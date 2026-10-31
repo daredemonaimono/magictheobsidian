@@ -1,6 +1,7 @@
 import { App, ItemView, Modal, Notice, TFile, ViewStateResult, WorkspaceLeaf } from "obsidian";
 import { CardInfo, cardImage, cardInfo, cardText, ensureCardFile, localCards, printingImage, readPrintings } from "./cards";
 import { Settings } from "./settings";
+import { loadCollection, saveCollection } from "./collection";
 import { Board, Deck, parseDeck, writeDeck } from "./deck";
 import { Printing, ScryfallCard, cardImageUrl, printingImageUrl, searchCards } from "./scryfall";
 
@@ -27,11 +28,15 @@ interface Result {
   manaCost: string;
   image: () => Promise<string | undefined>;
   text: () => Promise<string>;
-  resolve: () => Promise<{ key: string; meta: Meta }>;
+  // print = 追加時に使う版 (コレクションは版ごとに持つため必要)
+  resolve: () => Promise<{ key: string; meta: Meta; print?: string }>;
 }
 
 export class DeckView extends ItemView {
   private path = "";
+  // コレクション表示: 全セットの所持カードを main に入れ、キーは `カード名|set 番号`
+  private collection = false;
+  private collectionSets = new Set<string>();
   private deck: Deck = { main: new Map(), side: new Map() };
   private board: Board = "main";
   private meta = new Map<string, Meta>();
@@ -50,19 +55,25 @@ export class DeckView extends ItemView {
     return DECK_VIEW;
   }
   getDisplayText() {
-    return this.path.split("/").pop()?.replace(/\.md$/, "") ?? "Deck";
+    return this.collection ? "Collection" : this.path.split("/").pop()?.replace(/\.md$/, "") ?? "Deck";
   }
   getIcon() {
     return "layers";
   }
   getState() {
-    return { path: this.path };
+    return { path: this.path, collection: this.collection };
   }
 
-  async setState(state: { path?: string }, result: ViewStateResult) {
+  async setState(state: { path?: string; collection?: boolean }, result: ViewStateResult) {
     this.path = state?.path ?? "";
-    const file = this.app.vault.getAbstractFileByPath(this.path);
-    if (file instanceof TFile) this.deck = parseDeck(await this.app.vault.cachedRead(file));
+    this.collection = !!state?.collection;
+    if (this.collection) {
+      this.deck = { main: await loadCollection(this.app), side: new Map() };
+      this.collectionSets = new Set([...this.deck.main.values()].map((e) => e.print!.split(" ")[0]));
+    } else {
+      const file = this.app.vault.getAbstractFileByPath(this.path);
+      if (file instanceof TFile) this.deck = parseDeck(await this.app.vault.cachedRead(file));
+    }
     this.build();
     await super.setState(state, result);
   }
@@ -111,9 +122,10 @@ export class DeckView extends ItemView {
 
   private renderTabs() {
     this.el.tabs.empty();
-    for (const b of ["main", "side"] as Board[]) {
+    for (const b of (this.collection ? ["main"] : ["main", "side"]) as Board[]) {
       const total = [...this.deck[b].values()].reduce((a, e) => a + e.n, 0);
-      const btn = this.el.tabs.createEl("button", { text: `${b === "main" ? "メイン" : "サイド"} ${total}` });
+      const label = this.collection ? "所持" : b === "main" ? "メイン" : "サイド";
+      const btn = this.el.tabs.createEl("button", { text: `${label} ${total}` });
       btn.toggleClass("is-on", this.board === b);
       btn.onclick = () => {
         this.board = b;
@@ -189,10 +201,15 @@ export class DeckView extends ItemView {
       manaCost: c.manaCost,
       image: () => cardImage(this.app, c.file),
       text: () => cardText(this.app, c.file.basename),
-      resolve: async () => ({
-        key: c.file.basename,
-        meta: { name: c.name, typeLine: c.typeLine, cmc: c.cmc, image: await cardImage(this.app, c.file) },
-      }),
+      resolve: async () => {
+        const prints = await readPrintings(this.app, c.file.basename);
+        const p = prints.find((x) => x.set === c.set) ?? prints[0];
+        return {
+          key: c.file.basename,
+          meta: { name: c.name, typeLine: c.typeLine, cmc: c.cmc, image: await cardImage(this.app, c.file) },
+          print: p && `${p.set} ${p.collector_number}`,
+        };
+      },
     };
   }
 
@@ -205,7 +222,11 @@ export class DeckView extends ItemView {
       manaCost: c.mana_cost ?? c.card_faces?.[0]?.mana_cost ?? "",
       image: async () => meta.image,
       text: async () => c.printed_text ?? c.oracle_text ?? c.card_faces?.map((f) => f.printed_text ?? f.oracle_text).join("\n\n---\n\n") ?? "",
-      resolve: async () => ({ key: (await ensureCardFile(this.app, c, this.settings)).basename, meta }),
+      resolve: async () => ({
+        key: (await ensureCardFile(this.app, c, this.settings)).basename,
+        meta,
+        print: `${c.set} ${c.collector_number}`,
+      }),
     };
   }
 
@@ -221,9 +242,11 @@ export class DeckView extends ItemView {
       const add = row.createEl("button", { text: "+" });
       add.onclick = async () => {
         try {
-          const { key, meta } = await r.resolve();
+          const { key, meta, print } = await r.resolve();
           this.meta.set(key, meta);
-          await this.change(key, 1);
+          if (!this.collection) return await this.change(key, 1);
+          if (!print) return void new Notice("収録一覧が無いカード。Cards から削除して取り直すと追加できる");
+          await this.change(`${key}|${print}`, 1, print);
         } catch (e) {
           new Notice(`追加失敗: ${(e as Error).message}`);
         }
@@ -233,28 +256,45 @@ export class DeckView extends ItemView {
 
   // ---- デッキ ----
 
-  private async change(key: string, delta: number) {
+  // コレクションのキーは `カード名|set 番号`。カードのファイル名はその前半
+  private base = (key: string) => key.split("|")[0];
+
+  private async change(key: string, delta: number, print?: string) {
     const m = this.deck[this.board];
     const e = m.get(key);
     const n = Math.max(0, (e?.n ?? 0) + delta);
-    n ? m.set(key, { ...e, n }) : m.delete(key);
+    n ? m.set(key, { ...e, n, print: e?.print ?? print }) : m.delete(key);
     await this.save();
   }
 
   private async setPrint(key: string, print?: string) {
-    const e = this.deck[this.board].get(key);
-    if (e) this.deck[this.board].set(key, { ...e, print });
+    const m = this.deck[this.board];
+    const e = m.get(key);
+    if (!e) return;
+    if (this.collection && print) {
+      // 版を変えると別の行になる。同じ版が既にあれば枚数を足す
+      m.delete(key);
+      const nk = `${this.base(key)}|${print}`;
+      m.set(nk, { n: e.n + (m.get(nk)?.n ?? 0), print });
+    } else {
+      m.set(key, { ...e, print });
+    }
     await this.save();
   }
 
   private async save() {
-    const file = this.app.vault.getAbstractFileByPath(this.path);
-    if (file instanceof TFile) await this.app.vault.process(file, (c) => writeDeck(c, this.deck));
+    if (this.collection) {
+      await saveCollection(this.app, this.deck.main, this.collectionSets);
+    } else {
+      const file = this.app.vault.getAbstractFileByPath(this.path);
+      if (file instanceof TFile) await this.app.vault.process(file, (c) => writeDeck(c, this.deck));
+    }
     this.renderTabs();
     await this.renderStack();
   }
 
   private async getMeta(key: string): Promise<Meta | undefined> {
+    key = this.base(key);
     const known = this.meta.get(key);
     if (known) return known;
     const info = cardInfo(this.app, key);
@@ -269,7 +309,7 @@ export class DeckView extends ItemView {
     const cards = await Promise.all(
       [...this.deck[this.board]].map(async ([key, { n: count, print }]) => {
         const meta = await this.getMeta(key);
-        const image = (print && (await printingImage(this.app, key, print))) || meta?.image;
+        const image = (print && (await printingImage(this.app, this.base(key), print))) || meta?.image;
         return { key, count, meta, image };
       }),
     );
@@ -289,22 +329,23 @@ export class DeckView extends ItemView {
       col.createEl("h4", { text: `${g} (${items.reduce((a, c) => a + c.count, 0)})` });
       for (const c of items) {
         const item = col.createDiv("mtg-item");
-        if (c.image) item.createEl("img", { attr: { src: c.image, alt: c.key } });
-        else item.createSpan({ text: c.key, cls: "mtg-name" });
+        if (c.image) item.createEl("img", { attr: { src: c.image, alt: this.base(c.key) } });
+        else item.createSpan({ text: this.base(c.key), cls: "mtg-name" });
         item.createSpan({ text: String(c.count), cls: "mtg-badge" });
         const ctl = item.createDiv("mtg-ctl");
         ctl.createEl("button", { text: "🖼", attr: { "aria-label": "イラスト変更" } }).onclick = () => void this.pickPrint(c.key);
         ctl.createEl("button", { text: "−" }).onclick = () => void this.change(c.key, -1);
         ctl.createEl("button", { text: "+" }).onclick = () => void this.change(c.key, 1);
-        item.onmouseenter = () => void this.preview(c.key, Promise.resolve(c.image), cardText(this.app, c.key));
+        item.onmouseenter = () => void this.preview(this.base(c.key), Promise.resolve(c.image), cardText(this.app, this.base(c.key)));
       }
     }
   }
 
   private async pickPrint(key: string) {
-    const prints = await readPrintings(this.app, key);
+    const base = this.base(key);
+    const prints = await readPrintings(this.app, base);
     if (!prints.length) return void new Notice("収録一覧が無いカード。Cards から削除して取り直すと付く");
-    new PrintModal(this.app, key, prints, (p) => void this.setPrint(key, p)).open();
+    new PrintModal(this.app, base, prints, !this.collection, (p) => void this.setPrint(key, p)).open();
   }
 
   private async preview(name: string, image: Promise<string | undefined>, text: Promise<string>) {
@@ -319,14 +360,14 @@ export class DeckView extends ItemView {
 }
 
 class PrintModal extends Modal {
-  constructor(app: App, private key: string, private prints: Printing[], private onPick: (print?: string) => void) {
+  constructor(app: App, private key: string, private prints: Printing[], private canReset: boolean, private onPick: (print?: string) => void) {
     super(app);
   }
   onOpen() {
     this.setTitle(`${this.key} のイラスト`);
     this.modalEl.addClass("mtg-print-modal");
-    const reset = this.contentEl.createEl("button", { text: "指定なし (標準に戻す)" });
-    reset.onclick = () => this.pick();
+    // コレクションは版が必須なので「指定なし」は出さない
+    if (this.canReset) this.contentEl.createEl("button", { text: "指定なし (標準に戻す)" }).onclick = () => this.pick();
     const grid = this.contentEl.createDiv("mtg-print-grid");
     for (const p of this.prints) {
       const cell = grid.createDiv("mtg-print");

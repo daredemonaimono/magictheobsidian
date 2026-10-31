@@ -12,6 +12,7 @@ export interface CardInfo {
   colors: string[];
   cmc: number;
   manaCost: string;
+  set: string;
 }
 
 function toInfo(app: App, file: TFile): CardInfo | null {
@@ -25,6 +26,7 @@ function toInfo(app: App, file: TFile): CardInfo | null {
     colors: fm.colors ?? [],
     cmc: fm.cmc ?? 0,
     manaCost: fm.mana_cost ?? "",
+    set: fm.set ?? "",
   };
 }
 

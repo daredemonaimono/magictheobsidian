@@ -50,6 +50,11 @@ export default class MagicTheObsidian extends Plugin {
       callback: () => new NameModal(this.app, "Create deck", "赤単バーン", (n) => this.createDeck(n)).open(),
     });
     this.addCommand({
+      id: "open-collection",
+      name: "Open collection",
+      callback: () => void this.app.workspace.getLeaf(true).setViewState({ type: DECK_VIEW, state: { collection: true }, active: true }),
+    });
+    this.addCommand({
       id: "open-deck-view",
       name: "Open current deck in deck view",
       checkCallback: (checking) => {

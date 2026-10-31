@@ -13,6 +13,7 @@ export interface ScryfallCard {
   colors?: string[];
   color_identity: string[];
   set: string;
+  collector_number: string;
   rarity: string;
   scryfall_uri: string;
   prints_search_uri?: string;
