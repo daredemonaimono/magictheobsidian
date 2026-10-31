@@ -1,0 +1,36 @@
+.mtg-deck { display: flex; gap: 16px; padding: 12px; overflow: auto; }
+.mtg-side { width: 260px; flex-shrink: 0; position: sticky; top: 0; align-self: flex-start; }
+.mtg-side img { width: 100%; border-radius: 12px; }
+.mtg-preview-name { text-align: center; font-weight: 600; margin-top: 8px; }
+.mtg-main { flex: 1; min-width: 0; }
+
+.mtg-tabs, .mtg-bar { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
+.mtg-tabs button.is-on, .mtg-color.is-on { background: var(--interactive-accent); color: var(--text-on-accent); }
+.mtg-status { color: var(--text-muted); font-size: var(--font-ui-small); min-height: 1.4em; }
+
+.mtg-results { border: 1px solid var(--background-modifier-border); border-radius: 6px; max-height: 240px; overflow: auto; margin-bottom: 16px; }
+.mtg-results:empty { display: none; }
+.mtg-row { display: flex; gap: 10px; align-items: center; padding: 4px 8px; }
+.mtg-row:hover { background: var(--background-modifier-hover); }
+.mtg-row .mtg-name { flex: 1; }
+.mtg-dim { color: var(--text-muted); font-size: var(--font-ui-smaller); }
+
+.mtg-groups { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start; }
+.mtg-group { width: 200px; }
+.mtg-group h4 { margin: 0 0 6px; }
+/* 各カードは名前帯だけ見せて重ね、最後の1枚だけ全体を出す */
+.mtg-item { position: relative; height: 30px; overflow: hidden; border-radius: 8px; }
+.mtg-item:last-child { height: auto; }
+.mtg-item img { width: 100%; display: block; }
+.mtg-badge { position: absolute; left: 4px; top: 4px; background: rgba(0, 0, 0, 0.75); color: #fff; border-radius: 10px; padding: 0 7px; font-size: 12px; }
+.mtg-ctl { position: absolute; right: 4px; top: 2px; display: none; gap: 2px; }
+.mtg-item:hover .mtg-ctl { display: flex; }
+.mtg-ctl button { padding: 0 6px; height: 22px; }
+
+.mtg-print-modal { width: 760px; max-width: 95vw; }
+.mtg-print-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; margin-top: 12px; max-height: 60vh; overflow: auto; }
+.mtg-print { cursor: pointer; text-align: center; min-height: 190px; }
+.mtg-print img { width: 100%; border-radius: 8px; }
+.mtg-print:hover img { outline: 2px solid var(--interactive-accent); }
+
+.mtg-preview-text { white-space: pre-wrap; font-size: var(--font-ui-small); margin-top: 8px; padding: 8px 10px; border: 1px solid var(--background-modifier-border); border-radius: 8px; max-height: 40vh; overflow: auto; }
