@@ -65,7 +65,10 @@ export class CardListView extends ItemView {
     this.status = root.createDiv("mtg-status");
     this.grid = root.createDiv("mtg-lgrid");
     // デッキが変わったら (追加・削除・枚数) 一覧も更新する
-    this.registerEvent((this.app.workspace as unknown as { on(n: string, cb: () => void): EventRef }).on("mtg-deck-changed", () => this.draw()));
+    this.registerEvent((this.app.workspace as unknown as { on(n: string, cb: () => void): EventRef }).on("mtg-deck-changed", () => {
+        this.updateTarget(); // 追加先の名前も、デッキの読み込み後に合わせる
+        this.draw();
+      }));
     this.updateTarget();
     await this.search();
   }

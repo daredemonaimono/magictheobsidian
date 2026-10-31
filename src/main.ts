@@ -1,4 +1,4 @@
-import { App, Modal, Notice, Plugin, Setting, TFile, normalizePath } from "obsidian";
+import { App, Modal, Notice, Plugin, Setting, TFile, WorkspaceLeaf, normalizePath } from "obsidian";
 import { ensureCardFile, localCards, updateLegality } from "./cards";
 import { DECK_DIR, foldCommander, writeDeck } from "./deck";
 import { CREATABLE, FORMATS } from "./rules";
@@ -62,6 +62,7 @@ export default class MagicTheObsidian extends Plugin {
       cardLang: d.cardLang ?? DEFAULT_SETTINGS.cardLang,
       sidebar: d.sidebar ?? DEFAULT_SETTINGS.sidebar,
       listArt: d.listArt ?? DEFAULT_SETTINGS.listArt,
+      dashboardTab: d.dashboardTab ?? DEFAULT_SETTINGS.dashboardTab,
     };
     priceStore.prices = d.prices ?? {};
     priceStore.updated = d.pricesUpdated ?? "";
@@ -92,14 +93,15 @@ export default class MagicTheObsidian extends Plugin {
     const ws = this.app.workspace;
     this.registerEvent(
       ws.on("active-leaf-change", (leaf) => {
-        if (leaf?.view instanceof DeckView && leaf.view.getViewType() === DECK_VIEW) {
-          this.target = leaf.view;
-          this.updateLists();
-        }
+        this.dashboardIfEmpty(leaf);
+        if (leaf?.view.getViewType() === DECK_VIEW) void this.followDeck(leaf);
       }),
     );
     this.registerEvent(ws.on("layout-change", () => void this.syncSidebar()));
-    ws.onLayoutReady(() => void this.syncSidebar());
+    ws.onLayoutReady(() => {
+      this.dashboardIfEmpty(ws.getMostRecentLeaf());
+      void this.syncSidebar();
+    });
 
     this.addCommand({
       id: "fetch-card",
@@ -155,6 +157,23 @@ export default class MagicTheObsidian extends Plugin {
         return !!isDeck;
       },
     });
+  }
+
+  // 開いたデッキ (タブを切り替えたデッキ) を、サイドバーの一覧の追加先にする。
+  // 背面だったタブは未読み込み (deferred) のことがあるので、読み込んでから使う
+  private async followDeck(leaf: WorkspaceLeaf) {
+    await (leaf as unknown as { loadIfDeferred?: () => Promise<void> }).loadIfDeferred?.();
+    if (leaf.view instanceof DeckView) {
+      this.target = leaf.view;
+      this.updateLists();
+    }
+  }
+
+  // 新しいタブ (空のタブ) をダッシュボードにする。サイドバーや別ウィンドウのタブは触らない
+  private dashboardIfEmpty(leaf: WorkspaceLeaf | null) {
+    if (!this.settings.dashboardTab || !leaf || leaf.view.getViewType() !== "empty") return;
+    if (leaf.getRoot() !== this.app.workspace.rootSplit) return;
+    void leaf.setViewState({ type: DASHBOARD_VIEW, active: true });
   }
 
   private async openDashboard() {

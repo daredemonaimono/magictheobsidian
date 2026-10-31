@@ -57,6 +57,7 @@ export class DeckView extends ItemView {
     if (file instanceof TFile) this.deck = parseDeck(await this.app.vault.cachedRead(file));
     this.board = this.rules().boards[0]; // 統率戦ならコマンダー欄から
     this.build();
+    this.app.workspace.trigger("mtg-deck-changed"); // 読み込みが終わった。サイドバーの一覧を、このデッキの中身にする
     await super.setState(state, result);
   }
 
