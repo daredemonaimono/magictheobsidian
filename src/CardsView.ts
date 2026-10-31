@@ -3,6 +3,7 @@ import { CARD_DIR, refetchCard } from "./cards";
 import { Result, buildFilterBar, emptyFilters, searchLocal } from "./search";
 import { Settings } from "./settings";
 import { manaCost } from "./symbols";
+import { wikiUrl } from "./wiki";
 
 export const CARDS_VIEW = "mtg-cards";
 const PAGE = 60;
@@ -85,6 +86,22 @@ export class CardsView extends ItemView {
           cell.removeClass("is-busy");
         }
       };
+      // 日本語の設定のときだけ、MTG Wiki のそのカードのページを開くボタン (ページは API で探す)
+      if (this.settings.textLang === "ja") {
+        const wiki = ctl.createEl("button", { text: "Wiki", attr: { "aria-label": "MTG Wiki のカードのページを開く" } });
+        wiki.onclick = async (e) => {
+          e.stopPropagation();
+          wiki.disabled = true;
+          try {
+            window.open(await wikiUrl(r.name, r.ja));
+          } catch (err) {
+            console.error(err);
+            new Notice(`Wiki を開けない: ${(err as Error).message}`);
+          } finally {
+            wiki.disabled = false;
+          }
+        };
+      }
       // クリックでカードのノートを開く
       cell.onclick = () => {
         const f = this.app.vault.getAbstractFileByPath(`${CARD_DIR}/${r.localKey}.md`);
