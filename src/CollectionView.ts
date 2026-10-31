@@ -55,7 +55,7 @@ export class CollectionView extends DeckView {
     this.head = root.createDiv("mtg-chead");
 
     const actions = root.createDiv("mtg-bar");
-    const addBtn = this.settings.sidebar ? null : actions.createEl("button", { text: "＋ Add cards" });
+    const addBtn = actions.createEl("button", { text: "＋ Add cards" });
     const updBtn = actions.createEl("button", { text: "価格を更新" });
     updBtn.onclick = async () => {
       updBtn.disabled = true;
@@ -69,10 +69,10 @@ export class CollectionView extends DeckView {
       void this.render();
     };
     this.panel = root.createDiv("mtg-cpanel");
-    if (addBtn) addBtn.onclick = () => this.panel.toggleClass("is-open", !this.panel.hasClass("is-open"));
+    addBtn.onclick = () => this.panel.toggleClass("is-open", !this.panel.hasClass("is-open"));
 
     const left = this.panel.createDiv("mtg-cleft");
-    const { status, results } = this.settings.sidebar ? { status: createDiv(), results: createDiv() } : this.buildSearch(left);
+    const { status, results } = this.buildSearch(left);
     const preview = this.panel.createDiv("mtg-cpreview");
 
     const fbar = root.createDiv("mtg-bar");

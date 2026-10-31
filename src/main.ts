@@ -92,7 +92,7 @@ export default class MagicTheObsidian extends Plugin {
     const ws = this.app.workspace;
     this.registerEvent(
       ws.on("active-leaf-change", (leaf) => {
-        if (leaf?.view instanceof DeckView) {
+        if (leaf?.view instanceof DeckView && leaf.view.getViewType() === DECK_VIEW) {
           this.target = leaf.view;
           this.updateLists();
         }
@@ -184,8 +184,9 @@ export default class MagicTheObsidian extends Plugin {
     return [...ws.getLeavesOfType(DECK_VIEW), ...ws.getLeavesOfType(COLLECTION_VIEW)];
   }
 
+  // サイドバーの追加先はデッキ画面だけ (コレクション画面は自前の Add cards)
   private liveTarget(): DeckView | undefined {
-    const leaves = this.deckLeaves();
+    const leaves = this.app.workspace.getLeavesOfType(DECK_VIEW);
     if (this.target && leaves.some((l) => l.view === this.target)) return this.target;
     return leaves[0]?.view as DeckView | undefined;
   }
@@ -194,10 +195,10 @@ export default class MagicTheObsidian extends Plugin {
     for (const l of this.app.workspace.getLeavesOfType(CARDLIST_VIEW)) (l.view as CardListView).updateTarget();
   }
 
-  // デッキ/コレクション画面が0→1になったときだけ自動で開く (手で閉じたら、また0になるまで開き直さない)。0になったら閉じる
+  // デッキ画面が0→1になったときだけ自動で開く (手で閉じたら、また0になるまで開き直さない)。デッキ画面が無いときは、手で開いても閉じる
   private async syncSidebar() {
     const ws = this.app.workspace;
-    const count = this.deckLeaves().length;
+    const count = ws.getLeavesOfType(DECK_VIEW).length;
     const lists = ws.getLeavesOfType(CARDLIST_VIEW);
     if (!this.settings.sidebar || count === 0) {
       lists.forEach((l) => l.detach());

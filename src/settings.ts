@@ -45,7 +45,7 @@ export class SettingsTab extends PluginSettingTab {
         );
     new Setting(this.containerEl)
       .setName("カード一覧をサイドバーに出す / Card list in sidebar")
-      .setDesc("デッキ画面を開くと右サイドバーにカード一覧が出る(クリックで追加、Shift+クリックで削除)。オフにすると、画面内の検索欄(従来の表示)に戻る。")
+      .setDesc("デッキ画面を開いている間だけ右サイドバーが出る。条件が空のときはデッキ内のカード、検索・フィルターすると追加できる(クリックで追加、Shift+クリックで削除)。オフにすると、画面内の検索欄(従来の表示)に戻る。")
       .addToggle((t) =>
         t.setValue(this.settings.sidebar).onChange(async (v) => {
           this.settings.sidebar = v;

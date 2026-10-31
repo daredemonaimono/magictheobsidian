@@ -232,6 +232,18 @@ export class DeckView extends ItemView {
     }
   }
 
+  // サイドバーに並べる、いまデッキに入っているカード (コマンダー → メイン → サイド、コスト順)
+  deckCards(): { key: string; n: number; board: Board }[] {
+    const cmc = (k: string) => cardInfo(this.app, k)?.cmc ?? 0;
+    return (["commander", "main", "side"] as Board[]).flatMap((board) =>
+      [...this.deck[board]].map(([key, e]) => ({ key, n: e.n, board })).sort((a, b) => cmc(a.key) - cmc(b.key) || a.key.localeCompare(b.key)),
+    );
+  }
+
+  countOf(key: string) {
+    return (["commander", "main", "side"] as Board[]).reduce((a, b) => a + (this.deck[b].get(key)?.n ?? 0), 0);
+  }
+
   // サイドバーの一覧にホバーしたとき、左の拡大表示に出す
   previewResult(r: Result) {
     void this.preview(r.name, r.image(), r.text(), r.ja);
@@ -302,6 +314,7 @@ export class DeckView extends ItemView {
     if (file instanceof TFile) await this.app.vault.process(file, (c) => writeDeck(c, this.deck));
     this.renderTabs();
     await this.renderStack();
+    this.app.workspace.trigger("mtg-deck-changed"); // サイドバーの一覧を更新させる
   }
 
   private async getMeta(key: string): Promise<Meta | undefined> {

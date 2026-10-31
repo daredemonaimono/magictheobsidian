@@ -105,3 +105,8 @@
 
 /* 見出しの並び: 縦に重なる見出しは同じ列 */
 .mtg-col { display: flex; flex-direction: column; gap: 16px; width: 200px; }
+
+.mtg-lcell.is-static { cursor: default; }
+.mtg-lcell.is-static:hover { outline: none; }
+.mtg-lcount { position: relative; z-index: 1; font-size: var(--font-ui-smaller); font-weight: 700; padding: 0 6px; border-radius: 10px; background: var(--background-modifier-border); }
+.mtg-ltag { position: relative; z-index: 1; font-size: var(--font-ui-smaller); color: var(--text-muted); }
