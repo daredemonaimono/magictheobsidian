@@ -73,3 +73,21 @@
 .mtg-dashboard { padding: 24px; }
 .mtg-dash-buttons { display: flex; gap: 12px; flex-wrap: wrap; }
 .mtg-dash-buttons button { padding: 16px 32px; font-size: var(--font-ui-large); height: auto; }
+
+/* デッキ一覧 */
+.mtg-decklist { padding: 16px; }
+.mtg-dbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+.mtg-dtabs { display: flex; gap: 6px; margin-right: auto; }
+.mtg-dtabs button.is-on { background: var(--interactive-accent); color: var(--text-on-accent); }
+.mtg-dgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; margin-top: 8px; }
+.mtg-dtile { position: relative; height: 150px; border-radius: 10px; overflow: hidden; cursor: pointer; background: var(--background-secondary); color: #fff; }
+.mtg-dtile img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.mtg-dshade { position: absolute; inset: 0; background: linear-gradient(to top, rgba(0,0,0,.8), rgba(0,0,0,.15)); }
+.mtg-dname { position: absolute; left: 14px; top: 12px; right: 70px; font-size: var(--font-ui-large); font-weight: 700; text-shadow: 0 1px 4px rgba(0,0,0,.7); }
+.mtg-dformat { position: absolute; left: 14px; top: 58px; font-style: italic; opacity: .85; }
+.mtg-dpips { position: absolute; left: 14px; bottom: 12px; display: flex; gap: 4px; }
+.mtg-dpip { width: 20px; height: 20px; line-height: 20px; text-align: center; border-radius: 50%; color: #111; font-size: 11px; font-weight: 700; }
+.mtg-dctl { position: absolute; right: 8px; top: 8px; display: flex; gap: 4px; }
+.mtg-dctl button { padding: 0 8px; height: 26px; }
+.mtg-dctl button.is-on { color: #e25563; }
+.mtg-dago { text-align: right; color: var(--text-muted); font-size: var(--font-ui-smaller); margin-top: 4px; }

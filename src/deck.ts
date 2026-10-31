@@ -2,6 +2,8 @@
 // カード名は Cards/ のファイル名 (= グラフビューのリンク先)。(set 番号) はイラスト指定で省略可。
 
 // print = "m11 149" (Printings 表の set と no)
+export const DECK_DIR = "Decks";
+
 export interface Entry {
   n: number;
   print?: string;

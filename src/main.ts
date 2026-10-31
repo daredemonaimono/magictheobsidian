@@ -1,16 +1,16 @@
-import { App, FuzzySuggestModal, Modal, Notice, Plugin, Setting, TFile, normalizePath } from "obsidian";
+import { App, Modal, Notice, Plugin, Setting, TFile, normalizePath } from "obsidian";
 import { ensureCardFile } from "./cards";
-import { writeDeck } from "./deck";
+import { DECK_DIR, writeDeck } from "./deck";
 import { ImportModal, resolveDeck } from "./import";
 import { CARDLIST_VIEW, CardListView } from "./CardListView";
 import { COLLECTION_VIEW, CollectionView } from "./CollectionView";
 import { DASHBOARD_VIEW, DashboardView } from "./DashboardView";
+import { DECKLIST_VIEW, DeckListView } from "./DeckListView";
 import { DECK_VIEW, DeckView } from "./DeckView";
 import { fetchCard, fileSafe } from "./scryfall";
 import { priceStore, updateCollectionPrices } from "./prices";
 import { DEFAULT_SETTINGS, Settings, SettingsTab } from "./settings";
 
-const DECK_DIR = "Decks";
 // 「動き方」はカード行の外なので、デッキ画面で枚数を変えても書き換わらない
 const DECK_TEMPLATE =
   "---\nmtg: deck\nformat: constructed\ntags: [mtg/deck]\n---\n\n## Main\n\n## Side\n\n## 動き方\n\n- 勝ち筋:\n- 序盤:\n- 中盤:\n- 注意点:\n";
@@ -36,24 +36,6 @@ class NameModal extends Modal {
   }
   onClose() {
     this.contentEl.empty();
-  }
-}
-
-// デッキの選択。先頭は新規作成
-class DeckPicker extends FuzzySuggestModal<TFile | null> {
-  constructor(app: App, private onPick: (file: TFile | null) => void) {
-    super(app);
-    this.setPlaceholder("デッキを選ぶ");
-  }
-  getItems() {
-    const decks = this.app.vault.getMarkdownFiles().filter((f) => f.path.startsWith(`${DECK_DIR}/`));
-    return [null, ...decks.sort((a, b) => a.basename.localeCompare(b.basename))];
-  }
-  getItemText(item: TFile | null) {
-    return item ? item.basename : "＋ 新しいデッキを作る";
-  }
-  onChooseItem(item: TFile | null) {
-    this.onPick(item);
   }
 }
 
@@ -85,7 +67,16 @@ export default class MagicTheObsidian extends Plugin {
       }),
     );
     this.registerView(DECK_VIEW, (leaf) => new DeckView(leaf, this.settings));
-    this.registerView(DASHBOARD_VIEW, (leaf) => new DashboardView(leaf, { collection: () => void this.openCollection(), deck: () => this.pickDeck() }));
+    this.registerView(DASHBOARD_VIEW, (leaf) => new DashboardView(leaf, { collection: () => void this.openCollection(), deck: () => void this.openDeckList() }));
+    this.registerView(
+      DECKLIST_VIEW,
+      (leaf) =>
+        new DeckListView(leaf, {
+          open: (f) => void this.openDeck(f),
+          create: () => new NameModal(this.app, "Create deck", "赤単バーン", (n) => void this.createDeck(n)).open(),
+          import: () => new ImportModal(this.app, true, (n, t) => void this.importDeck(n, t)).open(),
+        }),
+    );
     this.registerView(COLLECTION_VIEW, (leaf) => new CollectionView(leaf, this.settings));
     this.registerView(CARDLIST_VIEW, (leaf) => new CardListView(leaf, this.settings, () => this.liveTarget()));
 
@@ -158,11 +149,11 @@ export default class MagicTheObsidian extends Plugin {
     await ws.getLeaf(true).setViewState({ type: COLLECTION_VIEW, active: true });
   }
 
-  private pickDeck() {
-    new DeckPicker(this.app, (file) => {
-      if (file) void this.openDeck(file);
-      else new NameModal(this.app, "Create deck", "赤単バーン", (n) => void this.createDeck(n)).open();
-    }).open();
+  private async openDeckList() {
+    const ws = this.app.workspace;
+    const open = ws.getLeavesOfType(DECKLIST_VIEW)[0];
+    if (open) return void ws.revealLeaf(open);
+    await ws.getLeaf(true).setViewState({ type: DECKLIST_VIEW, active: true });
   }
 
   private deckLeaves() {
