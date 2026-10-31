@@ -2,7 +2,7 @@ import { Notice, ViewStateResult } from "obsidian";
 import { CardInfo, cardImage, cardInfo, printingOf, readPrintings } from "./cards";
 import { CONDS, Row, loadCollection, rowKey, saveCollection } from "./collection";
 import { DeckView, PrintModal, Result } from "./DeckView";
-import { fetchPrices, priceOf } from "./prices";
+import { priceOf, priceStore, updateCollectionPrices } from "./prices";
 import { printingImageUrl } from "./scryfall";
 
 export const COLLECTION_VIEW = "mtg-collection";
@@ -55,6 +55,18 @@ export class CollectionView extends DeckView {
 
     const actions = root.createDiv("mtg-bar");
     const addBtn = actions.createEl("button", { text: "＋ Add cards" });
+    const updBtn = actions.createEl("button", { text: "価格を更新" });
+    updBtn.onclick = async () => {
+      updBtn.disabled = true;
+      new Notice("価格を更新中…");
+      try {
+        new Notice(`価格を更新: ${await updateCollectionPrices(this.app)} 件`);
+      } catch (e) {
+        new Notice(`価格の更新失敗: ${(e as Error).message}`);
+      }
+      updBtn.disabled = false;
+      void this.render();
+    };
     this.panel = root.createDiv("mtg-cpanel");
     addBtn.onclick = () => this.panel.toggleClass("is-open", !this.panel.hasClass("is-open"));
 
@@ -109,9 +121,6 @@ export class CollectionView extends DeckView {
         return { row, key, info, id: p?.id, image };
       }),
     );
-    if (seq !== this.renderSeq) return;
-    this.draw(items);
-    await fetchPrices(items.flatMap((i) => (i.id ? [i.id] : [])));
     if (seq === this.renderSeq) this.draw(items);
   }
 
@@ -131,7 +140,8 @@ export class CollectionView extends DeckView {
 
     const count = items.reduce((a, i) => a + i.row.n, 0);
     const value = items.reduce((a, i) => a + i.row.n * (this.price(i) ?? 0), 0);
-    this.head.setText(`${count} 枚 · ${this.fmt(value)}`);
+    const updated = priceStore.updated ? new Date(priceStore.updated).toLocaleString() : "未取得 (「価格を更新」を押す)";
+    this.head.setText(`${count} 枚 · ${this.fmt(value)} · 価格の更新: ${updated}`);
 
     this.setSelect.empty();
     this.setSelect.createEl("option", { text: "Any Set", value: "" });

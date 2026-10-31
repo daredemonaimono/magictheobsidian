@@ -3,6 +3,7 @@ import { ensureCardFile } from "./cards";
 import { COLLECTION_VIEW, CollectionView } from "./CollectionView";
 import { DECK_VIEW, DeckView } from "./DeckView";
 import { fetchCard, fileSafe } from "./scryfall";
+import { priceStore, updateCollectionPrices } from "./prices";
 import { DEFAULT_SETTINGS, Settings, SettingsTab } from "./settings";
 
 const DECK_DIR = "Decks";
@@ -36,8 +37,14 @@ export default class MagicTheObsidian extends Plugin {
   settings: Settings = { ...DEFAULT_SETTINGS };
 
   async onload() {
-    this.settings = { ...DEFAULT_SETTINGS, ...(await this.loadData()) };
-    this.addSettingTab(new SettingsTab(this.app, this, this.settings, () => this.saveData(this.settings)));
+    // data.json: 設定 + 価格キャッシュ (旧版は設定だけのフラットな形)
+    const d = (await this.loadData()) ?? {};
+    this.settings = { textLang: d.textLang ?? DEFAULT_SETTINGS.textLang, cardLang: d.cardLang ?? DEFAULT_SETTINGS.cardLang };
+    priceStore.prices = d.prices ?? {};
+    priceStore.updated = d.pricesUpdated ?? "";
+    const saveAll = () => this.saveData({ ...this.settings, prices: priceStore.prices, pricesUpdated: priceStore.updated });
+    priceStore.save = saveAll;
+    this.addSettingTab(new SettingsTab(this.app, this, this.settings, saveAll));
     this.registerView(DECK_VIEW, (leaf) => new DeckView(leaf, this.settings));
     this.registerView(COLLECTION_VIEW, (leaf) => new CollectionView(leaf, this.settings));
 
@@ -55,6 +62,18 @@ export default class MagicTheObsidian extends Plugin {
       id: "open-collection",
       name: "Open collection",
       callback: () => void this.app.workspace.getLeaf(true).setViewState({ type: COLLECTION_VIEW, active: true }),
+    });
+    this.addCommand({
+      id: "update-prices",
+      name: "Update collection prices",
+      callback: async () => {
+        new Notice("価格を更新中…");
+        try {
+          new Notice(`価格を更新: ${await updateCollectionPrices(this.app)} 件`);
+        } catch (e) {
+          new Notice(`価格の更新失敗: ${(e as Error).message}`);
+        }
+      },
     });
     this.addCommand({
       id: "open-deck-view",
