@@ -4,8 +4,8 @@ import { LEGAL_FORMATS, formatOf } from "./rules";
 import { ImportModal, resolveDeck } from "./import";
 import { Settings } from "./settings";
 import { Board, Deck, emptyDeck, parseDeck, writeDeck } from "./deck";
-import { Printing, printingImageUrl, searchCards } from "./scryfall";
-import { Filters, Meta, Result, buildFilterBar, emptyFilters, isEmpty, scryfallQuery, scryfallResult, searchLocal } from "./search";
+import { Printing, printingImageUrl } from "./scryfall";
+import { Filters, Meta, Result, buildFilterBar, emptyFilters, isEmpty, searchAll } from "./search";
 
 export const DECK_VIEW = "mtg-deck";
 
@@ -184,23 +184,10 @@ export class DeckView extends ItemView {
       this.el.status.setText("");
       return this.renderResults([]);
     }
-
-    const local = await searchLocal(this.app, f);
-    if (seq !== this.searchSeq) return;
-    if (local.length) {
-      this.el.status.setText(`Cards 内 ${local.length} 件`);
-      return this.renderResults(local.slice(0, MAX_RESULTS));
-    }
-
-    this.el.status.setText("Cards に無いので Scryfall を検索中…");
-    try {
-      const found = await searchCards(scryfallQuery(f));
-      if (seq !== this.searchSeq) return;
-      this.el.status.setText(`Scryfall ${found.length} 件`);
-      this.renderResults(found.slice(0, MAX_RESULTS).map((c) => scryfallResult(this.app, this.settings, c)));
-    } catch (e) {
-      this.el.status.setText(`検索失敗: ${(e as Error).message}`);
-    }
+    await searchAll(this.app, this.settings, f, () => seq !== this.searchSeq, (res, note) => {
+      this.el.status.setText(note);
+      this.renderResults(res.slice(0, MAX_RESULTS));
+    });
   }
 
   protected renderResults(results: Result[]) {

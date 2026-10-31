@@ -1,6 +1,6 @@
 import { App } from "obsidian";
 import { CardInfo, cardImage, cardText, ensureCardFile, localCards, readPrintings } from "./cards";
-import { ScryfallCard, artCropUrl, cardImageUrl, legalList, restrictedList } from "./scryfall";
+import { ScryfallCard, artCropUrl, cardImageUrl, legalList, restrictedList, searchCards } from "./scryfall";
 import { Settings } from "./settings";
 
 export interface Meta {
@@ -139,4 +139,35 @@ export function scryfallResult(app: App, settings: Settings, c: ScryfallCard): R
       print: `${c.set} ${c.collector_number}`,
     }),
   };
+}
+
+// 検索語ごとの Scryfall の結果。画面を開いている間だけ覚えて、同じ検索で API を呼び直さない
+const found = new Map<string, ScryfallCard[]>();
+
+// Cards/ の結果を先に出し、続けて Scryfall の結果のうち Cards/ に無いものを足す。
+// (Cards/ に1枚でもあると Scryfall を見に行かない、という作りだと、同じ名前の別カードが出なくなる)
+// update(結果, 注記) は2回呼ばれる: Cards/ だけ → Scryfall を足した後
+export async function searchAll(
+  app: App,
+  settings: Settings,
+  f: Filters,
+  stale: () => boolean,
+  update: (results: Result[], note: string) => void,
+) {
+  const local = await searchLocal(app, f);
+  if (stale()) return;
+  const q = scryfallQuery(f);
+  // 名前だけで1文字のときは広すぎるので Scryfall は見ない
+  if (!q.trim() || (f.name.length === 1 && !f.effect && !f.type && !f.colors.size)) return update(local, `Cards ${local.length} 件`);
+  update(local, `Cards ${local.length} 件 · Scryfall を検索中…`);
+  try {
+    if (!found.has(q)) found.set(q, await searchCards(q));
+  } catch (e) {
+    if (!stale()) update(local, `Cards ${local.length} 件 · Scryfall の検索失敗: ${(e as Error).message}`);
+    return;
+  }
+  if (stale()) return;
+  const have = new Set(local.map((r) => r.name));
+  const extra = found.get(q)!.filter((c) => !have.has(c.name)).map((c) => scryfallResult(app, settings, c));
+  update([...local, ...extra], `Cards ${local.length} 件 + Scryfall ${extra.length} 件`);
 }

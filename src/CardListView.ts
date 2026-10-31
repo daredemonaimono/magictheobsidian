@@ -1,8 +1,7 @@
 import { EventRef, ItemView, Notice, WorkspaceLeaf } from "obsidian";
 import { cardInfo } from "./cards";
-import { searchCards } from "./scryfall";
 import { DeckView } from "./DeckView";
-import { Result, buildFilterBar, emptyFilters, isEmpty, localResult, scryfallQuery, scryfallResult, searchLocal } from "./search";
+import { Result, buildFilterBar, emptyFilters, isEmpty, localResult, searchAll } from "./search";
 import { Settings } from "./settings";
 
 export const CARDLIST_VIEW = "mtg-cardlist";
@@ -31,6 +30,7 @@ export class CardListView extends ItemView {
   private seq = 0;
   private results: Result[] = [];
   private shown = PAGE;
+  private note = "";
   private lastTarget?: DeckView;
   private targetEl!: HTMLElement;
   private status!: HTMLElement;
@@ -92,21 +92,12 @@ export class CardListView extends ItemView {
       this.results = [];
       return this.draw();
     }
-    let res = await searchLocal(this.app, this.f);
-    if (seq !== this.seq) return;
-    if (!res.length) {
-      this.status.setText("Cards に無いので Scryfall を検索中…");
-      try {
-        res = (await searchCards(scryfallQuery(this.f))).map((c) => scryfallResult(this.app, this.settings, c));
-      } catch (e) {
-        this.status.setText(`検索失敗: ${(e as Error).message}`);
-        return;
-      }
-      if (seq !== this.seq) return;
-    }
-    this.results = res;
-    this.shown = PAGE;
-    this.draw();
+    await searchAll(this.app, this.settings, this.f, () => seq !== this.seq, (res, note) => {
+      this.results = res;
+      this.note = note;
+      this.shown = PAGE;
+      this.draw();
+    });
   }
 
   private deckRows(): Row[] {
@@ -130,7 +121,7 @@ export class CardListView extends ItemView {
     this.status.setText(
       deckMode
         ? `デッキ内 ${rows.reduce((a, x) => a + (x.n ?? 0), 0)} 枚 (検索・フィルターで探して追加)`
-        : `${this.results.length} 件${this.results.length > this.shown ? ` (先頭 ${this.shown} 件)` : ""}`,
+        : `${this.note}${this.results.length > this.shown ? ` (先頭 ${this.shown} 件を表示)` : ""}`,
     );
 
     this.grid.empty();
