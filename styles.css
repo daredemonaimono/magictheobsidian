@@ -102,3 +102,9 @@
 .mtg-ltag { position: relative; z-index: 1; font-size: var(--font-ui-smaller); color: var(--text-muted); }
 
 .mtg-lcell.is-busy { opacity: 0.5; cursor: progress; }
+
+/* 使えなくなったカード (フォーマットを変えたとき) */
+.mtg-lcell.is-illegal { background: color-mix(in srgb, var(--text-error) 22%, var(--background-secondary)); outline: 1px solid var(--text-error); }
+.mtg-lcell.is-illegal .mtg-lart { opacity: 0.25; }
+.mtg-lcell.is-illegal .mtg-lname { color: var(--text-error); }
+.mtg-lillegal { position: relative; z-index: 1; font-size: var(--font-ui-smaller); font-weight: 700; color: var(--text-error); white-space: nowrap; }

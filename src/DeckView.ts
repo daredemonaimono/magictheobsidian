@@ -143,6 +143,7 @@ export class DeckView extends ItemView {
     this.board = this.rules().boards[0];
     this.renderTabs();
     await this.renderStack();
+    this.app.workspace.trigger("mtg-deck-changed"); // サイドバーの一覧で、使えなくなったカードを出し直す
   }
 
   // サイドバーの一覧でカードを選べるか。このデッキのフォーマットで使えないと分かっているカードは選べない

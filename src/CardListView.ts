@@ -22,6 +22,7 @@ interface Row {
   n?: number; // デッキ内の枚数
   tag?: string;
   board?: Board; // デッキ内の一覧のとき、そのカードがいる欄
+  illegal?: boolean; // デッキ内の一覧のとき、いまのフォーマットで使えない
 }
 
 // 右サイドバー。デッキ画面を開いている間だけ出る。
@@ -112,9 +113,12 @@ export class CardListView extends ItemView {
     const rows: Row[] = [];
     for (const c of t?.deckCards() ?? []) {
       const info = cardInfo(this.app, c.key);
-      if (info) rows.push({ r: localResult(this.app, info), n: c.n, tag: tag[c.board], board: c.board });
+      if (!info) continue;
+      const r = localResult(this.app, info);
+      rows.push({ r, n: c.n, tag: tag[c.board], board: c.board, illegal: !!t && !t.allows(r) });
     }
-    return rows;
+    // 使えないカードは先頭にまとめて、見落とさないようにする (並びは元の順を保つ)
+    return [...rows.filter((x) => x.illegal), ...rows.filter((x) => !x.illegal)];
   }
 
   private draw() {
@@ -126,22 +130,25 @@ export class CardListView extends ItemView {
       : this.results.slice(0, this.shown).map((r) => ({ r, n: (r.localKey && target?.countOf(r.localKey)) || undefined }));
     this.status.setText(
       deckMode
-        ? `デッキ内 ${rows.reduce((a, x) => a + (x.n ?? 0), 0)} 枚 (クリックで+1 / Shift+クリックで−1。検索すると他のカードも追加できる)`
+        ? `デッキ内 ${rows.reduce((a, x) => a + (x.n ?? 0), 0)} 枚${rows.some((x) => x.illegal) ? ` · このフォーマットで使えないカード ${rows.filter((x) => x.illegal).length} 種` : ""} (クリックで+1 / Shift+クリックで−1。検索すると他のカードも追加できる)`
         : `${this.note}${this.results.length > this.shown ? ` (先頭 ${this.shown} 件を表示)` : ""}`,
     );
 
     this.grid.empty();
-    for (const { r, n, tag, board } of rows) {
+    for (const { r, n, tag, board, illegal } of rows) {
       const cell = this.grid.createDiv("mtg-lcell");
       cell.setAttr("aria-label", r.ja && r.ja !== r.name ? `${r.name} (${r.ja})` : r.name);
       cell.style.setProperty("--mtg-color", colorOf(r.colors));
       const banned = !deckMode && !!target && !target.allows(r);
       cell.toggleClass("is-banned", banned);
       if (banned) cell.setAttr("aria-label", `${r.ja ?? r.name} (このフォーマットでは使えない)`);
+      cell.toggleClass("is-illegal", !!illegal);
+      if (illegal) cell.setAttr("aria-label", `${r.ja ?? r.name} (このフォーマットでは使えない。Shift+クリックで外す)`);
       // 見えている行の分だけ読み込む (loading=lazy)。設定でオフにできる
       if (this.settings.listArt && r.art) cell.createEl("img", { cls: "mtg-lart", attr: { src: r.art, loading: "lazy", alt: "" } });
       cell.createSpan({ text: String(r.cmc), cls: "mtg-lcost" });
       cell.createSpan({ text: r.ja ?? r.name, cls: "mtg-lname" });
+      if (illegal) cell.createSpan({ text: "✕ 使えない", cls: "mtg-lillegal" });
       if (tag) cell.createSpan({ text: tag, cls: "mtg-ltag" });
       if (n) cell.createSpan({ text: `${n}×`, cls: "mtg-lcount" });
       cell.onmouseenter = () => target?.previewResult(r);
