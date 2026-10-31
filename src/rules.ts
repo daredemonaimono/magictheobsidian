@@ -43,3 +43,26 @@ export const FORMATS: Record<string, FormatRules> = {
 };
 
 export const formatOf = (id?: string): FormatRules => FORMATS[id ?? ""] ?? FORMATS.constructed;
+
+// ---- カードのリーガル判定 (デッキ内の全カードが使えるフォーマットを ○ / × で出す) ----
+
+// [Scryfall の id, 表示名]
+export const LEGAL_FORMATS = [
+  ["standard", "Standard"],
+  ["pioneer", "Pioneer"],
+  ["modern", "Modern"],
+  ["legacy", "Legacy"],
+  ["vintage", "Vintage"],
+  ["pauper", "Pauper"],
+  ["commander", "Commander"],
+] as const;
+
+export type Verdict = "ok" | "ng" | "unknown";
+
+// legal 未取得 (undefined) のカードは判定できない。1枚でも使えないと分かっていれば ng
+export function judge(cards: { key: string; legal?: string[] }[], format: string) {
+  const bad = cards.filter((c) => c.legal && !c.legal.includes(format)).map((c) => c.key);
+  const unknown = cards.filter((c) => !c.legal).map((c) => c.key);
+  const verdict: Verdict = bad.length ? "ng" : unknown.length || !cards.length ? "unknown" : "ok";
+  return { verdict, bad, unknown };
+}

@@ -1,5 +1,5 @@
 import { App, Modal, Notice, Plugin, Setting, TFile, normalizePath } from "obsidian";
-import { ensureCardFile } from "./cards";
+import { ensureCardFile, localCards, updateLegality } from "./cards";
 import { DECK_DIR, writeDeck } from "./deck";
 import { ImportModal, resolveDeck } from "./import";
 import { CARDLIST_VIEW, CardListView } from "./CardListView";
@@ -108,6 +108,20 @@ export default class MagicTheObsidian extends Plugin {
       callback: () => new ImportModal(this.app, true, (n, t) => void this.importDeck(n, t)).open(),
     });
     this.addCommand({ id: "open-collection", name: "Open collection", callback: () => void this.openCollection() });
+    this.addCommand({
+      id: "update-legality",
+      name: "Update card legality (cards without it)",
+      callback: async () => {
+        const keys = localCards(this.app).filter((c) => !c.legal).map((c) => c.file.basename);
+        if (!keys.length) return void new Notice("リーガル情報が無いカードはない");
+        new Notice(`リーガル情報を更新中… ${keys.length} 枚`);
+        try {
+          new Notice(`リーガル情報を更新: ${await updateLegality(this.app, keys)} 枚`);
+        } catch (e) {
+          new Notice(`更新失敗: ${(e as Error).message}`);
+        }
+      },
+    });
     this.addCommand({ id: "open-dashboard", name: "Open dashboard", callback: () => void this.openDashboard() });
     this.addRibbonIcon("layout-dashboard", "Magic the Obsidian", () => void this.openDashboard());
     this.addCommand({

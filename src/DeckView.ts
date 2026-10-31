@@ -1,6 +1,6 @@
 import { App, ItemView, Modal, Notice, TFile, ViewStateResult, WorkspaceLeaf } from "obsidian";
-import { cardImage, cardInfo, cardText, oracleEnglish, printingImage, readPrintings } from "./cards";
-import { formatOf } from "./rules";
+import { cardImage, cardInfo, cardText, deckVerdicts, oracleEnglish, printingImage, readPrintings, updateLegality } from "./cards";
+import { LEGAL_FORMATS, formatOf } from "./rules";
 import { ImportModal, resolveDeck } from "./import";
 import { Settings } from "./settings";
 import { Board, Deck, parseDeck, writeDeck } from "./deck";
@@ -23,6 +23,7 @@ export class DeckView extends ItemView {
   protected timer?: number;
   protected searchSeq = 0;
   private stackSeq = 0;
+  private legalEl?: HTMLElement;
   protected previewSeq = 0;
   protected el!: { tabs: HTMLElement; status: HTMLElement; results: HTMLElement; stack: HTMLElement; preview: HTMLElement };
 
@@ -63,6 +64,7 @@ export class DeckView extends ItemView {
     const preview = root.createDiv("mtg-side");
     const main = root.createDiv("mtg-main");
     const tabs = main.createDiv("mtg-tabs");
+    this.legalEl = main.createDiv("mtg-legal");
     // サイドバーの一覧を使う設定のときは画面内の検索欄を出さない (設定で戻せる)
     const { status, results } = this.settings.sidebar ? { status: createDiv(), results: createDiv() } : this.buildSearch(main);
     this.el = { preview, tabs, status, results, stack: main.createDiv("mtg-groups") };
@@ -97,6 +99,31 @@ export class DeckView extends ItemView {
     }
     this.el.tabs.createEl("button", { text: "Import" }).onclick = () =>
       new ImportModal(this.app, false, (_, text) => void this.importInto(text)).open();
+    this.renderLegal();
+  }
+
+  // デッキ内の全カード(メイン+サイド)が使えるフォーマットを ○ / × で出す。? は情報が未取得
+  private renderLegal() {
+    const el = this.legalEl;
+    if (!el) return;
+    el.empty();
+    const v = deckVerdicts(this.app, [...this.deck.main.keys(), ...this.deck.side.keys()]);
+    for (const [id, name] of LEGAL_FORMATS) {
+      const r = v[id];
+      const chip = el.createSpan({ text: `${name} ${r.verdict === "ok" ? "○" : r.verdict === "ng" ? "×" : "?"}`, cls: `mtg-chip is-${r.verdict}` });
+      chip.setAttr("aria-label", r.verdict === "ng" ? `使えないカード: ${r.bad.join(", ")}` : r.verdict === "unknown" ? "リーガル情報が未取得のカードがある" : "全てのカードが使える");
+    }
+    const unknown = v[LEGAL_FORMATS[0][0]].unknown;
+    if (unknown.length) {
+      el.createEl("button", { text: `リーガル情報を更新 (${unknown.length}枚)` }).onclick = async () => {
+        try {
+          new Notice(`リーガル情報を更新: ${await updateLegality(this.app, unknown)} 枚`);
+        } catch (e) {
+          new Notice(`更新失敗: ${(e as Error).message}`);
+        }
+        this.renderLegal();
+      };
+    }
   }
 
   // 取り込んだカードは今のデッキに足す (枚数は加算、版は既存を優先)。上書きはしない

@@ -17,6 +17,7 @@ export interface ScryfallCard {
   rarity: string;
   scryfall_uri: string;
   prints_search_uri?: string;
+  legalities?: Record<string, string>;
   image_uris?: { normal: string };
   card_faces?: {
     name: string;
@@ -116,6 +117,9 @@ export async function fetchLocalized(oracleId: string, lang: string): Promise<Sc
   return res.status === 200 ? res.json.data?.[0] : undefined;
 }
 
+// restricted (Vintage の制限カード) も使えるものとして数える
+export const legalList = (l: Record<string, string> = {}) => Object.entries(l).filter(([, v]) => v === "legal" || v === "restricted").map(([k]) => k);
+
 export const fileSafe = (s: string) => s.replace(" // ", " - ").replace(/[\\/:*?"<>|#^\[\]]/g, "");
 
 export interface CardOptions {
@@ -150,6 +154,7 @@ export function toMarkdown(c: ScryfallCard, { lang, local, printings }: CardOpti
     `set: ${c.set}`,
     `scryfall_id: ${c.id}`,
     `oracle_id: ${c.oracle_id}`,
+    `legal: [${legalList(c.legalities).join(", ")}]`,
     `tags: [mtg/card]`,
     "---",
   ].join("\n");

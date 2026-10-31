@@ -91,3 +91,10 @@
 .mtg-dctl button { padding: 0 8px; height: 26px; }
 .mtg-dctl button.is-on { color: #e25563; }
 .mtg-dago { text-align: right; color: var(--text-muted); font-size: var(--font-ui-smaller); margin-top: 4px; }
+
+/* フォーマットの ○ × */
+.mtg-legal { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 8px; }
+.mtg-chip { padding: 2px 10px; border-radius: 999px; font-size: var(--font-ui-smaller); border: 1px solid var(--background-modifier-border); }
+.mtg-chip.is-ok { color: #3ea45b; border-color: #3ea45b; }
+.mtg-chip.is-ng { color: var(--text-faint); text-decoration: line-through; }
+.mtg-chip.is-unknown { color: var(--text-muted); }

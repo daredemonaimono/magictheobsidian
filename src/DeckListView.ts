@@ -1,8 +1,8 @@
 import { App, ItemView, Modal, TAbstractFile, TFile, WorkspaceLeaf, debounce } from "obsidian";
-import { cardInfo, printingOf } from "./cards";
+import { cardInfo, deckVerdicts, printingOf } from "./cards";
 import { COLOR_HEX } from "./CardListView";
 import { DECK_DIR, parseDeck } from "./deck";
-import { formatOf } from "./rules";
+import { LEGAL_FORMATS, Verdict } from "./rules";
 import { artCropUrl } from "./scryfall";
 
 export const DECKLIST_VIEW = "mtg-decklist";
@@ -15,7 +15,7 @@ export interface DeckListActions {
 
 interface Entry {
   file: TFile;
-  format: string;
+  legal: Record<string, Verdict>; // フォーマットごとの判定 (デッキ内の全カード)
   favorite: boolean;
   colors: string[];
   count: number; // メインの枚数
@@ -36,6 +36,7 @@ const ago = (ms: number) => {
 export class DeckListView extends ItemView {
   private tab: "all" | "fav" = "all";
   private query = "";
+  private format = ""; // 空 = 全フォーマット
   private seq = 0;
   private body!: HTMLElement;
   private tabs!: HTMLElement;
@@ -63,6 +64,13 @@ export class DeckListView extends ItemView {
 
     const bar = root.createDiv("mtg-dbar");
     this.tabs = bar.createDiv("mtg-dtabs");
+    const sel = bar.createEl("select");
+    sel.createEl("option", { text: "全フォーマット", value: "" });
+    for (const [id, name] of LEGAL_FORMATS) sel.createEl("option", { text: `${name} で使える`, value: id });
+    sel.onchange = () => {
+      this.format = sel.value;
+      void this.render();
+    };
     bar.createEl("input", { type: "text", placeholder: "デッキを検索" }).addEventListener("input", (e) => {
       this.query = (e.target as HTMLInputElement).value.trim().toLowerCase();
       void this.render();
@@ -101,7 +109,7 @@ export class DeckListView extends ItemView {
       }
       out.push({
         file,
-        format: formatOf(fm.format).name,
+        legal: Object.fromEntries(Object.entries(deckVerdicts(this.app, keys)).map(([k, r]) => [k, r.verdict])),
         favorite: !!fm.favorite,
         colors: COLOR_ORDER.filter((c) => colors.has(c)),
         count: [...deck.main.values()].reduce((a, e) => a + e.n, 0),
@@ -127,7 +135,7 @@ export class DeckListView extends ItemView {
       };
     }
 
-    const list = all.filter((d) => (this.tab === "all" || d.favorite) && d.file.basename.toLowerCase().includes(this.query));
+    const list = all.filter((d) => (this.tab === "all" || d.favorite) && d.file.basename.toLowerCase().includes(this.query) && (!this.format || d.legal[this.format] === "ok"));
     this.status.setText(`${list.length} 件 (更新日の新しい順)`);
     this.body.empty();
     for (const d of list) this.card(d);
@@ -139,7 +147,10 @@ export class DeckListView extends ItemView {
     if (d.art) tile.createEl("img", { attr: { src: d.art, loading: "lazy", alt: "" } });
     tile.createDiv("mtg-dshade");
     tile.createDiv({ text: d.file.basename, cls: "mtg-dname" });
-    tile.createDiv({ text: `${d.format} · ${d.count}枚`, cls: "mtg-dformat" });
+    // 使えるフォーマット (全カードが使えると分かっているもの)。未取得ならその旨
+    const names = LEGAL_FORMATS.filter(([id]) => d.legal[id] === "ok").map(([, n]) => n);
+    const unknown = LEGAL_FORMATS.every(([id]) => d.legal[id] === "unknown");
+    tile.createDiv({ text: `${unknown ? "判定なし" : names.join(" · ") || "どのフォーマットでも不可"} · ${d.count}枚`, cls: "mtg-dformat" });
     const pips = tile.createDiv("mtg-dpips");
     for (const c of d.colors) pips.createSpan({ text: c, cls: "mtg-dpip" }).style.background = COLOR_HEX[c];
 

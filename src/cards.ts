@@ -1,6 +1,7 @@
-import { App, TFile, normalizePath } from "obsidian";
+import { App, TFile, normalizePath, requestUrl } from "obsidian";
+import { LEGAL_FORMATS, judge } from "./rules";
 import { Settings } from "./settings";
-import { Printing, ScryfallCard, printingImageUrl, fetchLocalized, fetchPrintings, fileSafe, toMarkdown } from "./scryfall";
+import { Printing, ScryfallCard, legalList, printingImageUrl, fetchLocalized, fetchPrintings, fileSafe, toMarkdown } from "./scryfall";
 
 export const CARD_DIR = "Cards";
 
@@ -14,6 +15,7 @@ export interface CardInfo {
   manaCost: string;
   set: string;
   id: string; // scryfall_id
+  legal?: string[]; // 使えるフォーマット。未取得なら undefined
 }
 
 function toInfo(app: App, file: TFile): CardInfo | null {
@@ -29,6 +31,7 @@ function toInfo(app: App, file: TFile): CardInfo | null {
     manaCost: fm.mana_cost ?? "",
     set: fm.set ?? "",
     id: fm.scryfall_id ?? "",
+    legal: Array.isArray(fm.legal) ? fm.legal : undefined,
   };
 }
 
@@ -98,4 +101,45 @@ export async function printingOf(app: App, key: string, print: string): Promise<
 export async function printingImage(app: App, key: string, print: string): Promise<string | undefined> {
   const p = await printingOf(app, key, print);
   return p && printingImageUrl(p.id);
+}
+
+// デッキ内のカードから、フォーマットごとの判定を出す
+export function deckVerdicts(app: App, keys: string[]) {
+  const cards = keys.map((key) => ({ key, legal: cardInfo(app, key)?.legal }));
+  return Object.fromEntries(LEGAL_FORMATS.map(([id]) => [id, judge(cards, id)]));
+}
+
+// 手動更新。リーガル情報が無いカードのノートに `legal:` を書く。1回75件まで。戻り値は更新した枚数
+export async function updateLegality(app: App, keys: string[]): Promise<number> {
+  const byId = new Map<string, string>();
+  for (const key of keys) {
+    const id = cardInfo(app, key)?.id;
+    if (id) byId.set(id, key);
+  }
+  const ids = [...byId.keys()];
+  let done = 0;
+  let failed = 0;
+  for (let i = 0; i < ids.length; i += 75) {
+    if (i) await new Promise((r) => setTimeout(r, 100)); // Scryfall の負荷配慮
+    const res = await requestUrl({
+      url: "https://api.scryfall.com/cards/collection",
+      method: "POST",
+      contentType: "application/json",
+      headers: { "User-Agent": "magictheobsidian/0.8.0", Accept: "application/json" },
+      body: JSON.stringify({ identifiers: ids.slice(i, i + 75).map((id) => ({ id })) }),
+      throw: false,
+    });
+    if (res.status !== 200) {
+      failed++;
+      continue;
+    }
+    for (const c of res.json.data) {
+      const f = app.vault.getAbstractFileByPath(`${CARD_DIR}/${byId.get(c.id)}.md`);
+      if (!(f instanceof TFile)) continue;
+      await app.fileManager.processFrontMatter(f, (fm) => (fm.legal = legalList(c.legalities)));
+      done++;
+    }
+  }
+  if (failed) throw new Error(`${failed} 回の取得に失敗 (取れた分だけ更新した)`);
+  return done;
 }
