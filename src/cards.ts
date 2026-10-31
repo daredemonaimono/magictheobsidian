@@ -25,7 +25,7 @@ function toInfo(app: App, file: TFile): CardInfo | null {
   return {
     file,
     name: fm.name,
-    nameLocal: fm.name_local ?? fm.name_ja,
+    nameLocal: fm.name_local,
     typeLine: fm.type_line ?? "",
     colors: fm.colors ?? [],
     cmc: fm.cmc ?? 0,
@@ -65,7 +65,7 @@ export async function ensureCardFile(app: App, card: ScryfallCard, settings: Set
   return app.vault.create(path, toMarkdown(card, { lang: settings.textLang, local, printings }));
 }
 
-// カード md の Printings 表を読む。表が無ければ空 (取得前に作ったカード)。lang 列が無い古い表は英語扱い
+// カード md の Printings 表を読む。表が無ければ空 (取得前に作ったカード)
 export async function readPrintings(app: App, key: string): Promise<Printing[]> {
   const f = app.vault.getAbstractFileByPath(`${CARD_DIR}/${key}.md`);
   if (!(f instanceof TFile)) return [];
@@ -74,7 +74,7 @@ export async function readPrintings(app: App, key: string): Promise<Printing[]> 
     .filter((l) => l.startsWith("| "))
     .map((l) => l.slice(2, -2).split(" | "))
     .filter((c) => /^[0-9a-f-]{36}$/.test(c[4] ?? ""))
-    .map(([set, collector_number, rarity, released_at, id, lang]) => ({ set, collector_number, rarity, released_at, id, lang: lang ?? "en" }));
+    .map(([set, collector_number, rarity, released_at, id, lang]) => ({ set, collector_number, rarity, released_at, id, lang }));
 }
 
 // 英語のオラクルテキスト (設定言語の Text 節は含めない)。ルール判定用

@@ -1,6 +1,6 @@
 import { Board, Deck } from "./deck";
 
-// フォーマットごとのルール。デッキのノートの frontmatter `format:` で選ぶ (無ければ constructed = 旧版互換で制限は枚数だけ)。
+// フォーマットごとのルール。デッキのノートの frontmatter `format:` で選ぶ (無い・知らないものは constructed = 制限なし。同名4枚とサイド15枚だけ)。
 // 新しいフォーマットは FORMATS に足す
 
 export interface AddCheck {
@@ -86,8 +86,8 @@ export const FORMATS: Record<string, FormatRules> = {
   vintage: sixty("Vintage", "vintage"),
   pauper: sixty("Pauper", "pauper"),
   commander,
-  // 旧版のデッキ (`format: constructed`) 用。カードの使用可否は見ない
-  constructed: sixty("構築戦"),
+  // format が無い・知らないデッキ用。カードの使用可否は見ない
+  constructed: sixty("制限なし"),
 };
 
 export const formatOf = (id?: string): FormatRules => FORMATS[id ?? ""] ?? FORMATS.constructed;

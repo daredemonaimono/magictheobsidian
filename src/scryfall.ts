@@ -193,7 +193,7 @@ export function toMarkdown(c: ScryfallCard, { lang, local, printings }: CardOpti
   // 画像URLは scryfall_id から作れるので Printings には保存しない。資産管理ではこの id を単位にする
   const prints = printings.length
     ? `\n## Printings\n\n| set | no | rarity | released | scryfall_id | lang |\n|---|---|---|---|---|---|\n${printings
-        .map((p) => `| ${p.set} | ${p.collector_number} | ${p.rarity} | ${p.released_at} | ${p.id} | ${p.lang ?? "en"} |`)
+        .map((p) => `| ${p.set} | ${p.collector_number} | ${p.rarity} | ${p.released_at} | ${p.id} | ${p.lang} |`)
         .join("\n")}\n`
     : "";
   return `${fm}\n\n${img ? `![](${img})\n\n` : ""}${text}\n\n${localText.trim() ? `## Text (${lang})\n\n${localText}\n\n` : ""}[Scryfall](${c.scryfall_uri})\n${prints}`;

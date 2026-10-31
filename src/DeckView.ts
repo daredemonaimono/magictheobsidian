@@ -103,18 +103,18 @@ export class DeckView extends ItemView {
     this.el.tabs.createEl("button", { text: "Import" }).onclick = () =>
       new ImportModal(this.app, false, (_, text) => void this.importInto(text)).open();
 
-    // フォーマット (枚数・使えるカードのルールが変わる)。旧版のデッキは「構築戦」で、使用可否も制限も見ない
+    // フォーマット (枚数・使えるカードのルールが変わる)。`制限なし` は、format が無い・知らないデッキの扱い
     const current = this.formatId();
     const sel = this.el.tabs.createEl("select", { attr: { "aria-label": "フォーマット" } });
     const options = CREATABLE.filter((id) => (current === "commander") === (id === "commander"));
     if (!options.includes(current)) options.unshift(current);
-    for (const id of options) sel.createEl("option", { text: id === "constructed" ? "構築戦 (制限なし・旧)" : FORMATS[id].name, value: id });
+    for (const id of options) sel.createEl("option", { text: FORMATS[id].name, value: id });
     sel.value = current;
     sel.disabled = current === "commander";
     sel.onchange = () => void this.setFormat(sel.value);
   }
 
-  // デッキのフォーマット (frontmatter の format:)。無ければ旧版互換の構築戦
+  // デッキのフォーマット (frontmatter の format:)。無い・知らないものは制限なし
   private formatId(): string {
     const file = this.app.vault.getAbstractFileByPath(this.path);
     const id = this.format ?? (file instanceof TFile ? this.app.metadataCache.getFileCache(file)?.frontmatter?.format : undefined);

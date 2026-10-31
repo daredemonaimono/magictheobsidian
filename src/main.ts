@@ -56,7 +56,7 @@ export default class MagicTheObsidian extends Plugin {
   private opening = false;
 
   async onload() {
-    // data.json: 設定 + 価格キャッシュ (旧版は設定だけのフラットな形)
+    // data.json: 設定 + 価格キャッシュ (フラットな1つのオブジェクト)
     const d = (await this.loadData()) ?? {};
     this.settings = {
       textLang: d.textLang ?? DEFAULT_SETTINGS.textLang,
