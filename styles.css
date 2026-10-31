@@ -117,3 +117,6 @@
 button.mtg-color { padding: 2px 4px; opacity: 0.45; }
 button.mtg-color.is-on { opacity: 1; background: var(--background-modifier-hover); color: inherit; }
 button.mtg-color .mtg-sym { width: 20px; height: 20px; display: block; }
+
+.mtg-lhead { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+.mtg-lhead button { flex: 1 1 auto; }

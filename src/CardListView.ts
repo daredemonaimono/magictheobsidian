@@ -1,8 +1,8 @@
-import { EventRef, ItemView, Notice, WorkspaceLeaf } from "obsidian";
+import { App, EventRef, ItemView, Modal, Notice, Setting, WorkspaceLeaf } from "obsidian";
 import { cardInfo } from "./cards";
 import { Board } from "./deck";
 import { DeckView } from "./DeckView";
-import { Result, buildFilterBar, emptyFilters, isEmpty, localResult, searchAll } from "./search";
+import { Filters, Result, buildFilterBar, emptyFilters, localResult, searchAll } from "./search";
 import { Settings } from "./settings";
 import { manaCost } from "./symbols";
 
@@ -26,18 +26,51 @@ interface Row {
   illegal?: boolean; // デッキ内の一覧のとき、いまのフォーマットで使えない
 }
 
+// 「新しく追加」: 条件を入れて検索する。「デッキ内のカードも含める」を付けると、いまデッキにあるカードも結果に出る
+class SearchModal extends Modal {
+  constructor(app: App, private f: Filters, private opts: { includeDeck: boolean }, private onSearch: () => void) {
+    super(app);
+  }
+  onOpen() {
+    const root = this.contentEl;
+    root.empty();
+    this.setTitle("新しく追加");
+    buildFilterBar(root, this.f, () => {});
+    new Setting(root).setName("デッキ内のカードも含める").addToggle((t) => t.setValue(this.opts.includeDeck).onChange((v) => (this.opts.includeDeck = v)));
+    new Setting(root)
+      .addButton((b) =>
+        b.setButtonText("条件をクリア").onClick(() => {
+          Object.assign(this.f, emptyFilters());
+          this.onOpen();
+        }),
+      )
+      .addButton((b) => b.setButtonText("検索").setCta().onClick(() => this.go()));
+    // 名前や効果の欄で Enter でも検索する
+    root.addEventListener("keydown", (e) => e.key === "Enter" && !e.isComposing && (e.target as HTMLElement).tagName === "INPUT" && this.go());
+  }
+  private go() {
+    this.close();
+    this.onSearch();
+  }
+  onClose() {
+    this.contentEl.empty();
+  }
+}
+
 // 右サイドバー。デッキ画面を開いている間だけ出る。
-// 条件が空: いまデッキに入っているカード。条件あり: 検索結果 (デッキ内のカードも含む)。
+// 普段: いまデッキに入っているカード。「新しく追加」で検索すると、結果 (Cards/ + Scryfall) に切り替わる。
 // どちらも、クリックで1枚追加 / Shift+クリックで1枚削除 (デッキ内の一覧では、そのカードがいる欄の枚数が増減する)
 export class CardListView extends ItemView {
   private f = emptyFilters();
-  private timer?: number;
+  private searching = false; // true = 検索結果を出している
+  private opts = { includeDeck: false }; // 検索結果に、いまデッキにあるカードも含める
   private seq = 0;
   private results: Result[] = [];
   private shown = PAGE;
   private note = "";
   private lastTarget?: DeckView;
   private targetEl!: HTMLElement;
+  private headEl!: HTMLElement;
   private status!: HTMLElement;
   private grid!: HTMLElement;
 
@@ -60,10 +93,8 @@ export class CardListView extends ItemView {
     root.empty();
     root.addClass("mtg-cardlist");
     this.targetEl = root.createDiv("mtg-ltarget");
-    buildFilterBar(root, this.f, () => {
-      window.clearTimeout(this.timer);
-      this.timer = window.setTimeout(() => void this.search(), 250);
-    });
+    this.headEl = root.createDiv("mtg-lhead");
+    this.renderHead();
     this.status = root.createDiv("mtg-status");
     this.grid = root.createDiv("mtg-lgrid");
     // デッキが変わったら (追加・削除・枚数) 一覧も更新する
@@ -72,11 +103,7 @@ export class CardListView extends ItemView {
         this.draw();
       }));
     this.updateTarget();
-    await this.search();
-  }
-
-  async onClose() {
-    window.clearTimeout(this.timer);
+    this.draw();
   }
 
   refresh() {
@@ -93,15 +120,29 @@ export class CardListView extends ItemView {
     this.targetEl?.setText(t ? `追加先: ${t.getDisplayText()}` : "追加先なし (デッキ画面を開く)");
   }
 
-  // 条件があるときだけ検索する。Cards/ に無ければ Scryfall を検索する
+  // 「新しく追加」と、検索中だけ出る「デッキ内に戻る」
+  private renderHead() {
+    this.headEl.empty();
+    this.headEl.createEl("button", { text: "＋ 新しく追加", cls: "mod-cta" }).onclick = () =>
+      new SearchModal(this.app, this.f, this.opts, () => void this.search()).open();
+    if (this.searching) {
+      this.headEl.createEl("button", { text: "← デッキ内に戻る" }).onclick = () => {
+        this.searching = false;
+        this.seq++; // 取得中の検索があれば捨てる
+        this.renderHead();
+        this.draw();
+      };
+    }
+  }
+
+  // 条件で検索する (条件が空なら Cards/ の全カード)。Cards/ に無ければ Scryfall も探す
   private async search() {
     const seq = ++this.seq;
-    if (isEmpty(this.f)) {
-      this.results = [];
-      return this.draw();
-    }
+    this.searching = true;
+    this.renderHead();
     await searchAll(this.app, this.settings, this.f, () => seq !== this.seq, (res, note) => {
-      this.results = res;
+      const t = this.getTarget();
+      this.results = this.opts.includeDeck ? res : res.filter((r) => !(r.localKey && t?.countOf(r.localKey)));
       this.note = note;
       this.shown = PAGE;
       this.draw();
@@ -125,7 +166,7 @@ export class CardListView extends ItemView {
   private draw() {
     if (!this.grid) return;
     const target = this.getTarget();
-    const deckMode = isEmpty(this.f);
+    const deckMode = !this.searching;
     const rows: Row[] = deckMode
       ? this.deckRows()
       : this.results.slice(0, this.shown).map((r) => ({ r, n: (r.localKey && target?.countOf(r.localKey)) || undefined }));

@@ -42,20 +42,44 @@ export const isEmpty = (f: Filters) => !f.name && !f.effect && !f.type && !f.col
 
 const COLORS = ["W", "U", "B", "R", "G"];
 
-// 検索欄 (名前・効果・タイプ・色)。サイドバーの一覧と、画面内検索で共有
+// タイプの選択肢。値は Scryfall の t: にも、ノートの type_line の照合にもそのまま使う
+export const TYPES: [string, string][] = [
+  ["", "タイプ: すべて"],
+  ["Creature", "クリーチャー"],
+  ["Instant", "インスタント"],
+  ["Sorcery", "ソーサリー"],
+  ["Artifact", "アーティファクト"],
+  ["Enchantment", "エンチャント"],
+  ["Land", "土地"],
+  ["Planeswalker", "プレインズウォーカー"],
+  ["Battle", "バトル"],
+];
+
+// 検索欄 (名前・効果・タイプ・色)。画面内の検索と、サイドバーの「新しく追加」で共有。
+// 欄は f の現在の値で始まり、変えると f を書き換えて onChange を呼ぶ
 export function buildFilterBar(parent: HTMLElement, f: Filters, onChange: () => void) {
   const bar = parent.createDiv("mtg-bar");
-  const input = (ph: string, key: "name" | "effect" | "type") =>
-    bar.createEl("input", { type: "text", placeholder: ph }).addEventListener("input", (e) => {
-      f[key] = (e.target as HTMLInputElement).value.trim();
+  const input = (ph: string, key: "name" | "effect") => {
+    const el = bar.createEl("input", { type: "text", placeholder: ph });
+    el.value = f[key];
+    el.addEventListener("input", () => {
+      f[key] = el.value.trim();
       onChange();
     });
+  };
   input("名前 (日本語可)", "name");
   input("効果テキスト", "effect");
-  input("タイプ", "type");
+  const sel = bar.createEl("select", { attr: { "aria-label": "タイプ" } });
+  for (const [value, label] of TYPES) sel.createEl("option", { text: label, value });
+  sel.value = f.type;
+  sel.onchange = () => {
+    f.type = sel.value;
+    onChange();
+  };
   for (const c of COLORS) {
     const b = bar.createEl("button", { cls: "mtg-color", attr: { "aria-label": c } });
     symbolImg(b, c);
+    b.toggleClass("is-on", f.colors.has(c));
     b.onclick = () => {
       f.colors.has(c) ? f.colors.delete(c) : f.colors.add(c);
       b.toggleClass("is-on", f.colors.has(c));
