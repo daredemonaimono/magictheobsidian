@@ -1,5 +1,6 @@
 import { App, ItemView, Modal, Notice, TFile, ViewStateResult, WorkspaceLeaf } from "obsidian";
 import { CardInfo, cardImage, cardInfo, cardText, ensureCardFile, localCards, printingImage, readPrintings } from "./cards";
+import { ImportModal, resolveDeck } from "./import";
 import { Settings } from "./settings";
 import { Board, Deck, parseDeck, writeDeck } from "./deck";
 import { Printing, ScryfallCard, cardImageUrl, printingImageUrl, searchCards } from "./scryfall";
@@ -122,6 +123,21 @@ export class DeckView extends ItemView {
         void this.renderStack();
       };
     }
+    this.el.tabs.createEl("button", { text: "Import" }).onclick = () =>
+      new ImportModal(this.app, false, (_, text) => void this.importInto(text)).open();
+  }
+
+  // 取り込んだカードは今のデッキに足す (枚数は加算、版は既存を優先)。上書きはしない
+  private async importInto(text: string) {
+    const r = await resolveDeck(this.app, this.settings, text);
+    if (!r) return;
+    for (const board of ["main", "side"] as Board[]) {
+      for (const [key, e] of r.deck[board]) {
+        const cur = this.deck[board].get(key);
+        this.deck[board].set(key, { n: (cur?.n ?? 0) + e.n, print: cur?.print ?? e.print });
+      }
+    }
+    await this.save();
   }
 
   // ---- 検索 ----
