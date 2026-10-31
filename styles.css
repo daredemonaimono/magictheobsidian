@@ -34,3 +34,22 @@
 .mtg-print:hover img { outline: 2px solid var(--interactive-accent); }
 
 .mtg-preview-text { white-space: pre-wrap; font-size: var(--font-ui-small); margin-top: 8px; padding: 8px 10px; border: 1px solid var(--background-modifier-border); border-radius: 8px; max-height: 40vh; overflow: auto; }
+
+/* コレクション画面 */
+.mtg-coll { padding: 16px; overflow: auto; }
+.mtg-coll h2 { margin: 0 0 4px; }
+.mtg-chead { color: var(--text-muted); margin-bottom: 8px; }
+.mtg-cpanel { display: none; gap: 16px; margin-bottom: 16px; padding: 12px; border: 1px solid var(--background-modifier-border); border-radius: 8px; }
+.mtg-cpanel.is-open { display: flex; }
+.mtg-cleft { flex: 1; min-width: 0; }
+.mtg-cpreview { width: 220px; flex-shrink: 0; }
+.mtg-cpreview img { width: 100%; border-radius: 10px; }
+.mtg-cgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 16px; }
+.mtg-citem { position: relative; border-radius: 12px; overflow: hidden; }
+.mtg-citem img { width: 100%; display: block; }
+.mtg-citem:hover .mtg-ctl { display: flex; }
+.mtg-citem .mtg-ctl { top: auto; bottom: 6px; right: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.mtg-cmeta { display: flex; flex-direction: column; align-items: center; margin-top: 6px; }
+.mtg-cprice { font-weight: 600; }
+.mtg-clist .mtg-ctl.is-inline { position: static; display: flex; }
+.mtg-ctl button.is-on { background: var(--interactive-accent); color: var(--text-on-accent); }

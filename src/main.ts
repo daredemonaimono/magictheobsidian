@@ -1,5 +1,6 @@
 import { App, Modal, Notice, Plugin, Setting, TFile, normalizePath } from "obsidian";
 import { ensureCardFile } from "./cards";
+import { COLLECTION_VIEW, CollectionView } from "./CollectionView";
 import { DECK_VIEW, DeckView } from "./DeckView";
 import { fetchCard, fileSafe } from "./scryfall";
 import { DEFAULT_SETTINGS, Settings, SettingsTab } from "./settings";
@@ -38,6 +39,7 @@ export default class MagicTheObsidian extends Plugin {
     this.settings = { ...DEFAULT_SETTINGS, ...(await this.loadData()) };
     this.addSettingTab(new SettingsTab(this.app, this, this.settings, () => this.saveData(this.settings)));
     this.registerView(DECK_VIEW, (leaf) => new DeckView(leaf, this.settings));
+    this.registerView(COLLECTION_VIEW, (leaf) => new CollectionView(leaf, this.settings));
 
     this.addCommand({
       id: "fetch-card",
@@ -52,7 +54,7 @@ export default class MagicTheObsidian extends Plugin {
     this.addCommand({
       id: "open-collection",
       name: "Open collection",
-      callback: () => void this.app.workspace.getLeaf(true).setViewState({ type: DECK_VIEW, state: { collection: true }, active: true }),
+      callback: () => void this.app.workspace.getLeaf(true).setViewState({ type: COLLECTION_VIEW, active: true }),
     });
     this.addCommand({
       id: "open-deck-view",

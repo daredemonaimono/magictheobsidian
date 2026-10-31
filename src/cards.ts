@@ -80,8 +80,12 @@ export async function cardText(app: App, key: string): Promise<string> {
   return c.replace(/^---[\s\S]*?\n---\n/, "").replace(/!\[\]\(.*?\)\n*/, "").split("\n[Scryfall]")[0].trim();
 }
 
-export async function printingImage(app: App, key: string, print: string): Promise<string | undefined> {
+export async function printingOf(app: App, key: string, print: string): Promise<Printing | undefined> {
   const [set, no] = print.split(" ");
-  const p = (await readPrintings(app, key)).find((x) => x.set === set && x.collector_number === no);
+  return (await readPrintings(app, key)).find((x) => x.set === set && x.collector_number === no);
+}
+
+export async function printingImage(app: App, key: string, print: string): Promise<string | undefined> {
+  const p = await printingOf(app, key, print);
   return p && printingImageUrl(p.id);
 }

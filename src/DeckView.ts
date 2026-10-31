@@ -1,7 +1,6 @@
 import { App, ItemView, Modal, Notice, TFile, ViewStateResult, WorkspaceLeaf } from "obsidian";
 import { CardInfo, cardImage, cardInfo, cardText, ensureCardFile, localCards, printingImage, readPrintings } from "./cards";
 import { Settings } from "./settings";
-import { loadCollection, saveCollection } from "./collection";
 import { Board, Deck, parseDeck, writeDeck } from "./deck";
 import { Printing, ScryfallCard, cardImageUrl, printingImageUrl, searchCards } from "./scryfall";
 
@@ -13,7 +12,7 @@ const TYPE_CHECK = ["Land", "Creature", "Planeswalker", "Battle", "Instant", "So
 const GROUP_ORDER = ["Creature", "Planeswalker", "Instant", "Sorcery", "Artifact", "Enchantment", "Battle", "Land", "Other"];
 const MAX_RESULTS = 40;
 
-interface Meta {
+export interface Meta {
   name: string;
   typeLine: string;
   cmc: number;
@@ -21,33 +20,30 @@ interface Meta {
 }
 
 // key = Cards/ のファイル名。ensureCardFile で md 化してから返す
-interface Result {
+export interface Result {
   name: string;
   ja?: string;
   typeLine: string;
   manaCost: string;
   image: () => Promise<string | undefined>;
   text: () => Promise<string>;
-  // print = 追加時に使う版 (コレクションは版ごとに持つため必要)
+  // print = 追加時の版 (コレクションで使う)
   resolve: () => Promise<{ key: string; meta: Meta; print?: string }>;
 }
 
 export class DeckView extends ItemView {
   private path = "";
-  // コレクション表示: 全セットの所持カードを main に入れ、キーは `カード名|set 番号`
-  private collection = false;
-  private collectionSets = new Set<string>();
   private deck: Deck = { main: new Map(), side: new Map() };
   private board: Board = "main";
-  private meta = new Map<string, Meta>();
-  private filters = { name: "", effect: "", type: "", colors: new Set<string>() };
-  private timer?: number;
-  private searchSeq = 0;
+  protected meta = new Map<string, Meta>();
+  protected filters = { name: "", effect: "", type: "", colors: new Set<string>() };
+  protected timer?: number;
+  protected searchSeq = 0;
   private stackSeq = 0;
-  private previewSeq = 0;
-  private el!: { tabs: HTMLElement; status: HTMLElement; results: HTMLElement; stack: HTMLElement; preview: HTMLElement };
+  protected previewSeq = 0;
+  protected el!: { tabs: HTMLElement; status: HTMLElement; results: HTMLElement; stack: HTMLElement; preview: HTMLElement };
 
-  constructor(leaf: WorkspaceLeaf, private settings: Settings) {
+  constructor(leaf: WorkspaceLeaf, protected settings: Settings) {
     super(leaf);
   }
 
@@ -55,25 +51,19 @@ export class DeckView extends ItemView {
     return DECK_VIEW;
   }
   getDisplayText() {
-    return this.collection ? "Collection" : this.path.split("/").pop()?.replace(/\.md$/, "") ?? "Deck";
+    return this.path.split("/").pop()?.replace(/\.md$/, "") ?? "Deck";
   }
   getIcon() {
     return "layers";
   }
   getState() {
-    return { path: this.path, collection: this.collection };
+    return { path: this.path };
   }
 
-  async setState(state: { path?: string; collection?: boolean }, result: ViewStateResult) {
+  async setState(state: { path?: string }, result: ViewStateResult) {
     this.path = state?.path ?? "";
-    this.collection = !!state?.collection;
-    if (this.collection) {
-      this.deck = { main: await loadCollection(this.app), side: new Map() };
-      this.collectionSets = new Set([...this.deck.main.values()].map((e) => e.print!.split(" ")[0]));
-    } else {
-      const file = this.app.vault.getAbstractFileByPath(this.path);
-      if (file instanceof TFile) this.deck = parseDeck(await this.app.vault.cachedRead(file));
-    }
+    const file = this.app.vault.getAbstractFileByPath(this.path);
+    if (file instanceof TFile) this.deck = parseDeck(await this.app.vault.cachedRead(file));
     this.build();
     await super.setState(state, result);
   }
@@ -82,7 +72,7 @@ export class DeckView extends ItemView {
     window.clearTimeout(this.timer);
   }
 
-  private build() {
+  protected build() {
     const root = this.contentEl;
     root.empty();
     root.addClass("mtg-deck");
@@ -90,7 +80,16 @@ export class DeckView extends ItemView {
     const preview = root.createDiv("mtg-side");
     const main = root.createDiv("mtg-main");
     const tabs = main.createDiv("mtg-tabs");
-    const bar = main.createDiv("mtg-bar");
+    const { status, results } = this.buildSearch(main);
+    this.el = { preview, tabs, status, results, stack: main.createDiv("mtg-groups") };
+    this.renderTabs();
+    void this.renderStack();
+    this.renderResults([]);
+  }
+
+  // 検索欄 (名前・効果・タイプ・色) と結果欄。デッキ画面とコレクション画面で共有
+  protected buildSearch(parent: HTMLElement) {
+    const bar = parent.createDiv("mtg-bar");
     const input = (ph: string, key: "name" | "effect" | "type") =>
       bar.createEl("input", { type: "text", placeholder: ph }).addEventListener("input", (e) => {
         this.filters[key] = (e.target as HTMLInputElement).value.trim();
@@ -108,24 +107,14 @@ export class DeckView extends ItemView {
       };
     }
 
-    this.el = {
-      preview,
-      tabs,
-      status: main.createDiv("mtg-status"),
-      results: main.createDiv("mtg-results"),
-      stack: main.createDiv("mtg-groups"),
-    };
-    this.renderTabs();
-    void this.renderStack();
-    this.renderResults([]);
+    return { status: parent.createDiv("mtg-status"), results: parent.createDiv("mtg-results") };
   }
 
   private renderTabs() {
     this.el.tabs.empty();
-    for (const b of (this.collection ? ["main"] : ["main", "side"]) as Board[]) {
+    for (const b of ["main", "side"] as Board[]) {
       const total = [...this.deck[b].values()].reduce((a, e) => a + e.n, 0);
-      const label = this.collection ? "所持" : b === "main" ? "メイン" : "サイド";
-      const btn = this.el.tabs.createEl("button", { text: `${label} ${total}` });
+      const btn = this.el.tabs.createEl("button", { text: `${b === "main" ? "メイン" : "サイド"} ${total}` });
       btn.toggleClass("is-on", this.board === b);
       btn.onclick = () => {
         this.board = b;
@@ -137,12 +126,12 @@ export class DeckView extends ItemView {
 
   // ---- 検索 ----
 
-  private scheduleSearch() {
+  protected scheduleSearch() {
     window.clearTimeout(this.timer);
     this.timer = window.setTimeout(() => void this.search(), 300);
   }
 
-  private async search() {
+  protected async search() {
     const seq = ++this.searchSeq;
     const f = this.filters;
     if (!f.name && !f.effect && !f.type && !f.colors.size) {
@@ -168,7 +157,7 @@ export class DeckView extends ItemView {
     }
   }
 
-  private async searchLocal(): Promise<Result[]> {
+  protected async searchLocal(): Promise<Result[]> {
     const { name, effect, type, colors } = this.filters;
     const lc = (s?: string) => (s ?? "").toLowerCase();
     const out: Result[] = [];
@@ -183,7 +172,7 @@ export class DeckView extends ItemView {
     return out;
   }
 
-  private scryfallQuery(): string {
+  protected scryfallQuery(): string {
     const { name, effect, type, colors } = this.filters;
     const q = name.split(/\s+/).filter(Boolean);
     if (/[^\x00-\x7F]/.test(name)) q.push("lang:any"); // 日本語名
@@ -193,7 +182,7 @@ export class DeckView extends ItemView {
     return q.join(" ");
   }
 
-  private localResult(c: CardInfo): Result {
+  protected localResult(c: CardInfo): Result {
     return {
       name: c.name,
       ja: c.nameLocal,
@@ -213,7 +202,7 @@ export class DeckView extends ItemView {
     };
   }
 
-  private scryfallResult(c: ScryfallCard): Result {
+  protected scryfallResult(c: ScryfallCard): Result {
     const meta: Meta = { name: c.name, typeLine: c.type_line, cmc: c.cmc, image: cardImageUrl(c) };
     return {
       name: c.name,
@@ -230,7 +219,7 @@ export class DeckView extends ItemView {
     };
   }
 
-  private renderResults(results: Result[]) {
+  protected renderResults(results: Result[]) {
     const box = this.el.results;
     box.empty();
     for (const r of results) {
@@ -240,61 +229,46 @@ export class DeckView extends ItemView {
       row.createSpan({ text: r.typeLine, cls: "mtg-dim" });
       row.onmouseenter = () => void this.preview(r.name, r.image(), r.text());
       const add = row.createEl("button", { text: "+" });
-      add.onclick = async () => {
-        try {
-          const { key, meta, print } = await r.resolve();
-          this.meta.set(key, meta);
-          if (!this.collection) return await this.change(key, 1);
-          if (!print) return void new Notice("収録一覧が無いカード。Cards から削除して取り直すと追加できる");
-          await this.change(`${key}|${print}`, 1, print);
-        } catch (e) {
-          new Notice(`追加失敗: ${(e as Error).message}`);
-        }
+      add.onclick = () => {
+        void this.add(r);
       };
     }
   }
 
   // ---- デッキ ----
 
-  // コレクションのキーは `カード名|set 番号`。カードのファイル名はその前半
-  private base = (key: string) => key.split("|")[0];
+  protected async add(r: Result) {
+    try {
+      const { key, meta } = await r.resolve();
+      this.meta.set(key, meta);
+      await this.change(key, 1);
+    } catch (e) {
+      new Notice(`追加失敗: ${(e as Error).message}`);
+    }
+  }
 
-  private async change(key: string, delta: number, print?: string) {
+  private async change(key: string, delta: number) {
     const m = this.deck[this.board];
     const e = m.get(key);
     const n = Math.max(0, (e?.n ?? 0) + delta);
-    n ? m.set(key, { ...e, n, print: e?.print ?? print }) : m.delete(key);
+    n ? m.set(key, { ...e, n }) : m.delete(key);
     await this.save();
   }
 
   private async setPrint(key: string, print?: string) {
-    const m = this.deck[this.board];
-    const e = m.get(key);
-    if (!e) return;
-    if (this.collection && print) {
-      // 版を変えると別の行になる。同じ版が既にあれば枚数を足す
-      m.delete(key);
-      const nk = `${this.base(key)}|${print}`;
-      m.set(nk, { n: e.n + (m.get(nk)?.n ?? 0), print });
-    } else {
-      m.set(key, { ...e, print });
-    }
+    const e = this.deck[this.board].get(key);
+    if (e) this.deck[this.board].set(key, { ...e, print });
     await this.save();
   }
 
   private async save() {
-    if (this.collection) {
-      await saveCollection(this.app, this.deck.main, this.collectionSets);
-    } else {
-      const file = this.app.vault.getAbstractFileByPath(this.path);
-      if (file instanceof TFile) await this.app.vault.process(file, (c) => writeDeck(c, this.deck));
-    }
+    const file = this.app.vault.getAbstractFileByPath(this.path);
+    if (file instanceof TFile) await this.app.vault.process(file, (c) => writeDeck(c, this.deck));
     this.renderTabs();
     await this.renderStack();
   }
 
   private async getMeta(key: string): Promise<Meta | undefined> {
-    key = this.base(key);
     const known = this.meta.get(key);
     if (known) return known;
     const info = cardInfo(this.app, key);
@@ -309,7 +283,7 @@ export class DeckView extends ItemView {
     const cards = await Promise.all(
       [...this.deck[this.board]].map(async ([key, { n: count, print }]) => {
         const meta = await this.getMeta(key);
-        const image = (print && (await printingImage(this.app, this.base(key), print))) || meta?.image;
+        const image = (print && (await printingImage(this.app, key, print))) || meta?.image;
         return { key, count, meta, image };
       }),
     );
@@ -329,26 +303,25 @@ export class DeckView extends ItemView {
       col.createEl("h4", { text: `${g} (${items.reduce((a, c) => a + c.count, 0)})` });
       for (const c of items) {
         const item = col.createDiv("mtg-item");
-        if (c.image) item.createEl("img", { attr: { src: c.image, alt: this.base(c.key) } });
-        else item.createSpan({ text: this.base(c.key), cls: "mtg-name" });
+        if (c.image) item.createEl("img", { attr: { src: c.image, alt: c.key } });
+        else item.createSpan({ text: c.key, cls: "mtg-name" });
         item.createSpan({ text: String(c.count), cls: "mtg-badge" });
         const ctl = item.createDiv("mtg-ctl");
         ctl.createEl("button", { text: "🖼", attr: { "aria-label": "イラスト変更" } }).onclick = () => void this.pickPrint(c.key);
         ctl.createEl("button", { text: "−" }).onclick = () => void this.change(c.key, -1);
         ctl.createEl("button", { text: "+" }).onclick = () => void this.change(c.key, 1);
-        item.onmouseenter = () => void this.preview(this.base(c.key), Promise.resolve(c.image), cardText(this.app, this.base(c.key)));
+        item.onmouseenter = () => void this.preview(c.key, Promise.resolve(c.image), cardText(this.app, c.key));
       }
     }
   }
 
   private async pickPrint(key: string) {
-    const base = this.base(key);
-    const prints = await readPrintings(this.app, base);
+    const prints = await readPrintings(this.app, key);
     if (!prints.length) return void new Notice("収録一覧が無いカード。Cards から削除して取り直すと付く");
-    new PrintModal(this.app, base, prints, !this.collection, (p) => void this.setPrint(key, p)).open();
+    new PrintModal(this.app, key, prints, true, (p) => void this.setPrint(key, p)).open();
   }
 
-  private async preview(name: string, image: Promise<string | undefined>, text: Promise<string>) {
+  protected async preview(name: string, image: Promise<string | undefined>, text: Promise<string>) {
     const seq = ++this.previewSeq;
     const [url, body] = await Promise.all([image, text]);
     if (seq !== this.previewSeq) return;
@@ -359,7 +332,7 @@ export class DeckView extends ItemView {
   }
 }
 
-class PrintModal extends Modal {
+export class PrintModal extends Modal {
   constructor(app: App, private key: string, private prints: Printing[], private canReset: boolean, private onPick: (print?: string) => void) {
     super(app);
   }
