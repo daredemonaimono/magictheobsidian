@@ -1,6 +1,6 @@
 import { App, ItemView, Modal, Notice, TFile, ViewStateResult, WorkspaceLeaf } from "obsidian";
 import { cardImage, cardInfo, cardText, oracleEnglish, printingImage, readPrintings, updateLegality } from "./cards";
-import { formatOf } from "./rules";
+import { CREATABLE, FORMATS, formatOf } from "./rules";
 import { ImportModal, resolveDeck } from "./import";
 import { Settings } from "./settings";
 import { Board, Deck, emptyDeck, parseDeck, writeDeck } from "./deck";
@@ -30,6 +30,7 @@ export class DeckView extends ItemView {
   protected timer?: number;
   protected searchSeq = 0;
   private stackSeq = 0;
+  private format?: string; // 画面で変えた直後のフォーマット (frontmatter への反映を待たずに使う)
   protected previewSeq = 0;
   protected el!: { tabs: HTMLElement; status: HTMLElement; results: HTMLElement; stack: HTMLElement; preview: HTMLElement };
 
@@ -109,12 +110,38 @@ export class DeckView extends ItemView {
     }
     this.el.tabs.createEl("button", { text: "Import" }).onclick = () =>
       new ImportModal(this.app, false, (_, text) => void this.importInto(text)).open();
+
+    // フォーマット (枚数・使えるカードのルールが変わる)。旧版のデッキは「構築戦」で、使用可否も制限も見ない
+    const current = this.formatId();
+    const sel = this.el.tabs.createEl("select", { attr: { "aria-label": "フォーマット" } });
+    const options = CREATABLE.filter((id) => (current === "commander") === (id === "commander"));
+    if (!options.includes(current)) options.unshift(current);
+    for (const id of options) sel.createEl("option", { text: id === "constructed" ? "構築戦 (制限なし・旧)" : FORMATS[id].name, value: id });
+    sel.value = current;
+    sel.disabled = current === "commander";
+    sel.onchange = () => void this.setFormat(sel.value);
   }
 
   // デッキのフォーマット (frontmatter の format:)。無ければ旧版互換の構築戦
-  private rules() {
+  private formatId(): string {
     const file = this.app.vault.getAbstractFileByPath(this.path);
-    return formatOf(file instanceof TFile ? this.app.metadataCache.getFileCache(file)?.frontmatter?.format : undefined);
+    const id = this.format ?? (file instanceof TFile ? this.app.metadataCache.getFileCache(file)?.frontmatter?.format : undefined);
+    return id in FORMATS ? id : "constructed";
+  }
+
+  private rules() {
+    return formatOf(this.formatId());
+  }
+
+  // 作成後にフォーマットを変える。統率戦とのあいだは欄の構成が違うので変えられない (作り直す)
+  private async setFormat(id: string) {
+    const file = this.app.vault.getAbstractFileByPath(this.path);
+    if (!(file instanceof TFile)) return;
+    this.format = id;
+    await this.app.fileManager.processFrontMatter(file, (fm) => (fm.format = id));
+    this.board = this.rules().boards[0];
+    this.renderTabs();
+    await this.renderStack();
   }
 
   // サイドバーの一覧でカードを選べるか。このデッキのフォーマットで使えないと分かっているカードは選べない

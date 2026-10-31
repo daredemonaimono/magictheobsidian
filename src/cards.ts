@@ -127,7 +127,7 @@ export async function updateLegality(app: App, keys: string[]): Promise<Map<stri
       url: "https://api.scryfall.com/cards/collection",
       method: "POST",
       contentType: "application/json",
-      headers: { "User-Agent": "magictheobsidian/0.9.7", Accept: "application/json" },
+      headers: { "User-Agent": "magictheobsidian/0.9.8", Accept: "application/json" },
       body: JSON.stringify({ identifiers: ids.slice(i, i + 75).map((id) => ({ id })) }),
       throw: false,
     });
