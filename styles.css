@@ -102,3 +102,6 @@
 .mtg-rulename { font-weight: 600; margin-right: 4px; }
 .mtg-lcell.is-banned { opacity: 0.35; cursor: not-allowed; }
 .mtg-lcell.is-banned .mtg-lname { text-decoration: line-through; }
+
+/* 見出しの並び: 縦に重なる見出しは同じ列 */
+.mtg-col { display: flex; flex-direction: column; gap: 16px; width: 200px; }

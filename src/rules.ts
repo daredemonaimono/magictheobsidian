@@ -22,6 +22,7 @@ export interface FormatRules {
   name: string;
   legalId?: string; // Scryfall の legalities のキー。無ければカードの使用可否は見ない
   boards: Board[]; // デッキ画面のタブ (先頭が最初に開く)
+  hasCommander?: boolean; // コマンダー欄がある (タブにはせず、メインの上に並べて出す)
   // 1枚足してよければ null、だめなら理由
   canAdd(c: AddCheck): string | null;
   // デッキ画面に出す「枚数などの状態」
@@ -71,7 +72,8 @@ function sixty(name: string, legalId?: string): FormatRules {
 const commander: FormatRules = {
   name: "Commander",
   legalId: "commander",
-  boards: ["commander", "main"],
+  boards: ["main"],
+  hasCommander: true,
   canAdd(c) {
     const bad = notLegal(c, "commander", "Commander");
     if (bad) return bad;
@@ -124,7 +126,9 @@ export const LEGAL_FORMATS = [
 export type Verdict = "ok" | "ng" | "unknown";
 
 // legal 未取得 (undefined) のカードは判定できない。1枚でも使えないと分かっていれば ng
-export function judge(cards: { key: string; legal?: string[] }[], format: string) {
+// commanderDeck: コマンダーが入っているデッキは、Commander 以外のフォーマットでは使えない
+export function judge(cards: { key: string; legal?: string[] }[], format: string, commanderDeck = false) {
+  if (commanderDeck && format !== "commander") return { verdict: "ng" as Verdict, bad: [] as string[], unknown: [] as string[] };
   const bad = cards.filter((c) => c.legal && !c.legal.includes(format)).map((c) => c.key);
   const unknown = cards.filter((c) => !c.legal).map((c) => c.key);
   const verdict: Verdict = bad.length ? "ng" : unknown.length || !cards.length ? "unknown" : "ok";

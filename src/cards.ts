@@ -106,9 +106,9 @@ export async function printingImage(app: App, key: string, print: string): Promi
 }
 
 // デッキ内のカードから、フォーマットごとの判定を出す
-export function deckVerdicts(app: App, keys: string[]) {
+export function deckVerdicts(app: App, keys: string[], commanderDeck = false) {
   const cards = keys.map((key) => ({ key, legal: cardInfo(app, key)?.legal }));
-  return Object.fromEntries(LEGAL_FORMATS.map(([id]) => [id, judge(cards, id)]));
+  return Object.fromEntries(LEGAL_FORMATS.map(([id]) => [id, judge(cards, id, commanderDeck)]));
 }
 
 // 手動更新。リーガル情報が無いカードのノートに `legal:` を書く。1回75件まで。戻り値は更新した枚数
@@ -127,7 +127,7 @@ export async function updateLegality(app: App, keys: string[]): Promise<number> 
       url: "https://api.scryfall.com/cards/collection",
       method: "POST",
       contentType: "application/json",
-      headers: { "User-Agent": "magictheobsidian/0.9.0", Accept: "application/json" },
+      headers: { "User-Agent": "magictheobsidian/0.9.1", Accept: "application/json" },
       body: JSON.stringify({ identifiers: ids.slice(i, i + 75).map((id) => ({ id })) }),
       throw: false,
     });

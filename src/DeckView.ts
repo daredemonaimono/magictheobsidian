@@ -11,7 +11,14 @@ export const DECK_VIEW = "mtg-deck";
 
 // Land を先に判定する (Artifact Land は土地として扱う)
 const TYPE_CHECK = ["Land", "Creature", "Planeswalker", "Battle", "Instant", "Sorcery", "Artifact", "Enchantment"];
-const GROUP_ORDER = ["Creature", "Planeswalker", "Instant", "Sorcery", "Artifact", "Enchantment", "Battle", "Land", "Other"];
+// 見出しの並び (全てのデッキ画面で共通)。縦に重なる見出しは同じ列。Commander は統率者構築のときだけ出る。
+// Creature は指定が無かったので1列目の最後に、Battle / Other は余りとして3・4列目の最後に置いた
+const COLUMNS = [
+  ["Commander", "Planeswalker", "Creature"],
+  ["Sorcery", "Instant"],
+  ["Artifact", "Enchantment", "Battle"],
+  ["Land", "Other"],
+];
 const MAX_RESULTS = 40;
 
 export class DeckView extends ItemView {
@@ -89,8 +96,11 @@ export class DeckView extends ItemView {
   private renderTabs() {
     this.el.tabs.empty();
     const label: Record<Board, string> = { main: "メイン", side: "サイド", commander: "コマンダー" };
-    for (const b of this.rules().boards) {
-      const total = [...this.deck[b].values()].reduce((a, e) => a + e.n, 0);
+    const rules = this.rules();
+    for (const b of rules.boards) {
+      // 統率者構築は、コマンダーもメインの画面に並ぶので合計で数える
+      const boards = rules.hasCommander && b === "main" ? ["commander", "main"] as Board[] : [b];
+      const total = boards.flatMap((x) => [...this.deck[x].values()]).reduce((a, e) => a + e.n, 0);
       const btn = this.el.tabs.createEl("button", { text: `${label[b]} ${total}` });
       btn.toggleClass("is-on", this.board === b);
       btn.onclick = () => {
@@ -125,13 +135,14 @@ export class DeckView extends ItemView {
     el.createSpan({ text: rules.name, cls: "mtg-rulename" });
     for (const c of rules.status(this.deck)) el.createSpan({ text: `${c.ok ? "○" : "×"} ${c.label}`, cls: `mtg-chip is-${c.ok ? "ok" : "ng"}` });
     el.createSpan({ text: "|", cls: "mtg-dim" });
-    const v = deckVerdicts(this.app, [...this.deck.main.keys(), ...this.deck.side.keys(), ...this.deck.commander.keys()]);
+    const commanderDeck = !!rules.hasCommander || this.deck.commander.size > 0;
+    const v = deckVerdicts(this.app, [...this.deck.main.keys(), ...this.deck.side.keys(), ...this.deck.commander.keys()], commanderDeck);
     for (const [id, name] of LEGAL_FORMATS) {
       const r = v[id];
       const chip = el.createSpan({ text: `${name} ${r.verdict === "ok" ? "○" : r.verdict === "ng" ? "×" : "?"}`, cls: `mtg-chip is-${r.verdict}` });
-      chip.setAttr("aria-label", r.verdict === "ng" ? `使えないカード: ${r.bad.join(", ")}` : r.verdict === "unknown" ? "リーガル情報が未取得のカードがある" : "全てのカードが使える");
+      chip.setAttr("aria-label", r.verdict === "ng" ? (commanderDeck && id !== "commander" ? "コマンダーがいるデッキは Commander でだけ使える" : `使えないカード: ${r.bad.join(", ")}`) : r.verdict === "unknown" ? "リーガル情報が未取得のカードがある" : "全てのカードが使える");
     }
-    const unknown = v[LEGAL_FORMATS[0][0]].unknown;
+    const unknown = v.commander.unknown; // Commander の判定は他のフォーマットの上書きを受けない
     if (unknown.length) {
       el.createEl("button", { text: `リーガル情報を更新 (${unknown.length}枚)` }).onclick = async () => {
         try {
@@ -148,8 +159,9 @@ export class DeckView extends ItemView {
   private async importInto(text: string) {
     const r = await resolveDeck(this.app, this.settings, text);
     if (!r) return;
+    const rules = this.rules();
     for (const from of ["commander", "main", "side"] as Board[]) {
-      const board = this.rules().boards.includes(from) ? from : "main"; // 欄が無いフォーマットはメインへ
+      const board = rules.boards.includes(from) || (from === "commander" && rules.hasCommander) ? from : "main"; // 欄が無いフォーマットはメインへ
       for (const [key, e] of r.deck[from]) {
         const cur = this.deck[board].get(key);
         this.deck[board].set(key, { n: (cur?.n ?? 0) + e.n, print: cur?.print ?? e.print });
@@ -230,11 +242,11 @@ export class DeckView extends ItemView {
   }
 
   // フォーマットのルール (構築戦なら同名4枚・サイド15枚まで) を満たさない追加は断る
-  private async violation(key: string): Promise<string | null> {
+  private async violation(key: string, board: Board = this.board): Promise<string | null> {
     const meta = await this.getMeta(key);
     return this.rules().canAdd({
       deck: this.deck,
-      board: this.board,
+      board,
       key,
       typeLine: meta?.typeLine ?? "",
       text: await oracleEnglish(this.app, key),
@@ -243,21 +255,45 @@ export class DeckView extends ItemView {
     });
   }
 
-  private async change(key: string, delta: number) {
+  private async change(key: string, delta: number, board: Board = this.board) {
     if (delta > 0) {
-      const why = await this.violation(key);
+      const why = await this.violation(key, board);
       if (why) return void new Notice(why);
     }
-    const m = this.deck[this.board];
+    const m = this.deck[board];
     const e = m.get(key);
     const n = Math.max(0, (e?.n ?? 0) + delta);
     n ? m.set(key, { ...e, n }) : m.delete(key);
     await this.save();
   }
 
-  private async setPrint(key: string, print?: string) {
-    const e = this.deck[this.board].get(key);
-    if (e) this.deck[this.board].set(key, { ...e, print });
+  private async setPrint(key: string, print: string | undefined, board: Board) {
+    const e = this.deck[board].get(key);
+    if (e) this.deck[board].set(key, { ...e, print });
+    await this.save();
+  }
+
+  // 統率者構築: メインの1枚をコマンダーに指定する。コマンダーは1体まで (今の指定を外してから)
+  private async designate(key: string) {
+    const main = this.deck.main;
+    const e = main.get(key);
+    if (!e) return;
+    if (this.deck.commander.size) return void new Notice("コマンダーは1体まで (今のコマンダーを先に解除する)");
+    e.n > 1 ? main.set(key, { ...e, n: e.n - 1 }) : main.delete(key);
+    const why = await this.violation(key, "commander"); // メインから外した状態で、コマンダーとして入れられるか見る
+    if (why) {
+      main.set(key, e);
+      return void new Notice(why);
+    }
+    this.deck.commander.set(key, { n: 1, print: e.print });
+    await this.save();
+  }
+
+  private async undesignate(key: string) {
+    const e = this.deck.commander.get(key);
+    if (!e) return;
+    this.deck.commander.delete(key);
+    this.deck.main.set(key, { n: (this.deck.main.get(key)?.n ?? 0) + 1, print: e.print });
     await this.save();
   }
 
@@ -280,45 +316,60 @@ export class DeckView extends ItemView {
 
   private async renderStack() {
     const seq = ++this.stackSeq;
+    const rules = this.rules();
+    // 統率者構築はコマンダーとメインを1つの画面に並べる。それ以外は今のタブ (メイン/サイド)
+    const shown: Board[] = rules.hasCommander ? ["commander", "main"] : [this.board];
     const cards = await Promise.all(
-      [...this.deck[this.board]].map(async ([key, { n: count, print }]) => {
-        const meta = await this.getMeta(key);
-        const image = (print && (await printingImage(this.app, key, print))) || meta?.image;
-        return { key, count, meta, image };
-      }),
+      shown.flatMap((board) =>
+        [...this.deck[board]].map(async ([key, { n: count, print }]) => {
+          const meta = await this.getMeta(key);
+          const image = (print && (await printingImage(this.app, key, print))) || meta?.image;
+          return { key, count, board, meta, image };
+        }),
+      ),
     );
     if (seq !== this.stackSeq) return;
 
     const groups = new Map<string, typeof cards>();
     for (const c of cards) {
-      const type = c.meta ? TYPE_CHECK.find((t) => c.meta!.typeLine.includes(t)) ?? "Other" : "Other";
+      const type = c.board === "commander" ? "Commander" : c.meta ? TYPE_CHECK.find((t) => c.meta!.typeLine.includes(t)) ?? "Other" : "Other";
       groups.set(type, [...(groups.get(type) ?? []), c]);
     }
 
     this.el.stack.empty();
-    for (const g of GROUP_ORDER) {
-      const items = groups.get(g)?.sort((a, b) => (a.meta?.cmc ?? 0) - (b.meta?.cmc ?? 0) || a.key.localeCompare(b.key));
-      if (!items) continue;
-      const col = this.el.stack.createDiv("mtg-group");
-      col.createEl("h4", { text: `${g} (${items.reduce((a, c) => a + c.count, 0)})` });
-      for (const c of items) {
-        const item = col.createDiv("mtg-item");
-        if (c.image) item.createEl("img", { attr: { src: c.image, alt: c.key } });
-        else item.createSpan({ text: c.key, cls: "mtg-name" });
-        item.createSpan({ text: String(c.count), cls: "mtg-badge" });
-        const ctl = item.createDiv("mtg-ctl");
-        ctl.createEl("button", { text: "🖼", attr: { "aria-label": "イラスト変更" } }).onclick = () => void this.pickPrint(c.key);
-        ctl.createEl("button", { text: "−" }).onclick = () => void this.change(c.key, -1);
-        ctl.createEl("button", { text: "+" }).onclick = () => void this.change(c.key, 1);
-        item.onmouseenter = () => void this.preview(c.key, Promise.resolve(c.image), cardText(this.app, c.key), cardInfo(this.app, c.key)?.nameLocal);
+    for (const names of COLUMNS) {
+      const column = this.el.stack.createDiv("mtg-col");
+      for (const g of names) {
+        const items = groups.get(g)?.sort((a, b) => (a.meta?.cmc ?? 0) - (b.meta?.cmc ?? 0) || a.key.localeCompare(b.key));
+        if (!items) continue;
+        const col = column.createDiv("mtg-group");
+        col.createEl("h4", { text: `${g} (${items.reduce((a, c) => a + c.count, 0)})` });
+        for (const c of items) {
+          const item = col.createDiv("mtg-item");
+          if (c.image) item.createEl("img", { attr: { src: c.image, alt: c.key } });
+          else item.createSpan({ text: c.key, cls: "mtg-name" });
+          item.createSpan({ text: String(c.count), cls: "mtg-badge" });
+          const ctl = item.createDiv("mtg-ctl");
+          ctl.createEl("button", { text: "🖼", attr: { "aria-label": "イラスト変更" } }).onclick = () => void this.pickPrint(c.key, c.board);
+          // 統率者構築: 伝説のカードはコマンダーに指定できる。指定済みなら解除
+          if (rules.hasCommander && (c.board === "commander" || c.meta?.typeLine.includes("Legendary"))) {
+            const crown = ctl.createEl("button", { text: "👑", attr: { "aria-label": c.board === "commander" ? "コマンダーを解除" : "コマンダーにする" } });
+            crown.toggleClass("is-on", c.board === "commander");
+            crown.onclick = () => void (c.board === "commander" ? this.undesignate(c.key) : this.designate(c.key));
+          }
+          ctl.createEl("button", { text: "−" }).onclick = () => void this.change(c.key, -1, c.board);
+          if (c.board !== "commander") ctl.createEl("button", { text: "+" }).onclick = () => void this.change(c.key, 1, c.board);
+          item.onmouseenter = () => void this.preview(c.key, Promise.resolve(c.image), cardText(this.app, c.key), cardInfo(this.app, c.key)?.nameLocal);
+        }
       }
+      if (!column.hasChildNodes()) column.remove();
     }
   }
 
-  private async pickPrint(key: string) {
+  private async pickPrint(key: string, board: Board) {
     const prints = await readPrintings(this.app, key);
     if (!prints.length) return void new Notice("収録一覧が無いカード。Cards から削除して取り直すと付く");
-    new PrintModal(this.app, key, prints, true, (p) => void this.setPrint(key, p)).open();
+    new PrintModal(this.app, key, prints, true, (p) => void this.setPrint(key, p, board)).open();
   }
 
   // ja = 設定した言語のカード名。無ければ英語名だけ出す
