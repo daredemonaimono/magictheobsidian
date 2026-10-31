@@ -1,5 +1,6 @@
 import { EventRef, ItemView, Notice, WorkspaceLeaf } from "obsidian";
 import { cardInfo } from "./cards";
+import { Board } from "./deck";
 import { DeckView } from "./DeckView";
 import { Result, buildFilterBar, emptyFilters, isEmpty, localResult, searchAll } from "./search";
 import { Settings } from "./settings";
@@ -20,10 +21,12 @@ interface Row {
   r: Result;
   n?: number; // デッキ内の枚数
   tag?: string;
+  board?: Board; // デッキ内の一覧のとき、そのカードがいる欄
 }
 
 // 右サイドバー。デッキ画面を開いている間だけ出る。
-// 条件が空: いまデッキに入っているカード (表示だけ)。条件あり: 検索結果 (デッキ内のカードも含む) で、クリックで1枚追加 / Shift+クリックで1枚削除
+// 条件が空: いまデッキに入っているカード。条件あり: 検索結果 (デッキ内のカードも含む)。
+// どちらも、クリックで1枚追加 / Shift+クリックで1枚削除 (デッキ内の一覧では、そのカードがいる欄の枚数が増減する)
 export class CardListView extends ItemView {
   private f = emptyFilters();
   private timer?: number;
@@ -106,7 +109,7 @@ export class CardListView extends ItemView {
     const rows: Row[] = [];
     for (const c of t?.deckCards() ?? []) {
       const info = cardInfo(this.app, c.key);
-      if (info) rows.push({ r: localResult(this.app, info), n: c.n, tag: tag[c.board] });
+      if (info) rows.push({ r: localResult(this.app, info), n: c.n, tag: tag[c.board], board: c.board });
     }
     return rows;
   }
@@ -120,18 +123,17 @@ export class CardListView extends ItemView {
       : this.results.slice(0, this.shown).map((r) => ({ r, n: (r.localKey && target?.countOf(r.localKey)) || undefined }));
     this.status.setText(
       deckMode
-        ? `デッキ内 ${rows.reduce((a, x) => a + (x.n ?? 0), 0)} 枚 (検索・フィルターで探して追加)`
+        ? `デッキ内 ${rows.reduce((a, x) => a + (x.n ?? 0), 0)} 枚 (クリックで+1 / Shift+クリックで−1。検索すると他のカードも追加できる)`
         : `${this.note}${this.results.length > this.shown ? ` (先頭 ${this.shown} 件を表示)` : ""}`,
     );
 
     this.grid.empty();
-    for (const { r, n, tag } of rows) {
+    for (const { r, n, tag, board } of rows) {
       const cell = this.grid.createDiv("mtg-lcell");
       cell.setAttr("aria-label", r.ja && r.ja !== r.name ? `${r.name} (${r.ja})` : r.name);
       cell.style.setProperty("--mtg-color", colorOf(r.colors));
       const banned = !deckMode && !!target && !target.allows(r);
       cell.toggleClass("is-banned", banned);
-      cell.toggleClass("is-static", deckMode); // デッキ内の一覧は表示だけ
       if (banned) cell.setAttr("aria-label", `${r.ja ?? r.name} (このフォーマットでは使えない)`);
       // 見えている行の分だけ読み込む (loading=lazy)。設定でオフにできる
       if (this.settings.listArt && r.art) cell.createEl("img", { cls: "mtg-lart", attr: { src: r.art, loading: "lazy", alt: "" } });
@@ -140,11 +142,14 @@ export class CardListView extends ItemView {
       if (tag) cell.createSpan({ text: tag, cls: "mtg-ltag" });
       if (n) cell.createSpan({ text: `${n}×`, cls: "mtg-lcount" });
       cell.onmouseenter = () => target?.previewResult(r);
-      if (deckMode) continue;
       cell.onclick = async (e) => {
         const t = this.getTarget();
         if (!t) return void new Notice("追加先のデッキ画面が見つからない。デッキ画面を開いてから、もう一度");
         try {
+          if (deckMode) {
+            if (r.localKey && board) await t.adjustCard(r.localKey, e.shiftKey ? -1 : 1, board);
+            return;
+          }
           if (!e.shiftKey && !t.allows(r)) return void new Notice(`${r.name} はこのフォーマットでは使えない`);
           cell.addClass("is-busy"); // Cards/ に無いカードは取得に数秒かかる
           await (e.shiftKey ? t.removeCard(r) : t.addCard(r));

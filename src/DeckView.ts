@@ -196,6 +196,11 @@ export class DeckView extends ItemView {
     );
   }
 
+  // サイドバーのデッキ内の一覧から、そのカードの枚数を増減する (欄はカードがいる欄)。上限などのルールは追加と同じ
+  async adjustCard(key: string, delta: number, board: Board) {
+    await this.change(key, delta, board);
+  }
+
   countOf(key: string) {
     return (["commander", "main", "side"] as Board[]).reduce((a, b) => a + (this.deck[b].get(key)?.n ?? 0), 0);
   }
