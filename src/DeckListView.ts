@@ -4,7 +4,7 @@ import { DECK_DIR, parseDeck } from "./deck";
 import { DECK_VIEW } from "./DeckView";
 import { LEGAL_FORMATS, Verdict } from "./rules";
 import { artCropUrl } from "./scryfall";
-import { symbolImg } from "./symbols";
+import { COLORS, symbolImg } from "./symbols";
 
 export const DECKLIST_VIEW = "mtg-decklist";
 
@@ -24,7 +24,6 @@ interface Entry {
   art?: string;
 }
 
-const COLOR_ORDER = ["W", "U", "B", "R", "G"];
 const ago = (ms: number) => {
   const min = Math.round((Date.now() - ms) / 60000);
   const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
@@ -112,7 +111,7 @@ export class DeckListView extends ItemView {
         file,
         legal: deckVerdicts(this.app, keys, deck.commander.size > 0 || fm.format === "commander"),
         favorite: !!fm.favorite,
-        colors: COLOR_ORDER.filter((c) => colors.has(c)),
+        colors: COLORS.filter((c) => colors.has(c)),
         count: [...deck.main.values(), ...deck.commander.values()].reduce((a, e) => a + e.n, 0),
         keys,
         art,

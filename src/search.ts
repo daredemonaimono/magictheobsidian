@@ -2,7 +2,7 @@ import { App } from "obsidian";
 import { CardInfo, cardImage, cardText, ensureCardFile, localCards, readPrintings } from "./cards";
 import { ScryfallCard, artCropUrl, cardImageUrl, legalList, restrictedList, searchCards } from "./scryfall";
 import { Settings } from "./settings";
-import { symbolImg } from "./symbols";
+import { COLORS, symbolImg } from "./symbols";
 
 export interface Meta {
   name: string;
@@ -39,8 +39,6 @@ export interface Filters {
 
 export const emptyFilters = (): Filters => ({ name: "", effect: "", type: "", colors: new Set() });
 export const isEmpty = (f: Filters) => !f.name && !f.effect && !f.type && !f.colors.size;
-
-const COLORS = ["W", "U", "B", "R", "G"];
 
 // タイプの選択肢。値は Scryfall の t: にも、ノートの type_line の照合にもそのまま使う
 export const TYPES: [string, string][] = [

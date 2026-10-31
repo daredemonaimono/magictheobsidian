@@ -1,3 +1,6 @@
+// 色の並び (白青黒赤緑)。色のボタン、デッキ一覧の色の表示、並び替えで共通
+export const COLORS = ["W", "U", "B", "R", "G"];
+
 // マナシンボルは Scryfall の画像 (SVG)。コスト {2}{W/U} → コード 2, WU (スラッシュを除く) がファイル名
 export const symbolUrl = (code: string) => `https://svgs.scryfall.io/card-symbols/${code}.svg`;
 

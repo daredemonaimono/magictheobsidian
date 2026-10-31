@@ -78,7 +78,7 @@ export default class MagicTheObsidian extends Plugin {
       }),
     );
     this.registerView(DECK_VIEW, (leaf) => new DeckView(leaf, this.settings));
-    this.registerView(DASHBOARD_VIEW, (leaf) => new DashboardView(leaf, { collection: () => void this.openCollection(), deck: () => void this.openDeckList(), cards: () => void this.openCards() }));
+    this.registerView(DASHBOARD_VIEW, (leaf) => new DashboardView(leaf, { collection: () => void this.openOrReveal(COLLECTION_VIEW), deck: () => void this.openOrReveal(DECKLIST_VIEW), cards: () => void this.openOrReveal(CARDS_VIEW) }));
     this.registerView(CARDS_VIEW, (leaf) => new CardsView(leaf, this.settings));
     this.registerView(
       DECKLIST_VIEW,
@@ -120,7 +120,7 @@ export default class MagicTheObsidian extends Plugin {
       name: "Import deck (Moxfield text)",
       callback: () => new ImportModal(this.app, true, (n, t, f) => void this.importDeck(n, t, f)).open(),
     });
-    this.addCommand({ id: "open-collection", name: "Open collection", callback: () => void this.openCollection() });
+    this.addCommand({ id: "open-collection", name: "Open collection", callback: () => void this.openOrReveal(COLLECTION_VIEW) });
     this.addCommand({
       id: "update-legality",
       name: "Update card legality (cards without it)",
@@ -135,8 +135,8 @@ export default class MagicTheObsidian extends Plugin {
         }
       },
     });
-    this.addCommand({ id: "open-dashboard", name: "Open dashboard", callback: () => void this.openDashboard() });
-    this.addRibbonIcon("layout-dashboard", "Magic the Obsidian", () => void this.openDashboard());
+    this.addCommand({ id: "open-dashboard", name: "Open dashboard", callback: () => void this.openOrReveal(DASHBOARD_VIEW) });
+    this.addRibbonIcon("layout-dashboard", "Magic the Obsidian", () => void this.openOrReveal(DASHBOARD_VIEW));
     this.addCommand({
       id: "update-prices",
       name: "Update collection prices",
@@ -178,33 +178,12 @@ export default class MagicTheObsidian extends Plugin {
     void leaf.setViewState({ type: DASHBOARD_VIEW, active: true });
   }
 
-  private async openDashboard() {
-    const ws = this.app.workspace;
-    const open = ws.getLeavesOfType(DASHBOARD_VIEW)[0];
-    if (open) return void ws.revealLeaf(open);
-    await ws.getLeaf(true).setViewState({ type: DASHBOARD_VIEW, active: true });
-  }
-
   // 開いていればそのタブへ、無ければ新しいタブで
-  private async openCollection() {
+  private async openOrReveal(type: string) {
     const ws = this.app.workspace;
-    const open = ws.getLeavesOfType(COLLECTION_VIEW)[0];
+    const open = ws.getLeavesOfType(type)[0];
     if (open) return void ws.revealLeaf(open);
-    await ws.getLeaf(true).setViewState({ type: COLLECTION_VIEW, active: true });
-  }
-
-  private async openCards() {
-    const ws = this.app.workspace;
-    const open = ws.getLeavesOfType(CARDS_VIEW)[0];
-    if (open) return void ws.revealLeaf(open);
-    await ws.getLeaf(true).setViewState({ type: CARDS_VIEW, active: true });
-  }
-
-  private async openDeckList() {
-    const ws = this.app.workspace;
-    const open = ws.getLeavesOfType(DECKLIST_VIEW)[0];
-    if (open) return void ws.revealLeaf(open);
-    await ws.getLeaf(true).setViewState({ type: DECKLIST_VIEW, active: true });
+    await ws.getLeaf(true).setViewState({ type, active: true });
   }
 
   private deckLeaves() {

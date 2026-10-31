@@ -5,11 +5,9 @@ import { DeckView, PrintModal } from "./DeckView";
 import { Result } from "./search";
 import { priceOf, priceStore, updateCollectionPrices } from "./prices";
 import { printingImageUrl } from "./scryfall";
-import { symbolImg } from "./symbols";
+import { COLORS, symbolImg } from "./symbols";
 
 export const COLLECTION_VIEW = "mtg-collection";
-
-const COLORS = ["W", "U", "B", "R", "G"];
 
 interface Item {
   row: Row;

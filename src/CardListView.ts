@@ -10,7 +10,7 @@ import { manaCost } from "./symbols";
 export const CARDLIST_VIEW = "mtg-cardlist";
 const PAGE = 60;
 
-export const COLOR_HEX: Record<string, string> = { W: "#e6dca8", U: "#4a90d9", B: "#7a6a86", R: "#d9534a", G: "#4a9a5b" };
+const COLOR_HEX: Record<string, string> = { W: "#e6dca8", U: "#4a90d9", B: "#7a6a86", R: "#d9534a", G: "#4a9a5b" };
 
 // 無色は灰色、多色は色を並べたグラデーション
 const colorOf = (colors: string[]) => {

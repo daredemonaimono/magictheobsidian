@@ -1,7 +1,7 @@
-import { App, TFile, normalizePath, parseYaml, requestUrl } from "obsidian";
+import { App, TFile, normalizePath, parseYaml } from "obsidian";
 import { LEGAL_FORMATS, judge } from "./rules";
 import { Settings } from "./settings";
-import { Printing, ScryfallCard, legalList, restrictedList, printingImageUrl, fetchById, fetchCard, fetchLocalized, fetchPrintings, fileSafe, toMarkdown } from "./scryfall";
+import { Printing, ScryfallCard, legalList, restrictedList, printingImageUrl, fetchById, fetchCard, fetchCollection, fetchLocalized, fetchPrintings, fileSafe, toMarkdown } from "./scryfall";
 
 export const CARD_DIR = "Cards";
 
@@ -118,33 +118,18 @@ export async function updateLegality(app: App, keys: string[]): Promise<Map<stri
     const id = cardInfo(app, key)?.id;
     if (id) byId.set(id, key);
   }
-  const ids = [...byId.keys()];
+  const { data, failed } = await fetchCollection([...byId.keys()]);
   const done = new Map<string, { legal: string[]; restricted: string[] }>();
-  let failed = 0;
-  for (let i = 0; i < ids.length; i += 75) {
-    if (i) await new Promise((r) => setTimeout(r, 100)); // Scryfall の負荷配慮
-    const res = await requestUrl({
-      url: "https://api.scryfall.com/cards/collection",
-      method: "POST",
-      contentType: "application/json",
-      headers: { "User-Agent": "magictheobsidian/0.12.3", Accept: "application/json" },
-      body: JSON.stringify({ identifiers: ids.slice(i, i + 75).map((id) => ({ id })) }),
-      throw: false,
+  for (const c of data) {
+    const key = byId.get(c.id)!;
+    const f = app.vault.getAbstractFileByPath(`${CARD_DIR}/${key}.md`);
+    if (!(f instanceof TFile)) continue;
+    const result = { legal: legalList(c.legalities), restricted: restrictedList(c.legalities) };
+    await app.fileManager.processFrontMatter(f, (fm) => {
+      fm.legal = result.legal;
+      fm.restricted = result.restricted;
     });
-    if (res.status !== 200) {
-      failed++;
-      continue;
-    }
-    for (const c of res.json.data) {
-      const f = app.vault.getAbstractFileByPath(`${CARD_DIR}/${byId.get(c.id)}.md`);
-      if (!(f instanceof TFile)) continue;
-      const result = { legal: legalList(c.legalities), restricted: restrictedList(c.legalities) };
-      await app.fileManager.processFrontMatter(f, (fm) => {
-        fm.legal = result.legal;
-        fm.restricted = result.restricted;
-      });
-      done.set(byId.get(c.id)!, result);
-    }
+    done.set(key, result);
   }
   if (failed) throw new Error(`${failed} 回の取得に失敗 (取れた分だけ更新した)`);
   return done;

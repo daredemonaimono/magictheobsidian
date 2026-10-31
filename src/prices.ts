@@ -1,6 +1,7 @@
-import { App, requestUrl } from "obsidian";
+import { App } from "obsidian";
 import { printingOf } from "./cards";
 import { loadCollection } from "./collection";
+import { fetchCollection } from "./scryfall";
 
 export interface Prices {
   usd?: string | null;
@@ -22,28 +23,12 @@ export async function updateCollectionPrices(app: App): Promise<number> {
     const p = await printingOf(app, r.card, r.print);
     if (p) ids.add(p.id);
   }
-  const all = [...ids];
-  let failed = 0;
-  for (let i = 0; i < all.length; i += 75) {
-    if (i) await new Promise((r) => setTimeout(r, 100)); // Scryfall の負荷配慮
-    const res = await requestUrl({
-      url: "https://api.scryfall.com/cards/collection",
-      method: "POST",
-      contentType: "application/json",
-      headers: { "User-Agent": "magictheobsidian/0.3.1", Accept: "application/json" },
-      body: JSON.stringify({ identifiers: all.slice(i, i + 75).map((id) => ({ id })) }),
-      throw: false,
-    });
-    if (res.status !== 200) {
-      failed++;
-      continue;
-    }
-    for (const c of res.json.data) priceStore.prices[c.id] = c.prices ?? {};
-  }
+  const { data, failed } = await fetchCollection([...ids]);
+  for (const c of data) priceStore.prices[c.id] = c.prices ?? {};
   priceStore.updated = new Date().toISOString();
   await priceStore.save();
   if (failed) throw new Error(`${failed} 回の取得に失敗 (取れた分だけ更新した)`);
-  return all.length;
+  return ids.size;
 }
 
 // shortcut: 状態 (NM/LP…) による値引きはしない。必要になったら係数を設定に足す

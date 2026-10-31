@@ -18,6 +18,7 @@ export interface ScryfallCard {
   scryfall_uri: string;
   prints_search_uri?: string;
   legalities?: Record<string, string>;
+  prices?: { usd?: string | null; usd_foil?: string | null; usd_etched?: string | null };
   image_uris?: { normal: string };
   card_faces?: {
     name: string;
@@ -33,7 +34,8 @@ export interface ScryfallCard {
   oracle_text?: string;
 }
 
-const HEADERS = { "User-Agent": "magictheobsidian/0.1.0", Accept: "application/json" };
+// 版は書かない (リリースのたびに直す所を増やさない)
+const HEADERS = { "User-Agent": "magictheobsidian", Accept: "application/json" };
 
 export const cardImageUrl = (c: ScryfallCard) => c.image_uris?.normal ?? c.card_faces?.[0]?.image_uris?.normal;
 
@@ -69,6 +71,26 @@ export async function fetchPrint(set: string, no: string): Promise<ScryfallCard>
   });
   if (res.status !== 200) throw new Error(res.json?.details ?? `HTTP ${res.status}`);
   return res.json;
+}
+
+// scryfall_id の一覧をまとめて取得する。1回75件まで。戻り値は取れたカードと、失敗した回数
+export async function fetchCollection(ids: string[]): Promise<{ data: ScryfallCard[]; failed: number }> {
+  const data: ScryfallCard[] = [];
+  let failed = 0;
+  for (let i = 0; i < ids.length; i += 75) {
+    if (i) await new Promise((r) => setTimeout(r, 100)); // Scryfall の負荷配慮
+    const res = await requestUrl({
+      url: "https://api.scryfall.com/cards/collection",
+      method: "POST",
+      contentType: "application/json",
+      headers: HEADERS,
+      body: JSON.stringify({ identifiers: ids.slice(i, i + 75).map((id) => ({ id })) }),
+      throw: false,
+    });
+    if (res.status !== 200) failed++;
+    else data.push(...res.json.data);
+  }
+  return { data, failed };
 }
 
 // 該当なしは 404 で返るので空配列にする
