@@ -68,3 +68,8 @@
 .mtg-lcost { position: relative; z-index: 1; flex: 0 0 22px; height: 22px; line-height: 22px; text-align: center; border-radius: 50%; background: var(--background-modifier-border); font-size: var(--font-ui-smaller); font-weight: 600; }
 .mtg-lname { position: relative; z-index: 1; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; text-shadow: 0 0 4px var(--background-secondary); }
 .mtg-lmore { margin-top: 6px; }
+
+/* ダッシュボード */
+.mtg-dashboard { padding: 24px; }
+.mtg-dash-buttons { display: flex; gap: 12px; flex-wrap: wrap; }
+.mtg-dash-buttons button { padding: 16px 32px; font-size: var(--font-ui-large); height: auto; }

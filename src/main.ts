@@ -1,9 +1,10 @@
-import { App, Modal, Notice, Plugin, Setting, TFile, normalizePath } from "obsidian";
+import { App, FuzzySuggestModal, Modal, Notice, Plugin, Setting, TFile, normalizePath } from "obsidian";
 import { ensureCardFile } from "./cards";
 import { writeDeck } from "./deck";
 import { ImportModal, resolveDeck } from "./import";
 import { CARDLIST_VIEW, CardListView } from "./CardListView";
 import { COLLECTION_VIEW, CollectionView } from "./CollectionView";
+import { DASHBOARD_VIEW, DashboardView } from "./DashboardView";
 import { DECK_VIEW, DeckView } from "./DeckView";
 import { fetchCard, fileSafe } from "./scryfall";
 import { priceStore, updateCollectionPrices } from "./prices";
@@ -38,6 +39,24 @@ class NameModal extends Modal {
   }
 }
 
+// デッキの選択。先頭は新規作成
+class DeckPicker extends FuzzySuggestModal<TFile | null> {
+  constructor(app: App, private onPick: (file: TFile | null) => void) {
+    super(app);
+    this.setPlaceholder("デッキを選ぶ");
+  }
+  getItems() {
+    const decks = this.app.vault.getMarkdownFiles().filter((f) => f.path.startsWith(`${DECK_DIR}/`));
+    return [null, ...decks.sort((a, b) => a.basename.localeCompare(b.basename))];
+  }
+  getItemText(item: TFile | null) {
+    return item ? item.basename : "＋ 新しいデッキを作る";
+  }
+  onChooseItem(item: TFile | null) {
+    this.onPick(item);
+  }
+}
+
 export default class MagicTheObsidian extends Plugin {
   settings: Settings = { ...DEFAULT_SETTINGS };
   private target?: DeckView; // サイドバーの一覧からカードを足す先 (最後に触ったデッキ/コレクション画面)
@@ -66,6 +85,7 @@ export default class MagicTheObsidian extends Plugin {
       }),
     );
     this.registerView(DECK_VIEW, (leaf) => new DeckView(leaf, this.settings));
+    this.registerView(DASHBOARD_VIEW, (leaf) => new DashboardView(leaf, { collection: () => void this.openCollection(), deck: () => this.pickDeck() }));
     this.registerView(COLLECTION_VIEW, (leaf) => new CollectionView(leaf, this.settings));
     this.registerView(CARDLIST_VIEW, (leaf) => new CardListView(leaf, this.settings, () => this.liveTarget()));
 
@@ -96,11 +116,9 @@ export default class MagicTheObsidian extends Plugin {
       name: "Import deck (Moxfield text)",
       callback: () => new ImportModal(this.app, true, (n, t) => void this.importDeck(n, t)).open(),
     });
-    this.addCommand({
-      id: "open-collection",
-      name: "Open collection",
-      callback: () => void this.app.workspace.getLeaf(true).setViewState({ type: COLLECTION_VIEW, active: true }),
-    });
+    this.addCommand({ id: "open-collection", name: "Open collection", callback: () => void this.openCollection() });
+    this.addCommand({ id: "open-dashboard", name: "Open dashboard", callback: () => void this.openDashboard() });
+    this.addRibbonIcon("layout-dashboard", "Magic the Obsidian", () => void this.openDashboard());
     this.addCommand({
       id: "update-prices",
       name: "Update collection prices",
@@ -123,6 +141,28 @@ export default class MagicTheObsidian extends Plugin {
         return !!isDeck;
       },
     });
+  }
+
+  private async openDashboard() {
+    const ws = this.app.workspace;
+    const open = ws.getLeavesOfType(DASHBOARD_VIEW)[0];
+    if (open) return void ws.revealLeaf(open);
+    await ws.getLeaf(true).setViewState({ type: DASHBOARD_VIEW, active: true });
+  }
+
+  // 開いていればそのタブへ、無ければ新しいタブで
+  private async openCollection() {
+    const ws = this.app.workspace;
+    const open = ws.getLeavesOfType(COLLECTION_VIEW)[0];
+    if (open) return void ws.revealLeaf(open);
+    await ws.getLeaf(true).setViewState({ type: COLLECTION_VIEW, active: true });
+  }
+
+  private pickDeck() {
+    new DeckPicker(this.app, (file) => {
+      if (file) void this.openDeck(file);
+      else new NameModal(this.app, "Create deck", "赤単バーン", (n) => void this.createDeck(n)).open();
+    }).open();
   }
 
   private deckLeaves() {
@@ -189,6 +229,9 @@ export default class MagicTheObsidian extends Plugin {
   }
 
   private async openDeck(file: TFile) {
+    // 同じデッキが既に開いていれば、そのタブへ
+    const open = this.app.workspace.getLeavesOfType(DECK_VIEW).find((l) => l.getViewState().state?.path === file.path);
+    if (open) return void this.app.workspace.revealLeaf(open);
     try {
       await this.app.workspace.getLeaf(true).setViewState({ type: DECK_VIEW, state: { path: file.path }, active: true });
     } catch (e) {
