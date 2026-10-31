@@ -141,11 +141,19 @@ export class CardListView extends ItemView {
       if (n) cell.createSpan({ text: `${n}×`, cls: "mtg-lcount" });
       cell.onmouseenter = () => target?.previewResult(r);
       if (deckMode) continue;
-      cell.onclick = (e) => {
+      cell.onclick = async (e) => {
         const t = this.getTarget();
-        if (!t) return void new Notice("デッキ画面を開く");
-        if (!e.shiftKey && !t.allows(r)) return void new Notice(`${r.name} はこのフォーマットでは使えない`);
-        void (e.shiftKey ? t.removeCard(r) : t.addCard(r));
+        if (!t) return void new Notice("追加先のデッキ画面が見つからない。デッキ画面を開いてから、もう一度");
+        try {
+          if (!e.shiftKey && !t.allows(r)) return void new Notice(`${r.name} はこのフォーマットでは使えない`);
+          cell.addClass("is-busy"); // Cards/ に無いカードは取得に数秒かかる
+          await (e.shiftKey ? t.removeCard(r) : t.addCard(r));
+        } catch (err) {
+          console.error(err);
+          new Notice(`追加できない: ${(err as Error).message}`);
+        } finally {
+          cell.removeClass("is-busy");
+        }
       };
     }
     if (!deckMode && this.results.length > this.shown) {

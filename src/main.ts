@@ -186,9 +186,15 @@ export default class MagicTheObsidian extends Plugin {
 
   // サイドバーの追加先はデッキ画面だけ (コレクション画面は自前の Add cards)
   private liveTarget(): DeckView | undefined {
-    const leaves = this.app.workspace.getLeavesOfType(DECK_VIEW);
-    if (this.target && leaves.some((l) => l.view === this.target)) return this.target;
-    return leaves[0]?.view as DeckView | undefined;
+    // 背面のタブは未読み込み (deferred) のことがある。その view にはメソッドが無いので、読み込んでから使う
+    const views = this.app.workspace
+      .getLeavesOfType(DECK_VIEW)
+      .map((l) => {
+        void (l as unknown as { loadIfDeferred?: () => Promise<void> }).loadIfDeferred?.();
+        return l.view;
+      })
+      .filter((v): v is DeckView => v instanceof DeckView);
+    return this.target && views.includes(this.target) ? this.target : views[0];
   }
 
   private updateLists() {

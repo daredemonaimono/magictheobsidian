@@ -102,3 +102,5 @@
 .mtg-lcell.is-static:hover { outline: none; }
 .mtg-lcount { position: relative; z-index: 1; font-size: var(--font-ui-smaller); font-weight: 700; padding: 0 6px; border-radius: 10px; background: var(--background-modifier-border); }
 .mtg-ltag { position: relative; z-index: 1; font-size: var(--font-ui-smaller); color: var(--text-muted); }
+
+.mtg-lcell.is-busy { opacity: 0.5; cursor: progress; }
