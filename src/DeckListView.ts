@@ -110,7 +110,7 @@ export class DeckListView extends ItemView {
       }
       out.push({
         file,
-        legal: Object.fromEntries(Object.entries(deckVerdicts(this.app, keys, deck.commander.size > 0 || fm.format === "commander")).map(([k, r]) => [k, r.verdict])),
+        legal: deckVerdicts(this.app, keys, deck.commander.size > 0 || fm.format === "commander"),
         favorite: !!fm.favorite,
         colors: COLOR_ORDER.filter((c) => colors.has(c)),
         count: [...deck.main.values(), ...deck.commander.values()].reduce((a, e) => a + e.n, 0),

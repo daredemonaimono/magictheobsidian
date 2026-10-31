@@ -13,11 +13,6 @@ export interface AddCheck {
   restricted?: string[]; // 制限カードになっているフォーマット (Vintage)
 }
 
-export interface Chip {
-  label: string;
-  ok: boolean;
-}
-
 export interface FormatRules {
   name: string;
   legalId?: string; // Scryfall の legalities のキー。無ければカードの使用可否は見ない
@@ -25,8 +20,6 @@ export interface FormatRules {
   hasCommander?: boolean; // コマンダー欄がある (タブにはせず、メインの上に並べて出す)
   // 1枚足してよければ null、だめなら理由
   canAdd(c: AddCheck): string | null;
-  // デッキ画面に出す「枚数などの状態」
-  status(deck: Deck): Chip[];
 }
 
 const NUMBERS: Record<string, number> = { two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
@@ -60,10 +53,6 @@ function sixty(name: string, legalId?: string): FormatRules {
       const have = (c.deck.main.get(c.key)?.n ?? 0) + (c.deck.side.get(c.key)?.n ?? 0);
       return have >= limit ? `${c.key} は${limit}枚まで (メインとサイドの合計)` : null;
     },
-    status: (d) => [
-      { label: `メイン ${sum(d.main)}/60以上`, ok: sum(d.main) >= 60 },
-      { label: `サイド ${sum(d.side)}/15`, ok: sum(d.side) <= 15 },
-    ],
   };
 }
 
@@ -87,10 +76,6 @@ const commander: FormatRules = {
     const limit = copyLimit(c.typeLine, c.text, 1);
     return have >= limit ? `${c.key} は${limit}枚まで (統率戦は同名1種)` : null;
   },
-  status: (d) => [
-    { label: `コマンダー ${sum(d.commander)}/1`, ok: sum(d.commander) === 1 },
-    { label: `合計 ${sum(d.main) + sum(d.commander)}/100`, ok: sum(d.main) + sum(d.commander) === 100 },
-  ],
 };
 
 export const FORMATS: Record<string, FormatRules> = {
@@ -127,10 +112,8 @@ export type Verdict = "ok" | "ng" | "unknown";
 
 // legal 未取得 (undefined) のカードは判定できない。1枚でも使えないと分かっていれば ng
 // commanderDeck: コマンダーが入っているデッキは、Commander 以外のフォーマットでは使えない
-export function judge(cards: { key: string; legal?: string[] }[], format: string, commanderDeck = false) {
-  if (commanderDeck && format !== "commander") return { verdict: "ng" as Verdict, bad: [] as string[], unknown: [] as string[] };
-  const bad = cards.filter((c) => c.legal && !c.legal.includes(format)).map((c) => c.key);
-  const unknown = cards.filter((c) => !c.legal).map((c) => c.key);
-  const verdict: Verdict = bad.length ? "ng" : unknown.length || !cards.length ? "unknown" : "ok";
-  return { verdict, bad, unknown };
+export function judge(cards: { key: string; legal?: string[] }[], format: string, commanderDeck = false): Verdict {
+  if (commanderDeck && format !== "commander") return "ng";
+  if (cards.some((c) => c.legal && !c.legal.includes(format))) return "ng";
+  return cards.some((c) => !c.legal) || !cards.length ? "unknown" : "ok";
 }

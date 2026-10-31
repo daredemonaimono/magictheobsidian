@@ -239,16 +239,6 @@ export class CollectionView extends DeckView {
     new PrintModal(this.app, r.card, prints, false, (p) => p && void this.setRowPrint(key, p)).open();
   }
 
-  // コレクションにフォーマットの制限はない
-  allows() {
-    return true;
-  }
-
-  async removeCard(r: Result) {
-    const key = [...this.rows].find(([, row]) => row.card === r.localKey)?.[0];
-    if (key) await this.adjust(key, -1);
-  }
-
   async addCard(r: Result) {
     try {
       const { key, print } = await r.resolve();
