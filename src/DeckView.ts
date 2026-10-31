@@ -243,7 +243,7 @@ export class DeckView extends ItemView {
       row.createSpan({ text: r.ja ? `${r.name} / ${r.ja}` : r.name, cls: "mtg-name" });
       row.createSpan({ text: r.manaCost, cls: "mtg-dim" });
       row.createSpan({ text: r.typeLine, cls: "mtg-dim" });
-      row.onmouseenter = () => void this.preview(r.name, r.image(), r.text());
+      row.onmouseenter = () => void this.preview(r.name, r.image(), r.text(), r.ja);
       const add = row.createEl("button", { text: "+" });
       add.onclick = () => {
         void this.add(r);
@@ -326,7 +326,7 @@ export class DeckView extends ItemView {
         ctl.createEl("button", { text: "🖼", attr: { "aria-label": "イラスト変更" } }).onclick = () => void this.pickPrint(c.key);
         ctl.createEl("button", { text: "−" }).onclick = () => void this.change(c.key, -1);
         ctl.createEl("button", { text: "+" }).onclick = () => void this.change(c.key, 1);
-        item.onmouseenter = () => void this.preview(c.key, Promise.resolve(c.image), cardText(this.app, c.key));
+        item.onmouseenter = () => void this.preview(c.key, Promise.resolve(c.image), cardText(this.app, c.key), cardInfo(this.app, c.key)?.nameLocal);
       }
     }
   }
@@ -337,13 +337,14 @@ export class DeckView extends ItemView {
     new PrintModal(this.app, key, prints, true, (p) => void this.setPrint(key, p)).open();
   }
 
-  protected async preview(name: string, image: Promise<string | undefined>, text: Promise<string>) {
+  // ja = 設定した言語のカード名。無ければ英語名だけ出す
+  protected async preview(name: string, image: Promise<string | undefined>, text: Promise<string>, ja?: string) {
     const seq = ++this.previewSeq;
     const [url, body] = await Promise.all([image, text]);
     if (seq !== this.previewSeq) return;
     this.el.preview.empty();
     if (url) this.el.preview.createEl("img", { attr: { src: url, alt: name } });
-    this.el.preview.createDiv({ text: name, cls: "mtg-preview-name" });
+    this.el.preview.createDiv({ text: ja && ja !== name ? `${name} (${ja})` : name, cls: "mtg-preview-name" });
     this.el.preview.createDiv({ text: body, cls: "mtg-preview-text" });
   }
 }
