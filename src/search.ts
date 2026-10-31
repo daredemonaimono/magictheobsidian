@@ -2,6 +2,7 @@ import { App } from "obsidian";
 import { CardInfo, cardImage, cardText, ensureCardFile, localCards, readPrintings } from "./cards";
 import { ScryfallCard, artCropUrl, cardImageUrl, legalList, restrictedList, searchCards } from "./scryfall";
 import { Settings } from "./settings";
+import { symbolImg } from "./symbols";
 
 export interface Meta {
   name: string;
@@ -53,7 +54,8 @@ export function buildFilterBar(parent: HTMLElement, f: Filters, onChange: () => 
   input("効果テキスト", "effect");
   input("タイプ", "type");
   for (const c of COLORS) {
-    const b = bar.createEl("button", { text: c, cls: "mtg-color" });
+    const b = bar.createEl("button", { cls: "mtg-color", attr: { "aria-label": c } });
+    symbolImg(b, c);
     b.onclick = () => {
       f.colors.has(c) ? f.colors.delete(c) : f.colors.add(c);
       b.toggleClass("is-on", f.colors.has(c));

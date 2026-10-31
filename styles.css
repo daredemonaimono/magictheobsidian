@@ -65,7 +65,7 @@
 /* イラストは右側に薄く出し、左は背景色に溶かして文字を読みやすくする */
 .mtg-lart { position: absolute; right: 0; top: 0; width: 65%; height: 100%; object-fit: cover; opacity: 0.55; z-index: 0; -webkit-mask-image: linear-gradient(to right, transparent, #000 70%); mask-image: linear-gradient(to right, transparent, #000 70%); }
 .mtg-lcell:hover { outline: 1px solid var(--interactive-accent); }
-.mtg-lcost { position: relative; z-index: 1; flex: 0 0 22px; height: 22px; line-height: 22px; text-align: center; border-radius: 50%; background: var(--background-modifier-border); font-size: var(--font-ui-smaller); font-weight: 600; }
+.mtg-lcost { position: relative; z-index: 1; flex: 0 0 auto; min-width: 20px; display: flex; align-items: center; gap: 1px; }
 .mtg-lname { position: relative; z-index: 1; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; text-shadow: 0 0 4px var(--background-secondary); }
 .mtg-lmore { margin-top: 6px; }
 
@@ -86,7 +86,7 @@
 .mtg-dname { position: absolute; left: 14px; top: 12px; right: 70px; font-size: var(--font-ui-large); font-weight: 700; text-shadow: 0 1px 4px rgba(0,0,0,.7); }
 .mtg-dformat { position: absolute; left: 14px; top: 58px; font-style: italic; opacity: .85; }
 .mtg-dpips { position: absolute; left: 14px; bottom: 12px; display: flex; gap: 4px; }
-.mtg-dpip { width: 20px; height: 20px; line-height: 20px; text-align: center; border-radius: 50%; color: #111; font-size: 11px; font-weight: 700; }
+.mtg-dpips .mtg-sym { width: 22px; height: 22px; }
 .mtg-dctl { position: absolute; right: 8px; top: 8px; display: flex; gap: 4px; }
 .mtg-dctl button { padding: 0 8px; height: 26px; }
 .mtg-dctl button.is-on { color: #e25563; }
@@ -108,3 +108,12 @@
 .mtg-lcell.is-illegal .mtg-lart { opacity: 0.25; }
 .mtg-lcell.is-illegal .mtg-lname { color: var(--text-error); }
 .mtg-lillegal { position: relative; z-index: 1; font-size: var(--font-ui-smaller); font-weight: 700; color: var(--text-error); white-space: nowrap; }
+
+/* マナシンボル (Scryfall の画像) */
+.mtg-sym { width: 16px; height: 16px; vertical-align: middle; flex: 0 0 auto; }
+.mtg-lcost .mtg-sym { width: 18px; height: 18px; filter: drop-shadow(0 0 1px rgba(0,0,0,.6)); }
+.mtg-cost { display: inline-flex; align-items: center; gap: 1px; }
+/* 色のフィルターボタン: 選んでいないときは薄く */
+button.mtg-color { padding: 2px 4px; opacity: 0.45; }
+button.mtg-color.is-on { opacity: 1; background: var(--background-modifier-hover); color: inherit; }
+button.mtg-color .mtg-sym { width: 20px; height: 20px; display: block; }

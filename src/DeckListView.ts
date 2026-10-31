@@ -1,9 +1,9 @@
 import { App, ItemView, Modal, TAbstractFile, TFile, WorkspaceLeaf, debounce } from "obsidian";
 import { cardInfo, deckVerdicts, printingOf } from "./cards";
-import { COLOR_HEX } from "./CardListView";
 import { DECK_DIR, parseDeck } from "./deck";
 import { LEGAL_FORMATS, Verdict } from "./rules";
 import { artCropUrl } from "./scryfall";
+import { symbolImg } from "./symbols";
 
 export const DECKLIST_VIEW = "mtg-decklist";
 
@@ -152,7 +152,7 @@ export class DeckListView extends ItemView {
     const unknown = LEGAL_FORMATS.every(([id]) => d.legal[id] === "unknown");
     tile.createDiv({ text: `${unknown ? "判定なし" : names.join(" · ") || "どのフォーマットでも不可"} · ${d.count}枚`, cls: "mtg-dformat" });
     const pips = tile.createDiv("mtg-dpips");
-    for (const c of d.colors) pips.createSpan({ text: c, cls: "mtg-dpip" }).style.background = COLOR_HEX[c];
+    for (const c of d.colors) symbolImg(pips, c);
 
     const ctl = tile.createDiv("mtg-dctl");
     const heart = ctl.createEl("button", { text: d.favorite ? "♥" : "♡", attr: { "aria-label": "お気に入り" } });

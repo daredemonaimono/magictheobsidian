@@ -4,6 +4,7 @@ import { Board } from "./deck";
 import { DeckView } from "./DeckView";
 import { Result, buildFilterBar, emptyFilters, isEmpty, localResult, searchAll } from "./search";
 import { Settings } from "./settings";
+import { manaCost } from "./symbols";
 
 export const CARDLIST_VIEW = "mtg-cardlist";
 const PAGE = 60;
@@ -146,7 +147,7 @@ export class CardListView extends ItemView {
       if (illegal) cell.setAttr("aria-label", `${r.ja ?? r.name} (このフォーマットでは使えない。Shift+クリックで外す)`);
       // 見えている行の分だけ読み込む (loading=lazy)。設定でオフにできる
       if (this.settings.listArt && r.art) cell.createEl("img", { cls: "mtg-lart", attr: { src: r.art, loading: "lazy", alt: "" } });
-      cell.createSpan({ text: String(r.cmc), cls: "mtg-lcost" });
+      manaCost(cell, r.manaCost).addClass("mtg-lcost");
       cell.createSpan({ text: r.ja ?? r.name, cls: "mtg-lname" });
       if (illegal) cell.createSpan({ text: "✕ 使えない", cls: "mtg-lillegal" });
       if (tag) cell.createSpan({ text: tag, cls: "mtg-ltag" });

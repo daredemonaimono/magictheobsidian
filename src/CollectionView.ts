@@ -5,6 +5,7 @@ import { DeckView, PrintModal } from "./DeckView";
 import { Result } from "./search";
 import { priceOf, priceStore, updateCollectionPrices } from "./prices";
 import { printingImageUrl } from "./scryfall";
+import { symbolImg } from "./symbols";
 
 export const COLLECTION_VIEW = "mtg-collection";
 
@@ -82,7 +83,8 @@ export class CollectionView extends DeckView {
       void this.render();
     };
     for (const c of COLORS) {
-      const b = fbar.createEl("button", { text: c, cls: "mtg-color" });
+      const b = fbar.createEl("button", { cls: "mtg-color", attr: { "aria-label": c } });
+      symbolImg(b, c);
       b.onclick = () => {
         this.cf.colors.has(c) ? this.cf.colors.delete(c) : this.cf.colors.add(c);
         b.toggleClass("is-on", this.cf.colors.has(c));
