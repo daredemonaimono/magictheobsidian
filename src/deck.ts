@@ -47,3 +47,23 @@ export function writeDeck(content: string, deck: Deck): string {
   }
   return lines.join("\n");
 }
+
+// Moxfield / MTGO 形式: `4 Card Name (SET) 123`。"SIDEBOARD:" 以降がサイド。
+// MAYBEBOARD などサイド以外の見出しは読み飛ばす。key はカード名 (Cards/ のファイル名とは限らない)
+const MOX_LINE = /^(\d+)x?\s+(.+?)\s+\(([A-Za-z0-9]+)\)\s+(\S+)/;
+
+export function parseMoxfield(text: string): Deck {
+  const deck: Deck = { main: new Map(), side: new Map() };
+  let cur: Board | null = "main";
+  for (const raw of text.split("\n")) {
+    const line = raw.trim();
+    if (/^sideboard:?$/i.test(line)) cur = "side";
+    else if (/^(maybeboard|considering|tokens?)\b/i.test(line)) cur = null;
+    else if (/^(deck|mainboard|commander|companion):?$/i.test(line)) cur = "main";
+    const m = cur && line.match(MOX_LINE);
+    if (!cur || !m) continue;
+    const prev = deck[cur].get(m[2]);
+    deck[cur].set(m[2], { n: (prev?.n ?? 0) + Number(m[1]), print: prev?.print ?? `${m[3].toLowerCase()} ${m[4]}` });
+  }
+  return deck;
+}

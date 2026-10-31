@@ -49,6 +49,17 @@ export async function fetchCard(name: string): Promise<ScryfallCard> {
   return res.json;
 }
 
+// セットと番号で版を指定して取得 (デッキ取り込み用)
+export async function fetchPrint(set: string, no: string): Promise<ScryfallCard> {
+  const res = await requestUrl({
+    url: `https://api.scryfall.com/cards/${encodeURIComponent(set.toLowerCase())}/${encodeURIComponent(no)}`,
+    headers: HEADERS,
+    throw: false,
+  });
+  if (res.status !== 200) throw new Error(res.json?.details ?? `HTTP ${res.status}`);
+  return res.json;
+}
+
 // 該当なしは 404 で返るので空配列にする
 export async function searchCards(q: string): Promise<ScryfallCard[]> {
   const res = await requestUrl({
