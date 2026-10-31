@@ -69,8 +69,8 @@ export default class MagicTheObsidian extends Plugin {
     priceStore.save = saveAll;
     this.addSettingTab(
       new SettingsTab(this.app, this, this.settings, saveAll, () => {
-        for (const l of this.deckLeaves()) (l.view as DeckView).rebuild();
-        for (const l of this.app.workspace.getLeavesOfType(CARDLIST_VIEW)) (l.view as CardListView).refresh();
+        for (const l of this.deckLeaves()) if (l.view instanceof DeckView) l.view.rebuild();
+        for (const l of this.app.workspace.getLeavesOfType(CARDLIST_VIEW)) if (l.view instanceof CardListView) l.view.refresh();
         this.prevCount = 0; // 次の同期で開き直す
         void this.syncSidebar();
       }),
@@ -198,7 +198,8 @@ export default class MagicTheObsidian extends Plugin {
   }
 
   private updateLists() {
-    for (const l of this.app.workspace.getLeavesOfType(CARDLIST_VIEW)) (l.view as CardListView).updateTarget();
+    // 背面のタブは未読み込み (deferred) で、まだ CardListView ではない
+    for (const l of this.app.workspace.getLeavesOfType(CARDLIST_VIEW)) if (l.view instanceof CardListView) l.view.updateTarget();
   }
 
   // デッキ画面が0→1になったときだけ自動で開く (手で閉じたら、また0になるまで開き直さない)。デッキ画面が無いときは、手で開いても閉じる
@@ -207,14 +208,17 @@ export default class MagicTheObsidian extends Plugin {
     const count = ws.getLeavesOfType(DECK_VIEW).length;
     const lists = ws.getLeavesOfType(CARDLIST_VIEW);
     if (!this.settings.sidebar || count === 0) {
+      // 一覧が見えていたなら、閉じるときにサイドバーも畳む。他のタブだけが見えているときは触らない
+      const shown = lists.some((l) => l.view.containerEl.isShown());
       lists.forEach((l) => l.detach());
+      if (shown) ws.rightSplit.collapse();
     } else if (this.prevCount === 0 && !lists.length && !this.opening) {
       this.opening = true;
       try {
         const leaf = ws.getRightLeaf(false);
         if (leaf) {
+          // アイコンを置くだけ。サイドバーは勝手に開かない (開くかどうかは、アイコンを押す人が決める)
           await leaf.setViewState({ type: CARDLIST_VIEW, active: false });
-          await ws.revealLeaf(leaf);
         }
       } finally {
         this.opening = false;
