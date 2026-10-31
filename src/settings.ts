@@ -18,10 +18,11 @@ export const LANGS: Record<string, string> = {
 export interface Settings {
   textLang: string; // カード名・効果テキスト
   cardLang: string; // カード画像 (収録一覧)
+  listArt: boolean; // サイドバーの一覧に、カードのイラストを薄く出す
   sidebar: boolean; // カード一覧を右サイドバーに出す。オフなら画面内の検索欄 (従来の表示)
 }
 
-export const DEFAULT_SETTINGS: Settings = { textLang: "en", cardLang: "en", sidebar: true };
+export const DEFAULT_SETTINGS: Settings = { textLang: "en", cardLang: "en", sidebar: true, listArt: true };
 
 export class SettingsTab extends PluginSettingTab {
   constructor(app: App, plugin: Plugin, private settings: Settings, private save: () => Promise<void>, private onSidebar: () => void) {
@@ -48,6 +49,16 @@ export class SettingsTab extends PluginSettingTab {
       .addToggle((t) =>
         t.setValue(this.settings.sidebar).onChange(async (v) => {
           this.settings.sidebar = v;
+          await this.save();
+          this.onSidebar();
+        }),
+      );
+    new Setting(this.containerEl)
+      .setName("一覧にイラストを出す / Art in card list")
+      .setDesc("サイドバーの一覧に、カードのイラストを薄く出す。重いと感じたらオフ。見えている行の分だけ読み込む。")
+      .addToggle((t) =>
+        t.setValue(this.settings.listArt).onChange(async (v) => {
+          this.settings.listArt = v;
           await this.save();
           this.onSidebar();
         }),

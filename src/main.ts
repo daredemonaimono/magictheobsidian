@@ -51,6 +51,7 @@ export default class MagicTheObsidian extends Plugin {
       textLang: d.textLang ?? DEFAULT_SETTINGS.textLang,
       cardLang: d.cardLang ?? DEFAULT_SETTINGS.cardLang,
       sidebar: d.sidebar ?? DEFAULT_SETTINGS.sidebar,
+      listArt: d.listArt ?? DEFAULT_SETTINGS.listArt,
     };
     priceStore.prices = d.prices ?? {};
     priceStore.updated = d.pricesUpdated ?? "";
@@ -59,6 +60,7 @@ export default class MagicTheObsidian extends Plugin {
     this.addSettingTab(
       new SettingsTab(this.app, this, this.settings, saveAll, () => {
         for (const l of this.deckLeaves()) (l.view as DeckView).rebuild();
+        for (const l of this.app.workspace.getLeavesOfType(CARDLIST_VIEW)) (l.view as CardListView).refresh();
         this.prevCount = 0; // 次の同期で開き直す
         void this.syncSidebar();
       }),

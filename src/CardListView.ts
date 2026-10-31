@@ -7,6 +7,15 @@ import { Settings } from "./settings";
 export const CARDLIST_VIEW = "mtg-cardlist";
 const PAGE = 60;
 
+const COLOR_HEX: Record<string, string> = { W: "#e6dca8", U: "#4a90d9", B: "#7a6a86", R: "#d9534a", G: "#4a9a5b" };
+
+// 無色は灰色、多色は色を並べたグラデーション
+const colorOf = (colors: string[]) => {
+  const hex = colors.map((c) => COLOR_HEX[c]).filter(Boolean);
+  if (!hex.length) return "#8a8f98";
+  return hex.length === 1 ? hex[0] : `linear-gradient(${hex.join(", ")})`;
+};
+
 // 右サイドバーのカード一覧。クリックで「追加先」のデッキ/コレクションに1枚追加、Shift+クリックで1枚削除
 export class CardListView extends ItemView {
   private f = emptyFilters();
@@ -51,6 +60,10 @@ export class CardListView extends ItemView {
     window.clearTimeout(this.timer);
   }
 
+  refresh() {
+    this.draw();
+  }
+
   updateTarget() {
     const t = this.getTarget();
     this.targetEl?.setText(t ? `追加先: ${t.getDisplayText()}` : "追加先なし (デッキ画面を開く)");
@@ -84,9 +97,12 @@ export class CardListView extends ItemView {
     for (const r of this.results.slice(0, this.shown)) {
       const cell = this.grid.createDiv("mtg-lcell");
       cell.setAttr("aria-label", r.ja && r.ja !== r.name ? `${r.name} (${r.ja})` : r.name);
-      const img = cell.createEl("img", { attr: { loading: "lazy", alt: r.name } });
-      void r.image().then((url) => url && img.setAttr("src", url));
-      cell.createDiv({ text: r.ja ?? r.name, cls: "mtg-lname" });
+      cell.style.setProperty("--mtg-color", colorOf(r.colors));
+      // 見えている行の分だけ読み込む (loading=lazy)。設定でオフにできる
+      if (this.settings.listArt && r.art) cell.createEl("img", { cls: "mtg-lart", attr: { src: r.art, loading: "lazy", alt: "" } });
+      cell.createSpan({ text: String(r.cmc), cls: "mtg-lcost" });
+      cell.createSpan({ text: r.ja ?? r.name, cls: "mtg-lname" });
+      cell.onmouseenter = () => this.getTarget()?.previewResult(r);
       cell.onclick = (e) => {
         const t = this.getTarget();
         if (!t) return void new Notice("デッキ画面を開く");

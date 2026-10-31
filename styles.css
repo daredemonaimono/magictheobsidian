@@ -58,9 +58,13 @@
 .mtg-cardlist { padding: 8px; }
 .mtg-ltarget { color: var(--text-muted); font-size: var(--font-ui-small); margin-bottom: 6px; }
 .mtg-cardlist .mtg-bar input { flex: 1 1 100px; min-width: 0; }
-.mtg-lgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; }
-.mtg-lcell { cursor: pointer; min-width: 0; }
-.mtg-lcell img { width: 100%; min-height: 150px; border-radius: 8px; display: block; background: var(--background-secondary); }
-.mtg-lcell:hover img { outline: 2px solid var(--interactive-accent); }
-.mtg-lname { font-size: var(--font-ui-smaller); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; }
-.mtg-lmore { grid-column: 1 / -1; }
+.mtg-lgrid { display: flex; flex-direction: column; gap: 3px; }
+.mtg-lcell { position: relative; display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 8px 0 10px; cursor: pointer; overflow: hidden; border-radius: 6px; background: var(--background-secondary); isolation: isolate; }
+/* 左の色帯 (多色はグラデーション) */
+.mtg-lcell::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--mtg-color); z-index: 2; }
+/* イラストは右側に薄く出し、左は背景色に溶かして文字を読みやすくする */
+.mtg-lart { position: absolute; right: 0; top: 0; width: 65%; height: 100%; object-fit: cover; opacity: 0.55; z-index: 0; -webkit-mask-image: linear-gradient(to right, transparent, #000 70%); mask-image: linear-gradient(to right, transparent, #000 70%); }
+.mtg-lcell:hover { outline: 1px solid var(--interactive-accent); }
+.mtg-lcost { position: relative; z-index: 1; flex: 0 0 22px; height: 22px; line-height: 22px; text-align: center; border-radius: 50%; background: var(--background-modifier-border); font-size: var(--font-ui-smaller); font-weight: 600; }
+.mtg-lname { position: relative; z-index: 1; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; text-shadow: 0 0 4px var(--background-secondary); }
+.mtg-lmore { margin-top: 6px; }

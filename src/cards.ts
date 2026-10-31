@@ -13,6 +13,7 @@ export interface CardInfo {
   cmc: number;
   manaCost: string;
   set: string;
+  id: string; // scryfall_id
 }
 
 function toInfo(app: App, file: TFile): CardInfo | null {
@@ -27,6 +28,7 @@ function toInfo(app: App, file: TFile): CardInfo | null {
     cmc: fm.cmc ?? 0,
     manaCost: fm.mana_cost ?? "",
     set: fm.set ?? "",
+    id: fm.scryfall_id ?? "",
   };
 }
 

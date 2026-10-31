@@ -1,6 +1,6 @@
 import { App } from "obsidian";
 import { CardInfo, cardImage, cardText, ensureCardFile, localCards, readPrintings } from "./cards";
-import { ScryfallCard, cardImageUrl } from "./scryfall";
+import { ScryfallCard, artCropUrl, cardImageUrl } from "./scryfall";
 import { Settings } from "./settings";
 
 export interface Meta {
@@ -16,6 +16,9 @@ export interface Result {
   ja?: string;
   typeLine: string;
   manaCost: string;
+  cmc: number;
+  colors: string[];
+  art?: string; // イラストだけの小さい画像のURL (一覧用)
   localKey?: string; // Cards/ に既にあるカードだけ (削除操作はノートを作らないため、これで判定)
   image: () => Promise<string | undefined>;
   text: () => Promise<string>;
@@ -88,6 +91,9 @@ export function localResult(app: App, c: CardInfo): Result {
     ja: c.nameLocal,
     typeLine: c.typeLine,
     manaCost: c.manaCost,
+    cmc: c.cmc,
+    colors: c.colors,
+    art: c.id ? artCropUrl(c.id) : undefined,
     localKey: c.file.basename,
     image: () => cardImage(app, c.file),
     text: () => cardText(app, c.file.basename),
@@ -110,6 +116,9 @@ export function scryfallResult(app: App, settings: Settings, c: ScryfallCard): R
     ja: c.printed_name !== c.name ? c.printed_name : undefined,
     typeLine: c.type_line,
     manaCost: c.mana_cost ?? c.card_faces?.[0]?.mana_cost ?? "",
+    cmc: c.cmc,
+    colors: c.colors ?? c.card_faces?.[0]?.colors ?? [],
+    art: artCropUrl(c.id),
     image: async () => meta.image,
     text: async () => c.printed_text ?? c.oracle_text ?? c.card_faces?.map((x) => x.printed_text ?? x.oracle_text).join("\n\n---\n\n") ?? "",
     resolve: async () => ({

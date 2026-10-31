@@ -39,6 +39,9 @@ export const cardImageUrl = (c: ScryfallCard) => c.image_uris?.normal ?? c.card_
 // shortcut: 表面 jpg 固定。裏面や png しか無い版が出たら Printings に URL を持たせる
 export const printingImageUrl = (id: string) => `https://cards.scryfall.io/normal/front/${id[0]}/${id[1]}/${id}.jpg`;
 
+// 横長のイラスト部分だけの小さい画像 (サイドバー一覧用)。表面 jpg 固定
+export const artCropUrl = (id: string) => `https://cards.scryfall.io/art_crop/front/${id[0]}/${id[1]}/${id}.jpg`;
+
 export async function fetchCard(name: string): Promise<ScryfallCard> {
   const res = await requestUrl({
     url: `https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(name)}`,

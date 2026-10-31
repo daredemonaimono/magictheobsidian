@@ -173,6 +173,11 @@ export class DeckView extends ItemView {
     }
   }
 
+  // サイドバーの一覧にホバーしたとき、左の拡大表示に出す
+  previewResult(r: Result) {
+    void this.preview(r.name, r.image(), r.text(), r.ja);
+  }
+
   async removeCard(r: Result) {
     if (r.localKey) await this.change(r.localKey, -1);
   }
