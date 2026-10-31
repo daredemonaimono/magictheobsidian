@@ -1,5 +1,6 @@
 import { App, ItemView, Modal, Notice, TFile, ViewStateResult, WorkspaceLeaf } from "obsidian";
-import { cardImage, cardInfo, cardText, printingImage, readPrintings } from "./cards";
+import { cardImage, cardInfo, cardText, oracleEnglish, printingImage, readPrintings } from "./cards";
+import { formatOf } from "./rules";
 import { ImportModal, resolveDeck } from "./import";
 import { Settings } from "./settings";
 import { Board, Deck, parseDeck, writeDeck } from "./deck";
@@ -182,7 +183,19 @@ export class DeckView extends ItemView {
     if (r.localKey) await this.change(r.localKey, -1);
   }
 
+  // フォーマットのルール (構築戦なら同名4枚・サイド15枚まで) を満たさない追加は断る
+  private async violation(key: string): Promise<string | null> {
+    const file = this.app.vault.getAbstractFileByPath(this.path);
+    const format = file instanceof TFile ? this.app.metadataCache.getFileCache(file)?.frontmatter?.format : undefined;
+    const meta = await this.getMeta(key);
+    return formatOf(format).canAdd({ deck: this.deck, board: this.board, key, typeLine: meta?.typeLine ?? "", text: await oracleEnglish(this.app, key) });
+  }
+
   private async change(key: string, delta: number) {
+    if (delta > 0) {
+      const why = await this.violation(key);
+      if (why) return void new Notice(why);
+    }
     const m = this.deck[this.board];
     const e = m.get(key);
     const n = Math.max(0, (e?.n ?? 0) + delta);

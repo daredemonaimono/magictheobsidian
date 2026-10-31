@@ -72,6 +72,14 @@ export async function readPrintings(app: App, key: string): Promise<Printing[]> 
     .map(([set, collector_number, rarity, released_at, id, lang]) => ({ set, collector_number, rarity, released_at, id, lang: lang ?? "en" }));
 }
 
+// 英語のオラクルテキスト (設定言語の Text 節は含めない)。ルール判定用
+export async function oracleEnglish(app: App, key: string): Promise<string> {
+  const f = app.vault.getAbstractFileByPath(`${CARD_DIR}/${key}.md`);
+  if (!(f instanceof TFile)) return "";
+  const c = await app.vault.cachedRead(f);
+  return c.replace(/^---[\s\S]*?\n---\n/, "").replace(/!\[\]\(.*?\)\n*/, "").split(/\n## Text \(|\n\[Scryfall\]/)[0].trim();
+}
+
 // 効果テキスト。設定言語のテキストがあればそれ、無ければ英語
 export async function cardText(app: App, key: string): Promise<string> {
   const f = app.vault.getAbstractFileByPath(`${CARD_DIR}/${key}.md`);
