@@ -2,6 +2,7 @@ import { App, EventRef, ItemView, Modal, Notice, Setting, WorkspaceLeaf } from "
 import { cardInfo } from "./cards";
 import { Board } from "./deck";
 import { DeckView } from "./DeckView";
+import { groupOf, groupRank } from "./layout";
 import { Filters, Result, buildFilterBar, emptyFilters, localResult, searchAll } from "./search";
 import { Settings } from "./settings";
 import { manaCost } from "./symbols";
@@ -17,6 +18,10 @@ const colorOf = (colors: string[]) => {
   if (!hex.length) return "#8a8f98";
   return hex.length === 1 ? hex[0] : `linear-gradient(${hex.join(", ")})`;
 };
+
+// デッキ画面の見出しの並び → コスト → 名前
+const byLayout = (a: Result, b: Result, aCmd = false, bCmd = false) =>
+  groupRank(groupOf(a.typeLine, aCmd)) - groupRank(groupOf(b.typeLine, bCmd)) || a.cmc - b.cmc || a.name.localeCompare(b.name);
 
 interface Row {
   r: Result;
@@ -117,7 +122,7 @@ export class CardListView extends ItemView {
       this.lastTarget = t;
       if (this.grid) this.draw();
     }
-    this.targetEl?.setText(t ? `追加先: ${t.getDisplayText()}` : "追加先なし (デッキ画面を開く)");
+    this.targetEl?.setText(t ? t.getDisplayText() : "デッキ画面を開く");
   }
 
   // 「新しく追加」と、検索中だけ出る「デッキ内に戻る」
@@ -144,6 +149,7 @@ export class CardListView extends ItemView {
       const t = this.getTarget();
       this.results = this.opts.includeDeck ? res : res.filter((r) => !(r.localKey && t?.countOf(r.localKey)));
       this.note = note;
+      this.results.sort((a, b) => byLayout(a, b));
       this.shown = PAGE;
       this.draw();
     });
@@ -159,8 +165,10 @@ export class CardListView extends ItemView {
       const r = localResult(this.app, info);
       rows.push({ r, n: c.n, tag: tag[c.board], board: c.board, illegal: !!t && !t.allows(r) });
     }
-    // 使えないカードは先頭にまとめて、見落とさないようにする (並びは元の順を保つ)
-    return [...rows.filter((x) => x.illegal), ...rows.filter((x) => !x.illegal)];
+    // 使えないカードは先頭にまとめて見落とさないようにし、あとはメイン → サイド。
+    // それぞれ、デッキ画面の見出しと同じ並び (タイプ別、コスト順)
+    const rank = (x: Row) => (x.illegal ? 0 : 4) + (x.board === "side" ? 2 : 0);
+    return rows.sort((a, b) => rank(a) - rank(b) || byLayout(a.r, b.r, a.board === "commander", b.board === "commander"));
   }
 
   private draw() {

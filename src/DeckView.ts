@@ -5,20 +5,11 @@ import { ImportModal, resolveDeck } from "./import";
 import { Settings } from "./settings";
 import { Board, Deck, emptyDeck, parseDeck, writeDeck } from "./deck";
 import { Printing, printingImageUrl } from "./scryfall";
+import { COLUMNS, groupOf } from "./layout";
 import { Filters, Meta, Result, buildFilterBar, emptyFilters, isEmpty, searchAll } from "./search";
 
 export const DECK_VIEW = "mtg-deck";
 
-// Land を先に判定する (Artifact Land は土地として扱う)
-const TYPE_CHECK = ["Land", "Creature", "Planeswalker", "Battle", "Instant", "Sorcery", "Artifact", "Enchantment"];
-// 見出しの並び (全てのデッキ画面で共通)。縦に重なる見出しは同じ列。Commander は統率者構築のときだけ出る。
-// Creature は指定が無かったので1列目の最後に、Battle / Other は余りとして3・4列目の最後に置いた
-const COLUMNS = [
-  ["Commander", "Planeswalker", "Creature"],
-  ["Sorcery", "Instant"],
-  ["Artifact", "Enchantment", "Battle"],
-  ["Land", "Other"],
-];
 const MAX_RESULTS = 40;
 
 export class DeckView extends ItemView {
@@ -344,7 +335,7 @@ export class DeckView extends ItemView {
 
     const groups = new Map<string, typeof cards>();
     for (const c of cards) {
-      const type = c.board === "commander" ? "Commander" : c.meta ? TYPE_CHECK.find((t) => c.meta!.typeLine.includes(t)) ?? "Other" : "Other";
+      const type = groupOf(c.meta?.typeLine ?? "", c.board === "commander");
       groups.set(type, [...(groups.get(type) ?? []), c]);
     }
 
