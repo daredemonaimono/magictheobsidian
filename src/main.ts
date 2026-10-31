@@ -7,7 +7,9 @@ import { priceStore, updateCollectionPrices } from "./prices";
 import { DEFAULT_SETTINGS, Settings, SettingsTab } from "./settings";
 
 const DECK_DIR = "Decks";
-const DECK_TEMPLATE = "---\nmtg: deck\ntags: [mtg/deck]\n---\n\n## Main\n\n## Side\n";
+// 「動き方」はカード行の外なので、デッキ画面で枚数を変えても書き換わらない
+const DECK_TEMPLATE =
+  "---\nmtg: deck\ntags: [mtg/deck]\n---\n\n## Main\n\n## Side\n\n## 動き方\n\n- 勝ち筋:\n- 序盤:\n- 中盤:\n- 注意点:\n";
 
 class NameModal extends Modal {
   private value = "";
