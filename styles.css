@@ -81,7 +81,7 @@
 .mtg-dtabs button.is-on { background: var(--interactive-accent); color: var(--text-on-accent); }
 .mtg-dgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; margin-top: 8px; }
 .mtg-dtile { position: relative; height: 150px; border-radius: 10px; overflow: hidden; cursor: pointer; background: var(--background-secondary); color: #fff; }
-.mtg-dtile img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.mtg-dtile > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .mtg-dshade { position: absolute; inset: 0; background: linear-gradient(to top, rgba(0,0,0,.8), rgba(0,0,0,.15)); }
 .mtg-dname { position: absolute; left: 14px; top: 12px; right: 70px; font-size: var(--font-ui-large); font-weight: 700; text-shadow: 0 1px 4px rgba(0,0,0,.7); }
 .mtg-dformat { position: absolute; left: 14px; top: 58px; font-style: italic; opacity: .85; }
@@ -126,7 +126,9 @@ button.mtg-color .mtg-sym { width: 20px; height: 20px; display: block; }
 .mtg-cardsview h2 { margin: 0 0 4px; }
 .mtg-ccgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 14px; margin-top: 10px; }
 .mtg-cc { position: relative; cursor: pointer; }
-.mtg-cc img { width: 100%; min-height: 220px; display: block; border-radius: 10px; background: var(--background-secondary); }
+/* カード画像だけ (マナシンボルの img には当てない) */
+.mtg-cc > img { width: 100%; min-height: 220px; display: block; border-radius: 10px; background: var(--background-secondary); }
+.mtg-ccmeta .mtg-sym { width: 16px; height: 16px; }
 .mtg-cc:hover .mtg-ctl { display: flex; }
 .mtg-cc .mtg-ctl { top: 6px; right: 6px; }
 .mtg-ccmeta { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-top: 4px; }
