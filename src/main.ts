@@ -121,11 +121,11 @@ export default class MagicTheObsidian extends Plugin {
       id: "update-legality",
       name: "Update card legality (cards without it)",
       callback: async () => {
-        const keys = localCards(this.app).filter((c) => !c.legal).map((c) => c.file.basename);
+        const keys = localCards(this.app).filter((c) => !c.legal || !c.restricted).map((c) => c.file.basename);
         if (!keys.length) return void new Notice("リーガル情報が無いカードはない");
         new Notice(`リーガル情報を更新中… ${keys.length} 枚`);
         try {
-          new Notice(`リーガル情報を更新: ${await updateLegality(this.app, keys)} 枚`);
+          new Notice(`リーガル情報を更新: ${(await updateLegality(this.app, keys)).size} 枚`);
         } catch (e) {
           new Notice(`更新失敗: ${(e as Error).message}`);
         }

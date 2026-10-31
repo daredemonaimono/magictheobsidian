@@ -157,7 +157,7 @@ export function toMarkdown(c: ScryfallCard, { lang, local, printings }: CardOpti
     `scryfall_id: ${c.id}`,
     `oracle_id: ${c.oracle_id}`,
     `legal: [${legalList(c.legalities).join(", ")}]`,
-    ...(restrictedList(c.legalities).length ? [`restricted: [${restrictedList(c.legalities).join(", ")}]`] : []),
+    `restricted: [${restrictedList(c.legalities).join(", ")}]`, // 空でも書く (キーが無い = 未取得、と区別するため)
     `tags: [mtg/card]`,
     "---",
   ].join("\n");

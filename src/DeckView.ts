@@ -1,5 +1,5 @@
 import { App, ItemView, Modal, Notice, TFile, ViewStateResult, WorkspaceLeaf } from "obsidian";
-import { cardImage, cardInfo, cardText, oracleEnglish, printingImage, readPrintings } from "./cards";
+import { cardImage, cardInfo, cardText, oracleEnglish, printingImage, readPrintings, updateLegality } from "./cards";
 import { formatOf } from "./rules";
 import { ImportModal, resolveDeck } from "./import";
 import { Settings } from "./settings";
@@ -216,8 +216,17 @@ export class DeckView extends ItemView {
 
   // フォーマットのルール (構築戦なら同名4枚・サイド15枚まで) を満たさない追加は断る
   private async violation(key: string, board: Board = this.board): Promise<string | null> {
-    const meta = await this.getMeta(key);
-    return this.rules().canAdd({
+    const rules = this.rules();
+    let meta = await this.getMeta(key);
+    // Vintage の制限カード (1枚だけ) の判定には制限の情報が要る。古いカードで未取得なら、このカード1枚だけ取りに行く
+    if (rules.legalId === "vintage" && meta && !meta.restricted) {
+      const got = (await updateLegality(this.app, [key]).catch(() => undefined))?.get(key);
+      if (got) {
+        meta = { ...meta, ...got };
+        this.meta.set(key, meta);
+      }
+    }
+    return rules.canAdd({
       deck: this.deck,
       board,
       key,
