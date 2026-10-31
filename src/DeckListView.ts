@@ -1,6 +1,7 @@
-import { App, ItemView, Modal, TAbstractFile, TFile, WorkspaceLeaf, debounce } from "obsidian";
+import { App, ItemView, Modal, Notice, Setting, TAbstractFile, TFile, WorkspaceLeaf, debounce } from "obsidian";
 import { cardInfo, deckVerdicts, printingOf } from "./cards";
 import { DECK_DIR, parseDeck } from "./deck";
+import { DECK_VIEW } from "./DeckView";
 import { LEGAL_FORMATS, Verdict } from "./rules";
 import { artCropUrl } from "./scryfall";
 import { symbolImg } from "./symbols";
@@ -141,6 +142,20 @@ export class DeckListView extends ItemView {
     for (const d of list) this.card(d);
   }
 
+  // ノートごと消す。Obsidian の「削除したファイルの行き先」の設定に従う (標準ではゴミ箱へ)。カードのノートは消さない
+  private async deleteDeck(file: TFile) {
+    // 開いているデッキ画面があれば閉じる
+    for (const leaf of this.app.workspace.getLeavesOfType(DECK_VIEW)) {
+      if (leaf.getViewState().state?.path === file.path) leaf.detach();
+    }
+    try {
+      await this.app.fileManager.trashFile(file);
+      new Notice(`削除した: ${file.basename}`);
+    } catch (e) {
+      new Notice(`削除できない: ${(e as Error).message}`);
+    }
+  }
+
   private card(d: Entry) {
     const wrap = this.body.createDiv("mtg-dcard");
     const tile = wrap.createDiv("mtg-dtile");
@@ -164,6 +179,10 @@ export class DeckListView extends ItemView {
     ctl.createEl("button", { text: "🖼", attr: { "aria-label": "サムネイルを選ぶ" } }).onclick = (e) => {
       e.stopPropagation();
       new ThumbnailModal(this.app, d.keys, (key) => void this.app.fileManager.processFrontMatter(d.file, (fm) => (fm.thumbnail = key))).open();
+    };
+    ctl.createEl("button", { text: "🗑", attr: { "aria-label": "デッキを削除" } }).onclick = (e) => {
+      e.stopPropagation();
+      new ConfirmDelete(this.app, d.file, () => void this.deleteDeck(d.file)).open();
     };
     tile.onclick = () => this.actions.open(d.file);
     wrap.createDiv({ text: ago(d.file.stat.mtime), cls: "mtg-dago" });
@@ -189,6 +208,30 @@ class ThumbnailModal extends Modal {
         this.onPick(key);
       };
     }
+  }
+  onClose() {
+    this.contentEl.empty();
+  }
+}
+
+class ConfirmDelete extends Modal {
+  constructor(app: App, private file: TFile, private onYes: () => void) {
+    super(app);
+  }
+  onOpen() {
+    this.setTitle("デッキを削除");
+    this.contentEl.createEl("p", { text: `「${this.file.basename}」をノートごと削除する。デッキの中のカード(Cards/)は消えない。` });
+    new Setting(this.contentEl)
+      .addButton((b) => b.setButtonText("キャンセル").onClick(() => this.close()))
+      .addButton((b) =>
+        b
+          .setButtonText("削除")
+          .setWarning()
+          .onClick(() => {
+            this.close();
+            this.onYes();
+          }),
+      );
   }
   onClose() {
     this.contentEl.empty();
