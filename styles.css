@@ -98,3 +98,7 @@
 .mtg-chip.is-ok { color: #3ea45b; border-color: #3ea45b; }
 .mtg-chip.is-ng { color: var(--text-faint); text-decoration: line-through; }
 .mtg-chip.is-unknown { color: var(--text-muted); }
+
+.mtg-rulename { font-weight: 600; margin-right: 4px; }
+.mtg-lcell.is-banned { opacity: 0.35; cursor: not-allowed; }
+.mtg-lcell.is-banned .mtg-lname { text-decoration: line-through; }

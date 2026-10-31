@@ -1,7 +1,7 @@
 import { App, TFile, normalizePath, requestUrl } from "obsidian";
 import { LEGAL_FORMATS, judge } from "./rules";
 import { Settings } from "./settings";
-import { Printing, ScryfallCard, legalList, printingImageUrl, fetchLocalized, fetchPrintings, fileSafe, toMarkdown } from "./scryfall";
+import { Printing, ScryfallCard, legalList, restrictedList, printingImageUrl, fetchLocalized, fetchPrintings, fileSafe, toMarkdown } from "./scryfall";
 
 export const CARD_DIR = "Cards";
 
@@ -16,6 +16,7 @@ export interface CardInfo {
   set: string;
   id: string; // scryfall_id
   legal?: string[]; // 使えるフォーマット。未取得なら undefined
+  restricted?: string[]; // 制限カードのフォーマット (Vintage)
 }
 
 function toInfo(app: App, file: TFile): CardInfo | null {
@@ -32,6 +33,7 @@ function toInfo(app: App, file: TFile): CardInfo | null {
     set: fm.set ?? "",
     id: fm.scryfall_id ?? "",
     legal: Array.isArray(fm.legal) ? fm.legal : undefined,
+    restricted: Array.isArray(fm.restricted) ? fm.restricted : undefined,
   };
 }
 
@@ -125,7 +127,7 @@ export async function updateLegality(app: App, keys: string[]): Promise<number> 
       url: "https://api.scryfall.com/cards/collection",
       method: "POST",
       contentType: "application/json",
-      headers: { "User-Agent": "magictheobsidian/0.8.0", Accept: "application/json" },
+      headers: { "User-Agent": "magictheobsidian/0.9.0", Accept: "application/json" },
       body: JSON.stringify({ identifiers: ids.slice(i, i + 75).map((id) => ({ id })) }),
       throw: false,
     });
@@ -136,7 +138,11 @@ export async function updateLegality(app: App, keys: string[]): Promise<number> 
     for (const c of res.json.data) {
       const f = app.vault.getAbstractFileByPath(`${CARD_DIR}/${byId.get(c.id)}.md`);
       if (!(f instanceof TFile)) continue;
-      await app.fileManager.processFrontMatter(f, (fm) => (fm.legal = legalList(c.legalities)));
+      await app.fileManager.processFrontMatter(f, (fm) => {
+        fm.legal = legalList(c.legalities);
+        const r = restrictedList(c.legalities);
+        r.length ? (fm.restricted = r) : delete fm.restricted;
+      });
       done++;
     }
   }

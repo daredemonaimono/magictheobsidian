@@ -23,6 +23,7 @@ export class CardListView extends ItemView {
   private seq = 0;
   private results: Result[] = [];
   private shown = PAGE;
+  private lastTarget?: DeckView;
   private targetEl!: HTMLElement;
   private status!: HTMLElement;
   private grid!: HTMLElement;
@@ -66,6 +67,11 @@ export class CardListView extends ItemView {
 
   updateTarget() {
     const t = this.getTarget();
+    // 追加先が変わったら、選べるカード(フォーマットで使えるもの)の表示を更新する
+    if (t !== this.lastTarget) {
+      this.lastTarget = t;
+      if (this.grid) this.draw();
+    }
     this.targetEl?.setText(t ? `追加先: ${t.getDisplayText()}` : "追加先なし (デッキ画面を開く)");
   }
 
@@ -98,6 +104,10 @@ export class CardListView extends ItemView {
       const cell = this.grid.createDiv("mtg-lcell");
       cell.setAttr("aria-label", r.ja && r.ja !== r.name ? `${r.name} (${r.ja})` : r.name);
       cell.style.setProperty("--mtg-color", colorOf(r.colors));
+      const target = this.getTarget();
+      const banned = !!target && !target.allows(r);
+      cell.toggleClass("is-banned", banned);
+      if (banned) cell.setAttr("aria-label", `${r.ja ?? r.name} (このフォーマットでは使えない)`);
       // 見えている行の分だけ読み込む (loading=lazy)。設定でオフにできる
       if (this.settings.listArt && r.art) cell.createEl("img", { cls: "mtg-lart", attr: { src: r.art, loading: "lazy", alt: "" } });
       cell.createSpan({ text: String(r.cmc), cls: "mtg-lcost" });
@@ -106,6 +116,7 @@ export class CardListView extends ItemView {
       cell.onclick = (e) => {
         const t = this.getTarget();
         if (!t) return void new Notice("デッキ画面を開く");
+        if (!e.shiftKey && !t.allows(r)) return void new Notice(`${r.name} はこのフォーマットでは使えない`);
         void (e.shiftKey ? t.removeCard(r) : t.addCard(r));
       };
     }

@@ -1,6 +1,7 @@
 import { App, Modal, Notice, Setting, TFile, normalizePath } from "obsidian";
 import { CARD_DIR, ensureCardFile } from "./cards";
-import { Deck, parseMoxfield } from "./deck";
+import { Deck, emptyDeck, parseMoxfield } from "./deck";
+import { CREATABLE, FORMATS } from "./rules";
 import { fetchPrint, fileSafe } from "./scryfall";
 import { Settings } from "./settings";
 
@@ -9,7 +10,7 @@ import { Settings } from "./settings";
 // 取得できなかったカードは通知して除く。読み取れる行が無ければ null
 export async function resolveDeck(app: App, settings: Settings, text: string): Promise<{ deck: Deck; failed: string[] } | null> {
   const parsed = parseMoxfield(text);
-  const total = parsed.main.size + parsed.side.size;
+  const total = parsed.main.size + parsed.side.size + parsed.commander.size;
   if (!total) {
     new Notice("読み取れる行が無い (例: 4 Lightning Bolt (M11) 149)");
     return null;
@@ -19,7 +20,7 @@ export async function resolveDeck(app: App, settings: Settings, text: string): P
   const failed: string[] = [];
   let done = 0;
   const notice = new Notice(`取り込み中… 0/${total}`, 0);
-  for (const [cardName, e] of [...parsed.main, ...parsed.side]) {
+  for (const [cardName, e] of [...parsed.commander, ...parsed.main, ...parsed.side]) {
     if (keys.has(cardName)) continue;
     try {
       const existing = app.vault.getAbstractFileByPath(normalizePath(`${CARD_DIR}/${fileSafe(cardName)}.md`));
@@ -37,8 +38,8 @@ export async function resolveDeck(app: App, settings: Settings, text: string): P
   }
   notice.hide();
 
-  const deck: Deck = { main: new Map(), side: new Map() };
-  for (const board of ["main", "side"] as const) {
+  const deck: Deck = emptyDeck();
+  for (const board of ["commander", "main", "side"] as const) {
     for (const [cardName, e] of parsed[board]) {
       const key = keys.get(cardName);
       if (key) deck[board].set(key, e);
@@ -48,16 +49,18 @@ export async function resolveDeck(app: App, settings: Settings, text: string): P
   return { deck, failed };
 }
 
-// askName: 新しいデッキを作るときだけデッキ名を聞く
+// askName: 新しいデッキを作るときだけデッキ名とフォーマットを聞く
 export class ImportModal extends Modal {
   private name = "";
   private text = "";
-  constructor(app: App, private askName: boolean, private onSubmit: (name: string, text: string) => void) {
+  private format = CREATABLE[0];
+  constructor(app: App, private askName: boolean, private onSubmit: (name: string, text: string, format: string) => void) {
     super(app);
   }
   onOpen() {
     this.setTitle("Import deck (Moxfield text)");
     if (this.askName) new Setting(this.contentEl).setName("Deck name").addText((t) => t.setPlaceholder("リアニ").onChange((v) => (this.name = v)));
+    if (this.askName) new Setting(this.contentEl).setName("Format").addDropdown((d) => d.addOptions(Object.fromEntries(CREATABLE.map((id) => [id, FORMATS[id].name]))).setValue(this.format).onChange((v) => (this.format = v)));
     const area = this.contentEl.createEl("textarea", { attr: { rows: "14", placeholder: "4 Lightning Bolt (M11) 149\n...\n\nSIDEBOARD:\n3 Smash to Smithereens (ROE) 160" } });
     area.style.width = "100%";
     area.addEventListener("input", () => (this.text = area.value));
@@ -65,7 +68,7 @@ export class ImportModal extends Modal {
       b.setButtonText("Import").setCta().onClick(() => {
         if ((this.askName && !this.name.trim()) || !this.text.trim()) return new Notice(this.askName ? "デッキ名とリストを入れる" : "リストを入れる");
         this.close();
-        this.onSubmit(this.name.trim(), this.text);
+        this.onSubmit(this.name.trim(), this.text, this.format);
       }),
     );
   }

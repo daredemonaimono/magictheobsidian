@@ -3,7 +3,7 @@ import { cardImage, cardInfo, cardText, deckVerdicts, oracleEnglish, printingIma
 import { LEGAL_FORMATS, formatOf } from "./rules";
 import { ImportModal, resolveDeck } from "./import";
 import { Settings } from "./settings";
-import { Board, Deck, parseDeck, writeDeck } from "./deck";
+import { Board, Deck, emptyDeck, parseDeck, writeDeck } from "./deck";
 import { Printing, printingImageUrl, searchCards } from "./scryfall";
 import { Filters, Meta, Result, buildFilterBar, emptyFilters, isEmpty, scryfallQuery, scryfallResult, searchLocal } from "./search";
 
@@ -16,7 +16,7 @@ const MAX_RESULTS = 40;
 
 export class DeckView extends ItemView {
   private path = "";
-  private deck: Deck = { main: new Map(), side: new Map() };
+  private deck: Deck = emptyDeck();
   private board: Board = "main";
   protected meta = new Map<string, Meta>();
   protected filters: Filters = emptyFilters();
@@ -48,6 +48,7 @@ export class DeckView extends ItemView {
     this.path = state?.path ?? "";
     const file = this.app.vault.getAbstractFileByPath(this.path);
     if (file instanceof TFile) this.deck = parseDeck(await this.app.vault.cachedRead(file));
+    this.board = this.rules().boards[0]; // 統率戦ならコマンダー欄から
     this.build();
     await super.setState(state, result);
   }
@@ -87,9 +88,10 @@ export class DeckView extends ItemView {
 
   private renderTabs() {
     this.el.tabs.empty();
-    for (const b of ["main", "side"] as Board[]) {
+    const label: Record<Board, string> = { main: "メイン", side: "サイド", commander: "コマンダー" };
+    for (const b of this.rules().boards) {
       const total = [...this.deck[b].values()].reduce((a, e) => a + e.n, 0);
-      const btn = this.el.tabs.createEl("button", { text: `${b === "main" ? "メイン" : "サイド"} ${total}` });
+      const btn = this.el.tabs.createEl("button", { text: `${label[b]} ${total}` });
       btn.toggleClass("is-on", this.board === b);
       btn.onclick = () => {
         this.board = b;
@@ -102,12 +104,28 @@ export class DeckView extends ItemView {
     this.renderLegal();
   }
 
-  // デッキ内の全カード(メイン+サイド)が使えるフォーマットを ○ / × で出す。? は情報が未取得
+  // デッキのフォーマット (frontmatter の format:)。無ければ旧版互換の構築戦
+  private rules() {
+    const file = this.app.vault.getAbstractFileByPath(this.path);
+    return formatOf(file instanceof TFile ? this.app.metadataCache.getFileCache(file)?.frontmatter?.format : undefined);
+  }
+
+  // サイドバーの一覧でカードを選べるか。このデッキのフォーマットで使えないと分かっているカードは選べない
+  allows(r: Result): boolean {
+    const id = this.rules().legalId;
+    return !id || !r.legal || r.legal.includes(id);
+  }
+
+  // デッキ内の全カード(メインとサイド・コマンダー)が使えるフォーマットを ○ / × で出す。? は情報が未取得
   private renderLegal() {
     const el = this.legalEl;
     if (!el) return;
     el.empty();
-    const v = deckVerdicts(this.app, [...this.deck.main.keys(), ...this.deck.side.keys()]);
+    const rules = this.rules();
+    el.createSpan({ text: rules.name, cls: "mtg-rulename" });
+    for (const c of rules.status(this.deck)) el.createSpan({ text: `${c.ok ? "○" : "×"} ${c.label}`, cls: `mtg-chip is-${c.ok ? "ok" : "ng"}` });
+    el.createSpan({ text: "|", cls: "mtg-dim" });
+    const v = deckVerdicts(this.app, [...this.deck.main.keys(), ...this.deck.side.keys(), ...this.deck.commander.keys()]);
     for (const [id, name] of LEGAL_FORMATS) {
       const r = v[id];
       const chip = el.createSpan({ text: `${name} ${r.verdict === "ok" ? "○" : r.verdict === "ng" ? "×" : "?"}`, cls: `mtg-chip is-${r.verdict}` });
@@ -130,8 +148,9 @@ export class DeckView extends ItemView {
   private async importInto(text: string) {
     const r = await resolveDeck(this.app, this.settings, text);
     if (!r) return;
-    for (const board of ["main", "side"] as Board[]) {
-      for (const [key, e] of r.deck[board]) {
+    for (const from of ["commander", "main", "side"] as Board[]) {
+      const board = this.rules().boards.includes(from) ? from : "main"; // 欄が無いフォーマットはメインへ
+      for (const [key, e] of r.deck[from]) {
         const cur = this.deck[board].get(key);
         this.deck[board].set(key, { n: (cur?.n ?? 0) + e.n, print: cur?.print ?? e.print });
       }
@@ -212,10 +231,16 @@ export class DeckView extends ItemView {
 
   // フォーマットのルール (構築戦なら同名4枚・サイド15枚まで) を満たさない追加は断る
   private async violation(key: string): Promise<string | null> {
-    const file = this.app.vault.getAbstractFileByPath(this.path);
-    const format = file instanceof TFile ? this.app.metadataCache.getFileCache(file)?.frontmatter?.format : undefined;
     const meta = await this.getMeta(key);
-    return formatOf(format).canAdd({ deck: this.deck, board: this.board, key, typeLine: meta?.typeLine ?? "", text: await oracleEnglish(this.app, key) });
+    return this.rules().canAdd({
+      deck: this.deck,
+      board: this.board,
+      key,
+      typeLine: meta?.typeLine ?? "",
+      text: await oracleEnglish(this.app, key),
+      legal: meta?.legal,
+      restricted: meta?.restricted,
+    });
   }
 
   private async change(key: string, delta: number) {
@@ -248,7 +273,7 @@ export class DeckView extends ItemView {
     if (known) return known;
     const info = cardInfo(this.app, key);
     if (!info) return undefined;
-    const meta = { name: info.name, typeLine: info.typeLine, cmc: info.cmc, image: await cardImage(this.app, info.file) };
+    const meta = { name: info.name, typeLine: info.typeLine, cmc: info.cmc, image: await cardImage(this.app, info.file), legal: info.legal, restricted: info.restricted };
     this.meta.set(key, meta);
     return meta;
   }

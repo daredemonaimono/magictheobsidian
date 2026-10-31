@@ -1,6 +1,6 @@
 import { App } from "obsidian";
 import { CardInfo, cardImage, cardText, ensureCardFile, localCards, readPrintings } from "./cards";
-import { ScryfallCard, artCropUrl, cardImageUrl } from "./scryfall";
+import { ScryfallCard, artCropUrl, cardImageUrl, legalList, restrictedList } from "./scryfall";
 import { Settings } from "./settings";
 
 export interface Meta {
@@ -8,6 +8,8 @@ export interface Meta {
   typeLine: string;
   cmc: number;
   image?: string;
+  legal?: string[];
+  restricted?: string[];
 }
 
 // key = Cards/ のファイル名。resolve() は Scryfall 由来ならここでノート化する
@@ -18,6 +20,7 @@ export interface Result {
   manaCost: string;
   cmc: number;
   colors: string[];
+  legal?: string[]; // 使えるフォーマット (未取得なら undefined)
   art?: string; // イラストだけの小さい画像のURL (一覧用)
   localKey?: string; // Cards/ に既にあるカードだけ (削除操作はノートを作らないため、これで判定)
   image: () => Promise<string | undefined>;
@@ -93,6 +96,7 @@ export function localResult(app: App, c: CardInfo): Result {
     manaCost: c.manaCost,
     cmc: c.cmc,
     colors: c.colors,
+    legal: c.legal,
     art: c.id ? artCropUrl(c.id) : undefined,
     localKey: c.file.basename,
     image: () => cardImage(app, c.file),
@@ -102,7 +106,7 @@ export function localResult(app: App, c: CardInfo): Result {
       const p = prints.find((x) => x.set === c.set) ?? prints[0];
       return {
         key: c.file.basename,
-        meta: { name: c.name, typeLine: c.typeLine, cmc: c.cmc, image: await cardImage(app, c.file) },
+        meta: { name: c.name, typeLine: c.typeLine, cmc: c.cmc, image: await cardImage(app, c.file), legal: c.legal, restricted: c.restricted },
         print: p && `${p.set} ${p.collector_number}`,
       };
     },
@@ -110,7 +114,14 @@ export function localResult(app: App, c: CardInfo): Result {
 }
 
 export function scryfallResult(app: App, settings: Settings, c: ScryfallCard): Result {
-  const meta: Meta = { name: c.name, typeLine: c.type_line, cmc: c.cmc, image: cardImageUrl(c) };
+  const meta: Meta = {
+    name: c.name,
+    typeLine: c.type_line,
+    cmc: c.cmc,
+    image: cardImageUrl(c),
+    legal: legalList(c.legalities),
+    restricted: restrictedList(c.legalities),
+  };
   return {
     name: c.name,
     ja: c.printed_name !== c.name ? c.printed_name : undefined,
@@ -118,6 +129,7 @@ export function scryfallResult(app: App, settings: Settings, c: ScryfallCard): R
     manaCost: c.mana_cost ?? c.card_faces?.[0]?.mana_cost ?? "",
     cmc: c.cmc,
     colors: c.colors ?? c.card_faces?.[0]?.colors ?? [],
+    legal: meta.legal,
     art: artCropUrl(c.id),
     image: async () => meta.image,
     text: async () => c.printed_text ?? c.oracle_text ?? c.card_faces?.map((x) => x.printed_text ?? x.oracle_text).join("\n\n---\n\n") ?? "",

@@ -120,6 +120,8 @@ export async function fetchLocalized(oracleId: string, lang: string): Promise<Sc
 // restricted (Vintage の制限カード) も使えるものとして数える
 export const legalList = (l: Record<string, string> = {}) => Object.entries(l).filter(([, v]) => v === "legal" || v === "restricted").map(([k]) => k);
 
+export const restrictedList = (l: Record<string, string> = {}) => Object.entries(l).filter(([, v]) => v === "restricted").map(([k]) => k);
+
 export const fileSafe = (s: string) => s.replace(" // ", " - ").replace(/[\\/:*?"<>|#^\[\]]/g, "");
 
 export interface CardOptions {
@@ -155,6 +157,7 @@ export function toMarkdown(c: ScryfallCard, { lang, local, printings }: CardOpti
     `scryfall_id: ${c.id}`,
     `oracle_id: ${c.oracle_id}`,
     `legal: [${legalList(c.legalities).join(", ")}]`,
+    ...(restrictedList(c.legalities).length ? [`restricted: [${restrictedList(c.legalities).join(", ")}]`] : []),
     `tags: [mtg/card]`,
     "---",
   ].join("\n");

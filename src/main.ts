@@ -1,6 +1,7 @@
 import { App, Modal, Notice, Plugin, Setting, TFile, normalizePath } from "obsidian";
 import { ensureCardFile, localCards, updateLegality } from "./cards";
-import { DECK_DIR, writeDeck } from "./deck";
+import { DECK_DIR, foldCommander, writeDeck } from "./deck";
+import { CREATABLE, FORMATS } from "./rules";
 import { ImportModal, resolveDeck } from "./import";
 import { CARDLIST_VIEW, CardListView } from "./CardListView";
 import { COLLECTION_VIEW, CollectionView } from "./CollectionView";
@@ -11,20 +12,22 @@ import { fetchCard, fileSafe } from "./scryfall";
 import { priceStore, updateCollectionPrices } from "./prices";
 import { DEFAULT_SETTINGS, Settings, SettingsTab } from "./settings";
 
-// 「動き方」はカード行の外なので、デッキ画面で枚数を変えても書き換わらない
-const DECK_TEMPLATE =
-  "---\nmtg: deck\nformat: constructed\ntags: [mtg/deck]\n---\n\n## Main\n\n## Side\n\n## 動き方\n\n- 勝ち筋:\n- 序盤:\n- 中盤:\n- 注意点:\n";
+// 「動き方」はカード行の外なので、デッキ画面で枚数を変えても書き換わらない。統率戦だけコマンダー欄があり、サイドは無い
+const deckTemplate = (format: string) =>
+  `---\nmtg: deck\nformat: ${format}\ntags: [mtg/deck]\n---\n\n${format === "commander" ? "## Commander\n\n## Main\n" : "## Main\n\n## Side\n"}\n## 動き方\n\n- 勝ち筋:\n- 序盤:\n- 中盤:\n- 注意点:\n`;
 
 class NameModal extends Modal {
   private value = "";
-  constructor(app: App, private title: string, private placeholder: string, private onSubmit: (v: string) => void) {
+  private format = CREATABLE[0];
+  // askFormat: 新しいデッキを作るときはフォーマットも選ぶ
+  constructor(app: App, private title: string, private placeholder: string, private onSubmit: (v: string, format: string) => void, private askFormat = false) {
     super(app);
   }
   onOpen() {
     const submit = () => {
       if (!this.value.trim()) return;
       this.close();
-      this.onSubmit(this.value.trim());
+      this.onSubmit(this.value.trim(), this.format);
     };
     this.setTitle(this.title);
     new Setting(this.contentEl).setName("Name").addText((t) => {
@@ -32,6 +35,12 @@ class NameModal extends Modal {
       t.inputEl.addEventListener("keydown", (e) => e.key === "Enter" && !e.isComposing && submit());
       t.inputEl.focus();
     });
+    if (this.askFormat) {
+      new Setting(this.contentEl)
+        .setName("Format")
+        .setDesc("使えないカード(禁止など)は選べなくなる。統率戦は100枚・同名1種・コマンダー1体")
+        .addDropdown((d) => d.addOptions(Object.fromEntries(CREATABLE.map((id) => [id, FORMATS[id].name]))).setValue(this.format).onChange((v) => (this.format = v)));
+    }
     new Setting(this.contentEl).addButton((b) => b.setButtonText("OK").setCta().onClick(submit));
   }
   onClose() {
@@ -73,8 +82,8 @@ export default class MagicTheObsidian extends Plugin {
       (leaf) =>
         new DeckListView(leaf, {
           open: (f) => void this.openDeck(f),
-          create: () => new NameModal(this.app, "Create deck", "赤単バーン", (n) => void this.createDeck(n)).open(),
-          import: () => new ImportModal(this.app, true, (n, t) => void this.importDeck(n, t)).open(),
+          create: () => new NameModal(this.app, "Create deck", "赤単バーン", (n, f) => void this.createDeck(n, f), true).open(),
+          import: () => new ImportModal(this.app, true, (n, t, f) => void this.importDeck(n, t, f)).open(),
         }),
     );
     this.registerView(COLLECTION_VIEW, (leaf) => new CollectionView(leaf, this.settings));
@@ -100,12 +109,12 @@ export default class MagicTheObsidian extends Plugin {
     this.addCommand({
       id: "create-deck",
       name: "Create deck",
-      callback: () => new NameModal(this.app, "Create deck", "赤単バーン", (n) => this.createDeck(n)).open(),
+      callback: () => new NameModal(this.app, "Create deck", "赤単バーン", (n, f) => void this.createDeck(n, f), true).open(),
     });
     this.addCommand({
       id: "import-deck",
       name: "Import deck (Moxfield text)",
-      callback: () => new ImportModal(this.app, true, (n, t) => void this.importDeck(n, t)).open(),
+      callback: () => new ImportModal(this.app, true, (n, t, f) => void this.importDeck(n, t, f)).open(),
     });
     this.addCommand({ id: "open-collection", name: "Open collection", callback: () => void this.openCollection() });
     this.addCommand({
@@ -217,20 +226,20 @@ export default class MagicTheObsidian extends Plugin {
     }
   }
 
-  private async createDeck(name: string) {
+  private async createDeck(name: string, format: string) {
     const path = normalizePath(`${DECK_DIR}/${fileSafe(name)}.md`);
     if (this.app.vault.getAbstractFileByPath(path)) return new Notice(`Already exists: ${path}`);
     if (!this.app.vault.getAbstractFileByPath(DECK_DIR)) await this.app.vault.createFolder(DECK_DIR);
-    await this.openDeck(await this.app.vault.create(path, DECK_TEMPLATE));
+    await this.openDeck(await this.app.vault.create(path, deckTemplate(format)));
   }
 
-  private async importDeck(name: string, text: string) {
+  private async importDeck(name: string, text: string, format: string) {
     const path = normalizePath(`${DECK_DIR}/${fileSafe(name)}.md`);
     if (this.app.vault.getAbstractFileByPath(path)) return void new Notice(`Already exists: ${path}`);
     const r = await resolveDeck(this.app, this.settings, text);
     if (!r) return;
     if (!this.app.vault.getAbstractFileByPath(DECK_DIR)) await this.app.vault.createFolder(DECK_DIR);
-    await this.openDeck(await this.app.vault.create(path, writeDeck(DECK_TEMPLATE, r.deck)));
+    await this.openDeck(await this.app.vault.create(path, writeDeck(deckTemplate(format), format === "commander" ? r.deck : foldCommander(r.deck))));
   }
 
   private async openDeck(file: TFile) {

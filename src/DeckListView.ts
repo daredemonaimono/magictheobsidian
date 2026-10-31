@@ -95,15 +95,15 @@ export class DeckListView extends ItemView {
       const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
       if (fm?.mtg !== "deck") continue;
       const deck = parseDeck(await this.app.vault.cachedRead(file));
-      const mainKeys = [...deck.main.keys()];
-      const keys = [...mainKeys, ...deck.side.keys()];
+      const mainKeys = [...deck.commander.keys(), ...deck.main.keys()]; // 統率戦はコマンダーが先頭
+      const keys = [...deck.commander.keys(), ...mainKeys, ...deck.side.keys()];
       const colors = new Set(mainKeys.flatMap((k) => cardInfo(this.app, k)?.colors ?? []));
 
       // サムネイル: frontmatter の thumbnail (デッキ内のカード名)。無ければメインの先頭。選んだ版があればその版のイラスト
       const thumb = keys.includes(fm.thumbnail) ? fm.thumbnail : mainKeys[0];
       let art: string | undefined;
       if (thumb) {
-        const print = (deck.main.get(thumb) ?? deck.side.get(thumb))?.print;
+        const print = (deck.commander.get(thumb) ?? deck.main.get(thumb) ?? deck.side.get(thumb))?.print;
         const id = (print && (await printingOf(this.app, thumb, print))?.id) || cardInfo(this.app, thumb)?.id;
         art = id ? artCropUrl(id) : undefined;
       }
@@ -112,7 +112,7 @@ export class DeckListView extends ItemView {
         legal: Object.fromEntries(Object.entries(deckVerdicts(this.app, keys)).map(([k, r]) => [k, r.verdict])),
         favorite: !!fm.favorite,
         colors: COLOR_ORDER.filter((c) => colors.has(c)),
-        count: [...deck.main.values()].reduce((a, e) => a + e.n, 0),
+        count: [...deck.main.values(), ...deck.commander.values()].reduce((a, e) => a + e.n, 0),
         keys,
         art,
       });
