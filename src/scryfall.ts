@@ -53,6 +53,13 @@ export async function fetchCard(name: string): Promise<ScryfallCard> {
   return res.json;
 }
 
+// scryfall_id で取得 (カードのノートの取り直し用)
+export async function fetchById(id: string): Promise<ScryfallCard> {
+  const res = await requestUrl({ url: `https://api.scryfall.com/cards/${encodeURIComponent(id)}`, headers: HEADERS, throw: false });
+  if (res.status !== 200) throw new Error(res.json?.details ?? `HTTP ${res.status}`);
+  return res.json;
+}
+
 // セットと番号で版を指定して取得 (デッキ取り込み用)
 export async function fetchPrint(set: string, no: string): Promise<ScryfallCard> {
   const res = await requestUrl({

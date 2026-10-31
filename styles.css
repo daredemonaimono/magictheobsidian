@@ -120,3 +120,15 @@ button.mtg-color .mtg-sym { width: 20px; height: 20px; display: block; }
 
 .mtg-lhead { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
 .mtg-lhead button { flex: 1 1 auto; }
+
+/* カード一覧 (ダッシュボード → カード) */
+.mtg-cardsview { padding: 16px; overflow: auto; }
+.mtg-cardsview h2 { margin: 0 0 4px; }
+.mtg-ccgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 14px; margin-top: 10px; }
+.mtg-cc { position: relative; cursor: pointer; }
+.mtg-cc img { width: 100%; min-height: 220px; display: block; border-radius: 10px; background: var(--background-secondary); }
+.mtg-cc:hover .mtg-ctl { display: flex; }
+.mtg-cc .mtg-ctl { top: 6px; right: 6px; }
+.mtg-ccmeta { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-top: 4px; }
+.mtg-ccname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--font-ui-small); }
+.mtg-cc.is-busy { opacity: 0.5; cursor: progress; }

@@ -1,7 +1,7 @@
-import { App, TFile, normalizePath, requestUrl } from "obsidian";
+import { App, TFile, normalizePath, parseYaml, requestUrl } from "obsidian";
 import { LEGAL_FORMATS, judge } from "./rules";
 import { Settings } from "./settings";
-import { Printing, ScryfallCard, legalList, restrictedList, printingImageUrl, fetchLocalized, fetchPrintings, fileSafe, toMarkdown } from "./scryfall";
+import { Printing, ScryfallCard, legalList, restrictedList, printingImageUrl, fetchById, fetchCard, fetchLocalized, fetchPrintings, fileSafe, toMarkdown } from "./scryfall";
 
 export const CARD_DIR = "Cards";
 
@@ -127,7 +127,7 @@ export async function updateLegality(app: App, keys: string[]): Promise<Map<stri
       url: "https://api.scryfall.com/cards/collection",
       method: "POST",
       contentType: "application/json",
-      headers: { "User-Agent": "magictheobsidian/0.11.2", Accept: "application/json" },
+      headers: { "User-Agent": "magictheobsidian/0.12.0", Accept: "application/json" },
       body: JSON.stringify({ identifiers: ids.slice(i, i + 75).map((id) => ({ id })) }),
       throw: false,
     });
@@ -148,4 +148,20 @@ export async function updateLegality(app: App, keys: string[]): Promise<Map<stri
   }
   if (failed) throw new Error(`${failed} 回の取得に失敗 (取れた分だけ更新した)`);
   return done;
+}
+
+// カードのノートを Scryfall から取り直す。本文 (画像・テキスト・収録一覧) は作り直し、
+// frontmatter は取り直した項目を上書きして、自分で足したキーは残す。本文に書き足したメモは消える
+export async function refetchCard(app: App, settings: Settings, key: string): Promise<void> {
+  const file = app.vault.getAbstractFileByPath(`${CARD_DIR}/${key}.md`);
+  const info = cardInfo(app, key);
+  if (!(file instanceof TFile) || !info) throw new Error("カードのノートが見つからない");
+  const card = info.id ? await fetchById(info.id) : await fetchCard(info.name);
+  const printings = await fetchPrintings(card, settings.cardLang).catch(() => []);
+  const local = await fetchLocalized(card.oracle_id, settings.textLang).catch(() => undefined);
+  const fresh = toMarkdown(card, { lang: settings.textLang, local, printings });
+  const head = /^---\n([\s\S]*?)\n---\n/;
+  const freshHead = fresh.match(head)!;
+  await app.vault.process(file, (old) => (old.match(head)?.[0] ?? freshHead[0]) + fresh.slice(freshHead[0].length));
+  await app.fileManager.processFrontMatter(file, (fm) => Object.assign(fm, parseYaml(freshHead[1])));
 }

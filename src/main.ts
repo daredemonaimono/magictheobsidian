@@ -5,6 +5,7 @@ import { CREATABLE, FORMATS } from "./rules";
 import { ImportModal, resolveDeck } from "./import";
 import { CARDLIST_VIEW, CardListView } from "./CardListView";
 import { COLLECTION_VIEW, CollectionView } from "./CollectionView";
+import { CARDS_VIEW, CardsView } from "./CardsView";
 import { DASHBOARD_VIEW, DashboardView } from "./DashboardView";
 import { DECKLIST_VIEW, DeckListView } from "./DeckListView";
 import { DECK_VIEW, DeckView } from "./DeckView";
@@ -77,7 +78,8 @@ export default class MagicTheObsidian extends Plugin {
       }),
     );
     this.registerView(DECK_VIEW, (leaf) => new DeckView(leaf, this.settings));
-    this.registerView(DASHBOARD_VIEW, (leaf) => new DashboardView(leaf, { collection: () => void this.openCollection(), deck: () => void this.openDeckList() }));
+    this.registerView(DASHBOARD_VIEW, (leaf) => new DashboardView(leaf, { collection: () => void this.openCollection(), deck: () => void this.openDeckList(), cards: () => void this.openCards() }));
+    this.registerView(CARDS_VIEW, (leaf) => new CardsView(leaf, this.settings));
     this.registerView(
       DECKLIST_VIEW,
       (leaf) =>
@@ -189,6 +191,13 @@ export default class MagicTheObsidian extends Plugin {
     const open = ws.getLeavesOfType(COLLECTION_VIEW)[0];
     if (open) return void ws.revealLeaf(open);
     await ws.getLeaf(true).setViewState({ type: COLLECTION_VIEW, active: true });
+  }
+
+  private async openCards() {
+    const ws = this.app.workspace;
+    const open = ws.getLeavesOfType(CARDS_VIEW)[0];
+    if (open) return void ws.revealLeaf(open);
+    await ws.getLeaf(true).setViewState({ type: CARDS_VIEW, active: true });
   }
 
   private async openDeckList() {
