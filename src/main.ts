@@ -2,6 +2,7 @@ import { App, Modal, Notice, Plugin, Setting, TFile, normalizePath } from "obsid
 import { ensureCardFile } from "./cards";
 import { writeDeck } from "./deck";
 import { ImportModal, resolveDeck } from "./import";
+import { CARDLIST_VIEW, CardListView } from "./CardListView";
 import { COLLECTION_VIEW, CollectionView } from "./CollectionView";
 import { DECK_VIEW, DeckView } from "./DeckView";
 import { fetchCard, fileSafe } from "./scryfall";
@@ -39,18 +40,44 @@ class NameModal extends Modal {
 
 export default class MagicTheObsidian extends Plugin {
   settings: Settings = { ...DEFAULT_SETTINGS };
+  private target?: DeckView; // サイドバーの一覧からカードを足す先 (最後に触ったデッキ/コレクション画面)
+  private prevCount = 0;
+  private opening = false;
 
   async onload() {
     // data.json: 設定 + 価格キャッシュ (旧版は設定だけのフラットな形)
     const d = (await this.loadData()) ?? {};
-    this.settings = { textLang: d.textLang ?? DEFAULT_SETTINGS.textLang, cardLang: d.cardLang ?? DEFAULT_SETTINGS.cardLang };
+    this.settings = {
+      textLang: d.textLang ?? DEFAULT_SETTINGS.textLang,
+      cardLang: d.cardLang ?? DEFAULT_SETTINGS.cardLang,
+      sidebar: d.sidebar ?? DEFAULT_SETTINGS.sidebar,
+    };
     priceStore.prices = d.prices ?? {};
     priceStore.updated = d.pricesUpdated ?? "";
     const saveAll = () => this.saveData({ ...this.settings, prices: priceStore.prices, pricesUpdated: priceStore.updated });
     priceStore.save = saveAll;
-    this.addSettingTab(new SettingsTab(this.app, this, this.settings, saveAll));
+    this.addSettingTab(
+      new SettingsTab(this.app, this, this.settings, saveAll, () => {
+        for (const l of this.deckLeaves()) (l.view as DeckView).rebuild();
+        this.prevCount = 0; // 次の同期で開き直す
+        void this.syncSidebar();
+      }),
+    );
     this.registerView(DECK_VIEW, (leaf) => new DeckView(leaf, this.settings));
     this.registerView(COLLECTION_VIEW, (leaf) => new CollectionView(leaf, this.settings));
+    this.registerView(CARDLIST_VIEW, (leaf) => new CardListView(leaf, this.settings, () => this.liveTarget()));
+
+    const ws = this.app.workspace;
+    this.registerEvent(
+      ws.on("active-leaf-change", (leaf) => {
+        if (leaf?.view instanceof DeckView) {
+          this.target = leaf.view;
+          this.updateLists();
+        }
+      }),
+    );
+    this.registerEvent(ws.on("layout-change", () => void this.syncSidebar()));
+    ws.onLayoutReady(() => void this.syncSidebar());
 
     this.addCommand({
       id: "fetch-card",
@@ -94,6 +121,44 @@ export default class MagicTheObsidian extends Plugin {
         return !!isDeck;
       },
     });
+  }
+
+  private deckLeaves() {
+    const ws = this.app.workspace;
+    return [...ws.getLeavesOfType(DECK_VIEW), ...ws.getLeavesOfType(COLLECTION_VIEW)];
+  }
+
+  private liveTarget(): DeckView | undefined {
+    const leaves = this.deckLeaves();
+    if (this.target && leaves.some((l) => l.view === this.target)) return this.target;
+    return leaves[0]?.view as DeckView | undefined;
+  }
+
+  private updateLists() {
+    for (const l of this.app.workspace.getLeavesOfType(CARDLIST_VIEW)) (l.view as CardListView).updateTarget();
+  }
+
+  // デッキ/コレクション画面が0→1になったときだけ自動で開く (手で閉じたら、また0になるまで開き直さない)。0になったら閉じる
+  private async syncSidebar() {
+    const ws = this.app.workspace;
+    const count = this.deckLeaves().length;
+    const lists = ws.getLeavesOfType(CARDLIST_VIEW);
+    if (!this.settings.sidebar || count === 0) {
+      lists.forEach((l) => l.detach());
+    } else if (this.prevCount === 0 && !lists.length && !this.opening) {
+      this.opening = true;
+      try {
+        const leaf = ws.getRightLeaf(false);
+        if (leaf) {
+          await leaf.setViewState({ type: CARDLIST_VIEW, active: false });
+          await ws.revealLeaf(leaf);
+        }
+      } finally {
+        this.opening = false;
+      }
+    }
+    this.prevCount = count;
+    this.updateLists();
   }
 
   private async fetchCardNote(query: string) {

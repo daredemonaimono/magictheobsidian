@@ -1,7 +1,8 @@
 import { Notice, ViewStateResult } from "obsidian";
 import { CardInfo, cardImage, cardInfo, printingOf, readPrintings } from "./cards";
 import { CONDS, Row, loadCollection, rowKey, saveCollection } from "./collection";
-import { DeckView, PrintModal, Result } from "./DeckView";
+import { DeckView, PrintModal } from "./DeckView";
+import { Result } from "./search";
 import { priceOf, priceStore, updateCollectionPrices } from "./prices";
 import { printingImageUrl } from "./scryfall";
 
@@ -54,7 +55,7 @@ export class CollectionView extends DeckView {
     this.head = root.createDiv("mtg-chead");
 
     const actions = root.createDiv("mtg-bar");
-    const addBtn = actions.createEl("button", { text: "＋ Add cards" });
+    const addBtn = this.settings.sidebar ? null : actions.createEl("button", { text: "＋ Add cards" });
     const updBtn = actions.createEl("button", { text: "価格を更新" });
     updBtn.onclick = async () => {
       updBtn.disabled = true;
@@ -68,10 +69,10 @@ export class CollectionView extends DeckView {
       void this.render();
     };
     this.panel = root.createDiv("mtg-cpanel");
-    addBtn.onclick = () => this.panel.toggleClass("is-open", !this.panel.hasClass("is-open"));
+    if (addBtn) addBtn.onclick = () => this.panel.toggleClass("is-open", !this.panel.hasClass("is-open"));
 
     const left = this.panel.createDiv("mtg-cleft");
-    const { status, results } = this.buildSearch(left);
+    const { status, results } = this.settings.sidebar ? { status: createDiv(), results: createDiv() } : this.buildSearch(left);
     const preview = this.panel.createDiv("mtg-cpreview");
 
     const fbar = root.createDiv("mtg-bar");
@@ -236,7 +237,12 @@ export class CollectionView extends DeckView {
     new PrintModal(this.app, r.card, prints, false, (p) => p && void this.setRowPrint(key, p)).open();
   }
 
-  protected async add(r: Result) {
+  async removeCard(r: Result) {
+    const key = [...this.rows].find(([, row]) => row.card === r.localKey)?.[0];
+    if (key) await this.adjust(key, -1);
+  }
+
+  async addCard(r: Result) {
     try {
       const { key, print } = await r.resolve();
       if (!print) return void new Notice("収録一覧が無いカード。Cards から削除して取り直すと追加できる");

@@ -18,17 +18,18 @@ export const LANGS: Record<string, string> = {
 export interface Settings {
   textLang: string; // カード名・効果テキスト
   cardLang: string; // カード画像 (収録一覧)
+  sidebar: boolean; // カード一覧を右サイドバーに出す。オフなら画面内の検索欄 (従来の表示)
 }
 
-export const DEFAULT_SETTINGS: Settings = { textLang: "en", cardLang: "en" };
+export const DEFAULT_SETTINGS: Settings = { textLang: "en", cardLang: "en", sidebar: true };
 
 export class SettingsTab extends PluginSettingTab {
-  constructor(app: App, plugin: Plugin, private settings: Settings, private save: () => Promise<void>) {
+  constructor(app: App, plugin: Plugin, private settings: Settings, private save: () => Promise<void>, private onSidebar: () => void) {
     super(app, plugin);
   }
   display() {
     this.containerEl.empty();
-    const lang = (name: string, desc: string, key: keyof Settings) =>
+    const lang = (name: string, desc: string, key: "textLang" | "cardLang") =>
       new Setting(this.containerEl)
         .setName(name)
         .setDesc(desc)
@@ -41,6 +42,16 @@ export class SettingsTab extends PluginSettingTab {
               await this.save();
             }),
         );
+    new Setting(this.containerEl)
+      .setName("カード一覧をサイドバーに出す / Card list in sidebar")
+      .setDesc("デッキ画面を開くと右サイドバーにカード一覧が出る(クリックで追加、Shift+クリックで削除)。オフにすると、画面内の検索欄(従来の表示)に戻る。")
+      .addToggle((t) =>
+        t.setValue(this.settings.sidebar).onChange(async (v) => {
+          this.settings.sidebar = v;
+          await this.save();
+          this.onSidebar();
+        }),
+      );
     lang("効果テキストの言語 / Text language", "カード名と効果テキスト。無い言語は英語で表示。新しく取得するカードから反映。", "textLang");
     lang("カードの言語 / Card language", "カード画像とイラスト選択の言語。その言語の版が無いカードは英語になる。新しく取得するカードから反映。", "cardLang");
   }

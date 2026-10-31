@@ -53,3 +53,14 @@
 .mtg-cprice { font-weight: 600; }
 .mtg-clist .mtg-ctl.is-inline { position: static; display: flex; }
 .mtg-ctl button.is-on { background: var(--interactive-accent); color: var(--text-on-accent); }
+
+/* サイドバーのカード一覧 */
+.mtg-cardlist { padding: 8px; }
+.mtg-ltarget { color: var(--text-muted); font-size: var(--font-ui-small); margin-bottom: 6px; }
+.mtg-cardlist .mtg-bar input { flex: 1 1 100px; min-width: 0; }
+.mtg-lgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; }
+.mtg-lcell { cursor: pointer; min-width: 0; }
+.mtg-lcell img { width: 100%; min-height: 150px; border-radius: 8px; display: block; background: var(--background-secondary); }
+.mtg-lcell:hover img { outline: 2px solid var(--interactive-accent); }
+.mtg-lname { font-size: var(--font-ui-smaller); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; }
+.mtg-lmore { grid-column: 1 / -1; }

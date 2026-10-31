@@ -1,43 +1,24 @@
 import { App, ItemView, Modal, Notice, TFile, ViewStateResult, WorkspaceLeaf } from "obsidian";
-import { CardInfo, cardImage, cardInfo, cardText, ensureCardFile, localCards, printingImage, readPrintings } from "./cards";
+import { cardImage, cardInfo, cardText, printingImage, readPrintings } from "./cards";
 import { ImportModal, resolveDeck } from "./import";
 import { Settings } from "./settings";
 import { Board, Deck, parseDeck, writeDeck } from "./deck";
-import { Printing, ScryfallCard, cardImageUrl, printingImageUrl, searchCards } from "./scryfall";
+import { Printing, printingImageUrl, searchCards } from "./scryfall";
+import { Filters, Meta, Result, buildFilterBar, emptyFilters, isEmpty, scryfallQuery, scryfallResult, searchLocal } from "./search";
 
 export const DECK_VIEW = "mtg-deck";
 
-const COLORS = ["W", "U", "B", "R", "G"];
 // Land を先に判定する (Artifact Land は土地として扱う)
 const TYPE_CHECK = ["Land", "Creature", "Planeswalker", "Battle", "Instant", "Sorcery", "Artifact", "Enchantment"];
 const GROUP_ORDER = ["Creature", "Planeswalker", "Instant", "Sorcery", "Artifact", "Enchantment", "Battle", "Land", "Other"];
 const MAX_RESULTS = 40;
-
-export interface Meta {
-  name: string;
-  typeLine: string;
-  cmc: number;
-  image?: string;
-}
-
-// key = Cards/ のファイル名。ensureCardFile で md 化してから返す
-export interface Result {
-  name: string;
-  ja?: string;
-  typeLine: string;
-  manaCost: string;
-  image: () => Promise<string | undefined>;
-  text: () => Promise<string>;
-  // print = 追加時の版 (コレクションで使う)
-  resolve: () => Promise<{ key: string; meta: Meta; print?: string }>;
-}
 
 export class DeckView extends ItemView {
   private path = "";
   private deck: Deck = { main: new Map(), side: new Map() };
   private board: Board = "main";
   protected meta = new Map<string, Meta>();
-  protected filters = { name: "", effect: "", type: "", colors: new Set<string>() };
+  protected filters: Filters = emptyFilters();
   protected timer?: number;
   protected searchSeq = 0;
   private stackSeq = 0;
@@ -81,34 +62,24 @@ export class DeckView extends ItemView {
     const preview = root.createDiv("mtg-side");
     const main = root.createDiv("mtg-main");
     const tabs = main.createDiv("mtg-tabs");
-    const { status, results } = this.buildSearch(main);
+    // サイドバーの一覧を使う設定のときは画面内の検索欄を出さない (設定で戻せる)
+    const { status, results } = this.settings.sidebar ? { status: createDiv(), results: createDiv() } : this.buildSearch(main);
     this.el = { preview, tabs, status, results, stack: main.createDiv("mtg-groups") };
     this.renderTabs();
     void this.renderStack();
     this.renderResults([]);
   }
 
-  // 検索欄 (名前・効果・タイプ・色) と結果欄。デッキ画面とコレクション画面で共有
+  // 画面内の検索欄と結果欄 (サイドバーを使わない設定のとき)
   protected buildSearch(parent: HTMLElement) {
-    const bar = parent.createDiv("mtg-bar");
-    const input = (ph: string, key: "name" | "effect" | "type") =>
-      bar.createEl("input", { type: "text", placeholder: ph }).addEventListener("input", (e) => {
-        this.filters[key] = (e.target as HTMLInputElement).value.trim();
-        this.scheduleSearch();
-      });
-    input("名前 (日本語可)", "name");
-    input("効果テキスト", "effect");
-    input("タイプ", "type");
-    for (const c of COLORS) {
-      const b = bar.createEl("button", { text: c, cls: "mtg-color" });
-      b.onclick = () => {
-        this.filters.colors.has(c) ? this.filters.colors.delete(c) : this.filters.colors.add(c);
-        b.toggleClass("is-on", this.filters.colors.has(c));
-        this.scheduleSearch();
-      };
-    }
-
+    buildFilterBar(parent, this.filters, () => this.scheduleSearch());
     return { status: parent.createDiv("mtg-status"), results: parent.createDiv("mtg-results") };
+  }
+
+  // 設定の切り替え後に作り直す
+  rebuild() {
+    this.filters = emptyFilters();
+    this.build();
   }
 
   private renderTabs() {
@@ -150,12 +121,12 @@ export class DeckView extends ItemView {
   protected async search() {
     const seq = ++this.searchSeq;
     const f = this.filters;
-    if (!f.name && !f.effect && !f.type && !f.colors.size) {
+    if (isEmpty(f)) {
       this.el.status.setText("");
       return this.renderResults([]);
     }
 
-    const local = await this.searchLocal();
+    const local = await searchLocal(this.app, f);
     if (seq !== this.searchSeq) return;
     if (local.length) {
       this.el.status.setText(`Cards 内 ${local.length} 件`);
@@ -164,75 +135,13 @@ export class DeckView extends ItemView {
 
     this.el.status.setText("Cards に無いので Scryfall を検索中…");
     try {
-      const found = await searchCards(this.scryfallQuery());
+      const found = await searchCards(scryfallQuery(f));
       if (seq !== this.searchSeq) return;
       this.el.status.setText(`Scryfall ${found.length} 件`);
-      this.renderResults(found.slice(0, MAX_RESULTS).map((c) => this.scryfallResult(c)));
+      this.renderResults(found.slice(0, MAX_RESULTS).map((c) => scryfallResult(this.app, this.settings, c)));
     } catch (e) {
       this.el.status.setText(`検索失敗: ${(e as Error).message}`);
     }
-  }
-
-  protected async searchLocal(): Promise<Result[]> {
-    const { name, effect, type, colors } = this.filters;
-    const lc = (s?: string) => (s ?? "").toLowerCase();
-    const out: Result[] = [];
-    for (const c of localCards(this.app)) {
-      if (name && !lc(c.name).includes(lc(name)) && !lc(c.nameLocal).includes(lc(name))) continue;
-      if (type && !lc(c.typeLine).includes(lc(type))) continue;
-      if ([...colors].some((x) => !c.colors.includes(x))) continue;
-      // shortcut: 効果検索は md を毎回読む。数千枚で重くなったら索引を作る
-      if (effect && !lc(await this.app.vault.cachedRead(c.file)).includes(lc(effect))) continue;
-      out.push(this.localResult(c));
-    }
-    return out;
-  }
-
-  protected scryfallQuery(): string {
-    const { name, effect, type, colors } = this.filters;
-    const q = name.split(/\s+/).filter(Boolean);
-    if (/[^\x00-\x7F]/.test(name)) q.push("lang:any"); // 日本語名
-    if (effect) q.push(`o:"${effect}"`);
-    for (const t of type.split(/\s+/).filter(Boolean)) q.push(`t:${t}`);
-    if (colors.size) q.push(`c>=${[...colors].join("")}`);
-    return q.join(" ");
-  }
-
-  protected localResult(c: CardInfo): Result {
-    return {
-      name: c.name,
-      ja: c.nameLocal,
-      typeLine: c.typeLine,
-      manaCost: c.manaCost,
-      image: () => cardImage(this.app, c.file),
-      text: () => cardText(this.app, c.file.basename),
-      resolve: async () => {
-        const prints = await readPrintings(this.app, c.file.basename);
-        const p = prints.find((x) => x.set === c.set) ?? prints[0];
-        return {
-          key: c.file.basename,
-          meta: { name: c.name, typeLine: c.typeLine, cmc: c.cmc, image: await cardImage(this.app, c.file) },
-          print: p && `${p.set} ${p.collector_number}`,
-        };
-      },
-    };
-  }
-
-  protected scryfallResult(c: ScryfallCard): Result {
-    const meta: Meta = { name: c.name, typeLine: c.type_line, cmc: c.cmc, image: cardImageUrl(c) };
-    return {
-      name: c.name,
-      ja: c.printed_name !== c.name ? c.printed_name : undefined,
-      typeLine: c.type_line,
-      manaCost: c.mana_cost ?? c.card_faces?.[0]?.mana_cost ?? "",
-      image: async () => meta.image,
-      text: async () => c.printed_text ?? c.oracle_text ?? c.card_faces?.map((f) => f.printed_text ?? f.oracle_text).join("\n\n---\n\n") ?? "",
-      resolve: async () => ({
-        key: (await ensureCardFile(this.app, c, this.settings)).basename,
-        meta,
-        print: `${c.set} ${c.collector_number}`,
-      }),
-    };
   }
 
   protected renderResults(results: Result[]) {
@@ -246,14 +155,15 @@ export class DeckView extends ItemView {
       row.onmouseenter = () => void this.preview(r.name, r.image(), r.text(), r.ja);
       const add = row.createEl("button", { text: "+" });
       add.onclick = () => {
-        void this.add(r);
+        void this.addCard(r);
       };
     }
   }
 
   // ---- デッキ ----
 
-  protected async add(r: Result) {
+  // サイドバーの一覧から呼ばれる。clickで1枚追加 / shift+clickで1枚削除
+  async addCard(r: Result) {
     try {
       const { key, meta } = await r.resolve();
       this.meta.set(key, meta);
@@ -261,6 +171,10 @@ export class DeckView extends ItemView {
     } catch (e) {
       new Notice(`追加失敗: ${(e as Error).message}`);
     }
+  }
+
+  async removeCard(r: Result) {
+    if (r.localKey) await this.change(r.localKey, -1);
   }
 
   private async change(key: string, delta: number) {
