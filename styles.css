@@ -1,5 +1,5 @@
 .mtg-deck { display: flex; flex-direction: column; padding: 0; overflow: auto; }
-.mtg-dbody { display: flex; gap: 16px; padding: 12px; flex: 1; }
+.mtg-dbody { display: flex; gap: 16px; padding: 12px; flex: 1 0 auto; }
 .mtg-side { width: 260px; flex-shrink: 0; position: sticky; top: 0; align-self: flex-start; }
 .mtg-side img { width: 100%; border-radius: 12px; }
 .mtg-preview-name { text-align: center; font-weight: 600; margin-top: 8px; }
@@ -141,7 +141,7 @@ button.mtg-color .mtg-sym { width: 20px; height: 20px; display: block; }
 .mtg-textedit { width: 100%; min-height: 240px; }
 
 .view-content.mtg-deck { padding: 0; }
-.mtg-dhead { position: relative; overflow: hidden; padding: 32px 24px 22px; color: var(--text-on-accent); background: var(--interactive-accent); }
+.mtg-dhead { flex: none; position: relative; overflow: hidden; padding: 32px 24px 22px; color: var(--text-on-accent); background: var(--interactive-accent); }
 /* ヘッダー画像は右半分だけ。左へ向かって透明になる */
 .mtg-dhead::before { content: ""; position: absolute; top: 0; right: 0; bottom: 0; width: 55%; background: var(--mtg-head-art, none) center 30% / cover; -webkit-mask-image: linear-gradient(to right, transparent, #000 45%); mask-image: linear-gradient(to right, transparent, #000 45%); pointer-events: none; }
 .mtg-dhead > * { position: relative; }
@@ -157,6 +157,6 @@ button.mtg-color .mtg-sym { width: 20px; height: 20px; display: block; }
 .mtg-dhbar { display: flex; gap: 6px; }
 .mtg-dhbar button { background: transparent; color: var(--text-on-accent); border: none; box-shadow: none; padding-left: 0; }
 .mtg-dhbar button:hover { background: rgba(255, 255, 255, 0.18); }
-.mtg-dfoot { position: sticky; bottom: 0; display: flex; gap: 20px; align-items: center; flex-wrap: wrap; padding: 8px 24px; background: var(--interactive-accent); color: var(--text-on-accent); font-weight: 600; }
+.mtg-dfoot { flex: none; position: sticky; bottom: 0; display: flex; gap: 20px; align-items: center; flex-wrap: wrap; padding: 8px 24px; background: var(--interactive-accent); color: var(--text-on-accent); font-weight: 600; }
 .mtg-dfoot-dim { opacity: 0.8; font-weight: 400; }
 .mtg-dfoot-types { margin-left: auto; display: flex; gap: 14px; font-weight: 400; }
