@@ -134,3 +134,4 @@ button.mtg-color .mtg-sym { width: 20px; height: 20px; display: block; }
 .mtg-ccmeta { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-top: 4px; }
 .mtg-ccname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--font-ui-small); }
 .mtg-cc.is-busy { opacity: 0.5; cursor: progress; }
+.mtg-ltarget .mtg-lboard { margin-left: 4px; }

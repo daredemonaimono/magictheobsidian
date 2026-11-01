@@ -53,6 +53,7 @@ export default class MagicTheObsidian extends Plugin {
   settings: Settings = { ...DEFAULT_SETTINGS };
   private target?: DeckView; // サイドバーの一覧からカードを足す先 (最後に触ったデッキ/コレクション画面)
   private prevCount = 0;
+  private closedByTab = false;
   private opening = false;
 
   async onload() {
@@ -97,6 +98,7 @@ export default class MagicTheObsidian extends Plugin {
       ws.on("active-leaf-change", (leaf) => {
         this.dashboardIfEmpty(leaf);
         if (leaf?.view.getViewType() === DECK_VIEW) void this.followDeck(leaf);
+        this.tieSidebar(leaf);
       }),
     );
     this.registerEvent(ws.on("layout-change", () => void this.syncSidebar()));
@@ -168,6 +170,19 @@ export default class MagicTheObsidian extends Plugin {
     if (leaf.view instanceof DeckView) {
       this.target = leaf.view;
       this.updateLists();
+    }
+  }
+
+  // サイドバーの一覧はデッキ画面と一緒に出入りする: 他のタブに切り替えたら畳み、デッキ画面に戻ったら開き直す
+  private tieSidebar(leaf: WorkspaceLeaf | null) {
+    const ws = this.app.workspace;
+    if (!leaf || leaf.getRoot() !== ws.rootSplit) return; // サイドバー自身や別ウィンドウのタブは触らない
+    if (leaf.view.getViewType() === DECK_VIEW) {
+      if (this.closedByTab) ws.rightSplit.expand();
+      this.closedByTab = false;
+    } else if (ws.getLeavesOfType(CARDLIST_VIEW).some((l) => l.view.containerEl.isShown())) {
+      ws.rightSplit.collapse();
+      this.closedByTab = true;
     }
   }
 

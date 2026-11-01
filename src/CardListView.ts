@@ -105,7 +105,6 @@ export class CardListView extends ItemView {
     // デッキが変わったら (追加・削除・枚数) 一覧も更新する
     this.registerEvent((this.app.workspace as unknown as { on(n: string, cb: () => void): EventRef }).on("mtg-deck-changed", () => {
         this.updateTarget(); // 追加先の名前も、デッキの読み込み後に合わせる
-        this.renderHead();
         this.draw();
       }));
     this.updateTarget();
@@ -123,7 +122,16 @@ export class CardListView extends ItemView {
       this.lastTarget = t;
       if (this.grid) this.draw();
     }
-    this.targetEl?.setText(t ? `${t.getDisplayText()} (${t.onSide ? "サイド" : "メイン"})` : "デッキ画面を開く");
+    if (!this.targetEl) return;
+    this.targetEl.empty();
+    this.targetEl.createSpan({ text: t ? `${t.getDisplayText()} ` : "デッキ画面を開く" });
+    if (!t) return;
+    // メイン/サイドの切り替え。デッキ画面のタブと、追加先の欄も同じになる
+    this.targetEl.createEl("button", { text: t.onSide ? "サイド" : "メイン", cls: "mtg-lboard" }).onclick = () => {
+      t.showSide(!t.onSide);
+      this.updateTarget();
+      this.draw();
+    };
   }
 
   // 「新しく追加」と、検索中だけ出る「デッキ内に戻る」
@@ -131,13 +139,6 @@ export class CardListView extends ItemView {
     this.headEl.empty();
     this.headEl.createEl("button", { text: "＋ 新しく追加", cls: "mod-cta" }).onclick = () =>
       new SearchModal(this.app, this.f, this.opts, () => void this.search()).open();
-    this.headEl.createEl("button", { text: this.getTarget()?.onSide ? "サイド" : "メイン" }).onclick = () => {
-      const t = this.getTarget();
-      t?.showSide(!t.onSide);
-      this.updateTarget();
-      this.renderHead();
-      this.draw();
-    };
     if (this.searching) {
       this.headEl.createEl("button", { text: "← デッキ内に戻る" }).onclick = () => {
         this.searching = false;
@@ -189,7 +190,7 @@ export class CardListView extends ItemView {
       : this.results.slice(0, this.shown).map((r) => ({ r, n: (r.localKey && target?.countOf(r.localKey)) || undefined }));
     this.status.setText(
       deckMode
-        ? `デッキ内(${target?.onSide ? "サイド" : "メイン"}) ${rows.reduce((a, x) => a + (x.n ?? 0), 0)} 枚${rows.some((x) => x.illegal) ? ` · このフォーマットで使えないカード ${rows.filter((x) => x.illegal).length} 種` : ""} (クリックで+1 / Shift+クリックで−1。検索すると他のカードも追加できる)`
+        ? `${rows.reduce((a, x) => a + (x.n ?? 0), 0)} 枚${rows.some((x) => x.illegal) ? ` · このフォーマットで使えないカード ${rows.filter((x) => x.illegal).length} 種` : ""}`
         : `${this.note}${this.results.length > this.shown ? ` (先頭 ${this.shown} 件を表示)` : ""}`,
     );
 
