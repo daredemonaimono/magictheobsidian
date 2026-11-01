@@ -141,7 +141,7 @@ export class DeckView extends ItemView {
 
     // フォーマット。変えるとルール (枚数・使えるカード) が変わる。`制限なし` は、format が無い・知らないデッキの扱い
     const current = this.formatId();
-    const sel = badges.createEl("select", { cls: "mtg-dformat", attr: { "aria-label": "フォーマット" } });
+    const sel = badges.createEl("select", { cls: "mtg-dhformat", attr: { "aria-label": "フォーマット" } });
     const options = CREATABLE.filter((id) => (current === "commander") === (id === "commander"));
     if (!options.includes(current)) options.unshift(current);
     for (const id of options) sel.createEl("option", { text: FORMATS[id].name, value: id });

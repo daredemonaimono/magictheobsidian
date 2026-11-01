@@ -140,18 +140,23 @@ button.mtg-color .mtg-sym { width: 20px; height: 20px; display: block; }
 .mtg-preview-edit { position: absolute; top: 4px; right: 4px; }
 .mtg-textedit { width: 100%; min-height: 240px; }
 
-.mtg-dhead { position: relative; padding: 20px 24px 14px; color: var(--text-on-accent); background: linear-gradient(90deg, color-mix(in srgb, var(--interactive-accent) 90%, transparent), color-mix(in srgb, var(--interactive-accent) 40%, transparent)), var(--mtg-head-art, none) center 30% / cover, var(--interactive-accent); }
-.mtg-dtitle { font-size: 2.2em; font-weight: 700; line-height: 1.2; margin-bottom: 8px; }
-.mtg-dbadges { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
-.mtg-dformat { background: rgba(255, 255, 255, 0.15); color: var(--text-on-accent); border: 1px solid rgba(255, 255, 255, 0.35); text-transform: uppercase; font-weight: 600; }
-.mtg-dformat option { color: var(--text-normal); }
+.view-content.mtg-deck { padding: 0; }
+.mtg-dhead { position: relative; overflow: hidden; padding: 32px 24px 22px; color: var(--text-on-accent); background: var(--interactive-accent); }
+/* ヘッダー画像は右半分だけ。左へ向かって透明になる */
+.mtg-dhead::before { content: ""; position: absolute; top: 0; right: 0; bottom: 0; width: 55%; background: var(--mtg-head-art, none) center 30% / cover; -webkit-mask-image: linear-gradient(to right, transparent, #000 45%); mask-image: linear-gradient(to right, transparent, #000 45%); pointer-events: none; }
+.mtg-dhead > * { position: relative; }
+.mtg-dtitle { font-size: 2.2em; font-weight: 700; line-height: 1.25; margin-bottom: 14px; }
+.mtg-dbadges { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+.mtg-dhformat { flex: none; width: auto; height: auto; min-height: 30px; background: rgba(255, 255, 255, 0.18); color: var(--text-on-accent); border: none; box-shadow: none; font-weight: 600; }
+.mtg-dhformat option { color: var(--text-normal); }
 .mtg-dverdict.is-ok { color: #7ee0a0; }
 .mtg-dverdict.is-ng { color: #ff9a9a; }
 .mtg-dverdict.is-unknown { color: #ffd98a; }
 .mtg-dago-head { opacity: 0.8; font-size: var(--font-ui-small); }
-.mtg-ddesc { max-width: 60em; white-space: pre-wrap; margin-bottom: 8px; opacity: 0.95; }
+.mtg-ddesc { max-width: 60em; white-space: pre-wrap; margin-bottom: 14px; opacity: 0.95; }
 .mtg-dhbar { display: flex; gap: 6px; }
-.mtg-dhbar button { background: rgba(255, 255, 255, 0.15); color: var(--text-on-accent); border: 1px solid rgba(255, 255, 255, 0.35); }
+.mtg-dhbar button { background: transparent; color: var(--text-on-accent); border: none; box-shadow: none; padding-left: 0; }
+.mtg-dhbar button:hover { background: rgba(255, 255, 255, 0.18); }
 .mtg-dfoot { position: sticky; bottom: 0; display: flex; gap: 20px; align-items: center; flex-wrap: wrap; padding: 8px 24px; background: var(--interactive-accent); color: var(--text-on-accent); font-weight: 600; }
 .mtg-dfoot-dim { opacity: 0.8; font-weight: 400; }
 .mtg-dfoot-types { margin-left: auto; display: flex; gap: 14px; font-weight: 400; }
