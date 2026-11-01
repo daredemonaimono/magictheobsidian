@@ -40,7 +40,7 @@ class NameModal extends Modal {
       new Setting(this.contentEl)
         .setName("Format")
         .setDesc("使えないカード(禁止など)は選べなくなる。統率戦は100枚・同名1種・コマンダー1体")
-        .addDropdown((d) => d.addOptions(Object.fromEntries(CREATABLE.map((id) => [id, FORMATS[id].name]))).setValue(this.format).onChange((v) => (this.format = v)));
+        .addDropdown((d) => d.addOptions(Object.fromEntries(CREATABLE.map((id) => [id, FORMATS[id].name.toUpperCase()]))).setValue(this.format).onChange((v) => (this.format = v)));
     }
     new Setting(this.contentEl).addButton((b) => b.setButtonText("OK").setCta().onClick(submit));
   }

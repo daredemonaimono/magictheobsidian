@@ -60,7 +60,7 @@ export class ImportModal extends Modal {
   onOpen() {
     this.setTitle("Import deck (Moxfield text)");
     if (this.askName) new Setting(this.contentEl).setName("Deck name").addText((t) => t.setPlaceholder("リアニ").onChange((v) => (this.name = v)));
-    if (this.askName) new Setting(this.contentEl).setName("Format").addDropdown((d) => d.addOptions(Object.fromEntries(CREATABLE.map((id) => [id, FORMATS[id].name]))).setValue(this.format).onChange((v) => (this.format = v)));
+    if (this.askName) new Setting(this.contentEl).setName("Format").addDropdown((d) => d.addOptions(Object.fromEntries(CREATABLE.map((id) => [id, FORMATS[id].name.toUpperCase()]))).setValue(this.format).onChange((v) => (this.format = v)));
     const area = this.contentEl.createEl("textarea", { attr: { rows: "14", placeholder: "4 Lightning Bolt (M11) 149\n...\n\nSIDEBOARD:\n3 Smash to Smithereens (ROE) 160" } });
     area.style.width = "100%";
     area.addEventListener("input", () => (this.text = area.value));

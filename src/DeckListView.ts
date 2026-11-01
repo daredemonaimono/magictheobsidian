@@ -66,8 +66,8 @@ export class DeckListView extends ItemView {
     const bar = root.createDiv("mtg-dbar");
     this.tabs = bar.createDiv("mtg-dtabs");
     const sel = bar.createEl("select");
-    sel.createEl("option", { text: "全フォーマット", value: "" });
-    for (const [id, name] of LEGAL_FORMATS) sel.createEl("option", { text: `${name} で使える`, value: id });
+    sel.createEl("option", { text: "ALL", value: "" });
+    for (const [id, name] of LEGAL_FORMATS) sel.createEl("option", { text: `${name.toUpperCase()} で使える`, value: id });
     sel.onchange = () => {
       this.format = sel.value;
       void this.render();
@@ -163,7 +163,7 @@ export class DeckListView extends ItemView {
     tile.createDiv("mtg-dshade");
     tile.createDiv({ text: d.file.basename, cls: "mtg-dname" });
     // 使えるフォーマット (全カードが使えると分かっているもの)。未取得ならその旨
-    const names = LEGAL_FORMATS.filter(([id]) => d.legal[id] === "ok").map(([, n]) => n);
+    const names = LEGAL_FORMATS.filter(([id]) => d.legal[id] === "ok").map(([, n]) => n.toUpperCase());
     const unknown = LEGAL_FORMATS.every(([id]) => d.legal[id] === "unknown");
     tile.createDiv({ text: `${unknown ? "判定なし" : names.join(" · ") || "どのフォーマットでも不可"} · ${d.count}枚`, cls: "mtg-dformat" });
     const pips = tile.createDiv("mtg-dpips");
