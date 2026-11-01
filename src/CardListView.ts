@@ -105,6 +105,7 @@ export class CardListView extends ItemView {
     // デッキが変わったら (追加・削除・枚数) 一覧も更新する
     this.registerEvent((this.app.workspace as unknown as { on(n: string, cb: () => void): EventRef }).on("mtg-deck-changed", () => {
         this.updateTarget(); // 追加先の名前も、デッキの読み込み後に合わせる
+        this.renderHead();
         this.draw();
       }));
     this.updateTarget();
@@ -122,7 +123,7 @@ export class CardListView extends ItemView {
       this.lastTarget = t;
       if (this.grid) this.draw();
     }
-    this.targetEl?.setText(t ? t.getDisplayText() : "デッキ画面を開く");
+    this.targetEl?.setText(t ? `${t.getDisplayText()} (${t.onSide ? "サイド" : "メイン"})` : "デッキ画面を開く");
   }
 
   // 「新しく追加」と、検索中だけ出る「デッキ内に戻る」
@@ -130,6 +131,13 @@ export class CardListView extends ItemView {
     this.headEl.empty();
     this.headEl.createEl("button", { text: "＋ 新しく追加", cls: "mod-cta" }).onclick = () =>
       new SearchModal(this.app, this.f, this.opts, () => void this.search()).open();
+    this.headEl.createEl("button", { text: this.getTarget()?.onSide ? "サイド" : "メイン" }).onclick = () => {
+      const t = this.getTarget();
+      t?.showSide(!t.onSide);
+      this.updateTarget();
+      this.renderHead();
+      this.draw();
+    };
     if (this.searching) {
       this.headEl.createEl("button", { text: "← デッキ内に戻る" }).onclick = () => {
         this.searching = false;
@@ -157,9 +165,10 @@ export class CardListView extends ItemView {
 
   private deckRows(): Row[] {
     const t = this.getTarget();
-    const tag = { commander: "👑", main: undefined, side: "サイド" };
+    const tag = { commander: "👑", main: undefined, side: undefined };
     const rows: Row[] = [];
     for (const c of t?.deckCards() ?? []) {
+      if ((c.board === "side") !== !!t?.onSide) continue;
       const info = cardInfo(this.app, c.key);
       if (!info) continue;
       const r = localResult(this.app, info);
@@ -167,7 +176,7 @@ export class CardListView extends ItemView {
     }
     // 使えないカードは先頭にまとめて見落とさないようにし、あとはメイン → サイド。
     // それぞれ、デッキ画面の見出しと同じ並び (タイプ別、コスト順)
-    const rank = (x: Row) => (x.illegal ? 0 : 4) + (x.board === "side" ? 2 : 0);
+    const rank = (x: Row) => (x.illegal ? 0 : 4) + 0;
     return rows.sort((a, b) => rank(a) - rank(b) || byLayout(a.r, b.r, a.board === "commander", b.board === "commander"));
   }
 
@@ -180,7 +189,7 @@ export class CardListView extends ItemView {
       : this.results.slice(0, this.shown).map((r) => ({ r, n: (r.localKey && target?.countOf(r.localKey)) || undefined }));
     this.status.setText(
       deckMode
-        ? `デッキ内 ${rows.reduce((a, x) => a + (x.n ?? 0), 0)} 枚${rows.some((x) => x.illegal) ? ` · このフォーマットで使えないカード ${rows.filter((x) => x.illegal).length} 種` : ""} (クリックで+1 / Shift+クリックで−1。検索すると他のカードも追加できる)`
+        ? `デッキ内(${target?.onSide ? "サイド" : "メイン"}) ${rows.reduce((a, x) => a + (x.n ?? 0), 0)} 枚${rows.some((x) => x.illegal) ? ` · このフォーマットで使えないカード ${rows.filter((x) => x.illegal).length} 種` : ""} (クリックで+1 / Shift+クリックで−1。検索すると他のカードも追加できる)`
         : `${this.note}${this.results.length > this.shown ? ` (先頭 ${this.shown} 件を表示)` : ""}`,
     );
 

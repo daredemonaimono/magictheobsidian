@@ -98,6 +98,7 @@ export class DeckView extends ItemView {
         this.board = b;
         this.renderTabs();
         void this.renderStack();
+        this.app.workspace.trigger("mtg-deck-changed"); // サイドバーの一覧も、メイン/サイドに合わせる
       };
     }
     this.el.tabs.createEl("button", { text: "Import" }).onclick = () =>
@@ -206,6 +207,16 @@ export class DeckView extends ItemView {
     } catch (e) {
       new Notice(`追加失敗: ${(e as Error).message}`);
     }
+  }
+
+  // サイドバーのメイン/サイド切り替え。追加先の欄も同じになる
+  get onSide() {
+    return this.board === "side";
+  }
+  showSide(side: boolean) {
+    this.board = side ? "side" : this.rules().boards[0];
+    this.renderTabs();
+    void this.renderStack();
   }
 
   // サイドバーに並べる、いまデッキに入っているカード (コマンダー → メイン → サイド、コスト順)
