@@ -3,7 +3,7 @@ import { CardInfo, cardImage, cardInfo, printingOf, readPrintings } from "./card
 import { CONDS, Row, loadCollection, rowKey, saveCollection } from "./collection";
 import { DeckView, PrintModal } from "./DeckView";
 import { Result } from "./search";
-import { priceOf, priceStore, updateCollectionPrices } from "./prices";
+import { formatPrice, priceOf, priceStore, updateCollectionPrices } from "./prices";
 import { printingImageUrl } from "./scryfall";
 import { COLORS, symbolImg } from "./symbols";
 
@@ -60,7 +60,7 @@ export class CollectionView extends DeckView {
       updBtn.disabled = true;
       new Notice("価格を更新中…");
       try {
-        new Notice(`価格を更新: ${await updateCollectionPrices(this.app, this.settings)} 件`);
+        new Notice(`価格を更新: ${await updateCollectionPrices(this.app)} 件`);
       } catch (e) {
         new Notice(`価格の更新失敗: ${(e as Error).message}`);
       }
@@ -125,8 +125,8 @@ export class CollectionView extends DeckView {
     if (seq === this.renderSeq) this.draw(items);
   }
 
-  private price = (i: Item) => (i.id ? priceOf(i.id, i.row.foil) : undefined);
-  private fmt = (v?: number) => (v === undefined ? "—" : `$${v.toFixed(2)}`);
+  private price = (i: Item) => (i.id ? priceOf(i.id, i.row.foil, this.settings.currency) : undefined);
+  private fmt = (v?: number) => formatPrice(v, this.settings.currency);
 
   private draw(all: Item[]) {
     const lc = (s?: string) => (s ?? "").toLowerCase();

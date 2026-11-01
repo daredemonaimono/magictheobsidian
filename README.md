@@ -42,7 +42,7 @@ Obsidian を Magic: The Gathering のデッキ構築ツールにするプラグ�
 ### コレクション
 
 - コマンド「Open collection」か、ダッシュボードの「コレクション」。「Add cards」で検索して追加する。
-- グリッド/リスト表示。セット・色・名前で絞り込み。版ごとの価格(USD)と合計。価格は「価格を更新」ボタンかコマンド「Update collection prices」で手動更新する(自動では取得しない)。取得元は設定で選ぶ: Scryfall のみ / Scryfall 優先(取れなかったカードだけ [TCG Price Lookup](https://tcgpricelookup.com/tcg-api) で取る) / TCG Price Lookup のみ。TCG Price Lookup は API キーが要る(無料枠は1日100回、3秒に1回。名前とコレクター番号で探し、1つに決まらないカードは飛ばす)。
+- グリッド/リスト表示。セット・色・名前で絞り込み。版ごとの価格と合計。通貨は設定で選ぶ(既定は USD)。Scryfall の USD(TCGplayer の価格)が無いカードは、EUR(Cardmarket の価格)を、為替レート(Frankfurter)で設定の通貨に換算して出す。レートは価格の更新と、通貨を変えたときに取る。価格は「価格を更新」ボタンかコマンド「Update collection prices」で手動更新する(自動では取得しない)。
 - 行ごとに状態(NM/LP/MP/HP/DMG)と foil を記録する。ホバーで1枚だけ変更できる。
 
 ### カード一覧(ダッシュボード → カード)
@@ -79,7 +79,7 @@ Obsidian を Magic: The Gathering のデッキ構築ツールにするプラグ�
 
 ## 設定
 
-- 価格の取得元(Scryfall のみ / Scryfall 優先 / TCG Price Lookup のみ)と、TCG Price Lookup の API キー
+- 価格の通貨
 - 効果テキストの言語、カード(画像)の言語(新しく取得するカードから反映)
 - カード一覧をサイドバーに出す / 一覧にイラストを出す / 新しいタブをダッシュボードにする
 

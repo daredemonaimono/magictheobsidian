@@ -1,4 +1,5 @@
-import { App, Plugin, PluginSettingTab, Setting } from "obsidian";
+import { App, Notice, Plugin, PluginSettingTab, Setting } from "obsidian";
+import { CURRENCIES, updateRates } from "./prices";
 
 // Scryfall の言語コード
 export const LANGS: Record<string, string> = {
@@ -15,19 +16,16 @@ export const LANGS: Record<string, string> = {
   ru: "Русский",
 };
 
-export type PriceSource = "scryfall" | "scryfall-first" | "tcg";
-
 export interface Settings {
   textLang: string; // カード名・効果テキスト
   cardLang: string; // カード画像 (収録一覧)
   listArt: boolean; // サイドバーの一覧に、カードのイラストを薄く出す
   dashboardTab: boolean; // 新しいタブ (空のタブ) をダッシュボードにする
-  priceSource: PriceSource; // 価格の取得元
-  tcgKey: string; // TCG Price Lookup の API キー。空なら使わない
+  currency: string; // 資産価格の通貨 (EUR で取れた価格はこれに換算する)
   sidebar: boolean; // カード一覧を右サイドバーに出す。オフなら画面内の検索欄 (従来の表示)
 }
 
-export const DEFAULT_SETTINGS: Settings = { textLang: "en", cardLang: "en", sidebar: true, listArt: true, dashboardTab: true, priceSource: "scryfall-first", tcgKey: "" };
+export const DEFAULT_SETTINGS: Settings = { textLang: "en", cardLang: "en", sidebar: true, listArt: true, dashboardTab: true, currency: "USD" };
 
 export class SettingsTab extends PluginSettingTab {
   constructor(app: App, plugin: Plugin, private settings: Settings, private save: () => Promise<void>, private onSidebar: () => void) {
@@ -78,27 +76,18 @@ export class SettingsTab extends PluginSettingTab {
         }),
       );
     new Setting(this.containerEl)
-      .setName("価格の取得元 / Price source")
-      .setDesc("価格の更新で使う API。「Scryfall 優先」は、Scryfall で値段が取れなかったカードだけ TCG Price Lookup で取る。TCG Price Lookup を使うには、下に API キーが要る。")
+      .setName("価格の通貨 / Currency")
+      .setDesc("コレクションの価格と合計の通貨。Scryfall の USD を換算して出す。USD が無いカードは、EUR の価格を換算する。為替レートは、価格の更新と、この設定を変えたときに取る。")
       .addDropdown((d) =>
         d
-          .addOptions({ scryfall: "Scryfall のみ", "scryfall-first": "Scryfall 優先 (取れない分だけ TCG Price Lookup)", tcg: "TCG Price Lookup のみ" })
-          .setValue(this.settings.priceSource)
+          .addOptions(CURRENCIES)
+          .setValue(this.settings.currency)
           .onChange(async (v) => {
-            this.settings.priceSource = v as PriceSource;
+            this.settings.currency = v;
             await this.save();
+            await updateRates().catch(() => new Notice("為替レートを取れなかった"));
           }),
       );
-    new Setting(this.containerEl)
-      .setName("TCG Price Lookup の API キー / API key")
-      .setDesc("価格の取得元で TCG Price Lookup を使うときに入れる (無料枠は1日100回)。キーは tcgpricelookup.com で発行する。空だと、Scryfall のみになる。")
-      .addText((t) => {
-        t.inputEl.type = "password";
-        t.setValue(this.settings.tcgKey).onChange(async (v) => {
-          this.settings.tcgKey = v.trim();
-          await this.save();
-        });
-      });
     lang("効果テキストの言語 / Text language", "カード名と効果テキスト。無い言語は英語で表示。新しく取得するカードから反映。", "textLang");
     lang("カードの言語 / Card language", "カード画像とイラスト選択の言語。その言語の版が無いカードは英語になる。新しく取得するカードから反映。", "cardLang");
   }

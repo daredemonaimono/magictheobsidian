@@ -18,7 +18,7 @@ export interface ScryfallCard {
   scryfall_uri: string;
   prints_search_uri?: string;
   legalities?: Record<string, string>;
-  prices?: { usd?: string | null; usd_foil?: string | null; usd_etched?: string | null };
+  prices?: { usd?: string | null; usd_foil?: string | null; usd_etched?: string | null; eur?: string | null; eur_foil?: string | null };
   image_uris?: { normal: string };
   card_faces?: {
     name: string;
