@@ -1,4 +1,4 @@
-import { App, Modal, Notice, Plugin, Setting, TFile, WorkspaceLeaf, normalizePath } from "obsidian";
+import { App, EventRef, Modal, Notice, Plugin, Setting, TFile, WorkspaceLeaf, normalizePath } from "obsidian";
 import { ensureCardFile, localCards, updateLegality } from "./cards";
 import { DECK_DIR, foldCommander, writeDeck } from "./deck";
 import { CREATABLE, FORMATS } from "./rules";
@@ -104,6 +104,8 @@ export default class MagicTheObsidian extends Plugin {
       }),
     );
     this.registerEvent(ws.on("layout-change", () => void this.syncSidebar()));
+    // デッキ画面のメイン/サイドのタブを押したとき、サイドバーが畳まれていたら開く
+    this.registerEvent((ws as unknown as { on(n: string, cb: () => void): EventRef }).on("mtg-show-list", () => void this.showList(ws.getActiveViewOfType(DeckView)?.leaf)));
     ws.onLayoutReady(() => {
       this.dashboardIfEmpty(ws.getMostRecentLeaf());
       void this.syncSidebar();

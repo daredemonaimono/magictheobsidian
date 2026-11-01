@@ -1,9 +1,9 @@
 import { App, ItemView, Modal, Notice, Setting, TFile, ViewStateResult, WorkspaceLeaf, moment } from "obsidian";
 import { cardImage, cardInfo, cardText, oracleEnglish, printingImage, printingOf, readPrintings, setLocalText, updateLegality } from "./cards";
 import { CREATABLE, FORMATS, formatOf, judge } from "./rules";
-import { formatPrice, priceOf } from "./prices";
+import { loadCollection } from "./collection";
+import { formatPrice, priceOf, refreshPrices } from "./prices";
 import { deckArtUrl } from "./ThumbnailModal";
-import { ImportModal, resolveDeck } from "./import";
 import { Settings } from "./settings";
 import { Board, Deck, emptyDeck, parseDeck, writeDeck } from "./deck";
 import { Printing, printingImageUrl } from "./scryfall";
@@ -116,11 +116,28 @@ export class DeckView extends ItemView {
         this.renderTabs();
         void this.renderStack();
         this.app.workspace.trigger("mtg-deck-changed"); // サイドバーの一覧も、メイン/サイドに合わせる
+        this.app.workspace.trigger("mtg-show-list"); // サイドバーが畳まれていたら開く
       };
     }
-    this.el.tabs.createEl("button", { text: "Import" }).onclick = () =>
-      new ImportModal(this.app, false, (_, text) => void this.importInto(text)).open();
-
+    // デッキのカードの価格を Scryfall から取り直す (勝手には取らない)。資産にないカードの差額が下のバーに出る
+    const priceBtn = this.el.tabs.createEl("button", { text: "価格取得" });
+    priceBtn.onclick = async () => {
+      priceBtn.disabled = true;
+      new Notice("価格を取得中…");
+      try {
+        const ids = new Set<string>();
+        for (const [key, e] of [...this.deck.commander, ...this.deck.main, ...this.deck.side]) {
+          const id = (e.print && (await printingOf(this.app, key, e.print))?.id) || cardInfo(this.app, key)?.id;
+          if (id) ids.add(id);
+        }
+        const failed = await refreshPrices([...ids]);
+        new Notice(failed ? `${failed} 回の取得に失敗 (取れた分だけ更新した)` : `価格を更新: ${ids.size} 件`);
+      } catch (e) {
+        new Notice(`価格の取得失敗: ${(e as Error).message}`);
+      }
+      priceBtn.disabled = false;
+      void this.renderFooter();
+    };
     void this.renderHeader();
     void this.renderFooter();
   }
@@ -190,10 +207,24 @@ export class DeckView extends ItemView {
         types.set(g, (types.get(g) ?? 0) + e.n);
       }
     }
+    const need = new Map<string, { n: number; unit?: number }>();
     for (const [key, e] of [...this.deck.commander, ...this.deck.main, ...this.deck.side]) {
       const id = (e.print && (await printingOf(this.app, key, e.print))?.id) || cardInfo(this.app, key)?.id;
       const v = id ? priceOf(id, false, this.settings.currency) : undefined;
       v === undefined ? missing++ : (total += v * e.n);
+      const cur = need.get(key);
+      need.set(key, { n: (cur?.n ?? 0) + e.n, unit: cur?.unit ?? v });
+    }
+    // 資産 (コレクション) に無い分の差額。版は問わず、同じカードの所持枚数で数える。基本土地は数えない
+    const owned = new Map<string, number>();
+    for (const r of (await loadCollection(this.app)).values()) owned.set(r.card, (owned.get(r.card) ?? 0) + r.n);
+    let lack = 0;
+    let lackN = 0;
+    for (const [key, x] of need) {
+      if (cardInfo(this.app, key)?.typeLine.includes("Basic")) continue;
+      const short = Math.max(0, x.n - (owned.get(key) ?? 0));
+      lackN += short;
+      lack += short * (x.unit ?? 0);
     }
     if (seq !== this.footSeq) return;
     el.empty();
@@ -203,6 +234,10 @@ export class DeckView extends ItemView {
     el.createSpan({
       text: `${formatPrice(total, this.settings.currency)}${missing ? ` (値段なし ${missing} 種)` : ""}`,
       attr: { "aria-label": "デッキの合計価格 (コレクションの価格の更新で取った価格を使う)" },
+    });
+    el.createSpan({
+      text: lackN ? `不足 ${formatPrice(lack, this.settings.currency)} (${lackN} 枚)` : "不足なし",
+      attr: { "aria-label": "資産 (コレクション) に無いカードの差額。価格は「価格取得」で取り直せる" },
     });
     const right = el.createDiv("mtg-dfoot-types");
     for (const g of [...types.keys()].sort((a, b) => groupRank(a) - groupRank(b))) right.createSpan({ text: `${g} ${types.get(g)}` });
@@ -239,20 +274,6 @@ export class DeckView extends ItemView {
 
 
   // 取り込んだカードは今のデッキに足す (枚数は加算、版は既存を優先)。上書きはしない
-  private async importInto(text: string) {
-    const r = await resolveDeck(this.app, this.settings, text);
-    if (!r) return;
-    const rules = this.rules();
-    for (const from of ["commander", "main", "side"] as Board[]) {
-      const board = rules.boards.includes(from) || (from === "commander" && rules.hasCommander) ? from : "main"; // 欄が無いフォーマットはメインへ
-      for (const [key, e] of r.deck[from]) {
-        const cur = this.deck[board].get(key);
-        this.deck[board].set(key, { n: (cur?.n ?? 0) + e.n, print: cur?.print ?? e.print });
-      }
-    }
-    await this.save();
-  }
-
   // ---- 検索 ----
 
   protected scheduleSearch() {

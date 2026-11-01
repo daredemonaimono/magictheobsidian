@@ -28,18 +28,24 @@ export async function updateRates() {
   await priceStore.save();
 }
 
-// 所持している版の価格を Scryfall から取り直す。1回75件まで。戻り値は更新した件数
+// 版の価格を Scryfall から取り直して保存する (為替レートも)。1回75件まで。戻り値は、取得に失敗した回数
+export async function refreshPrices(ids: string[]): Promise<number> {
+  const { data, failed } = await fetchCollection(ids);
+  for (const c of data) priceStore.prices[c.id] = c.prices ?? {};
+  priceStore.updated = new Date().toISOString();
+  await priceStore.save();
+  await updateRates().catch(() => new Notice("為替レートを取れなかった (前回のレートを使う)"));
+  return failed;
+}
+
+// 所持している版の価格を取り直す。戻り値は更新した件数
 export async function updateCollectionPrices(app: App): Promise<number> {
   const ids = new Set<string>();
   for (const r of (await loadCollection(app)).values()) {
     const p = await printingOf(app, r.card, r.print);
     if (p) ids.add(p.id);
   }
-  const { data, failed } = await fetchCollection([...ids]);
-  for (const c of data) priceStore.prices[c.id] = c.prices ?? {};
-  priceStore.updated = new Date().toISOString();
-  await priceStore.save();
-  await updateRates().catch(() => new Notice("為替レートを取れなかった (前回のレートを使う)"));
+  const failed = await refreshPrices([...ids]);
   if (failed) throw new Error(`${failed} 回の取得に失敗 (取れた分だけ更新した)`);
   return ids.size;
 }
