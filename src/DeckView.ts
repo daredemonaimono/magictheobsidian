@@ -1,5 +1,5 @@
-import { App, ItemView, Modal, Notice, TFile, ViewStateResult, WorkspaceLeaf } from "obsidian";
-import { cardImage, cardInfo, cardText, oracleEnglish, printingImage, readPrintings, updateLegality } from "./cards";
+import { App, ItemView, Modal, Notice, Setting, TFile, ViewStateResult, WorkspaceLeaf } from "obsidian";
+import { cardImage, cardInfo, cardText, oracleEnglish, printingImage, readPrintings, setLocalText, updateLegality } from "./cards";
 import { CREATABLE, FORMATS, formatOf } from "./rules";
 import { ImportModal, resolveDeck } from "./import";
 import { Settings } from "./settings";
@@ -394,7 +394,17 @@ export class DeckView extends ItemView {
     this.el.preview.empty();
     if (url) this.el.preview.createEl("img", { attr: { src: url, alt: name } });
     this.el.preview.createDiv({ text: ja && ja !== name ? `${name} (${ja})` : name, cls: "mtg-preview-name" });
-    this.el.preview.createDiv({ text: body, cls: "mtg-preview-text" });
+    const text_ = this.el.preview.createDiv({ text: body, cls: "mtg-preview-text" });
+    // 設定した言語のテキストを手で直す (取れなかったとき用)。英語の本文は変えない
+    const lang = this.settings.textLang;
+    if (lang !== "en" && cardInfo(this.app, name)) {
+      const pen = text_.createEl("button", { text: "✎", cls: "mtg-preview-edit", attr: { "aria-label": `効果テキスト (${lang}) を編集` } });
+      pen.onclick = () =>
+        new TextModal(this.app, `${name} (${lang})`, body, async (t) => {
+          await setLocalText(this.app, name, lang, t);
+          void this.preview(name, image, cardText(this.app, name), ja);
+        }).open();
+    }
   }
 }
 
@@ -420,6 +430,26 @@ export class PrintModal extends Modal {
   private pick(print?: string) {
     this.close();
     this.onPick(print);
+  }
+  onClose() {
+    this.contentEl.empty();
+  }
+}
+
+class TextModal extends Modal {
+  constructor(app: App, private title: string, private body: string, private onSave: (text: string) => Promise<void>) {
+    super(app);
+  }
+  onOpen() {
+    this.setTitle(this.title);
+    const area = this.contentEl.createEl("textarea", { cls: "mtg-textedit" });
+    area.value = this.body;
+    new Setting(this.contentEl).addButton((b) =>
+      b.setButtonText("保存").setCta().onClick(async () => {
+        await this.onSave(area.value);
+        this.close();
+      }),
+    );
   }
   onClose() {
     this.contentEl.empty();

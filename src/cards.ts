@@ -95,6 +95,19 @@ export async function cardText(app: App, key: string): Promise<string> {
   return c.replace(/^---[\s\S]*?\n---\n/, "").replace(/!\[\]\(.*?\)\n*/, "").split("\n[Scryfall]")[0].trim();
 }
 
+// 設定言語のテキスト (`## Text (ja)`) だけを書き換える。英語の本文は触らない。空にすると節ごと消す。
+// ↻ で取り直すと本文は作り直されるので、手で直した内容は消える
+export async function setLocalText(app: App, key: string, lang: string, text: string) {
+  const f = app.vault.getAbstractFileByPath(`${CARD_DIR}/${key}.md`);
+  if (!(f instanceof TFile)) return;
+  const body = text.trim();
+  const section = /\n## Text \([^)]+\)\n\n[\s\S]*?(?=\n\[Scryfall\])/;
+  await app.vault.process(f, (c) => {
+    if (section.test(c)) return c.replace(section, body ? () => `\n## Text (${lang})\n\n${body}\n` : () => "");
+    return body ? c.replace("\n[Scryfall]", () => `\n## Text (${lang})\n\n${body}\n\n[Scryfall]`) : c;
+  });
+}
+
 export async function printingOf(app: App, key: string, print: string): Promise<Printing | undefined> {
   const [set, no] = print.split(" ");
   return (await readPrintings(app, key)).find((x) => x.set === set && x.collector_number === no);
