@@ -152,7 +152,7 @@ export class DeckView extends ItemView {
     const sel = badges.createEl("select", { cls: "mtg-dhformat", attr: { "aria-label": "フォーマット" } });
     const options = CREATABLE.filter((id) => (current === "commander") === (id === "commander"));
     if (!options.includes(current)) options.unshift(current);
-    for (const id of options) sel.createEl("option", { text: FORMATS[id].name, value: id });
+    for (const id of options) sel.createEl("option", { text: FORMATS[id].name.toUpperCase(), value: id });
     sel.value = current;
     sel.disabled = current === "commander";
     sel.onchange = () => void this.setFormat(sel.value);
@@ -199,7 +199,7 @@ export class DeckView extends ItemView {
     el.empty();
     const mainN = sum(this.deck.main) + sum(this.deck.commander);
     el.createSpan({ text: `メイン ${mainN} / サイド ${sum(this.deck.side)}` });
-    el.createSpan({ text: `${FORMATS[this.formatId()].name}`, cls: "mtg-dfoot-dim" });
+    el.createSpan({ text: FORMATS[this.formatId()].name.toUpperCase(), cls: "mtg-dfoot-dim" });
     el.createSpan({
       text: `${formatPrice(total, this.settings.currency)}${missing ? ` (値段なし ${missing} 種)` : ""}`,
       attr: { "aria-label": "デッキの合計価格 (コレクションの価格の更新で取った価格を使う)" },
