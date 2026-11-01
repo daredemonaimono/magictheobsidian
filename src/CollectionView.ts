@@ -60,7 +60,7 @@ export class CollectionView extends DeckView {
       updBtn.disabled = true;
       new Notice("価格を更新中…");
       try {
-        new Notice(`価格を更新: ${await updateCollectionPrices(this.app)} 件`);
+        new Notice(`価格を更新: ${await updateCollectionPrices(this.app, this.settings)} 件`);
       } catch (e) {
         new Notice(`価格の更新失敗: ${(e as Error).message}`);
       }

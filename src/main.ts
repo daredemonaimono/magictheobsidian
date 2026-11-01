@@ -65,6 +65,8 @@ export default class MagicTheObsidian extends Plugin {
       sidebar: d.sidebar ?? DEFAULT_SETTINGS.sidebar,
       listArt: d.listArt ?? DEFAULT_SETTINGS.listArt,
       dashboardTab: d.dashboardTab ?? DEFAULT_SETTINGS.dashboardTab,
+      priceSource: d.priceSource ?? DEFAULT_SETTINGS.priceSource,
+      tcgKey: d.tcgKey ?? DEFAULT_SETTINGS.tcgKey,
     };
     priceStore.prices = d.prices ?? {};
     priceStore.updated = d.pricesUpdated ?? "";
@@ -145,7 +147,7 @@ export default class MagicTheObsidian extends Plugin {
       callback: async () => {
         new Notice("価格を更新中…");
         try {
-          new Notice(`価格を更新: ${await updateCollectionPrices(this.app)} 件`);
+          new Notice(`価格を更新: ${await updateCollectionPrices(this.app, this.settings)} 件`);
         } catch (e) {
           new Notice(`価格の更新失敗: ${(e as Error).message}`);
         }
