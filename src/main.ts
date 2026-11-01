@@ -175,12 +175,21 @@ export default class MagicTheObsidian extends Plugin {
     }
   }
 
+  // サイドバーを開いて、カード一覧のタブを前に出す。操作中のデッキ画面 (back) には、そのまま戻す
+  private async showList(back?: WorkspaceLeaf) {
+    const ws = this.app.workspace;
+    const list = ws.getLeavesOfType(CARDLIST_VIEW)[0];
+    if (!list || !this.settings.sidebar) return;
+    await ws.revealLeaf(list);
+    if (back) ws.setActiveLeaf(back, { focus: true });
+  }
+
   // サイドバーの一覧はデッキ画面と一緒に出入りする: 他のタブに切り替えたら畳み、デッキ画面に戻ったら開き直す
   private tieSidebar(leaf: WorkspaceLeaf | null) {
     const ws = this.app.workspace;
     if (!leaf || leaf.getRoot() !== ws.rootSplit) return; // サイドバー自身や別ウィンドウのタブは触らない
     if (leaf.view.getViewType() === DECK_VIEW) {
-      if (this.closedByTab) ws.rightSplit.expand();
+      if (this.closedByTab) void this.showList(leaf);
       this.closedByTab = false;
     } else if (ws.getLeavesOfType(CARDLIST_VIEW).some((l) => l.view.containerEl.isShown())) {
       ws.rightSplit.collapse();
@@ -241,8 +250,9 @@ export default class MagicTheObsidian extends Plugin {
       try {
         const leaf = ws.getRightLeaf(false);
         if (leaf) {
-          // アイコンを置くだけ。サイドバーは勝手に開かない (開くかどうかは、アイコンを押す人が決める)
+          const deck = ws.getActiveViewOfType(DeckView)?.leaf;
           await leaf.setViewState({ type: CARDLIST_VIEW, active: false });
+          await this.showList(deck); // デッキ画面を開いたとき、サイドバーに一覧が出る
         }
       } finally {
         this.opening = false;
