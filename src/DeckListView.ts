@@ -67,7 +67,7 @@ export class DeckListView extends ItemView {
     this.tabs = bar.createDiv("mtg-dtabs");
     const sel = bar.createEl("select");
     sel.createEl("option", { text: "ALL", value: "" });
-    for (const [id, name] of LEGAL_FORMATS) sel.createEl("option", { text: `${name.toUpperCase()} で使える`, value: id });
+    for (const [id, name] of LEGAL_FORMATS) sel.createEl("option", { text: name.toUpperCase(), value: id });
     sel.onchange = () => {
       this.format = sel.value;
       void this.render();
