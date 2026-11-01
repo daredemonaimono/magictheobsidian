@@ -1,11 +1,13 @@
-import { App, ItemView, Modal, Notice, Setting, TFile, ViewStateResult, WorkspaceLeaf } from "obsidian";
-import { cardImage, cardInfo, cardText, oracleEnglish, printingImage, readPrintings, setLocalText, updateLegality } from "./cards";
-import { CREATABLE, FORMATS, formatOf } from "./rules";
+import { App, ItemView, Modal, Notice, Setting, TFile, ViewStateResult, WorkspaceLeaf, moment } from "obsidian";
+import { cardImage, cardInfo, cardText, oracleEnglish, printingImage, printingOf, readPrintings, setLocalText, updateLegality } from "./cards";
+import { CREATABLE, FORMATS, formatOf, judge } from "./rules";
+import { formatPrice, priceOf } from "./prices";
+import { ThumbnailModal, deckArtUrl } from "./ThumbnailModal";
 import { ImportModal, resolveDeck } from "./import";
 import { Settings } from "./settings";
 import { Board, Deck, emptyDeck, parseDeck, writeDeck } from "./deck";
 import { Printing, printingImageUrl } from "./scryfall";
-import { COLUMNS, groupOf } from "./layout";
+import { COLUMNS, groupOf, groupRank } from "./layout";
 import { Filters, Meta, Result, buildFilterBar, emptyFilters, isEmpty, searchAll } from "./search";
 
 export const DECK_VIEW = "mtg-deck";
@@ -23,6 +25,10 @@ export class DeckView extends ItemView {
   private stackSeq = 0;
   private format?: string; // 画面で変えた直後のフォーマット (frontmatter への反映を待たずに使う)
   protected previewSeq = 0;
+  private headSeq = 0;
+  private footSeq = 0;
+  private headEl!: HTMLElement;
+  private footEl!: HTMLElement;
   protected el!: { tabs: HTMLElement; status: HTMLElement; results: HTMLElement; stack: HTMLElement; preview: HTMLElement };
 
   constructor(leaf: WorkspaceLeaf, protected settings: Settings) {
@@ -61,8 +67,11 @@ export class DeckView extends ItemView {
     root.empty();
     root.addClass("mtg-deck");
 
-    const preview = root.createDiv("mtg-side");
-    const main = root.createDiv("mtg-main");
+    this.headEl = root.createDiv("mtg-dhead");
+    const body = root.createDiv("mtg-dbody");
+    this.footEl = root.createDiv("mtg-dfoot");
+    const preview = body.createDiv("mtg-side");
+    const main = body.createDiv("mtg-main");
     const tabs = main.createDiv("mtg-tabs");
     // サイドバーの一覧を使う設定のときは画面内の検索欄を出さない (設定で戻せる)
     const { status, results } = this.settings.sidebar ? { status: createDiv(), results: createDiv() } : this.buildSearch(main);
@@ -104,15 +113,96 @@ export class DeckView extends ItemView {
     this.el.tabs.createEl("button", { text: "Import" }).onclick = () =>
       new ImportModal(this.app, false, (_, text) => void this.importInto(text)).open();
 
-    // フォーマット (枚数・使えるカードのルールが変わる)。`制限なし` は、format が無い・知らないデッキの扱い
+    void this.renderHeader();
+    void this.renderFooter();
+  }
+
+  private get file() {
+    const f = this.app.vault.getAbstractFileByPath(this.path);
+    return f instanceof TFile ? f : undefined;
+  }
+
+  // 上のヘッダー: ヘッダー画像 (デッキのカードアート)、デッキ名、フォーマット (適合 ○/×)、説明文。ここから編集できる
+  private async renderHeader() {
+    const file = this.file;
+    const el = this.headEl;
+    if (!file || !el) return;
+    const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+    const seq = ++this.headSeq;
+    const key: string | undefined = fm?.header ?? fm?.thumbnail;
+    const art = key ? await deckArtUrl(this.app, this.deck, key) : undefined;
+    if (seq !== this.headSeq) return;
+    el.empty();
+    if (art) el.style.setProperty("--mtg-head-art", `url("${art}")`);
+    else el.style.removeProperty("--mtg-head-art");
+
+    el.createDiv({ text: this.getDisplayText(), cls: "mtg-dtitle" });
+    const badges = el.createDiv("mtg-dbadges");
+
+    // フォーマット。変えるとルール (枚数・使えるカード) が変わる。`制限なし` は、format が無い・知らないデッキの扱い
     const current = this.formatId();
-    const sel = this.el.tabs.createEl("select", { attr: { "aria-label": "フォーマット" } });
+    const sel = badges.createEl("select", { cls: "mtg-dformat", attr: { "aria-label": "フォーマット" } });
     const options = CREATABLE.filter((id) => (current === "commander") === (id === "commander"));
     if (!options.includes(current)) options.unshift(current);
     for (const id of options) sel.createEl("option", { text: FORMATS[id].name, value: id });
     sel.value = current;
     sel.disabled = current === "commander";
     sel.onchange = () => void this.setFormat(sel.value);
+    const all = ["commander", "main", "side"].flatMap((b) => [...this.deck[b as Board].keys()]);
+    if (current !== "constructed") {
+      const v = judge(all.map((k) => ({ key: k, legal: cardInfo(this.app, k)?.legal })), current, this.deck.commander.size > 0);
+      const mark = { ok: "○ このフォーマットで使える", ng: "× 使えないカードがある", unknown: "？ リーガル情報が無いカードがある" }[v];
+      badges.createSpan({ text: mark, cls: `mtg-dverdict is-${v}` });
+    }
+    badges.createSpan({ text: `更新 ${moment(file.stat.mtime).fromNow()}`, cls: "mtg-dago-head" });
+
+    const desc = el.createDiv("mtg-ddesc");
+    desc.createSpan({ text: fm?.description || "説明文なし" });
+    const bar = el.createDiv("mtg-dhbar");
+    bar.createEl("button", { text: "✎ 説明文" }).onclick = () =>
+      new TextModal(this.app, "デッキの説明文", String(fm?.description ?? ""), async (t) => {
+        await this.app.fileManager.processFrontMatter(file, (f) => (t.trim() ? (f.description = t.trim()) : delete f.description));
+        void this.renderHeader();
+      }).open();
+    bar.createEl("button", { text: "🖼 ヘッダー画像" }).onclick = () =>
+      new ThumbnailModal(this.app, file, "ヘッダー画像にするカードアート", async (k) => {
+        await this.app.fileManager.processFrontMatter(file, (f) => (f.header = k));
+        void this.renderHeader();
+      }).open();
+  }
+
+  // 下のバー: 枚数、デッキの合計価格 (コレクションと同じ通貨)、タイプ別の枚数
+  private async renderFooter() {
+    const el = this.footEl;
+    if (!el) return;
+    const seq = ++this.footSeq;
+    const sum = (m: Map<string, { n: number }>) => [...m.values()].reduce((a, e) => a + e.n, 0);
+    const types = new Map<string, number>();
+    let total = 0;
+    let missing = 0;
+    for (const [board, m] of [["commander", this.deck.commander], ["main", this.deck.main]] as const) {
+      for (const [key, e] of m) {
+        const info = cardInfo(this.app, key);
+        const g = groupOf(info?.typeLine ?? "", board === "commander");
+        types.set(g, (types.get(g) ?? 0) + e.n);
+      }
+    }
+    for (const [key, e] of [...this.deck.commander, ...this.deck.main, ...this.deck.side]) {
+      const id = (e.print && (await printingOf(this.app, key, e.print))?.id) || cardInfo(this.app, key)?.id;
+      const v = id ? priceOf(id, false, this.settings.currency) : undefined;
+      v === undefined ? missing++ : (total += v * e.n);
+    }
+    if (seq !== this.footSeq) return;
+    el.empty();
+    const mainN = sum(this.deck.main) + sum(this.deck.commander);
+    el.createSpan({ text: `メイン ${mainN} / サイド ${sum(this.deck.side)}` });
+    el.createSpan({ text: `${FORMATS[this.formatId()].name}`, cls: "mtg-dfoot-dim" });
+    el.createSpan({
+      text: `${formatPrice(total, this.settings.currency)}${missing ? ` (値段なし ${missing} 種)` : ""}`,
+      attr: { "aria-label": "デッキの合計価格 (コレクションの価格の更新で取った価格を使う)" },
+    });
+    const right = el.createDiv("mtg-dfoot-types");
+    for (const g of [...types.keys()].sort((a, b) => groupRank(a) - groupRank(b))) right.createSpan({ text: `${g} ${types.get(g)}` });
   }
 
   // デッキのフォーマット (frontmatter の format:)。無い・知らないものは制限なし

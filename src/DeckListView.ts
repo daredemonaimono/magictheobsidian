@@ -4,6 +4,7 @@ import { DECK_DIR, parseDeck } from "./deck";
 import { DECK_VIEW } from "./DeckView";
 import { LEGAL_FORMATS, Verdict } from "./rules";
 import { artCropUrl } from "./scryfall";
+import { ThumbnailModal } from "./ThumbnailModal";
 import { COLORS, symbolImg } from "./symbols";
 
 export const DECKLIST_VIEW = "mtg-decklist";
@@ -177,7 +178,7 @@ export class DeckListView extends ItemView {
     };
     ctl.createEl("button", { text: "🖼", attr: { "aria-label": "サムネイルを選ぶ" } }).onclick = (e) => {
       e.stopPropagation();
-      new ThumbnailModal(this.app, d.file, (key) => void this.app.fileManager.processFrontMatter(d.file, (fm) => (fm.thumbnail = key))).open();
+      new ThumbnailModal(this.app, d.file, "サムネイルにするカードアート", (key) => void this.app.fileManager.processFrontMatter(d.file, (fm) => (fm.thumbnail = key))).open();
     };
     ctl.createEl("button", { text: "🗑", attr: { "aria-label": "デッキを削除" } }).onclick = (e) => {
       e.stopPropagation();
@@ -185,39 +186,6 @@ export class DeckListView extends ItemView {
     };
     tile.onclick = () => this.actions.open(d.file);
     wrap.createDiv({ text: ago(d.file.stat.mtime), cls: "mtg-dago" });
-  }
-}
-
-// デッキの中で使っているカードアート (デッキで選んだ版。選んでいなければカードの標準の版) から、サムネイルにするカードを選ぶ
-class ThumbnailModal extends Modal {
-  constructor(app: App, private file: TFile, private onPick: (key: string) => void) {
-    super(app);
-  }
-  async onOpen() {
-    this.setTitle("サムネイルにするカードアート");
-    this.modalEl.addClass("mtg-print-modal");
-    const grid = this.contentEl.createDiv("mtg-print-grid");
-    const deck = parseDeck(await this.app.vault.cachedRead(this.file));
-    const seen = new Set<string>();
-    for (const [key, e] of [...deck.commander, ...deck.main, ...deck.side]) {
-      if (seen.has(key)) continue;
-      seen.add(key);
-      const cell = grid.createDiv("mtg-print");
-      const img = cell.createEl("img", { attr: { loading: "lazy", alt: key } });
-      void (async () => {
-        const id = (e.print && (await printingOf(this.app, key, e.print))?.id) || cardInfo(this.app, key)?.id;
-        if (id) img.setAttr("src", artCropUrl(id));
-      })();
-      cell.createDiv({ text: key, cls: "mtg-dim" });
-      if (e.print) cell.createDiv({ text: e.print.toUpperCase(), cls: "mtg-dim" });
-      cell.onclick = () => {
-        this.close();
-        this.onPick(key);
-      };
-    }
-  }
-  onClose() {
-    this.contentEl.empty();
   }
 }
 
