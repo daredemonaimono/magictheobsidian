@@ -153,10 +153,9 @@ button.mtg-color .mtg-sym { width: 20px; height: 20px; display: block; }
 .mtg-dverdict.is-ng { color: #ff9a9a; }
 .mtg-dverdict.is-unknown { color: #ffd98a; }
 .mtg-dago-head { opacity: 0.8; font-size: var(--font-ui-small); }
-.mtg-ddesc { max-width: 60em; white-space: pre-wrap; margin-bottom: 14px; opacity: 0.95; }
-.mtg-dhbar { display: flex; gap: 6px; }
-.mtg-dhbar button { background: transparent; color: var(--text-on-accent); border: none; box-shadow: none; padding-left: 0; }
-.mtg-dhbar button:hover { background: rgba(255, 255, 255, 0.18); }
+.mtg-ddesc { cursor: pointer; min-height: 1.5em; max-width: 60em; white-space: pre-wrap; margin-bottom: 14px; opacity: 0.95; }
 .mtg-dfoot { flex: none; position: sticky; bottom: 0; display: flex; gap: 20px; align-items: center; flex-wrap: wrap; padding: 8px 24px; background: var(--interactive-accent); color: var(--text-on-accent); font-weight: 600; }
 .mtg-dfoot-dim { opacity: 0.8; font-weight: 400; }
 .mtg-dfoot-types { margin-left: auto; display: flex; gap: 14px; font-weight: 400; }
+.mtg-ddesc.is-empty { opacity: 0.6; }
+.mtg-dverdict { font-size: 1.2em; font-weight: 700; }

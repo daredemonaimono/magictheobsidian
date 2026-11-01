@@ -2,7 +2,7 @@ import { App, ItemView, Modal, Notice, Setting, TFile, ViewStateResult, Workspac
 import { cardImage, cardInfo, cardText, oracleEnglish, printingImage, printingOf, readPrintings, setLocalText, updateLegality } from "./cards";
 import { CREATABLE, FORMATS, formatOf, judge } from "./rules";
 import { formatPrice, priceOf } from "./prices";
-import { ThumbnailModal, deckArtUrl } from "./ThumbnailModal";
+import { deckArtUrl } from "./ThumbnailModal";
 import { ImportModal, resolveDeck } from "./import";
 import { Settings } from "./settings";
 import { Board, Deck, emptyDeck, parseDeck, writeDeck } from "./deck";
@@ -130,7 +130,7 @@ export class DeckView extends ItemView {
     return f instanceof TFile ? f : undefined;
   }
 
-  // 上のヘッダー: ヘッダー画像 (デッキのカードアート)、デッキ名、フォーマット (適合 ○/×)、説明文。ここから編集できる
+  // 上のヘッダー: ヘッダー画像 (デッキのカードアート。デッキ一覧のサムネイルと同じ)、デッキ名、フォーマット (適合 ○/×)、説明文。フォーマットと説明文はここから編集できる
   private async renderHeader() {
     const file = this.file;
     const el = this.headEl;
@@ -159,22 +159,17 @@ export class DeckView extends ItemView {
     const all = ["commander", "main", "side"].flatMap((b) => [...this.deck[b as Board].keys()]);
     if (current !== "constructed") {
       const v = judge(all.map((k) => ({ key: k, legal: cardInfo(this.app, k)?.legal })), current, this.deck.commander.size > 0);
-      const mark = { ok: "○ このフォーマットで使える", ng: "× 使えないカードがある", unknown: "？ リーガル情報が無いカードがある" }[v];
-      badges.createSpan({ text: mark, cls: `mtg-dverdict is-${v}` });
+      const tip = { ok: "このフォーマットで使える", ng: "使えないカードがある", unknown: "リーガル情報が無いカードがある" }[v];
+      badges.createSpan({ text: { ok: "○", ng: "×", unknown: "？" }[v], cls: `mtg-dverdict is-${v}`, attr: { "aria-label": tip } });
     }
     badges.createSpan({ text: `更新 ${moment(file.stat.mtime).fromNow()}`, cls: "mtg-dago-head" });
 
-    const desc = el.createDiv("mtg-ddesc");
-    desc.createSpan({ text: fm?.description || "説明文なし" });
-    const bar = el.createDiv("mtg-dhbar");
-    bar.createEl("button", { text: "✎ 説明文" }).onclick = () =>
+    // 説明文はクリックで編集 (ヘッダー画像は、デッキ一覧の🖼で設定する)
+    const desc = el.createDiv({ text: fm?.description || "クリックして説明文を入力", cls: "mtg-ddesc" });
+    desc.toggleClass("is-empty", !fm?.description);
+    desc.onclick = () =>
       new TextModal(this.app, "デッキの説明文", String(fm?.description ?? ""), async (t) => {
         await this.app.fileManager.processFrontMatter(file, (f) => (t.trim() ? (f.description = t.trim()) : delete f.description));
-        void this.renderHeader();
-      }).open();
-    bar.createEl("button", { text: "🖼 ヘッダー画像" }).onclick = () =>
-      new ThumbnailModal(this.app, file, "ヘッダー画像(デッキ一覧のサムネイル)にするカードアート", async (k) => {
-        await this.app.fileManager.processFrontMatter(file, (f) => (f.thumbnail = k));
         void this.renderHeader();
       }).open();
   }
