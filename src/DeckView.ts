@@ -33,6 +33,14 @@ export class DeckView extends ItemView {
 
   constructor(leaf: WorkspaceLeaf, protected settings: Settings) {
     super(leaf);
+    // デッキ一覧など、別の画面でサムネイル・説明文・フォーマットを変えたときも、ヘッダーを合わせる
+    this.registerEvent(
+      this.app.metadataCache.on("changed", (f) => {
+        if (f.path !== this.path || !this.headEl) return;
+        void this.renderHeader();
+        void this.renderFooter();
+      }),
+    );
   }
 
   getViewType() {
@@ -129,7 +137,7 @@ export class DeckView extends ItemView {
     if (!file || !el) return;
     const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
     const seq = ++this.headSeq;
-    const key: string | undefined = fm?.header ?? fm?.thumbnail;
+    const key: string | undefined = fm?.thumbnail; // デッキ一覧のサムネイルと同じ
     const art = key ? await deckArtUrl(this.app, this.deck, key) : undefined;
     if (seq !== this.headSeq) return;
     el.empty();
@@ -165,8 +173,8 @@ export class DeckView extends ItemView {
         void this.renderHeader();
       }).open();
     bar.createEl("button", { text: "🖼 ヘッダー画像" }).onclick = () =>
-      new ThumbnailModal(this.app, file, "ヘッダー画像にするカードアート", async (k) => {
-        await this.app.fileManager.processFrontMatter(file, (f) => (f.header = k));
+      new ThumbnailModal(this.app, file, "ヘッダー画像(デッキ一覧のサムネイル)にするカードアート", async (k) => {
+        await this.app.fileManager.processFrontMatter(file, (f) => (f.thumbnail = k));
         void this.renderHeader();
       }).open();
   }
