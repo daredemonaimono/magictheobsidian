@@ -12,7 +12,6 @@ export const DECKLIST_VIEW = "mtg-decklist";
 export interface DeckListActions {
   open: (file: TFile) => void;
   create: () => void;
-  import: () => void;
 }
 
 interface Entry {
@@ -77,7 +76,6 @@ export class DeckListView extends ItemView {
       void this.render();
     });
     bar.createEl("button", { text: "＋ 新しいデッキ" }).onclick = () => this.actions.create();
-    bar.createEl("button", { text: "Import" }).onclick = () => this.actions.import();
     this.status = root.createDiv("mtg-status");
     this.body = root.createDiv("mtg-dgrid");
 

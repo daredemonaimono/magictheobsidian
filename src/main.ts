@@ -20,15 +20,16 @@ const deckTemplate = (format: string) =>
 class NameModal extends Modal {
   private value = "";
   private format = CREATABLE[0];
+  private list = "";
   // askFormat: 新しいデッキを作るときはフォーマットも選ぶ
-  constructor(app: App, private title: string, private placeholder: string, private onSubmit: (v: string, format: string) => void, private askFormat = false) {
+  constructor(app: App, private title: string, private placeholder: string, private onSubmit: (v: string, format: string, list: string) => void, private askFormat = false) {
     super(app);
   }
   onOpen() {
     const submit = () => {
       if (!this.value.trim()) return;
       this.close();
-      this.onSubmit(this.value.trim(), this.format);
+      this.onSubmit(this.value.trim(), this.format, this.list);
     };
     this.setTitle(this.title);
     new Setting(this.contentEl).setName("Name").addText((t) => {
@@ -41,6 +42,10 @@ class NameModal extends Modal {
         .setName("Format")
         .setDesc("使えないカード(禁止など)は選べなくなる。統率戦は100枚・同名1種・コマンダー1体")
         .addDropdown((d) => d.addOptions(Object.fromEntries(CREATABLE.map((id) => [id, FORMATS[id].name.toUpperCase()]))).setValue(this.format).onChange((v) => (this.format = v)));
+      // 入れると、そのリストを取り込んでデッキを作る (空なら空のデッキ)
+      const area = this.contentEl.createEl("textarea", { attr: { rows: "10", placeholder: "Import (任意): Moxfield のテキスト\n4 Lightning Bolt (M11) 149\n...\n\nSIDEBOARD:\n3 Smash to Smithereens (ROE) 160" } });
+      area.style.width = "100%";
+      area.addEventListener("input", () => (this.list = area.value));
     }
     new Setting(this.contentEl).addButton((b) => b.setButtonText("OK").setCta().onClick(submit));
   }
@@ -88,8 +93,7 @@ export default class MagicTheObsidian extends Plugin {
       (leaf) =>
         new DeckListView(leaf, {
           open: (f) => void this.openDeck(f),
-          create: () => new NameModal(this.app, "Create deck", "赤単バーン", (n, f) => void this.createDeck(n, f), true).open(),
-          import: () => new ImportModal(this.app, true, (n, t, f) => void this.importDeck(n, t, f)).open(),
+          create: () => new NameModal(this.app, "Create deck", "赤単バーン", (n, f, l) => void (l.trim() ? this.importDeck(n, l, f) : this.createDeck(n, f)), true).open(),
         }),
     );
     this.registerView(COLLECTION_VIEW, (leaf) => new CollectionView(leaf, this.settings));
@@ -119,7 +123,7 @@ export default class MagicTheObsidian extends Plugin {
     this.addCommand({
       id: "create-deck",
       name: "Create deck",
-      callback: () => new NameModal(this.app, "Create deck", "赤単バーン", (n, f) => void this.createDeck(n, f), true).open(),
+      callback: () => new NameModal(this.app, "Create deck", "赤単バーン", (n, f, l) => void (l.trim() ? this.importDeck(n, l, f) : this.createDeck(n, f)), true).open(),
     });
     this.addCommand({
       id: "import-deck",
