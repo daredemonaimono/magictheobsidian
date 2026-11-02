@@ -1,5 +1,5 @@
 import { App, ItemView, Modal, Notice, Setting, TFile, ViewStateResult, WorkspaceLeaf, moment } from "obsidian";
-import { cardImage, cardInfo, cardText, oracleEnglish, printingImage, printingOf, readPrintings, setLocalText, updateLegality } from "./cards";
+import { CARD_DIR, cardImage, cardInfo, cardText, oracleEnglish, printingImage, printingOf, readPrintings, refetchCard, setLocalText, updateLegality } from "./cards";
 import { CREATABLE, FORMATS, formatOf, judge } from "./rules";
 import { loadCollection } from "./collection";
 import { formatPrice, priceOf, refreshPrices } from "./prices";
@@ -119,23 +119,55 @@ export class DeckView extends ItemView {
         this.app.workspace.trigger("mtg-show-list"); // サイドバーが畳まれていたら開く
       };
     }
-    // デッキのカードの価格を Scryfall から取り直す (勝手には取らない)。資産にないカードの差額が下のバーに出る
-    const priceBtn = this.el.tabs.createEl("button", { text: "価格取得" });
-    priceBtn.onclick = async () => {
-      priceBtn.disabled = true;
-      new Notice("価格を取得中…");
+    // デッキの全カード (トークン含む) の情報を Scryfall から取る (勝手には取らない)。
+    // 取り込みで取れなかった効果テキスト・リーガル情報を補い、価格も取り直す。手で直したテキストは上書きしない
+    const infoBtn = this.el.tabs.createEl("button", { text: "情報取得" });
+    infoBtn.onclick = async () => {
+      infoBtn.disabled = true;
+      const notice = new Notice("情報を取得中…", 0);
       try {
+        const entries = (["commander", "main", "side", "token"] as Board[]).flatMap((b) => [...this.deck[b]]);
+        const keys = [...new Set(entries.map(([k]) => k))];
+        const lang = this.settings.textLang;
+        // 設定言語のテキスト (## Text (ja)) が無いノートは、取り直して作る (英語設定なら不要)
+        const noText: string[] = [];
+        if (lang !== "en") {
+          for (const k of keys) {
+            const f = this.app.vault.getAbstractFileByPath(`${CARD_DIR}/${k}.md`);
+            if (f instanceof TFile && !(await this.app.vault.cachedRead(f)).includes("\n## Text (")) noText.push(k);
+          }
+        }
+        let fetched = 0;
+        let failedCards = 0;
+        for (const k of noText) {
+          notice.setMessage(`情報を取得中… ${++fetched}/${noText.length}`);
+          try {
+            await refetchCard(this.app, this.settings, k);
+          } catch {
+            failedCards++;
+          }
+          await new Promise((r) => setTimeout(r, 100)); // Scryfall の負荷配慮
+        }
+        const noLegal = keys.filter((k) => !noText.includes(k) && !cardInfo(this.app, k)?.legal);
+        if (noLegal.length) await updateLegality(this.app, noLegal).catch(() => failedCards++);
         const ids = new Set<string>();
-        for (const [key, e] of [...this.deck.commander, ...this.deck.main, ...this.deck.side]) {
+        for (const [key, e] of entries) {
           const id = (e.print && (await printingOf(this.app, key, e.print))?.id) || cardInfo(this.app, key)?.id;
           if (id) ids.add(id);
         }
         const failed = await refreshPrices([...ids]);
-        new Notice(failed ? `${failed} 回の取得に失敗 (取れた分だけ更新した)` : `価格を更新: ${ids.size} 件`);
+        this.meta.clear(); // 取り直した型・リーガルを読み直す
+        notice.hide();
+        new Notice(
+          `情報を取得: テキスト ${noText.length} 枚補完・価格 ${ids.size} 件` +
+            (failed || failedCards ? ` (失敗 ${failed + failedCards} 回。取れた分だけ更新した)` : ""),
+        );
       } catch (e) {
-        new Notice(`価格の取得失敗: ${(e as Error).message}`);
+        notice.hide();
+        new Notice(`情報の取得失敗: ${(e as Error).message}`);
       }
-      priceBtn.disabled = false;
+      infoBtn.disabled = false;
+      void this.renderStack();
       void this.renderFooter();
     };
     void this.renderHeader();
