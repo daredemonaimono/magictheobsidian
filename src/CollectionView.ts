@@ -163,6 +163,7 @@ export class CollectionView extends DeckView {
     const card = cell.createDiv("mtg-citem");
     if (i.image) card.createEl("img", { attr: { src: i.image, alt: i.row.card } });
     else card.createSpan({ text: i.row.card, cls: "mtg-name" });
+    card.toggleClass("is-foil", i.row.foil);
     card.createSpan({ text: `${i.row.n}×`, cls: "mtg-badge" });
     this.controls(card.createDiv("mtg-ctl"), i);
     const meta = cell.createDiv("mtg-cmeta");

@@ -44,7 +44,7 @@ Obsidian を Magic: The Gathering のデッキ構築ツールにするプラグ�
 
 - コマンド「Open collection」か、ダッシュボードの「コレクション」。「Add cards」で検索して追加する。
 - グリッド/リスト表示。セット・色・名前で絞り込み。版ごとの価格と合計。通貨は設定で選ぶ(既定は USD)。Scryfall の USD(TCGplayer の価格)が無いカードは、EUR(Cardmarket の価格)を、為替レート(Frankfurter)で設定の通貨に換算して出す。レートは価格の更新と、通貨を変えたときに取る。価格は「価格を更新」ボタンかコマンド「Update collection prices」で手動更新する(自動では取得しない)。
-- 行ごとに状態(NM/LP/MP/HP/DMG)と foil を記録する。ホバーで1枚だけ変更できる。
+- 行ごとに状態(NM/LP/MP/HP/DMG)と foil を記録する。グリッド表示では foil のカードに虹色の光(動かない)を重ねる。ホバーで1枚だけ変更できる。
 
 ### カード一覧(ダッシュボード → カード)
 
