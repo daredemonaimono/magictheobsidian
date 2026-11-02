@@ -42,6 +42,7 @@ class SearchModal extends Modal {
     this.setTitle("新しく追加");
     buildFilterBar(root, this.f, () => {});
     new Setting(root).setName("デッキ内のカードも含める").addToggle((t) => t.setValue(this.opts.includeDeck).onChange((v) => (this.opts.includeDeck = v)));
+    new Setting(root).setName("トークンも含める").addToggle((t) => t.setValue(this.f.tokens).onChange((v) => (this.f.tokens = v)));
     new Setting(root)
       .addButton((b) =>
         b.setButtonText("条件をクリア").onClick(() => {

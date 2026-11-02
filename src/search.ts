@@ -35,9 +35,10 @@ export interface Filters {
   effect: string;
   type: string;
   colors: Set<string>;
+  tokens: boolean; // トークンも結果に含める (タイプでトークンを選んだときは常に含む)
 }
 
-export const emptyFilters = (): Filters => ({ name: "", effect: "", type: "", colors: new Set() });
+export const emptyFilters = (): Filters => ({ name: "", effect: "", type: "", colors: new Set(), tokens: false });
 export const isEmpty = (f: Filters) => !f.name && !f.effect && !f.type && !f.colors.size;
 
 // タイプの選択肢。値は Scryfall の t: にも、ノートの type_line の照合にもそのまま使う
@@ -51,6 +52,7 @@ export const TYPES: [string, string][] = [
   ["Land", "土地"],
   ["Planeswalker", "プレインズウォーカー"],
   ["Battle", "バトル"],
+  ["Token", "トークン"],
 ];
 
 // 検索欄 (名前・効果・タイプ・色)。画面内の検索と、サイドバーの「新しく追加」で共有。
@@ -87,12 +89,16 @@ export function buildFilterBar(parent: HTMLElement, f: Filters, onChange: () => 
 }
 
 // 条件が空なら Cards/ の全カード (名前順)
+const lcType = (t: string) => t.toLowerCase();
+
 export async function searchLocal(app: App, f: Filters): Promise<Result[]> {
   const { name, effect, type, colors } = f;
+  const noToken = !f.tokens && lcType(type) !== "token";
   const lc = (s?: string) => (s ?? "").toLowerCase();
   const out: Result[] = [];
   for (const c of localCards(app).sort((a, b) => a.name.localeCompare(b.name))) {
     if (name && !lc(c.name).includes(lc(name)) && !lc(c.nameLocal).includes(lc(name))) continue;
+    if (noToken && lc(c.typeLine).startsWith("token")) continue;
     if (type && !lc(c.typeLine).includes(lc(type))) continue;
     if ([...colors].some((x) => !c.colors.includes(x))) continue;
     // shortcut: 効果検索は md を毎回読む。数千枚で重くなったら索引を作る
@@ -109,6 +115,7 @@ export function scryfallQuery(f: Filters): string {
   if (effect) q.push(`o:"${effect}"`);
   for (const t of type.split(/\s+/).filter(Boolean)) q.push(`t:${t}`);
   if (colors.size) q.push(`c>=${[...colors].join("")}`);
+  if (f.tokens || lcType(type) === "token") q.push("include:extras"); // Scryfall は既定でトークンを出さない
   return q.join(" ");
 }
 
