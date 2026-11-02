@@ -167,7 +167,7 @@ export class CardListView extends ItemView {
 
   private deckRows(): Row[] {
     const t = this.getTarget();
-    const tag = { commander: "👑", main: undefined, side: undefined };
+    const tag = { commander: "👑", main: undefined, side: undefined, token: undefined };
     const rows: Row[] = [];
     for (const c of t?.deckCards() ?? []) {
       if ((c.board === "side") !== !!t?.onSide) continue;

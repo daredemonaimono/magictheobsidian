@@ -7,7 +7,7 @@ import { deckArtUrl } from "./ThumbnailModal";
 import { Settings } from "./settings";
 import { Board, Deck, emptyDeck, parseDeck, writeDeck } from "./deck";
 import { Printing, printingImageUrl } from "./scryfall";
-import { COLUMNS, groupOf, groupRank } from "./layout";
+import { COLUMNS, groupOf, groupRank, isToken } from "./layout";
 import { Filters, Meta, Result, buildFilterBar, emptyFilters, isEmpty, searchAll } from "./search";
 
 export const DECK_VIEW = "mtg-deck";
@@ -103,7 +103,7 @@ export class DeckView extends ItemView {
 
   private renderTabs() {
     this.el.tabs.empty();
-    const label: Record<Board, string> = { main: "メイン", side: "サイド", commander: "コマンダー" };
+    const label: Record<Board, string> = { main: "メイン", side: "サイド", commander: "コマンダー", token: "トークン" };
     const rules = this.rules();
     for (const b of rules.boards) {
       // 統率者構築は、コマンダーもメインの画面に並ぶので合計で数える
@@ -173,7 +173,7 @@ export class DeckView extends ItemView {
     sel.value = current;
     sel.disabled = current === "commander";
     sel.onchange = () => void this.setFormat(sel.value);
-    const all = ["commander", "main", "side"].flatMap((b) => [...this.deck[b as Board].keys()]);
+    const all = ["commander", "main", "side"].flatMap((b) => [...this.deck[b as Board].keys()]).filter((k) => !isToken(cardInfo(this.app, k)?.typeLine ?? ""));
     if (current !== "constructed") {
       const v = judge(all.map((k) => ({ key: k, legal: cardInfo(this.app, k)?.legal })), current, this.deck.commander.size > 0);
       const tip = { ok: "このフォーマットで使える", ng: "使えないカードがある", unknown: "リーガル情報が無いカードがある" }[v];
@@ -268,6 +268,7 @@ export class DeckView extends ItemView {
 
   // サイドバーの一覧でカードを選べるか。このデッキのフォーマットで使えないと分かっているカードは選べない
   allows(r: Result): boolean {
+    if (isToken(r.typeLine)) return true; // トークンはフォーマットに関係なく入れられる
     const id = this.rules().legalId;
     return !id || !r.legal || r.legal.includes(id);
   }
@@ -336,7 +337,7 @@ export class DeckView extends ItemView {
   // サイドバーに並べる、いまデッキに入っているカード (コマンダー → メイン → サイド、コスト順)
   deckCards(): { key: string; n: number; board: Board }[] {
     const cmc = (k: string) => cardInfo(this.app, k)?.cmc ?? 0;
-    return (["commander", "main", "side"] as Board[]).flatMap((board) =>
+    return (["commander", "main", "side", "token"] as Board[]).flatMap((board) =>
       [...this.deck[board]].map(([key, e]) => ({ key, n: e.n, board })).sort((a, b) => cmc(a.key) - cmc(b.key) || a.key.localeCompare(b.key)),
     );
   }
@@ -347,7 +348,7 @@ export class DeckView extends ItemView {
   }
 
   countOf(key: string) {
-    return (["commander", "main", "side"] as Board[]).reduce((a, b) => a + (this.deck[b].get(key)?.n ?? 0), 0);
+    return (["commander", "main", "side", "token"] as Board[]).reduce((a, b) => a + (this.deck[b].get(key)?.n ?? 0), 0);
   }
 
   // サイドバーの一覧にホバーしたとき、左の拡大表示に出す
@@ -383,7 +384,9 @@ export class DeckView extends ItemView {
   }
 
   private async change(key: string, delta: number, board: Board = this.board) {
-    if (delta > 0) {
+    // トークンは、どの欄から操作しても別枠 (Token) に入り、ルールの確認も受けない
+    if (isToken((await this.getMeta(key))?.typeLine ?? "")) board = "token";
+    else if (delta > 0) {
       const why = await this.violation(key, board);
       if (why) return void new Notice(why);
     }
@@ -446,7 +449,7 @@ export class DeckView extends ItemView {
     const seq = ++this.stackSeq;
     const rules = this.rules();
     // 統率者構築はコマンダーとメインを1つの画面に並べる。それ以外は今のタブ (メイン/サイド)
-    const shown: Board[] = rules.hasCommander ? ["commander", "main"] : [this.board];
+    const shown: Board[] = rules.hasCommander ? ["commander", "main", "token"] : [this.board, "token"];
     const cards = await Promise.all(
       shown.flatMap((board) =>
         [...this.deck[board]].map(async ([key, { n: count, print }]) => {

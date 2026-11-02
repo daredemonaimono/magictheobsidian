@@ -13,13 +13,14 @@ export interface Deck {
   main: Map<string, Entry>;
   side: Map<string, Entry>;
   commander: Map<string, Entry>; // 統率戦のコマンダー。他のフォーマットでは空
+  token: Map<string, Entry>; // トークン。メイン/サイドの枚数やフォーマットのルールには数えない別枠
 }
 
 export type Board = keyof Deck;
 
-const HEADING: Record<Board, string> = { main: "## Main", side: "## Side", commander: "## Commander" };
+const HEADING: Record<Board, string> = { main: "## Main", side: "## Side", commander: "## Commander", token: "## Token" };
 
-export const emptyDeck = (): Deck => ({ main: new Map(), side: new Map(), commander: new Map() });
+export const emptyDeck = (): Deck => ({ main: new Map(), side: new Map(), commander: new Map(), token: new Map() });
 const LINE = /^(\d+)\s+\[\[([^\]|]+)[^\]]*\]\](?:\s*\(([^)]+)\))?/;
 
 export function parseDeck(content: string): Deck {
@@ -39,7 +40,7 @@ export function parseDeck(content: string): Deck {
 // 見出し以外 (動き方メモなど) は触らず、カード行だけ差し替える
 export function writeDeck(content: string, deck: Deck): string {
   const lines = content.split("\n");
-  for (const board of ["commander", "main", "side"] as Board[]) {
+  for (const board of ["commander", "main", "side", "token"] as Board[]) {
     const body = [...deck[board]].map(([k, e]) => `${e.n} [[${k}]]${e.print ? ` (${e.print})` : ""}`);
     const start = lines.indexOf(HEADING[board]);
     if (start < 0) {

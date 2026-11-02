@@ -10,12 +10,15 @@ export const COLUMNS = [
   ["Sorcery", "Instant"],
   ["Artifact", "Enchantment", "Battle"],
   ["Land", "Other"],
+  ["Token"], // Land の右
 ];
 
 const ORDER = COLUMNS.flat();
 
+export const isToken = (typeLine: string) => /^Token\b/.test(typeLine);
+
 export const groupOf = (typeLine: string, commander = false): string =>
-  commander ? "Commander" : TYPE_CHECK.find((t) => typeLine.includes(t)) ?? "Other";
+  commander ? "Commander" : isToken(typeLine) ? "Token" : TYPE_CHECK.find((t) => typeLine.includes(t)) ?? "Other";
 
 // 見出しの並び順での位置 (左の列の上から)
 export const groupRank = (group: string) => ORDER.indexOf(group);
