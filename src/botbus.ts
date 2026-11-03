@@ -1,9 +1,15 @@
-import type { BCard } from "./botgame";
+// サイドバーに出すカード (BCard / CardDef のどちらも渡せる)
+export interface HoverCard {
+  key: string;
+  name: string;
+  typeLine: string;
+  manaCost: string;
+}
 
 // ボット画面 (メイン) とログ画面 (右サイドバー) をつなぐ。仮の実装
 class BotBus {
   log: string[] = [];
-  hover?: BCard;
+  hover?: HoverCard;
   onLog = new Set<(line: string) => void>();
   onHover = new Set<() => void>();
   addLog(line: string) {
@@ -14,7 +20,7 @@ class BotBus {
     this.log = [];
     this.onLog.forEach((f) => f(""));
   }
-  setHover(c?: BCard) {
+  setHover(c?: HoverCard) {
     this.hover = c;
     this.onHover.forEach((f) => f());
   }

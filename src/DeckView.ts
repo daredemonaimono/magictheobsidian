@@ -137,6 +137,11 @@ export class DeckView extends ItemView {
             if (f instanceof TFile && !(await this.app.vault.cachedRead(f)).includes("\n## Text (")) noText.push(k);
           }
         }
+        // クリーチャーで、パワー・タフネスが無い古いノートも取り直す (対戦エンジンで使う)
+        for (const k of keys) {
+          const i = cardInfo(this.app, k);
+          if (i && /\bCreature\b/.test(i.typeLine) && i.power === undefined && !noText.includes(k)) noText.push(k);
+        }
         let fetched = 0;
         let failedCards = 0;
         for (const k of noText) {
@@ -159,7 +164,7 @@ export class DeckView extends ItemView {
         this.meta.clear(); // 取り直した型・リーガルを読み直す
         notice.hide();
         new Notice(
-          `情報を取得: テキスト ${noText.length} 枚補完・価格 ${ids.size} 件` +
+          `情報を取得: 取り直し ${noText.length} 枚・価格 ${ids.size} 件` +
             (failed || failedCards ? ` (失敗 ${failed + failedCards} 回。取れた分だけ更新した)` : ""),
         );
       } catch (e) {

@@ -13,6 +13,8 @@ export interface CardInfo {
   colors: string[];
   cmc: number;
   manaCost: string;
+  power?: string; // クリーチャーだけ。"*" などもあるので文字列。古いノートには無い
+  toughness?: string;
   set: string;
   id: string; // scryfall_id
   legal?: string[]; // 使えるフォーマット。未取得なら undefined
@@ -30,6 +32,8 @@ function toInfo(app: App, file: TFile): CardInfo | null {
     colors: fm.colors ?? [],
     cmc: fm.cmc ?? 0,
     manaCost: fm.mana_cost ?? "",
+    power: fm.power !== undefined ? String(fm.power) : undefined,
+    toughness: fm.toughness !== undefined ? String(fm.toughness) : undefined,
     set: fm.set ?? "",
     id: fm.scryfall_id ?? "",
     legal: Array.isArray(fm.legal) ? fm.legal : undefined,

@@ -60,8 +60,8 @@ export class BotView extends ItemView {
     modelSel.value = this.model;
     modelSel.onchange = () => (this.model = modelSel.value);
     const thinkSel = bar.createEl("select", { attr: { "aria-label": "思考" } });
-    thinkSel.createEl("option", { text: "思考なし", value: "off" });
-    thinkSel.createEl("option", { text: "思考あり(浅い)", value: "on" });
+    thinkSel.createEl("option", { text: "思考浅め", value: "off" });
+    thinkSel.createEl("option", { text: "思考深め", value: "on" });
     thinkSel.value = this.think ? "on" : "off";
     thinkSel.onchange = () => (this.think = thinkSel.value === "on");
     bar.createSpan({ text: "ターン数" });
@@ -188,7 +188,7 @@ export class BotView extends ItemView {
     const recent: string[] = [];
     const note = (s: string) => (recent.push(s), log(s));
     const actions: unknown[] = []; // リプレイ用: 行動の列
-    log(`デッキ: ${deck.name} (${deck.cards.length} 枚) / モデル: ${MODELS[this.model].label} / ${this.think ? "思考あり(浅い)" : "思考なし"}`);
+    log(`デッキ: ${deck.name} (${deck.cards.length} 枚) / モデル: ${MODELS[this.model].label} / ${this.think ? "思考深め" : "思考浅め"}`);
     try {
       for (let t = 0; t < this.turns && !this.stop; t++) {
         startTurn(g).forEach(note);

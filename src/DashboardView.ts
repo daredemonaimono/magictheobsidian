@@ -7,6 +7,7 @@ export interface DashboardActions {
   deck: () => void;
   cards: () => void;
   bot: () => void;
+  battle: () => void;
 }
 
 // ホーム画面。今はテキストのボタンだけ。機能が増えたらここに足していく
@@ -35,5 +36,6 @@ export class DashboardView extends ItemView {
     row.createEl("button", { text: "デッキ" }).onclick = () => this.actions.deck();
     row.createEl("button", { text: "カード" }).onclick = () => this.actions.cards();
     row.createEl("button", { text: "Bot (試し)" }).onclick = () => this.actions.bot();
+    row.createEl("button", { text: "Bot 対戦 (仮)" }).onclick = () => this.actions.battle();
   }
 }

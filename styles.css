@@ -200,3 +200,12 @@ button.mtg-color .mtg-sym { width: 20px; height: 20px; display: block; }
 .mtg-bcard.is-tapped { transform: rotate(90deg); margin: 19px 19px; }
 .mtg-bcard.is-empty { border: 1px dashed var(--background-modifier-border); background: transparent; }
 .mtg-bcard.is-back { background: linear-gradient(135deg, var(--interactive-accent), var(--background-modifier-border)); }
+
+/* Bot 対戦 (仮) */
+.mtg-bmid { display: flex; flex-direction: column; gap: 6px; align-items: center; padding: 6px 0; }
+.mtg-bprompt { display: flex; gap: 8px; align-items: center; font-weight: 600; }
+.mtg-bcard.is-playable { box-shadow: 0 0 0 2px var(--interactive-accent); cursor: pointer; }
+.mtg-bcard.is-selected { box-shadow: 0 0 0 3px var(--text-accent); transform: translateY(-6px); }
+.mtg-bcard.is-tapped.is-selected { transform: rotate(90deg); }
+.mtg-bcard.is-small { width: 40px; min-height: 56px; }
+.mtg-bbadge { position: absolute; right: 2px; bottom: 2px; background: var(--background-primary); border: 1px solid var(--background-modifier-border); border-radius: 4px; padding: 0 4px; font-size: var(--font-ui-smaller); font-weight: 700; }

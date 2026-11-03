@@ -10,6 +10,8 @@ export interface ScryfallCard {
   mana_cost?: string;
   cmc: number;
   type_line: string;
+  power?: string;
+  toughness?: string;
   colors?: string[];
   color_identity: string[];
   set: string;
@@ -24,6 +26,8 @@ export interface ScryfallCard {
     name: string;
     mana_cost: string;
     type_line: string;
+    power?: string;
+    toughness?: string;
     colors?: string[];
     oracle_text?: string;
     printed_name?: string;
@@ -179,6 +183,7 @@ export function toMarkdown(c: ScryfallCard, { lang, local, printings }: CardOpti
     `mana_cost: "${c.mana_cost ?? c.card_faces?.[0]?.mana_cost ?? ""}"`,
     `cmc: ${c.cmc}`,
     `type_line: "${c.type_line}"`,
+    ...(c.power ?? c.card_faces?.[0]?.power ? [`power: "${c.power ?? c.card_faces?.[0]?.power}"`, `toughness: "${c.toughness ?? c.card_faces?.[0]?.toughness}"`] : []),
     `colors: [${(c.colors ?? c.card_faces?.[0]?.colors ?? []).join(", ")}]`,
     `color_identity: [${c.color_identity.join(", ")}]`,
     `rarity: ${c.rarity}`,

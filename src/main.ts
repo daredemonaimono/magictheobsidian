@@ -10,6 +10,7 @@ import { DASHBOARD_VIEW, DashboardView } from "./DashboardView";
 import { DECKLIST_VIEW, DeckListView } from "./DeckListView";
 import { DECK_VIEW, DeckView } from "./DeckView";
 import { BOT_VIEW, BotView } from "./BotView";
+import { BATTLE_VIEW, BattleView } from "./BattleView";
 import { BOTLOG_VIEW, BotLogView } from "./BotLogView";
 import { fetchCard, fileSafe } from "./scryfall";
 import { priceStore, updateCollectionPrices } from "./prices";
@@ -90,7 +91,8 @@ export default class MagicTheObsidian extends Plugin {
       }),
     );
     this.registerView(DECK_VIEW, (leaf) => new DeckView(leaf, this.settings));
-    this.registerView(DASHBOARD_VIEW, (leaf) => new DashboardView(leaf, { collection: () => void this.openOrReveal(COLLECTION_VIEW), deck: () => void this.openOrReveal(DECKLIST_VIEW), cards: () => void this.openOrReveal(CARDS_VIEW), bot: () => void this.openBot() }));
+    this.registerView(DASHBOARD_VIEW, (leaf) => new DashboardView(leaf, { collection: () => void this.openOrReveal(COLLECTION_VIEW), deck: () => void this.openOrReveal(DECKLIST_VIEW), cards: () => void this.openOrReveal(CARDS_VIEW), bot: () => void this.openBot(BOT_VIEW), battle: () => void this.openBot(BATTLE_VIEW) }));
+    this.registerView(BATTLE_VIEW, (leaf) => new BattleView(leaf, this.settings, () => this.app.secretStorage.getSecret(this.settings.botKey)));
     this.registerView(BOT_VIEW, (leaf) => new BotView(leaf, this.settings, () => this.app.secretStorage.getSecret(this.settings.botKey)));
     this.registerView(BOTLOG_VIEW, (leaf) => new BotLogView(leaf));
     this.registerView(CARDS_VIEW, (leaf) => new CardsView(leaf, this.settings));
@@ -151,7 +153,8 @@ export default class MagicTheObsidian extends Plugin {
         }
       },
     });
-    this.addCommand({ id: "open-bot", name: "Open bot trial (solo)", callback: () => void this.openBot() });
+    this.addCommand({ id: "open-bot", name: "Open bot trial (solo)", callback: () => void this.openBot(BOT_VIEW) });
+    this.addCommand({ id: "open-bot-battle", name: "Open bot battle (you vs bot)", callback: () => void this.openBot(BATTLE_VIEW) });
     this.addCommand({ id: "open-dashboard", name: "Open dashboard", callback: () => void this.openOrReveal(DASHBOARD_VIEW) });
     this.addRibbonIcon("layout-dashboard", "Magic the Obsidian", () => void this.openOrReveal(DASHBOARD_VIEW));
     this.addCommand({
@@ -226,9 +229,9 @@ export default class MagicTheObsidian extends Plugin {
   }
 
   // Bot の試し: メインに Bot 画面、右サイドバーにカード効果とログ
-  private async openBot() {
+  private async openBot(type: string) {
     const ws = this.app.workspace;
-    await this.openOrReveal(BOT_VIEW);
+    await this.openOrReveal(type);
     let log = ws.getLeavesOfType(BOTLOG_VIEW)[0];
     if (!log) {
       log = ws.getRightLeaf(false)!;
