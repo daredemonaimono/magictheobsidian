@@ -12,13 +12,14 @@ export const BOT_GAME_DIR = "Bot/Games";
 const SYSTEM = `あなたは Magic: The Gathering のプレイヤー。ひとり回しの練習で、自分のデッキを回している。
 ルール(練習用の簡略): 土地は1ターンに1枚。土地1枚 = 色を問わず1マナ。呪文は唱えると場(クリーチャー等)か墓地(インスタント・ソーサリー)に行くだけで、効果はまだ実行されない。相手はいない。
 デッキの使い方のメモに沿って、最も良い行動を選ぶ。
-返事は JSON を1つだけ: {"action": 番号, "reason": "短い理由(日本語)"}`;
+返事は JSON を1つだけ。説明や前置きは書かない: {"action": 番号, "reason": "理由(日本語、20字以内)"}`;
 
 // ボットのひとり回し (試し)。エンジンは使い捨ての簡易版。メイン領域に出る
 export class BotView extends ItemView {
   private deckPath = "";
   private model = this.settings.botModel;
   private turns = 8;
+  private think = false; // 思考を使うか。使わないと出力が減って安いが、判断は浅くなる
   private running = false;
   private stop = false;
   private game?: Game;
@@ -58,6 +59,11 @@ export class BotView extends ItemView {
     for (const [id, m] of Object.entries(MODELS)) modelSel.createEl("option", { text: m.label, value: id });
     modelSel.value = this.model;
     modelSel.onchange = () => (this.model = modelSel.value);
+    const thinkSel = bar.createEl("select", { attr: { "aria-label": "思考" } });
+    thinkSel.createEl("option", { text: "思考なし", value: "off" });
+    thinkSel.createEl("option", { text: "思考あり(浅い)", value: "on" });
+    thinkSel.value = this.think ? "on" : "off";
+    thinkSel.onchange = () => (this.think = thinkSel.value === "on");
     bar.createSpan({ text: "ターン数" });
     const turns = bar.createEl("input", { type: "number", attr: { min: "1", max: "30", style: "width:4em" } });
     turns.value = String(this.turns);
@@ -139,6 +145,7 @@ export class BotView extends ItemView {
       "mtg: bot-game",
       `deck: "[[${deck.name}]]"`,
       `model: ${this.model}`,
+      `thinking: ${this.think}`,
       `turns: ${g.turn}`,
       `calls: ${sum.calls}`,
       `tokens: ${sum.tokens}`,
@@ -181,7 +188,7 @@ export class BotView extends ItemView {
     const recent: string[] = [];
     const note = (s: string) => (recent.push(s), log(s));
     const actions: unknown[] = []; // リプレイ用: 行動の列
-    log(`デッキ: ${deck.name} (${deck.cards.length} 枚) / モデル: ${MODELS[this.model].label}`);
+    log(`デッキ: ${deck.name} (${deck.cards.length} 枚) / モデル: ${MODELS[this.model].label} / ${this.think ? "思考あり(浅い)" : "思考なし"}`);
     try {
       for (let t = 0; t < this.turns && !this.stop; t++) {
         startTurn(g).forEach(note);
@@ -227,18 +234,15 @@ export class BotView extends ItemView {
     let inTokens = 0;
     let outTokens = 0;
     for (let tries = 0; tries < 2; tries++) {
-      const r = await askClaude(key, this.model, system, user);
+      const r = await askClaude(key, this.model, system, user, this.think);
       cost += r.cost;
       inTokens += r.inTokens;
       outTokens += r.outTokens;
-      const m = r.text.match(/\{[\s\S]*\}/);
-      try {
-        const j = JSON.parse(m?.[0] ?? "");
-        const pick = acts.find((a) => a.id === Number(j.action));
-        if (pick) return { pick, reason: String(j.reason ?? ""), cost, inTokens, outTokens, tokens: inTokens + outTokens };
-      } catch {
-        /* 聞き直す */
-      }
+      // JSON 全体ではなく "action" の数字と "reason" の文字列だけ拾う (理由にマナ記号 {B} が入ると、JSON として読めなくなるため)
+      const n = r.text.match(/"action"\s*:\s*"?(\d+)/);
+      const pick = acts.find((a) => a.id === Number(n?.[1]));
+      if (pick) return { pick, reason: r.text.match(/"reason"\s*:\s*"([\s\S]*?)"\s*\}?\s*$/)?.[1] ?? "", cost, inTokens, outTokens, tokens: inTokens + outTokens };
+      botBus.addLog(`返事を読めず (${tries + 1}回目): ${r.text.slice(0, 200).replace(/\n/g, " ")}`);
     }
     return { pick: acts[acts.length - 1], reason: "(返事を読めず、終える)", cost, inTokens, outTokens, tokens: inTokens + outTokens };
   }

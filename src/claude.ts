@@ -16,14 +16,17 @@ export interface Reply {
 
 // Messages API を 1 回呼ぶ。思考は effort low で浅くして費用を抑える。
 // shortcut: ストリーミング無し・リトライ無し (requestUrl は逐次受信できない)。本実装で見直す
-export async function askClaude(key: string, model: string, system: string, user: string): Promise<Reply> {
+export async function askClaude(key: string, model: string, system: string, user: string, think = false): Promise<Reply> {
+  // 思考なし: Haiku は disabled、Sonnet は between_tools (disabled は 400)、Opus は止められない (effort low のみ)
+  const thinking = think ? undefined : model.includes("haiku") ? { type: "disabled" } : model.includes("sonnet") ? { type: "between_tools" } : undefined;
   const res = await requestUrl({
     url: "https://api.anthropic.com/v1/messages",
     method: "POST",
     headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
     body: JSON.stringify({
       model,
-      max_tokens: 4096,
+      max_tokens: think || !thinking ? 4096 : 800,
+      ...(thinking ? { thinking } : {}),
       cache_control: { type: "ephemeral" },
       output_config: { effort: "low" },
       system,
