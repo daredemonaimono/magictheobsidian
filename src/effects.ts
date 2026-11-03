@@ -219,11 +219,11 @@ function fromV2(raw: unknown[], hoist: TargetDef[]): unknown[] {
 }
 
 // 記録の1つの能力 (v2 でも v3 でも) を、検証した v3 にする。形が壊れていれば undefined
-export function normalizeAbility(raw: unknown): Ability | undefined {
+export function normalizeAbility(raw: unknown, macros?: Map<string, Macro>): Ability | undefined {
   const a = (raw ?? {}) as Record<string, unknown>;
   if (!KINDS.includes(String(a.kind))) return undefined;
   const hoist: TargetDef[] = [];
-  const effects = sanitizeSteps(fromV2(Array.isArray(a.effects) ? a.effects : [], hoist));
+  const effects = sanitizeSteps(fromV2(macros ? expandSteps(Array.isArray(a.effects) ? a.effects : [], macros) : Array.isArray(a.effects) ? a.effects : [], hoist));
   const cost = (a.cost ?? {}) as Record<string, unknown>;
   const ab: Ability = { kind: a.kind as Ability["kind"], effects };
   if (a.cost) ab.cost = { ...(cost.tap ? { tap: true } : {}), ...(typeof cost.mana === "string" ? { mana: cost.mana } : {}), ...(cost.life ? { life: num(cost.life) } : {}), ...(cost.sacrificeSelf ? { sacrificeSelf: true } : {}) };
@@ -325,4 +325,81 @@ export function describeAbility(a: Ability): string {
 // 入れ子の中も含めて、「未対応」の文を集める
 export function unsupportedIn(steps: Step[]): string[] {
   return steps.flatMap((s) => (s.do === "unsupported" ? [s.text] : s.do === "flip" ? unsupportedIn([...(s.win ?? []), ...(s.lose ?? [])]) : s.do === "if" ? unsupportedIn([...s.then, ...(s.else ?? [])]) : s.do === "may" ? unsupportedIn(s.steps) : []));
+}
+
+// ---- マクロ (既にある命令の組み合わせに、名前をつけた部品) ----
+// 記録には {"do":"use","macro":"名前","args":{"n":1}} と書く。読み込むとき、命令の並びに展開する (エンジンは、展開後の命令だけを実行する)。
+// マクロの steps の中の "$名前" は、引数に置き換わる。
+
+export interface Macro {
+  name: string; // camelCase。命令の種類 (move など) と同じ名前は使えない
+  title: string; // 日本語の名前
+  description: string; // 何をするか
+  params: string[]; // 引数の名前
+  steps: unknown[]; // 命令の並び ("$引数名" を含められる)
+}
+
+const MACRO_NAME = /^[a-z][A-Za-z0-9]{1,40}$/;
+
+// 形を確かめる。使えない形は、理由を返す
+export function validateMacro(raw: unknown): { macro?: Macro; error?: string } {
+  const m = (raw ?? {}) as Record<string, unknown>;
+  if (typeof m.name !== "string" || !MACRO_NAME.test(m.name)) return { error: "name は、英字で始まる英数字 (2〜41文字)" };
+  if ((STEP_VERBS as readonly string[]).includes(m.name) || m.name === "use") return { error: `name「${m.name}」は、命令の名前と重なる` };
+  if (!Array.isArray(m.steps) || !m.steps.length) return { error: "steps が空" };
+  const params = Array.isArray(m.params) ? m.params.map(String).filter((p) => /^[A-Za-z]\w*$/.test(p)) : [];
+  const ok = (steps: unknown[]): boolean =>
+    steps.every((x) => {
+      const e = (x ?? {}) as Record<string, unknown>;
+      if (e.do === "use") return typeof e.macro === "string";
+      if (!(STEP_VERBS as readonly string[]).includes(String(e.do)) || e.do === "unsupported") return false;
+      if (e.do === "flip") return ok([...((e.win as unknown[]) ?? []), ...((e.lose as unknown[]) ?? [])]);
+      if (e.do === "if") return ok([...((e.then as unknown[]) ?? []), ...((e.else as unknown[]) ?? [])]);
+      if (e.do === "may") return ok((e.steps as unknown[]) ?? []);
+      return true;
+    });
+  if (!ok(m.steps)) return { error: "steps に、知らない命令か、未対応 (unsupported) が入っている" };
+  return { macro: { name: m.name, title: typeof m.title === "string" ? m.title : m.name, description: typeof m.description === "string" ? m.description : "", params, steps: m.steps } };
+}
+
+function substitute(node: unknown, args: Record<string, unknown>): unknown {
+  if (typeof node === "string") return node.startsWith("$") && node.slice(1) in args ? args[node.slice(1)] : node;
+  if (Array.isArray(node)) return node.map((x) => substitute(x, args));
+  if (node && typeof node === "object") return Object.fromEntries(Object.entries(node).map(([k, v]) => [k, substitute(v, args)]));
+  return node;
+}
+
+// use を展開する。入れ子 (flip / if / may の中) も展開する。見つからないマクロや、深すぎる入れ子は「未対応」になる
+export function expandSteps(raw: unknown[], macros: Map<string, Macro>, depth = 0): unknown[] {
+  return raw.flatMap((x): unknown[] => {
+    const e = (x ?? {}) as Record<string, unknown>;
+    if (e.do === "use") {
+      const m = macros.get(String(e.macro));
+      if (!m || depth >= 5) return [{ do: "unsupported", text: `マクロ「${String(e.macro)}」が見つからない` }];
+      const args = (e.args ?? {}) as Record<string, unknown>;
+      return expandSteps(substitute(JSON.parse(JSON.stringify(m.steps)), args) as unknown[], macros, depth + 1);
+    }
+    const out = { ...e };
+    if (Array.isArray(e.win)) out.win = expandSteps(e.win, macros, depth);
+    if (Array.isArray(e.lose)) out.lose = expandSteps(e.lose, macros, depth);
+    if (Array.isArray(e.then)) out.then = expandSteps(e.then, macros, depth);
+    if (Array.isArray(e.else)) out.else = expandSteps(e.else, macros, depth);
+    if (Array.isArray(e.steps)) out.steps = expandSteps(e.steps, macros, depth);
+    return [out];
+  });
+}
+
+// マクロを使っている命令の名前を集める (記録の生の JSON から)
+export function macrosUsedIn(raw: unknown): string[] {
+  const found = new Set<string>();
+  const walk = (n: unknown) => {
+    if (Array.isArray(n)) n.forEach(walk);
+    else if (n && typeof n === "object") {
+      const o = n as Record<string, unknown>;
+      if (o.do === "use" && typeof o.macro === "string") found.add(o.macro);
+      Object.values(o).forEach(walk);
+    }
+  };
+  walk(raw);
+  return [...found];
 }

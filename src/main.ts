@@ -9,6 +9,8 @@ import { CARDS_VIEW, CardsView } from "./CardsView";
 import { DASHBOARD_VIEW, DashboardView } from "./DashboardView";
 import { DECKLIST_VIEW, DeckListView } from "./DeckListView";
 import { DECK_VIEW, DeckView } from "./DeckView";
+import { initMacroStore } from "./macros";
+import { initPendingStore } from "./pending";
 import { initRuleStore, migrateToRulebook } from "./rulestore";
 import { RULEBOOK_VIEW, RulebookView } from "./RulebookView";
 import { BOT_VIEW, BotView } from "./BotView";
@@ -125,7 +127,10 @@ export default class MagicTheObsidian extends Plugin {
     // デッキ画面のメイン/サイドのタブを押したとき、サイドバーが畳まれていたら開く
     this.registerEvent((ws as unknown as { on(n: string, cb: () => void): EventRef }).on("mtg-show-list", () => void this.showList(ws.getActiveViewOfType(DeckView)?.leaf)));
     // ルールブックの保存先 (隠しフォルダ)。旧い置き場 (vault の Bot/Rules, Bot/Types) からの移行は、1回だけ
-    initRuleStore(this.manifest.dir ?? ".obsidian/plugins/magictheobsidian");
+    const pluginDir = this.manifest.dir ?? ".obsidian/plugins/magictheobsidian";
+    initRuleStore(pluginDir);
+    initMacroStore(pluginDir);
+    initPendingStore(pluginDir);
     const migrate = async () => {
       if (this.settings.rulebookMigrated) return;
       try {

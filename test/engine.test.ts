@@ -523,4 +523,47 @@ console.log("engine ok");
   assert.ok(list.includes("エンジンの理解: 唱えて解決したとき") && list.includes("使っている型: Spell effect, change") && list.includes("⚠エンジンが実行できない部分(何も起きない): reveal"), "理解・型・動かない部分が付く");
   assert.ok(list.includes("処理の記録が無い"), "記録の無いカードは、そう書く");
 }
+{
+  // マクロ: 命令の組み合わせに名前をつけ、記録からは use で使う
+  const { expandSteps, validateMacro, macrosUsedIn, normalizeAbility } = await import("../src/effects");
+  const { parseProposal } = await import("../src/cardrules");
+  const { isReady } = await import("../src/pending");
+  const discardLose = { name: "discardLose", title: "捨てさせて、ライフを失う", description: "相手の手札から1枚捨てさせ、自分がライフを失う", params: ["n", "life"], steps: [
+    { do: "move", what: { kind: "cards", zone: "hand", owner: "opponent", count: "$n", chooser: "you" }, to: "graveyard", how: "discard" },
+    { do: "change", what: { kind: "player", who: "you" }, stat: "life", delta: "$life" },
+  ] };
+  assert.ok(validateMacro(discardLose).macro, "正しいマクロは通る");
+  assert.ok(validateMacro({ ...discardLose, name: "move" }).error?.includes("重なる"), "命令の名前は使えない");
+  assert.ok(validateMacro({ ...discardLose, steps: [{ do: "unsupported", text: "x" }] }).error, "未対応を含むマクロは作れない");
+  const table = new Map([["discardLose", validateMacro(discardLose).macro!]]);
+  const expanded = expandSteps([{ do: "use", macro: "discardLose", args: { n: 1, life: -2 } }, { do: "flip", lose: [{ do: "use", macro: "discardLose", args: { n: 2, life: -1 } }] }], table) as { do: string; what?: { count?: number }; delta?: number; lose?: { what?: { count?: number } }[] }[];
+  assert.equal(expanded[0].what?.count, 1, "引数が入る");
+  assert.equal((expanded[2].lose![0].what as { count: number }).count, 2, "入れ子 (flip の中) も展開する");
+  assert.equal((expandSteps([{ do: "use", macro: "nothing" }], table)[0] as { do: string }).do, "unsupported", "無いマクロは、未対応になる");
+  const ab = normalizeAbility({ kind: "spell", effects: [{ do: "use", macro: "discardLose", args: { n: 1, life: -2 } }] }, table)!;
+  assert.equal(ab.effects.length, 2, "記録を読むと、展開された命令になる");
+  assert.deepEqual(macrosUsedIn([{ kind: "spell", effects: [{ do: "use", macro: "discardLose", args: {} }] }]), ["discardLose"]);
+  // 動かす: マクロで書いた Thoughtseize
+  const seizeM = def("SeizeM", "Sorcery", "{B}", 0, 0, "", [{ kind: "spell", effects: ab.effects }]);
+  assert.equal(await (await import("../src/diagnose")).smokeTest(seizeM).then((r) => r.status), "ok", "マクロから展開した命令も、動く");
+
+  // AI の返事: 新しいマクロと実装待ち
+  const reply = JSON.stringify({
+    abilities: [{ kind: "triggered", trigger: { event: "etb" }, effects: [{ do: "use", macro: "pingTwo", args: { n: 1 } }, { do: "unsupported", text: "Then amass Orcs 1." }] }],
+    newMacros: [{ name: "pingTwo", title: "相手に点を与える", description: "相手に N 点", params: ["n"], steps: [{ do: "change", what: { kind: "player", who: "opponent" }, stat: "damage", delta: "$n" }] }, { name: "move", steps: [{ do: "shuffle", owner: "you" }] }],
+    needs: [{ name: "amass", title: "アマス", description: "トークンを作り、カウンターを置く", inputs: "N", state: "トークン、カウンター", waitFor: ["todo.token", "todo.counter"] }],
+    unsupported: [],
+  });
+  const p = parseProposal(reply, table);
+  assert.equal(p.macros.length, 1, "新しいマクロを1つ作る (命令の名前のものは作れない)");
+  assert.ok(p.errors.some((e) => e.includes("作れない")), "作れないマクロは、理由が付く");
+  assert.equal(p.abilities[0].effects[0].do, "change", "新しいマクロも展開して読める");
+  assert.equal(p.raw.length, 1);
+  assert.equal(p.needs[0].waitFor.length, 2);
+  assert.deepEqual(p.unsupported, ["Then amass Orcs 1."]);
+  const item = { id: "p1", key: "Bowmasters", instruction: "x", needs: p.needs, created: "", status: "waiting" as const };
+  assert.ok(!isReady(item), "待っている型が未実装の間は、まだ");
+  assert.ok(isReady({ ...item, needs: [{ ...p.needs[0], waitFor: ["verb.move"] }] }), "待っている型が実装されたら、更新できる");
+  assert.ok(!isReady({ ...item, needs: [{ ...p.needs[0], waitFor: ["todo.unknownFunction"] }] }), "カタログに無い型は、実装されるまで待つ");
+}
 console.log("diagnose ok");

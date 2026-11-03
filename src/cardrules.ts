@@ -1,7 +1,10 @@
 import { App } from "obsidian";
 import { cardInfo, oracleEnglish } from "./cards";
 import { askClaude } from "./claude";
-import { Ability, normalizeAbility, unsupportedIn } from "./effects";
+import { Ability, Macro, macrosUsedIn, normalizeAbility, unsupportedIn, validateMacro } from "./effects";
+import { getMacros, saveMacro } from "./macros";
+import { TYPE_ENTRIES } from "./typecatalog";
+import { NeedSpec, PendingItem, newPendingId, readPending, writePending } from "./pending";
 import { KEYWORDS, parseKeywords } from "./engine";
 import { readRuleText, writeRuleText } from "./rulestore";
 
@@ -11,8 +14,8 @@ export const COMPILE_MODEL = "claude-sonnet-5-5";
 // 効果の部品を増やしたら上げる。古い版で作った「一部未対応」の記録は、「ルール化」で作り直す
 export const VOCAB_VERSION = 3;
 
-export function sanitizeAbilities(raw: unknown): Ability[] {
-  return Array.isArray(raw) ? raw.map(normalizeAbility).filter((a): a is Ability => !!a) : [];
+export function sanitizeAbilities(raw: unknown, macros?: Map<string, Macro>): Ability[] {
+  return Array.isArray(raw) ? raw.map((a) => normalizeAbility(a, macros)).filter((a): a is Ability => !!a) : [];
 }
 
 // ---- 読み書き ----
@@ -32,11 +35,11 @@ export interface Rule {
 }
 
 // 本文 (ルール md) を読んで、能力・未対応・status を取り出す
-export function parseRule(text: string): Rule | undefined {
+export function parseRule(text: string, macros?: Map<string, Macro>): Rule | undefined {
   const m = text.match(/```json\n([\s\S]*?)\n```/);
   if (!m) return undefined;
   try {
-    const abilities = sanitizeAbilities(JSON.parse(m[1]).abilities);
+    const abilities = sanitizeAbilities(JSON.parse(m[1]).abilities, macros);
     const section = text.match(/## 未対応\n\n([\s\S]*?)\n\n##/)?.[1] ?? "";
     const unsupported = realUnsupported(section.split("\n").map((l) => l.replace(/^- /, "")).filter((l) => l.trim() !== "なし"));
     const vocab = Number(text.match(/^vocab: (\d+)$/m)?.[1]);
@@ -49,7 +52,7 @@ export function parseRule(text: string): Rule | undefined {
 // 記録があればその内容、無ければ undefined (エンジンは効果テキストのマナ能力だけを持つ)
 export async function loadRule(app: App, key: string): Promise<Rule | undefined> {
   const text = await readRuleText(app, key);
-  return text === undefined ? undefined : parseRule(text);
+  return text === undefined ? undefined : parseRule(text, await getMacros(app));
 }
 
 export const loadAbilities = async (app: App, key: string) => (await loadRule(app, key))?.abilities;
@@ -61,7 +64,7 @@ export async function isStale(app: App, key: string): Promise<boolean> {
 }
 
 // ルール md の本文を作る
-export function ruleText(key: string, oracle: string, abilities: Ability[], unsupported: string[], meta: { by: string; status?: string; note?: string }): string {
+export function ruleText(key: string, oracle: string, abilities: Ability[], unsupported: string[], meta: { by: string; status?: string; note?: string; raw?: unknown[] }): string {
   return [
     "---",
     "mtg: bot-rule",
@@ -85,7 +88,7 @@ export function ruleText(key: string, oracle: string, abilities: Ability[], unsu
     "## 処理",
     "",
     "```json",
-    JSON.stringify({ abilities }, null, 1),
+    JSON.stringify({ abilities: meta.raw ?? abilities }, null, 1), // マクロを使った記録は、使った形 (use) のまま残す
     "```",
     "",
   ].join("\n");
@@ -154,6 +157,18 @@ export const SPEC = `あなたは Magic: The Gathering の対戦エンジンの�
 常在型能力 (+1/+1 の修整、コストの増減)、代替コスト・追加コスト、置換効果、トークンを作る、カウンターを置く、ターン終了時までの一時的な効果、
 「このカードが戦場に出たとき」「アップキープの開始時」「死亡したとき」以外のきっかけ (攻撃したとき、カードを引いたとき、呪文を唱えたとき) の誘発型能力、「呪文を打ち消す」「コントロールを得る」「コピーする」、装備・オーラ・プレインズウォーカー能力。
 
+# マクロ (命令の組み合わせに、名前をつけた部品)
+effects の中で {"do":"use","macro":"名前","args":{"引数":値}} と書ける。使えるマクロは、末尾の「登録済みのマクロ」。
+同じ組み合わせが、他のカードにも出てきそうなときは、newMacros で新しいマクロを作ってよい: {"name":"英数字の名前","title":"日本語の名前","description":"何をするか","params":["n"],"steps":[命令...]}。
+steps の中では、"$n" のように引数を使える。steps に使える命令は、move change addMana shuffle flip if may use だけ (unsupported は入れない)。
+
+# 今の命令では書けないとき (needs)
+その文は、effects に {"do":"unsupported","text":"原文"} として残し、needs に、新しい関数の仕様を書く: {"name":"createToken","title":"トークンを作る","description":"どう動くか","inputs":"受け取るもの","state":"必要なゲームの状態","waitFor":["todo.token"]}。
+waitFor は、末尾の「まだ実装されていない型」の id から、いちばん近いものを選ぶ。当てはまるものが無ければ、"todo." + name にする。needs は、無ければ省く。
+
+# 出力 (拡張)
+{"abilities":[...],"newMacros":[...],"needs":[...],"unsupported":[...]}  (newMacros と needs は、無ければ省く)
+
 # 例
 Mana Crypt: {"abilities":[{"kind":"mana","cost":{"tap":true},"effects":[{"do":"addMana","options":"C","n":2}],"text":"無色2"},{"kind":"triggered","trigger":{"event":"upkeep","whose":"you"},"effects":[{"do":"flip","lose":[{"do":"change","what":{"kind":"player","who":"you"},"stat":"damage","delta":3}]}],"text":"コインに負けたら3点"}],"unsupported":[]}
 Dark Ritual: {"abilities":[{"kind":"spell","effects":[{"do":"addMana","options":"B","n":3}],"text":"BBB"}],"unsupported":[]}
@@ -171,13 +186,60 @@ export interface Compiled {
   error?: string;
 }
 
-// AI の返事 (JSON) を、検証した能力と未対応にする
-export function parseProposal(text: string): { abilities: Ability[]; unsupported: string[] } {
+// 指示書の末尾に付ける、いまの登録済みのマクロと、まだ実装されていない型
+export function specFor(macros: Map<string, Macro>): string {
+  const ms = [...macros.values()].map((m) => `- ${m.name}(${m.params.join(", ")}): ${m.title} — ${m.description}`);
+  const planned = TYPE_ENTRIES.filter((e) => e.status === "planned").map((e) => `- ${e.id}: ${e.title} — ${e.summary}`);
+  return `${SPEC}\n\n# 登録済みのマクロ\n${ms.length ? ms.join("\n") : "(まだ無い)"}\n\n# まだ実装されていない型 (needs の waitFor の候補)\n${planned.join("\n")}`;
+}
+
+export interface ProposalData {
+  abilities: Ability[]; // 展開後 (エンジンが実行する形)
+  raw: unknown[]; // 記録に書く形 (マクロは use のまま)
+  unsupported: string[];
+  macros: Macro[]; // 新しく作るマクロ
+  needs: NeedSpec[]; // 実装待ちの関数の仕様
+  errors: string[]; // 使えなかったマクロなど
+}
+
+// AI の返事 (JSON) を、検証した能力・マクロ・実装待ちにする
+export function parseProposal(text: string, existing: Map<string, Macro> = new Map()): ProposalData {
   const parsed = JSON.parse(text.match(/\{[\s\S]*\}/)?.[0] ?? "");
-  const abilities = sanitizeAbilities(parsed.abilities);
+  const errors: string[] = [];
+  const table = new Map(existing);
+  const macros: Macro[] = [];
+  for (const raw of Array.isArray(parsed.newMacros) ? parsed.newMacros : []) {
+    const v = validateMacro(raw);
+    if (!v.macro) errors.push(`マクロを作れない: ${v.error}`);
+    else if (existing.has(v.macro.name)) errors.push(`マクロ「${v.macro.name}」は既にある (上書きしない)`);
+    else (macros.push(v.macro), table.set(v.macro.name, v.macro));
+  }
+  const rawAbilities: unknown[] = Array.isArray(parsed.abilities) ? parsed.abilities : [];
+  const raw = rawAbilities.filter((a) => normalizeAbility(a, table));
+  const abilities = sanitizeAbilities(raw, table);
   const found: string[] = (Array.isArray(parsed.unsupported) ? parsed.unsupported : []).map((u: unknown) => String(u));
   for (const a of abilities) found.push(...unsupportedIn(a.effects));
-  return { abilities, unsupported: realUnsupported(found) }; // キーワードや、重複を除く
+  const needs: NeedSpec[] = (Array.isArray(parsed.needs) ? parsed.needs : [])
+    .map((n: Record<string, unknown>): NeedSpec => {
+      const name = String(n.name ?? "").replace(/[^A-Za-z0-9]/g, "") || "newFunction";
+      const wait = (Array.isArray(n.waitFor) ? n.waitFor.map(String) : []).filter(Boolean);
+      return { name, title: String(n.title ?? name), description: String(n.description ?? ""), inputs: String(n.inputs ?? ""), state: String(n.state ?? ""), waitFor: wait.length ? wait : [`todo.${name}`] };
+    })
+    .filter((n: NeedSpec) => n.description);
+  return { abilities, raw, unsupported: realUnsupported(found), macros, needs, errors };
+}
+
+// 案を保存する: マクロ、カードの記録、実装待ちの仕様。バックアップは、直す前の版を1つ前の分だけ残す
+export async function applyProposal(app: App, key: string, p: ProposalData, instruction: string, meta: { status?: string; backup: boolean }): Promise<{ macros: number; needs: number }> {
+  for (const m of p.macros) await saveMacro(app, m);
+  const oracle = await oracleEnglish(app, key);
+  await writeRuleText(app, key, ruleText(key, oracle, p.abilities, p.unsupported, { by: COMPILE_MODEL, status: meta.status, note: instruction || undefined, raw: p.raw }), meta.backup);
+  if (p.needs.length) {
+    const items = await readPending(app);
+    items.push({ id: newPendingId(), key, instruction: instruction || oracle, needs: p.needs, created: new Date().toISOString(), status: "waiting" });
+    await writePending(app, items);
+  }
+  return { macros: p.macros.length, needs: p.needs.length };
 }
 
 // 1枚の処理を AI に作らせて保存する。既にあれば何もしない (手で直したものを守る)
@@ -187,10 +249,11 @@ export async function compileCard(app: App, apiKey: string, key: string, overwri
   if ((await readRuleText(app, key)) !== undefined && !overwrite) return { key, ok: true, unsupported: [], cost: 0 };
   const oracle = await oracleEnglish(app, key);
   try {
-    const r = await askClaude(apiKey, COMPILE_MODEL, SPEC, `カード: ${info.name}\nタイプ: ${info.typeLine}\nマナコスト: ${info.manaCost}\n\nオラクルテキスト:\n${oracle}`, true);
-    const { abilities, unsupported } = parseProposal(r.text);
-    await writeRuleText(app, key, ruleText(key, oracle, abilities, unsupported, { by: COMPILE_MODEL }), overwrite);
-    return { key, ok: true, unsupported, cost: r.cost };
+    const macros = await getMacros(app);
+    const r = await askClaude(apiKey, COMPILE_MODEL, specFor(macros), `カード: ${info.name}\nタイプ: ${info.typeLine}\nマナコスト: ${info.manaCost}\n\nオラクルテキスト:\n${oracle}`, true);
+    const p = parseProposal(r.text, macros);
+    await applyProposal(app, key, p, "", { backup: overwrite });
+    return { key, ok: true, unsupported: p.unsupported, cost: r.cost };
   } catch (e) {
     return { key, ok: false, unsupported: [], cost: 0, error: (e as Error).message };
   }
@@ -198,25 +261,26 @@ export async function compileCard(app: App, apiKey: string, key: string, overwri
 
 export interface Proposal {
   before: Rule | undefined;
-  after: { abilities: Ability[]; unsupported: string[] };
+  data: ProposalData;
   cost: number;
 }
 
-// あなたの指示で、記録の案を作る (保存はしない。前後を見せて、確認してから保存する)
+// あなたが書いた処理から、記録の案を作る (保存はしない。前後を見せて、確認してから保存する)
 export async function proposeUpdate(app: App, apiKey: string, key: string, instruction: string): Promise<Proposal> {
   const info = cardInfo(app, key);
   if (!info) throw new Error("カードのノートが無い");
   const oracle = await oracleEnglish(app, key);
   const before = await loadRule(app, key);
-  const current = before ? JSON.stringify({ abilities: before.abilities, unsupported: before.unsupported }) : "(記録なし)";
-  const r = await askClaude(apiKey, COMPILE_MODEL, SPEC, `カード: ${info.name}\nタイプ: ${info.typeLine}\nマナコスト: ${info.manaCost}\n\nオラクルテキスト:\n${oracle}\n\n今の記録:\n${current}\n\nあなたへの指示 (この指示に沿って、記録を作り直す。指示に無い部分は、今の記録のまま残す):\n${instruction}`, true);
-  return { before, after: parseProposal(r.text), cost: r.cost };
+  const macros = await getMacros(app);
+  const rawText = await readRuleText(app, key);
+  const current = rawText?.match(/```json\n([\s\S]*?)\n```/)?.[1];
+  const r = await askClaude(apiKey, COMPILE_MODEL, specFor(macros), `カード: ${info.name}\nタイプ: ${info.typeLine}\nマナコスト: ${info.manaCost}\n\nオラクルテキスト:\n${oracle}\n\n今の記録:\n${current ?? "(記録なし)"}\n\nあなたが書いた処理 (この内容に沿って、記録を作り直す。書かれていない部分は、今の記録のまま残す。既にある関数・マクロで書けるものは、それで書く。足りない部分は needs に書く):\n${instruction}`, true);
+  return { before, data: parseProposal(r.text, macros), cost: r.cost };
 }
 
-// 案を保存する。手で直したものなので status は manual (作り直されない)。直す前の版は、1つ前の分だけ残る
-export async function saveProposal(app: App, key: string, after: { abilities: Ability[]; unsupported: string[] }, instruction: string) {
-  const oracle = await oracleEnglish(app, key);
-  await writeRuleText(app, key, ruleText(key, oracle, after.abilities, after.unsupported, { by: COMPILE_MODEL, status: "manual", note: instruction }), true);
+// 案を保存する。手で書いた処理なので status は manual (作り直されない)
+export async function saveProposal(app: App, key: string, p: ProposalData, instruction: string) {
+  return applyProposal(app, key, p, instruction, { status: "manual", backup: true });
 }
 
 export interface EnsureResult {

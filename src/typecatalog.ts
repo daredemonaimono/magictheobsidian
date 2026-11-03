@@ -14,7 +14,7 @@ export const CATEGORY_EN: Record<Category, string> = {
 
 export const EN_TITLES: Record<string, string> = {
   "kind.spell": "Spell effect", "kind.activated": "Activated ability", "kind.mana": "Mana ability", "kind.triggered": "Triggered ability",
-  "verb.move": "move", "verb.change": "change", "verb.addMana": "addMana", "verb.shuffle": "shuffle", "verb.flip": "flip", "verb.if": "if", "verb.may": "may", "verb.unsupported": "unsupported",
+  "verb.move": "move", "verb.change": "change", "verb.addMana": "addMana", "verb.use": "use", "verb.shuffle": "shuffle", "verb.flip": "flip", "verb.if": "if", "verb.may": "may", "verb.unsupported": "unsupported",
   "sel.cards": "cards", "sel.player": "player", "sel.any": "any", "sel.ref": "ref", "sel.targets": "targets",
   "amount.number": "number", "amount.of": "of", "amount.count": "count", "amount.x": "X",
   "cond.cmp": "cmp", "cond.has": "has", "cond.did": "did",
@@ -59,6 +59,7 @@ export const TYPE_ENTRIES: TypeEntry[] = [
   { id: "verb.flip", category: "命令", title: "flip (コイン投げ)", status: "implemented", since: "0.27.0", summary: "コインを投げて、勝ち・負けで別の命令を実行する。", shape: J({ do: "flip", win: [], lose: [] }), impl: "engine.ts の runSteps()。seed つきの乱数で決める (リプレイで同じ結果)。", example: "Mana Crypt" },
   { id: "verb.if", category: "命令", title: "if (もし〜なら)", status: "implemented", since: "0.31.0", summary: "条件で、実行する命令を分ける。", shape: J({ do: "if", cond: { has: { kind: "cards", types: ["land"], owner: "you" } }, then: [], else: [] }), impl: "engine.ts の runSteps() が evalCond() で条件を調べて、then か else を実行する。", example: "(今のデッキには無い)" },
   { id: "verb.may", category: "命令", title: "may (してもよい)", status: "implemented", since: "0.31.0", summary: "「してもよい」。決める人に、する・しないを聞く。", shape: J({ do: "may", steps: [], who: "you" }), impl: "engine.ts の runSteps()。choose() で「する/しない」を選ばせる。誘発型能力の optional も、解決時に同じ形で聞く。" },
+  { id: "verb.use", category: "命令", title: "use (マクロ)", status: "implemented", since: "0.34.0", summary: "マクロ (命令の組み合わせに、名前をつけた部品) を使う。記録を読むとき、命令の並びに展開される。", shape: J({ do: "use", macro: "discardLose", args: { n: 1, life: -2 } }), impl: "effects.ts の expandSteps()。マクロの steps の中の \"$名前\" を引数に置き換え、入れ子 (flip / if / may の中、マクロの中のマクロ。5段まで) も展開する。エンジンは、展開後の命令だけを実行する。マクロは、ルールブックの隠しフォルダ (rulebook/macros/) に保存され、「処理を書く」で AI が作る。見つからないマクロは、未対応になる。", limits: "マクロの中に、未対応 (unsupported) は入れられない。" },
   { id: "verb.unsupported", category: "命令", title: "unsupported (未対応)", status: "implemented", since: "0.27.0", summary: "エンジンが実行できない文の印。実行されず、ログに「未対応の効果」と出る。", shape: J({ do: "unsupported", text: "原文" }), impl: "effects.ts の sanitize が、知らない命令・壊れた形を、これに置き換える。能力の残りは動く。「未実装の効果」の一覧の元になる。" },
 
   // ---- 何を ----
