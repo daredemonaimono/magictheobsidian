@@ -1,7 +1,7 @@
 // 能力ライブラリ (共有の能力)。1つの能力につき1つの定義: 実際の効果 (日本語)・引数・照合の例・処理 (関数の並び)。
 // カードの記録は、{"ref":"能力のid","args":{...}} でこれを使う。カード固有の能力は、これまで通り、記録の中に直接書く。
 // Obsidian に依存しない部分 (型・検証・展開・md の書き読み)。保存先は abilitystore.ts。
-import { Ability, normalizeAbility, substitute, unsupportedIn } from "./effects";
+import { AMASS_STEPS, Ability, normalizeAbility, substitute, unsupportedIn } from "./effects";
 import { KEYWORDS } from "./engine";
 import type { NeedSpec } from "./pending";
 import { TYPE_ENTRIES } from "./typecatalog";
@@ -149,30 +149,22 @@ export function keywordEntries(): LibAbility[] {
 
 // リリースに同梱する処理。ライブラリに同じ id の能力があって、まだ処理が無ければ、起動時に入れる (AI を使わない)
 export const BUILTIN_ABILITIES: Record<string, unknown> = {
-  amass: {
-    kind: "spell",
-    effects: [
-      { do: "if", cond: { has: { kind: "cards", subtypes: ["Army"], owner: "you" } }, then: [], else: [{ do: "create", token: { name: "$type Army", types: "Creature — $type Army", power: 0, toughness: 0, colors: ["B"] } }] },
-      { do: "counters", what: { kind: "cards", subtypes: ["Army"], owner: "you", count: 1 }, counter: "+1/+1", n: "$n", as: "army" },
-      { do: "addType", what: { kind: "ref", ref: "army" }, subtype: "$type" },
-    ],
-    text: "動員 $n ($type)",
-  },
+  amass: { kind: "spell", effects: AMASS_STEPS, text: "動員 $n ($type)" },
   evoke: { kind: "altCost", alt: { mana: "$cost", evoke: true }, effects: [], text: "想起 $cost (出たとき生け贄にする)" },
 };
 
 // 同梱の処理があって、処理が無い能力に、処理を入れる。「処理はまだ無い」という古い説明も、実際の効果に直す。変えたら新しい定義、無ければ undefined
 export const BUILTIN_EFFECTS: Record<string, string> = {
-  amass: "動員 {n} ({type}): あなたが軍団(Army)をコントロールしていなければ、0/0 の黒の {type}・軍団のトークンを1体作る。軍団を1体選び、+1/+1 カウンターを {n} 個置き、{type} を加える。",
+  amass: "動員 {n} ({type}): あなたが軍団(Army)をコントロールしていなければ、0/0 の黒の {type}・軍団のトークンを1体作る。軍団を1体選び、+1/+1 カウンターを {n} 個置き、{type} を加える。能力の途中で使うときは、命令 {\"do\":\"use\",\"macro\":\"amass\",\"args\":{\"n\":1,\"type\":\"Orc\"}} と書く (ref ではなく)。",
   evoke: "想起 {cost}: このクリーチャー呪文を、マナコストの代わりに {cost} を払って唱えてもよい。想起で唱えたなら、出たとき生け贄にする。",
 };
 export function withBuiltin(lib: LibAbility): LibAbility | undefined {
   const ab = BUILTIN_ABILITIES[lib.id];
   if (!ab) return undefined;
-  const stale = lib.effect.includes("処理はまだ無い");
+  const stale = lib.effect !== (BUILTIN_EFFECTS[lib.id] ?? lib.effect); // 同梱の説明と違う (「処理はまだ無い」の古い説明を含む) ときは、同梱の説明に直す
   if (lib.ability && !stale) return undefined;
   const { needs: _needs, ...rest } = lib;
-  const next: LibAbility = { ...rest, ability: lib.ability ?? ab, effect: stale ? (BUILTIN_EFFECTS[lib.id] ?? lib.effect) : lib.effect };
+  const next: LibAbility = { ...rest, ability: lib.ability ?? ab, effect: BUILTIN_EFFECTS[lib.id] ?? lib.effect };
   return checkAbility(next).ok ? next : undefined;
 }
 

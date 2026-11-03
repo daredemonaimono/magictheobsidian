@@ -449,6 +449,16 @@ export interface Macro {
   steps: unknown[]; // 命令の並び ("$引数名" を含められる)
 }
 
+// リリースに同梱するマクロ。ルールブックに同じ名前が無ければ、使える (カードの記録の中で、命令として {"do":"use","macro":"amass","args":{...}} と書く)
+export const AMASS_STEPS: unknown[] = [
+  { do: "if", cond: { has: { kind: "cards", subtypes: ["Army"], owner: "you" } }, then: [], else: [{ do: "create", token: { name: "$type Army", types: "Creature — $type Army", power: 0, toughness: 0, colors: ["B"] } }] },
+  { do: "counters", what: { kind: "cards", subtypes: ["Army"], owner: "you", count: 1 }, counter: "+1/+1", n: "$n", as: "army" },
+  { do: "addType", what: { kind: "ref", ref: "army" }, subtype: "$type" },
+];
+export const BUILTIN_MACROS: Macro[] = [
+  { name: "amass", title: "動員 (Amass)", description: "動員 N (種族 T)。Army が無ければ 0/0 の黒の T・Army トークンを作り、Army を1体選んで +1/+1 カウンターを N 個置き、T を加える。能力の途中 (「〜したあと、動員 Orcs 1」) で使う", params: ["n", "type"], steps: AMASS_STEPS },
+];
+
 const MACRO_NAME = /^[a-z][A-Za-z0-9]{1,40}$/;
 
 // 形を確かめる。使えない形は、理由を返す

@@ -104,3 +104,12 @@ console.log("abilities ok");
   assert.ok(!fixed.effect.includes("処理はまだ無い") && fixed.effect.includes("想起"));
   assert.equal(withBuiltin(fixed), undefined, "直したあとは、何もしない");
 }
+{
+  // 同梱のマクロ amass: カードの記録で、命令として使える (Bowmasters)
+  const { BUILTIN_MACROS, expandSteps } = await import("../src/effects");
+  const table = new Map(BUILTIN_MACROS.map((m) => [m.name, m]));
+  const steps = expandSteps([{ do: "use", macro: "amass", args: { n: 1, type: "Orc" } }], table) as { do: string }[];
+  assert.deepEqual(steps.map((x) => x.do), ["if", "counters", "addType"], "amass が、トークン・カウンター・種族の命令に展開される");
+  const bow = parseRule("```json\n" + JSON.stringify({ abilities: [{ kind: "triggered", trigger: { event: "etb" }, targets: [{ id: "t", sel: { kind: "any" } }], effects: [{ do: "change", what: { kind: "ref", ref: "t" }, stat: "damage", delta: 1 }, { do: "use", macro: "amass", args: { n: 1, type: "Orc" } }] }] }) + "\n```", table, new Map());
+  assert.equal(bow?.unsupported.length, 0, "マクロ amass が見つかり、未対応が残らない");
+}

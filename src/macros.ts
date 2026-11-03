@@ -1,5 +1,5 @@
 import { App, normalizePath } from "obsidian";
-import { Macro, validateMacro } from "./effects";
+import { BUILTIN_MACROS, Macro, validateMacro } from "./effects";
 
 // マクロの保存先: ルールブックの隠しフォルダ (<プラグインのフォルダ>/rulebook/macros/<名前>.json)
 let base = "";
@@ -28,6 +28,7 @@ export async function getMacros(app: App): Promise<Map<string, Macro>> {
       }
     }
   }
+  for (const m of BUILTIN_MACROS) if (!out.has(m.name)) out.set(m.name, m); // 同梱のマクロ (ルールブックに同じ名前があれば、そちらが先)
   return (cache = out);
 }
 
