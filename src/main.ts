@@ -9,6 +9,8 @@ import { CARDS_VIEW, CardsView } from "./CardsView";
 import { DASHBOARD_VIEW, DashboardView } from "./DashboardView";
 import { DECKLIST_VIEW, DeckListView } from "./DeckListView";
 import { DECK_VIEW, DeckView } from "./DeckView";
+import { BOT_VIEW, BotView } from "./BotView";
+import { BOTLOG_VIEW, BotLogView } from "./BotLogView";
 import { fetchCard, fileSafe } from "./scryfall";
 import { priceStore, updateCollectionPrices } from "./prices";
 import { DEFAULT_SETTINGS, Settings, SettingsTab } from "./settings";
@@ -71,6 +73,8 @@ export default class MagicTheObsidian extends Plugin {
       listArt: d.listArt ?? DEFAULT_SETTINGS.listArt,
       dashboardTab: d.dashboardTab ?? DEFAULT_SETTINGS.dashboardTab,
       currency: d.currency ?? DEFAULT_SETTINGS.currency,
+      botModel: d.botModel ?? DEFAULT_SETTINGS.botModel,
+      botKey: d.botKey ?? DEFAULT_SETTINGS.botKey,
     };
     priceStore.prices = d.prices ?? {};
     priceStore.updated = d.pricesUpdated ?? "";
@@ -86,7 +90,9 @@ export default class MagicTheObsidian extends Plugin {
       }),
     );
     this.registerView(DECK_VIEW, (leaf) => new DeckView(leaf, this.settings));
-    this.registerView(DASHBOARD_VIEW, (leaf) => new DashboardView(leaf, { collection: () => void this.openOrReveal(COLLECTION_VIEW), deck: () => void this.openOrReveal(DECKLIST_VIEW), cards: () => void this.openOrReveal(CARDS_VIEW) }));
+    this.registerView(DASHBOARD_VIEW, (leaf) => new DashboardView(leaf, { collection: () => void this.openOrReveal(COLLECTION_VIEW), deck: () => void this.openOrReveal(DECKLIST_VIEW), cards: () => void this.openOrReveal(CARDS_VIEW), bot: () => void this.openBot() }));
+    this.registerView(BOT_VIEW, (leaf) => new BotView(leaf, this.settings, () => this.app.secretStorage.getSecret(this.settings.botKey)));
+    this.registerView(BOTLOG_VIEW, (leaf) => new BotLogView(leaf));
     this.registerView(CARDS_VIEW, (leaf) => new CardsView(leaf, this.settings));
     this.registerView(
       DECKLIST_VIEW,
@@ -145,6 +151,7 @@ export default class MagicTheObsidian extends Plugin {
         }
       },
     });
+    this.addCommand({ id: "open-bot", name: "Open bot trial (solo)", callback: () => void this.openBot() });
     this.addCommand({ id: "open-dashboard", name: "Open dashboard", callback: () => void this.openOrReveal(DASHBOARD_VIEW) });
     this.addRibbonIcon("layout-dashboard", "Magic the Obsidian", () => void this.openOrReveal(DASHBOARD_VIEW));
     this.addCommand({
@@ -216,6 +223,18 @@ export default class MagicTheObsidian extends Plugin {
     const open = ws.getLeavesOfType(type)[0];
     if (open) return void ws.revealLeaf(open);
     await ws.getLeaf(true).setViewState({ type, active: true });
+  }
+
+  // Bot の試し: メインに Bot 画面、右サイドバーにカード効果とログ
+  private async openBot() {
+    const ws = this.app.workspace;
+    await this.openOrReveal(BOT_VIEW);
+    let log = ws.getLeavesOfType(BOTLOG_VIEW)[0];
+    if (!log) {
+      log = ws.getRightLeaf(false)!;
+      await log.setViewState({ type: BOTLOG_VIEW, active: false });
+    }
+    await ws.revealLeaf(log);
   }
 
   private deckLeaves() {

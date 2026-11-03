@@ -1,4 +1,5 @@
-import { App, Notice, Plugin, PluginSettingTab, Setting } from "obsidian";
+import { App, Notice, Plugin, PluginSettingTab, SecretComponent, Setting } from "obsidian";
+import { MODELS } from "./claude";
 import { CURRENCIES, updateRates } from "./prices";
 
 // Scryfall の言語コード
@@ -22,10 +23,12 @@ export interface Settings {
   listArt: boolean; // サイドバーの一覧に、カードのイラストを薄く出す
   dashboardTab: boolean; // 新しいタブ (空のタブ) をダッシュボードにする
   currency: string; // 資産価格の通貨 (EUR で取れた価格はこれに換算する)
+  botModel: string; // ボットの試しで使うモデル
+  botKey: string; // Claude API キーの保存名 (値は Obsidian のキーチェーンに入り、ここには書かない)
   sidebar: boolean; // カード一覧を右サイドバーに出す。オフなら画面内の検索欄 (従来の表示)
 }
 
-export const DEFAULT_SETTINGS: Settings = { textLang: "en", cardLang: "en", sidebar: true, listArt: true, dashboardTab: true, currency: "USD" };
+export const DEFAULT_SETTINGS: Settings = { textLang: "en", cardLang: "en", sidebar: true, listArt: true, dashboardTab: true, currency: "USD", botModel: "claude-haiku-5-5", botKey: "" };
 
 export class SettingsTab extends PluginSettingTab {
   constructor(app: App, plugin: Plugin, private settings: Settings, private save: () => Promise<void>, private onSidebar: () => void) {
@@ -86,6 +89,27 @@ export class SettingsTab extends PluginSettingTab {
             this.settings.currency = v;
             await this.save();
             await updateRates().catch(() => new Notice("為替レートを取れなかった"));
+          }),
+      );
+    new Setting(this.containerEl)
+      .setName("Bot: Claude API キー / API key")
+      .setDesc("キーの値は Obsidian のキーチェーンに保存され、data.json やノートには書かれない。Bot の試し(ひとり回し)で使う。")
+      .addComponent((el) =>
+        new SecretComponent(this.app, el).setValue(this.settings.botKey).onChange(async (v) => {
+          this.settings.botKey = v ?? "";
+          await this.save();
+        }),
+      );
+    new Setting(this.containerEl)
+      .setName("Bot: モデル / Model")
+      .setDesc("Bot 画面の初期のモデル。")
+      .addDropdown((d) =>
+        d
+          .addOptions(Object.fromEntries(Object.entries(MODELS).map(([id, m]) => [id, m.label])))
+          .setValue(this.settings.botModel)
+          .onChange(async (v) => {
+            this.settings.botModel = v;
+            await this.save();
           }),
       );
     lang("効果テキストの言語 / Text language", "カード名と効果テキスト。無い言語は英語で表示。新しく取得するカードから反映。", "textLang");

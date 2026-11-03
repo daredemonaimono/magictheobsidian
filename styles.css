@@ -166,3 +166,16 @@ button.mtg-color .mtg-sym { width: 20px; height: 20px; display: block; }
   background: linear-gradient(115deg, rgba(255,0,128,.35), rgba(255,200,0,.3) 25%, rgba(0,255,160,.3) 50%, rgba(0,160,255,.35) 75%, rgba(180,0,255,.35));
   mix-blend-mode: color-dodge; opacity: .55;
 }
+
+/* Bot の試し */
+.mtg-botbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0; }
+.mtg-botinfo { margin-bottom: 8px; font-weight: 600; }
+.mtg-botsec h4 { margin: 10px 0 4px; }
+.mtg-botrow { display: flex; flex-wrap: wrap; gap: 6px; }
+.mtg-botchip { padding: 2px 8px; border: 1px solid var(--background-modifier-border); border-radius: 6px; background: var(--background-secondary); cursor: default; }
+.mtg-botchip.is-tapped { opacity: .5; }
+.mtg-botlogview { display: flex; flex-direction: column; height: 100%; gap: 8px; }
+.mtg-botcard { flex: none; max-height: 40%; overflow-y: auto; border-bottom: 1px solid var(--background-modifier-border); padding-bottom: 8px; }
+.mtg-botcardtext { white-space: pre-wrap; margin-top: 4px; }
+.mtg-botlog { flex: 1; overflow-y: auto; font-size: var(--font-ui-smaller); }
+.mtg-botlog > div { padding: 2px 0; border-bottom: 1px solid var(--background-modifier-border-hover); }
