@@ -1,10 +1,13 @@
-import { ItemView, Notice, WorkspaceLeaf } from "obsidian";
+import { ItemView, Notice, WorkspaceLeaf, moment, normalizePath } from "obsidian";
 import { botBus } from "./botbus";
 import { Action, BCard, Game, LoadedDeck, apply, decks, endTurn, legalActions, loadDeck, newGame, startTurn, stateText } from "./botgame";
+import { cardImage, cardInfo } from "./cards";
 import { MODELS, askClaude } from "./claude";
+import { fileSafe } from "./scryfall";
 import { Settings } from "./settings";
 
 export const BOT_VIEW = "mtg-bot";
+export const BOT_GAME_DIR = "Bot/Games";
 
 const SYSTEM = `あなたは Magic: The Gathering のプレイヤー。ひとり回しの練習で、自分のデッキを回している。
 ルール(練習用の簡略): 土地は1ターンに1枚。土地1枚 = 色を問わず1マナ。呪文は唱えると場(クリーチャー等)か墓地(インスタント・ソーサリー)に行くだけで、効果はまだ実行されない。相手はいない。
@@ -68,27 +71,94 @@ export class BotView extends ItemView {
     this.renderBoard();
   }
 
-  private chips(parent: HTMLElement, title: string, cards: BCard[], tapped?: boolean[]) {
-    const sec = parent.createDiv("mtg-botsec");
-    sec.createEl("h4", { text: `${title} (${cards.length})` });
-    const row = sec.createDiv("mtg-botrow");
-    cards.forEach((c, i) => {
-      const chip = row.createSpan({ text: `${c.name} ${c.manaCost}`, cls: "mtg-botchip" });
-      chip.toggleClass("is-tapped", !!tapped?.[i]);
-      chip.onmouseenter = () => botBus.setHover(c);
-    });
+  private imgs = new Map<string, string | null>();
+
+  // カード1枚。画像があれば画像、無ければ名前。カーソルを合わせると右サイドバーに効果が出る
+  private card(parent: HTMLElement, c: BCard, cls = "") {
+    const el = parent.createDiv({ cls: `mtg-bcard ${cls}` });
+    el.createSpan({ text: c.name, cls: "mtg-bcard-name" });
+    el.onmouseenter = () => botBus.setHover(c);
+    const show = (url: string) => {
+      el.empty();
+      el.createEl("img", { attr: { src: url, alt: c.name, loading: "lazy" } });
+    };
+    const known = this.imgs.get(c.key);
+    if (known) show(known);
+    else if (known === undefined) {
+      this.imgs.set(c.key, null);
+      const info = cardInfo(this.app, c.key);
+      if (info) void cardImage(this.app, info.file).then((u) => u && (this.imgs.set(c.key, u), show(u)));
+    }
+    return el;
   }
 
+  // 山・墓地: 一番上のカードと枚数
+  private pile(parent: HTMLElement, title: string, cards: BCard[], faceUp: boolean) {
+    const box = parent.createDiv("mtg-bpile");
+    box.createDiv({ text: `${title} ${cards.length}`, cls: "mtg-dim" });
+    if (!cards.length) return box.createDiv({ cls: "mtg-bcard is-empty" });
+    if (faceUp) this.card(box, cards[cards.length - 1]);
+    else box.createDiv({ cls: "mtg-bcard is-back" });
+  }
+
+  // 見下ろしの盤面 (仮): 上が相手 (未実装)、下が自分。場は手前に土地、その奥にそれ以外
   private renderBoard() {
     this.infoEl.setText(this.info);
     this.board.empty();
     const g = this.game;
-    if (!g) return;
-    this.chips(this.board, "手札", g.hand);
-    this.chips(this.board, "場の土地", g.lands.map((l) => l.card), g.lands.map((l) => l.tapped));
-    this.chips(this.board, "場", g.field);
-    this.chips(this.board, "墓地", g.graveyard);
-    this.board.createDiv({ text: `山札 ${g.library.length} 枚`, cls: "mtg-dim" });
+    const side = this.board.createDiv("mtg-bside is-opp");
+    side.createDiv({ text: "相手(未実装)  ライフ 20", cls: "mtg-bhead" });
+    side.createDiv({ cls: "mtg-bfield" });
+
+    const steps = this.board.createDiv("mtg-bsteps");
+    for (const s of ["アンタップ", "アップキープ", "ドロー", "メイン1", "戦闘", "メイン2", "終了"]) steps.createSpan({ text: s, cls: s === "メイン1" && g ? "is-on" : "" });
+
+    const me = this.board.createDiv("mtg-bside");
+    const main = me.createDiv("mtg-bmain");
+    const field = main.createDiv("mtg-bfield");
+    const others = field.createDiv("mtg-brow");
+    const lands = field.createDiv("mtg-brow");
+    const piles = main.createDiv("mtg-bpiles");
+    me.createDiv({ text: `自分  ライフ 20${g ? `  ·  ターン ${g.turn}` : ""}`, cls: "mtg-bhead" });
+    const hand = me.createDiv("mtg-brow mtg-bhand");
+    if (!g) return void others.createDiv({ text: "デッキを選んで開始", cls: "mtg-dim" });
+    g.field.forEach((c) => this.card(others, c));
+    g.lands.forEach((l) => this.card(lands, l.card, l.tapped ? "is-tapped" : ""));
+    this.pile(piles, "山札", g.library, false);
+    this.pile(piles, "墓地", g.graveyard, true);
+    g.hand.forEach((c) => this.card(hand, c));
+  }
+
+  // 対戦のあとにログを保存する。リプレイ用に、開始時の山札の並びと行動の列も JSON で残す
+  private async saveGame(deck: LoadedDeck, g: Game, lines: string[], actions: unknown[], sum: { calls: number; tokens: number; cost: number }) {
+    const vault = this.app.vault;
+    for (const dir of ["Bot", BOT_GAME_DIR]) if (!vault.getAbstractFileByPath(dir)) await vault.createFolder(dir);
+    const path = normalizePath(`${BOT_GAME_DIR}/${moment().format("YYYY-MM-DD HHmmss")} ${fileSafe(deck.name)}.md`);
+    const body = [
+      "---",
+      "mtg: bot-game",
+      `deck: "[[${deck.name}]]"`,
+      `model: ${this.model}`,
+      `turns: ${g.turn}`,
+      `calls: ${sum.calls}`,
+      `tokens: ${sum.tokens}`,
+      `cost_usd: ${sum.cost.toFixed(5)}`,
+      "tags: [mtg/bot-game]",
+      "---",
+      "",
+      "## ログ",
+      "",
+      ...lines.map((l) => `- ${l}`),
+      "",
+      "## リプレイ用データ",
+      "",
+      "```json",
+      JSON.stringify({ version: 1, order: g.order, actions }, null, 1),
+      "```",
+      "",
+    ].join("\n");
+    const file = await vault.create(path, body);
+    botBus.addLog(`ログを保存: ${file.path}`);
   }
 
   private async start() {
@@ -110,6 +180,7 @@ export class BotView extends ItemView {
     const g = (this.game = newGame(deck.cards));
     const recent: string[] = [];
     const note = (s: string) => (recent.push(s), log(s));
+    const actions: unknown[] = []; // リプレイ用: 行動の列
     log(`デッキ: ${deck.name} (${deck.cards.length} 枚) / モデル: ${MODELS[this.model].label}`);
     try {
       for (let t = 0; t < this.turns && !this.stop; t++) {
@@ -125,9 +196,12 @@ export class BotView extends ItemView {
             cost += r.cost;
             tokens += r.tokens;
             pick = r.pick;
-            note(`[${g.turn}] ${r.reason ? `${r.reason} → ` : ""}${apply(g, pick)}  (入力 ${r.inTokens} / 出力 ${r.outTokens}, $${r.cost.toFixed(4)})`);
+            const turn = g.turn;
+            note(`[${turn}] ${r.reason ? `${r.reason} → ` : ""}${apply(g, pick)}  (入力 ${r.inTokens} / 出力 ${r.outTokens}, $${r.cost.toFixed(4)})`);
+            actions.push({ turn, kind: pick.kind, key: pick.card?.key, reason: r.reason, in: r.inTokens, out: r.outTokens, cost: r.cost });
           } else {
             note(`[${g.turn}] 選べる行動なし → 自動でターンを終える (呼び出し無し)`);
+            actions.push({ turn: g.turn, kind: "pass", auto: true });
           }
           if (pick.kind === "pass") break;
         }
@@ -138,6 +212,7 @@ export class BotView extends ItemView {
       log(`エラーで停止: ${(e as Error).message}`);
       new Notice(`Bot 停止: ${(e as Error).message}`);
     } finally {
+      await this.saveGame(deck, g, recent, actions, { calls, tokens, cost }).catch((e) => botBus.addLog(`ログの保存に失敗: ${(e as Error).message}`));
       this.info = `終了 · 呼び出し ${calls} 回 · ${tokens} トークン · $${cost.toFixed(4)}`;
       this.running = false;
       this.renderBoard();

@@ -179,3 +179,24 @@ button.mtg-color .mtg-sym { width: 20px; height: 20px; display: block; }
 .mtg-botcardtext { white-space: pre-wrap; margin-top: 4px; }
 .mtg-botlog { flex: 1; overflow-y: auto; font-size: var(--font-ui-smaller); }
 .mtg-botlog > div { padding: 2px 0; border-bottom: 1px solid var(--background-modifier-border-hover); }
+
+/* Bot の盤面 (仮) */
+.mtg-bot { display: flex; flex-direction: column; }
+.mtg-btable, .mtg-botboard { display: flex; flex-direction: column; gap: 6px; }
+.mtg-bside { border: 1px solid var(--background-modifier-border); border-radius: 10px; padding: 8px; background: var(--background-secondary); }
+.mtg-bside.is-opp { opacity: .6; min-height: 90px; }
+.mtg-bhead { font-weight: 600; margin: 4px 0; }
+.mtg-bmain { display: flex; gap: 12px; align-items: flex-start; }
+.mtg-bfield { flex: 1; min-height: 150px; display: flex; flex-direction: column; gap: 8px; }
+.mtg-brow { display: flex; flex-wrap: wrap; gap: 6px; align-items: flex-start; min-height: 40px; }
+.mtg-bhand { margin-top: 6px; }
+.mtg-bpiles { display: flex; flex-direction: column; gap: 8px; flex: none; }
+.mtg-bsteps { display: flex; justify-content: center; gap: 6px; font-size: var(--font-ui-smaller); color: var(--text-faint); }
+.mtg-bsteps span { padding: 2px 8px; border-radius: 10px; }
+.mtg-bsteps span.is-on { background: var(--interactive-accent); color: var(--text-on-accent); }
+.mtg-bcard { position: relative; width: 96px; min-height: 134px; border-radius: 6px; overflow: hidden; background: var(--background-modifier-hover); flex: none; }
+.mtg-bcard img { width: 100%; display: block; }
+.mtg-bcard .mtg-bcard-name { font-size: var(--font-ui-smaller); padding: 4px; display: block; }
+.mtg-bcard.is-tapped { transform: rotate(90deg); margin: 19px 19px; }
+.mtg-bcard.is-empty { border: 1px dashed var(--background-modifier-border); background: transparent; }
+.mtg-bcard.is-back { background: linear-gradient(135deg, var(--interactive-accent), var(--background-modifier-border)); }

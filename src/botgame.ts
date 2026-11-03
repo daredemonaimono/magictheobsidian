@@ -26,6 +26,7 @@ export interface Game {
   graveyard: BCard[];
   turn: number;
   landDropped: boolean;
+  order: string[]; // 開始時の山札の並び (カード名のキー)。リプレイで同じ展開を再現するために保存する
 }
 export interface Action {
   id: number;
@@ -68,7 +69,8 @@ export function newGame(cards: BCard[]): Game {
     const j = Math.floor(Math.random() * (i + 1));
     [library[i], library[j]] = [library[j], library[i]];
   }
-  return { library, hand: library.splice(0, 7), lands: [], field: [], graveyard: [], turn: 0, landDropped: false };
+  const order = library.map((c) => c.key);
+  return { library, hand: library.splice(0, 7), lands: [], field: [], graveyard: [], turn: 0, landDropped: false, order };
 }
 
 // ターン開始: アンタップ → ドロー (最初のターンは引かない)
