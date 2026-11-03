@@ -18,6 +18,7 @@ export interface TargetSpec {
 export type Op =
   | { op: "addMana"; options: string; n?: number } // options = 出せる色 ("B" / "WB" / "WUBRG")。複数なら1度だけ色を選び、n 個出す
   | { op: "draw"; n: number; who?: Who }
+  | { op: "discard"; n: number; who?: Who; chooser?: "you" | "target"; nonland?: boolean } // 手札を捨てさせる (chooser = 誰が選ぶか。Thoughtseize は you、通常の「捨てる」は target)
   | { op: "gainLife"; n: number; who?: Who }
   | { op: "loseLife"; n: number; who?: Who }
   | { op: "damage"; n: number; to: Who | "creature" | "any" }
@@ -664,6 +665,22 @@ export class Game {
         case "draw":
           for (let i = 0; i < e.n; i++) this.draw(this.who(e.who, me));
           break;
+        case "discard": {
+          const t = this.who(e.who, me);
+          const c = e.chooser === "you" ? me : t;
+          const pl = s.players[t];
+          if (c !== t) this.log(`プレイヤー${t + 1} の手札を公開: ${pl.hand.map((x) => x.def.name).join(", ") || "なし"}`);
+          for (let i = 0; i < e.n; i++) {
+            const pool = pl.hand.filter((x) => !(e.nonland && isLand(x.def)));
+            if (!pool.length) break;
+            const k = await this.choose(c, c === t ? `${ctx.source.name}: 捨てるカードを選ぶ` : `${ctx.source.name}: プレイヤー${t + 1} に捨てさせるカードを選ぶ`, pool.map((x) => x.def.name), c === t ? pool.map((x) => x.uid) : undefined);
+            const card = pool[k];
+            pl.hand.splice(pl.hand.indexOf(card), 1);
+            pl.graveyard.push(card);
+            this.log(`プレイヤー${t + 1}: ${card.def.name} を捨てる`);
+          }
+          break;
+        }
         case "gainLife":
         case "loseLife": {
           const p = this.who(e.who, me);

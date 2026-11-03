@@ -1,7 +1,7 @@
 import { App, TFile } from "obsidian";
 import { cardInfo, oracleEnglish } from "./cards";
 import { DECK_DIR, parseDeck } from "./deck";
-import { loadAbilities } from "./cardrules";
+import { loadRule, needsRule } from "./cardrules";
 import { CardDef, makeDef } from "./engine";
 
 export interface BattleDeck {
@@ -14,6 +14,12 @@ export interface BattleDeck {
 
 export const deckFiles = (app: App) => app.vault.getFiles().filter((f) => f.path.startsWith(`${DECK_DIR}/`) && f.extension === "md");
 
+// ボットに、エンジンが動かせない効果を伝える (動かない効果のために、カードを使ってしまわないように)
+function note(typeLine: string, oracle: string, rule?: { unsupported: string[] }): string {
+  if (!rule) return needsRule(typeLine, oracle) ? " ⚠エンジンは、このカードの効果をまだ実行できない(処理の記録が無い)" : "";
+  return rule.unsupported.length ? ` ⚠エンジンが実行できない部分(何も起きない): ${rule.unsupported.join(" / ")}` : "";
+}
+
 // メインのカードだけ使う (サイド・トークン・コマンダーは使わない)
 export async function loadBattleDeck(app: App, file: TFile): Promise<BattleDeck> {
   const content = await app.vault.cachedRead(file);
@@ -25,11 +31,12 @@ export async function loadBattleDeck(app: App, file: TFile): Promise<BattleDeck>
     const info = cardInfo(app, key);
     if (!info) continue;
     const oracle = (await oracleEnglish(app, key)).replace(/\s+\n/g, "\n").trim();
+    const rule = await loadRule(app, key);
     const num = (v?: string) => (v !== undefined && /^-?\d+$/.test(v) ? Number(v) : 0); // "*" などは 0 にする (簡略)
     if (/\bCreature\b/.test(info.typeLine) && (info.power === undefined || info.keywords === undefined)) noStats++;
-    const def = makeDef({ key, name: info.name, typeLine: info.typeLine, manaCost: info.manaCost, cmc: info.cmc, power: num(info.power), toughness: num(info.toughness), oracle, abilities: await loadAbilities(app, key), keywords: info.keywords });
+    const def = makeDef({ key, name: info.name, typeLine: info.typeLine, manaCost: info.manaCost, cmc: info.cmc, power: num(info.power), toughness: num(info.toughness), oracle, abilities: rule?.abilities, keywords: info.keywords });
     for (let i = 0; i < e.n; i++) defs.push(def);
-    lines.push(`${e.n}x ${info.name} ${info.manaCost} [${info.typeLine}${info.power !== undefined ? ` ${info.power}/${info.toughness}` : ""}] ${oracle.replace(/\s+/g, " ").slice(0, 300)}`);
+    lines.push(`${e.n}x ${info.name} ${info.manaCost} [${info.typeLine}${info.power !== undefined ? ` ${info.power}/${info.toughness}` : ""}] ${oracle.replace(/\s+/g, " ").slice(0, 300)}${note(info.typeLine, oracle, rule)}`);
   }
   const m = content.match(/\n## 動き方\n([\s\S]*?)(?=\n## |$)/);
   return { name: file.basename, defs, playbook: m?.[1].trim() ?? "", list: lines.join("\n"), noStats };

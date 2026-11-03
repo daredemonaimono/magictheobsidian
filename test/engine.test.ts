@@ -343,6 +343,27 @@ const rat = (n = "Rat", pw = 2, th = 2, oracle = "", type = "Creature — Rat") 
   assert.ok(!byDefault.includes("upkeep") && byDefault.includes("main1"), "既定では、アップキープでは止まらず、メインで止まる");
   assert.ok((await run(["upkeep"])).includes("upkeep"), "止まるステップにすれば、アップキープでも聞かれる");
 }
+
+// ---- 手札を捨てさせる (Thoughtseize) ----
+{
+  const seize = def("Thoughtseize", "Sorcery", "{B}", 0, 0, "", [
+    { kind: "spell", effects: [{ op: "discard", n: 1, who: "opponent", chooser: "you", nonland: true }, { op: "loseLife", n: 2, who: "you" }] },
+  ]);
+  const big = def("BigSpell", "Creature — Dragon", "{5}{R}{R}", 6, 6);
+  const small = def("SmallSpell", "Creature — Rat", "{3}{R}", 1, 1);
+  const options: string[][] = [];
+  const me: Controller = async (g, d) => {
+    if (d.type === "choice") return options.push(d.options), d.options.indexOf("BigSpell");
+    if (d.type === "priority") return d.actions.find((a) => a.kind === "cast") ?? pass;
+    return d.type === "attackers" ? [] : ([] as Block[]);
+  };
+  const g = world([seize], [swamp], [me, greedy], [false, false]);
+  g.s.players[1].hand = [mountain, big, small].map((d, i) => ({ uid: 7000 + i, def: d, owner: 1 }));
+  await g.play(1);
+  assert.deepEqual(options[0].sort(), ["BigSpell", "SmallSpell"], "土地は選べない (nonland)");
+  assert.ok(g.s.players[1].graveyard.some((c) => c.def.name === "BigSpell"), "選んだカードが捨てられる");
+  assert.equal(g.s.players[0].life, 18, "2 点失う");
+}
 console.log("engine ok");
 
 // ---- 処理の記録の読み取り ----

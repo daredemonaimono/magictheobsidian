@@ -1,5 +1,5 @@
 import { App, ItemView, Modal, Notice, Setting, TFile, ViewStateResult, WorkspaceLeaf, moment } from "obsidian";
-import { compileCard, needsRule, RULE_DIR } from "./cardrules";
+import { compileCard, isStale, needsRule, RULE_DIR } from "./cardrules";
 import { CARD_DIR, cardImage, cardInfo, cardText, oracleEnglish, printingImage, printingOf, readPrintings, refetchCard, setLocalText, updateLegality } from "./cards";
 import { CREATABLE, FORMATS, formatOf, judge } from "./rules";
 import { loadCollection } from "./collection";
@@ -186,9 +186,14 @@ export class DeckView extends ItemView {
       try {
         const keys = [...new Set((["commander", "main", "side", "token"] as Board[]).flatMap((b) => [...this.deck[b].keys()]))];
         const todo: string[] = [];
+        const redo = new Set<string>();
         for (const k of keys) {
           const info = cardInfo(this.app, k);
-          if (!info || this.app.vault.getAbstractFileByPath(`${RULE_DIR}/${k}.md`)) continue;
+          if (!info) continue;
+          if (this.app.vault.getAbstractFileByPath(`${RULE_DIR}/${k}.md`)) {
+            if (isStale(this.app, k)) (todo.push(k), redo.add(k)); // 古い版の部品で作った「一部未対応」は、作り直す
+            continue;
+          }
           if (needsRule(info.typeLine, await oracleEnglish(this.app, k))) todo.push(k);
         }
         let done = 0;
@@ -197,7 +202,7 @@ export class DeckView extends ItemView {
         const failed: string[] = [];
         for (const k of todo) {
           notice.setMessage(`処理の記録を作成中… ${++done}/${todo.length} (${k})`);
-          const r = await compileCard(this.app, apiKey, k);
+          const r = await compileCard(this.app, apiKey, k, redo.has(k));
           cost += r.cost;
           if (!r.ok) failed.push(`${k}: ${r.error}`);
           else if (r.unsupported.length) partial.push(k);
