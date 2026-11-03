@@ -236,6 +236,10 @@ const rat = (n = "Rat", pw = 2, th = 2, oracle = "", type = "Creature — Rat") 
   assert.equal(g.s.players[1].life, 16, "二段攻撃: 2回与える");
   g = await fight(rat("Toucher", 1, 1, "Deathtouch"), [rat("Big", 5, 5)]);
   assert.ok(gone(g, 1, "Big"), "接死: 1点で倒す");
+  g = await fight(rat("DT-Trample", 3, 3, "Deathtouch\nTrample"), [rat("Wall", 0, 4)]);
+  assert.ok(gone(g, 1, "Wall") && g.s.players[1].life === 18, "接死+トランプル: ブロッカーには1点 (接死なら致死)、残りの2点を相手ライフへ");
+  g = await fight(rat("DT-Trample", 3, 3, "Deathtouch\nTrample"), [rat("A", 0, 4), rat("B", 0, 4)]);
+  assert.ok(gone(g, 1, "A") && gone(g, 1, "B") && g.s.players[1].life === 19, "接死+トランプル: 2体に1点ずつ (計2点) 割り振り、残りの1点が相手ライフへ");
   g = await fight(rat("Linker", 3, 3, "Lifelink"), []);
   assert.deepEqual([g.s.players[0].life, g.s.players[1].life], [23, 17], "絆魂");
   g = await fight(rat("Menacer", 2, 2, "Menace"), [rat("One")]);
@@ -364,6 +368,74 @@ const rat = (n = "Rat", pw = 2, th = 2, oracle = "", type = "Creature — Rat") 
   assert.ok(g.s.players[1].graveyard.some((c) => c.def.name === "BigSpell"), "選んだカードが捨てられる");
   assert.equal(g.s.players[0].life, 18, "2 点失う");
 }
+
+// ---- v3 の書き方: 移す / 変える / 対象 / 参照 ----
+{
+  // Marsh Flats: 生け贄にして、山札から沼か平地を戦場に出し、シャッフル
+  const flats = def("Flats", "Land", "", 0, 0, "", [
+    {
+      kind: "activated",
+      cost: { tap: true, life: 1, sacrificeSelf: true },
+      effects: [
+        { do: "move", what: { kind: "cards", zone: "library", owner: "you", subtypes: ["Plains", "Swamp"], count: 1, chooser: "you" }, to: "battlefield" },
+        { do: "shuffle", owner: "you" },
+      ],
+    },
+  ]);
+  const plains = def("Plains", "Basic Land — Plains", "");
+  const g = world([], [flats], [async (g, d) => (d.type === "priority" ? (d.actions.find((a) => a.kind === "activate") ?? pass) : d.type === "choice" ? 0 : d.type === "attackers" ? [] : ([] as Block[])), greedy], [false, false]);
+  g.s.players[0].library = [mountain, swamp, plains].map((d, i) => ({ uid: 8000 + i, def: d, owner: 0 }));
+  await g.play(1);
+  const f = g.s.players[0].field.map((p) => p.def.name).sort();
+  assert.ok(f.includes("Swamp") || f.includes("Plains"), "山札から基本土地を出す");
+  assert.ok(!f.includes("Flats") && g.s.players[0].graveyard.some((c) => c.def.name === "Flats"), "自分は生け贄で墓地へ");
+  assert.equal(g.s.players[0].life, 19, "1 点払う");
+  assert.equal(g.s.players[0].library.filter((c) => c.def.name === "Mountain").length, 1, "条件に合わない土地は、山札に残る");
+}
+{
+  // Swords to Plowshares: 追放して、そのコントローラーがパワーぶんライフを得る (対象は唱えるときに選び、パワーは追放後も参照できる)
+  const swords = def("Swords", "Instant", "{W}", 0, 0, "", [
+    {
+      kind: "spell",
+      targets: [{ id: "t", sel: { kind: "cards", types: ["creature"] } }],
+      effects: [
+        { do: "move", what: { kind: "ref", ref: "t" }, to: "exile", as: "x" },
+        { do: "change", what: { kind: "player", who: "controllerOf", ref: "x" }, stat: "life", delta: { of: "power", ref: "x" } },
+      ],
+    },
+  ]);
+  const plainsLand = def("Plains", "Basic Land — Plains", "");
+  const big = rat("Ogre", 4, 4);
+  const g = setup(pad, pad, [plainsLand, swords], [], [big]);
+  await g.play(1);
+  assert.ok(g.s.players[1].exile.some((c) => c.def.name === "Ogre"), "追放される");
+  assert.equal(g.s.players[1].life, 24, "コントローラーが、そのパワー 4 点ぶんライフを得る");
+}
+{
+  // 対象が無いと、唱えられない。対象が消えると不発
+  const zap = def("Zap", "Instant", "{R}", 0, 0, "", [{ kind: "spell", targets: [{ id: "t", sel: { kind: "cards", types: ["creature"], owner: "opponent" } }], effects: [{ do: "move", what: { kind: "ref", ref: "t" }, to: "graveyard", how: "destroy" }] }]);
+  const g = world([mountain, zap], [], [greedy, greedy], [false, false]);
+  g.s.phase = "main1";
+  g.s.players[0].field = [mkPerm(mountain, 6000, 0)];
+  assert.ok(!g.actions(0).some((a) => a.kind === "cast"), "対象になるクリーチャーが無ければ、唱えられない");
+}
+{
+  // Wasteland: 基本でない土地を破壊。基本土地は対象外
+  const waste = def("Waste", "Land", "", 0, 0, "", [{ kind: "activated", cost: { tap: true, sacrificeSelf: true }, targets: [{ id: "t", sel: { kind: "cards", types: ["land"], not: ["basic"] } }], effects: [{ do: "move", what: { kind: "ref", ref: "t" }, to: "graveyard", how: "destroy" }] }]);
+  const strange = def("Strange", "Land", "", 0, 0, "");
+  const act: Controller = async (_g, d) => (d.type === "priority" ? (d.actions.find((a) => a.kind === "activate") ?? pass) : d.type === "choice" ? Math.max(0, d.options.findIndex((o) => o.startsWith("Strange"))) : d.type === "attackers" ? [] : ([] as Block[]));
+  const g = world([], [waste], [act, greedy], [false, false]);
+  g.s.players[1].field = [mkPerm(mountain, 6100, 1), mkPerm(strange, 6101, 1)];
+  await g.play(1);
+  assert.deepEqual(g.s.players[1].field.map((p) => p.def.name), ["Mountain"], "基本でない土地だけ破壊される");
+}
+{
+  // 条件と数: もし相手のライフが 10 以下なら 3 点 (if / cmp)
+  const finisher = def("Finisher", "Sorcery", "{R}", 0, 0, "", [{ kind: "spell", effects: [{ do: "if", cond: { cmp: [{ count: { kind: "cards", types: ["land"], owner: "you" } }, ">=", 2] }, then: [{ do: "change", what: { kind: "player", who: "opponent" }, stat: "damage", delta: 3 }], else: [] }] }]);
+  const g = world([mountain, finisher], [mountain].map((d) => d), [greedy, greedy], [false, false]);
+  await g.play(1);
+  assert.equal(g.s.players[1].life, 17, "土地が 2 枚以上あれば 3 点 (場の土地 + 出した土地)");
+}
 console.log("engine ok");
 
 // ---- 処理の記録の読み取り ----
@@ -375,11 +447,30 @@ console.log("engine ok");
     { kind: "bogus", effects: [] },
     { kind: "triggered", trigger: { event: "attacks" }, effects: [] },
   ]);
-  assert.equal(abs.length, 2, "知らない種類・きっかけの能力は捨てる");
+  assert.equal(abs.length, 3, "知らない種類の能力は捨てる。知らないきっかけは、未対応の誘発として残す");
   assert.equal(abs[0].trigger?.whose, "you");
-  assert.deepEqual(abs[1].effects.map((e) => e.op), ["unsupported", "unsupported"], "知らない効果は未対応にする");
+  assert.deepEqual(abs[1].effects.map((e) => e.do), ["unsupported", "unsupported"], "知らない効果は未対応にする");
+  assert.equal(abs[2].effects[0].do, "unsupported");
   assert.equal(needsRule("Basic Land — Swamp", ""), false);
   assert.equal(needsRule("Creature — Bird", "Flying\nHaste"), false);
   assert.equal(needsRule("Creature — Bird", "Flying\nWhen this enters, draw a card."), true);
   console.log("rules ok");
 }
+
+// ---- 動作テスト (診断) ----
+{
+  const { smokeTest } = await import("../src/diagnose");
+  const ok = async (d: CardDef) => (await smokeTest(d)).status;
+  const thought = def("Thoughtseize", "Sorcery", "{B}", 0, 0, "", [{ kind: "spell", effects: [{ do: "move", what: { kind: "cards", zone: "hand", owner: "opponent", not: ["land"], count: 1, chooser: "you" }, to: "graveyard", how: "discard" }, { do: "change", what: { kind: "player", who: "you" }, stat: "life", delta: -2 }] }]);
+  assert.equal(await ok(thought), "ok", "Thoughtseize は動く");
+  const flats = def("Flats", "Land", "", 0, 0, "", [{ kind: "activated", cost: { tap: true, life: 1, sacrificeSelf: true }, effects: [{ do: "move", what: { kind: "cards", zone: "library", owner: "you", subtypes: ["Plains", "Swamp"], count: 1, chooser: "you" }, to: "battlefield" }, { do: "shuffle", owner: "you" }] }]);
+  assert.equal(await ok(flats), "ok", "フェッチランドは動く");
+  const crypt3 = def("Crypt3", "Artifact", "{0}", 0, 0, "", [{ kind: "mana", cost: { tap: true }, effects: [{ do: "addMana", options: "C", n: 2 }] }, { kind: "triggered", trigger: { event: "upkeep", whose: "you" }, effects: [{ do: "flip", lose: [{ do: "change", what: { kind: "player", who: "you" }, stat: "damage", delta: 3 }] }] }]);
+  assert.equal(await ok(crypt3), "ok", "アップキープの誘発も確認できる");
+  const swords2 = def("Swords", "Instant", "{W}", 0, 0, "", [{ kind: "spell", targets: [{ id: "t", sel: { kind: "cards", types: ["creature"] } }], effects: [{ do: "move", what: { kind: "ref", ref: "t" }, to: "exile", as: "x" }, { do: "change", what: { kind: "player", who: "controllerOf", ref: "x" }, stat: "life", delta: { of: "power", ref: "x" } }] }]);
+  assert.equal(await ok(swords2), "ok", "対象を取る呪文は動く");
+  const partial = def("Partial", "Sorcery", "{R}", 0, 0, "", [{ kind: "spell", effects: [{ do: "unsupported", text: "Create a token." }] }]);
+  assert.equal(await ok(partial), "unsupported", "未対応を含むカードは検出される");
+  assert.equal(await ok(rat("Vanilla")), "skipped", "能力の無いカードは対象外");
+}
+console.log("diagnose ok");

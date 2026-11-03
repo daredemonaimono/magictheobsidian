@@ -1,81 +1,18 @@
 import { App, TFile, normalizePath } from "obsidian";
 import { cardInfo, oracleEnglish } from "./cards";
 import { askClaude } from "./claude";
-import { Ability, Op, TargetSpec, parseKeywords } from "./engine";
+import { Ability, normalizeAbility, unsupportedIn } from "./effects";
+import { parseKeywords } from "./engine";
 
 // カードごとの処理の記録 (Bot/Rules/<カード名>.md)。初回だけ AI (Claude) が効果テキストから作り、
 // 以後は対戦エンジンが機械的に実行する。じゅまが読んで直してよい (直したものは上書きしない)
 export const RULE_DIR = "Bot/Rules";
 export const COMPILE_MODEL = "claude-sonnet-5-5";
 // 効果の部品を増やしたら上げる。古い版で作った「一部未対応」の記録は、「ルール化」で作り直す
-export const VOCAB_VERSION = 2;
-
-const KINDS = ["mana", "activated", "triggered", "spell"];
-const EVENTS = ["upkeep", "etb", "dies"];
-const TYPES = ["creature", "land", "artifact", "enchantment", "planeswalker", "permanent"];
-
-const num = (x: unknown, d = 1) => (typeof x === "number" && Number.isFinite(x) ? Math.max(0, Math.floor(x)) : d);
-const who = (x: unknown) => (x === "opponent" ? "opponent" : "you");
-
-function target(x: unknown): TargetSpec {
-  const t = (x ?? {}) as Record<string, unknown>;
-  return {
-    controller: t.controller === "you" || t.controller === "opponent" ? t.controller : "any",
-    types: Array.isArray(t.types) ? (t.types.filter((y) => TYPES.includes(String(y))) as TargetSpec["types"]) : ["permanent"],
-    ...(t.nonbasic ? { nonbasic: true } : {}),
-  };
-}
-
-// 知らない効果や壊れた形は、実行せずに「未対応」にして残す (対戦を壊さない)
-export function sanitizeOps(raw: unknown): Op[] {
-  if (!Array.isArray(raw)) return [];
-  return raw.map((r): Op => {
-    const e = (r ?? {}) as Record<string, unknown>;
-    switch (e.op) {
-      case "addMana":
-        return typeof e.options === "string" && /^[WUBRGC]+$/.test(e.options) ? { op: "addMana", options: e.options, n: num(e.n) } : { op: "unsupported", text: JSON.stringify(r) };
-      case "draw":
-        return { op: "draw", n: num(e.n), who: who(e.who) };
-      case "discard":
-        return { op: "discard", n: num(e.n), who: who(e.who), chooser: e.chooser === "you" ? "you" : "target", ...(e.nonland ? { nonland: true } : {}) };
-      case "gainLife":
-      case "loseLife":
-        return { op: e.op, n: num(e.n), who: who(e.who) };
-      case "damage":
-        return ["you", "opponent", "creature", "any"].includes(String(e.to)) ? { op: "damage", n: num(e.n), to: e.to as "you" } : { op: "unsupported", text: JSON.stringify(r) };
-      case "flip":
-        return { op: "flip", win: sanitizeOps(e.win), lose: sanitizeOps(e.lose) };
-      case "destroy":
-      case "exile":
-        return { op: e.op, target: target(e.target) };
-      default:
-        return { op: "unsupported", text: typeof e.text === "string" ? e.text : JSON.stringify(r) };
-    }
-  });
-}
+export const VOCAB_VERSION = 3;
 
 export function sanitizeAbilities(raw: unknown): Ability[] {
-  if (!Array.isArray(raw)) return [];
-  const out: Ability[] = [];
-  for (const r of raw) {
-    const a = (r ?? {}) as Record<string, unknown>;
-    if (!KINDS.includes(String(a.kind))) continue;
-    const cost = (a.cost ?? {}) as Record<string, unknown>;
-    const ab: Ability = { kind: a.kind as Ability["kind"], effects: sanitizeOps(a.effects) };
-    if (a.cost) ab.cost = { ...(cost.tap ? { tap: true } : {}), ...(typeof cost.mana === "string" ? { mana: cost.mana } : {}), ...(cost.life ? { life: num(cost.life) } : {}), ...(cost.sacrificeSelf ? { sacrificeSelf: true } : {}) };
-    if (ab.kind === "triggered") {
-      const t = (a.trigger ?? {}) as Record<string, unknown>;
-      if (!EVENTS.includes(String(t.event))) {
-        ab.effects = [{ op: "unsupported", text: `未対応の誘発: ${JSON.stringify(a.trigger)}` }];
-        continue;
-      }
-      ab.trigger = { event: t.event as "upkeep", whose: t.whose === "opponent" || t.whose === "each" ? t.whose : "you" };
-    }
-    if (a.optional) ab.optional = true;
-    if (typeof a.text === "string") ab.text = a.text;
-    out.push(ab);
-  }
-  return out;
+  return Array.isArray(raw) ? raw.map(normalizeAbility).filter((a): a is Ability => !!a) : [];
 }
 
 // ---- 読み書き ----
@@ -128,32 +65,58 @@ const SPEC = `あなたは Magic: The Gathering の対戦エンジンのため�
 
 # Ability
 - kind: "mana" (マナを出す起動型能力。スタックを使わない) / "activated" (起動型能力) / "triggered" (誘発型能力) / "spell" (インスタント・ソーサリーを唱えて解決したときの効果)
-- cost (mana / activated): {"tap": true, "mana": "{1}{W}", "life": 1, "sacrificeSelf": true} 。使うものだけ書く
+- cost (mana / activated): {"tap": true, "mana": "{1}{W}", "life": 1, "sacrificeSelf": true}。使うものだけ書く
 - trigger (triggered): {"event": "upkeep" | "etb" | "dies", "whose": "you" | "opponent" | "each"}。upkeep の whose は、誰のアップキープの開始時か。etb は「このカードが戦場に出たとき」、dies は「このカードが死亡したとき」だけ
+- targets: 「対象の〜」を取るとき、[{"id": "t", "sel": CardSel | {"kind":"any"} | {"kind":"player","who":"you"|"opponent"|"each"}}]。effects からは {"kind":"ref","ref":"t"} で参照する。{"kind":"any"} は「クリーチャーかプレイヤー(かプレインズウォーカー)のいずれか1つ」
 - optional: 「〜してもよい」なら true
-- effects: Op の配列
+- effects: 命令 (Step) の配列。上から順に実行する
 - text: 日本語で20字以内の説明
 
-# Op (これだけ使える)
-- {"op":"addMana","options":"B","n":3}  マナを出す。options は出せる色 (W U B R G C)。複数なら1度だけ色を選び n 個出す
-- {"op":"draw","n":1,"who":"you"|"opponent"}
-- {"op":"discard","n":1,"who":"you"|"opponent","chooser":"you"|"target","nonland":true}  手札を捨てさせる。chooser は、どのカードを捨てるか選ぶ人。「対象のプレイヤーは手札から選んで捨てる」なら target、「あなたが選ぶ」(Thoughtseize など) なら you。nonland は、土地以外だけ
-- {"op":"gainLife","n":1,"who":"you"|"opponent"} / {"op":"loseLife","n":1,"who":...}
-- {"op":"damage","n":3,"to":"you"|"opponent"|"creature"|"any"}  creature / any は対象を選ぶ
-- {"op":"flip","win":[Op...],"lose":[Op...]}  コイン投げ
-- {"op":"destroy","target":{"controller":"you"|"opponent"|"any","types":["creature"|"land"|"artifact"|"enchantment"|"planeswalker"|"permanent"],"nonbasic":true}}
-- {"op":"exile","target":{...同じ}}
-- {"op":"unsupported","text":"..."}  効果の一部だけ対応できないとき、その部分に入れる
+# 命令 (Step)。「どうする」は do で決める
+- {"do":"move","what":Selector,"to":Zone,"how":"draw"|"destroy"|"sacrifice"|"discard","position":"top"|"bottom","as":"名前"}
+  カードをゾーンからゾーンへ移す。ドロー、捨てる、破壊、追放、手札に戻す、ミル、サーチ、蘇生、戦場に出す、は全部これ。
+  - 引く: what が山札の上 {"kind":"cards","zone":"library","owner":"you","top":true,"count":N}、to が hand、how が draw
+  - 捨てる: what が手札、to が graveyard、how が discard
+  - 破壊: to が graveyard、how が destroy (破壊不能は死なない)。生け贄は how が sacrifice
+  - 追放: to が exile。手札に戻す: to が hand。山札から出す(サーチ): what の zone が library、to が battlefield か hand
+  - as は、結果に名前をつける (あとで参照するとき)
+- {"do":"change","what":Selector,"stat":"life"|"damage","delta":Amount}
+  stat が life: delta が正でライフを得る、負で失う。stat が damage: delta は与えるダメージ (正の数)
+- {"do":"addMana","options":"B","n":3}  マナを出す。options は出せる色 (W U B R G C)。複数なら1度だけ色を選び n 個出す
+- {"do":"shuffle","owner":"you"|"opponent"}
+- {"do":"flip","win":[Step...],"lose":[Step...]}  コイン投げ
+- {"do":"if","cond":Cond,"then":[Step...],"else":[Step...]}
+- {"do":"may","steps":[Step...]}  「してもよい」。who が opponent なら相手が決める
+- {"do":"unsupported","text":"..."}  効果の一部だけ対応できないとき、その部分に入れる
 
-# 能力にしないもの
-飛行・速攻などのキーワード能力、常在型能力 (+1/+1 の修整、コストの増減)、代替コスト、置換効果、戦闘以外のタップ・アンタップの細かい条件。これらは unsupported に書く。
-「このカードが戦場に出たとき」「アップキープの開始時」「死亡したとき」以外のきっかけ (攻撃したとき、カードを引いたとき、呪文を唱えたとき) の誘発型能力も unsupported。
+# Selector (何を)
+- {"kind":"cards", ...}  カード。次の穴が使える (全部省略可):
+  zone (library/hand/battlefield/graveyard/exile。既定は battlefield) / owner (you/opponent/any。戦場ではコントローラー、他のゾーンでは持ち主) /
+  types (どれか。creature land artifact enchantment planeswalker instant sorcery permanent card) / subtypes (どれか。Plains Swamp など) /
+  not (除く。land basic creature legendary artifact enchantment。「基本でない土地」は types:["land"], not:["basic"]) / name / cmc {"op":"<=","n":3} / power {"op":">=","n":4} /
+  count (数 または "all"。既定は 1) / upTo (「N 枚まで」なら true) / chooser (選ぶ人。you / opponent。既定は能力のコントローラー。「相手に〜を選ばせる」は opponent、「あなたが選ぶ」は you) / top (山札の一番上から。選ばない)
+- {"kind":"player","who":"you"|"opponent"|"each"|"controllerOf","ref":"名前"}  プレイヤー。controllerOf は、ref のカードのコントローラー
+- {"kind":"ref","ref":"名前"}  targets の id か、as でつけた名前
+- {"kind":"any"}  いずれか1つ (対象は targets で選ぶ)
+
+# Amount (どれだけ)
+数字 / {"of":"power"|"toughness"|"cmc","ref":"名前"} (そのカードのパワーなど) / {"count":CardSel} (数える。例: あなたの土地の数)
+
+# Cond
+{"cmp":[Amount,"<="|"<"|"="|">="|">",Amount]} / {"has":CardSel} (そのカードがある) / {"did":"名前"} (その名前の命令が1枚以上移した)
+
+# 能力にしないもの (unsupported に書く)
+飛行・速攻などのキーワード能力、常在型能力 (+1/+1 の修整、コストの増減)、代替コスト・追加コスト、置換効果、トークンを作る、カウンターを置く、ターン終了時までの一時的な効果、
+「このカードが戦場に出たとき」「アップキープの開始時」「死亡したとき」以外のきっかけ (攻撃したとき、カードを引いたとき、呪文を唱えたとき) の誘発型能力、「呪文を打ち消す」「コントロールを得る」「コピーする」、装備・オーラ・プレインズウォーカー能力。
 
 # 例
-Mana Crypt: {"abilities":[{"kind":"mana","cost":{"tap":true},"effects":[{"op":"addMana","options":"C","n":2}],"text":"無色2"},{"kind":"triggered","trigger":{"event":"upkeep","whose":"you"},"effects":[{"op":"flip","lose":[{"op":"damage","n":3,"to":"you"}]}],"text":"コインに負けたら3点"}],"unsupported":[]}
-Dark Ritual: {"abilities":[{"kind":"spell","effects":[{"op":"addMana","options":"B","n":3}],"text":"BBB"}],"unsupported":[]}
-Thoughtseize: {"abilities":[{"kind":"spell","effects":[{"op":"discard","n":1,"who":"opponent","chooser":"you","nonland":true},{"op":"loseLife","n":2,"who":"you"}],"text":"相手の土地以外を1枚捨てさせ、2点失う"}],"unsupported":[]}
-Black Lotus: {"abilities":[{"kind":"mana","cost":{"tap":true,"sacrificeSelf":true},"effects":[{"op":"addMana","options":"WUBRG","n":3}],"text":"生け贄で好きな1色を3つ"}],"unsupported":[]}`;
+Mana Crypt: {"abilities":[{"kind":"mana","cost":{"tap":true},"effects":[{"do":"addMana","options":"C","n":2}],"text":"無色2"},{"kind":"triggered","trigger":{"event":"upkeep","whose":"you"},"effects":[{"do":"flip","lose":[{"do":"change","what":{"kind":"player","who":"you"},"stat":"damage","delta":3}]}],"text":"コインに負けたら3点"}],"unsupported":[]}
+Dark Ritual: {"abilities":[{"kind":"spell","effects":[{"do":"addMana","options":"B","n":3}],"text":"BBB"}],"unsupported":[]}
+Black Lotus: {"abilities":[{"kind":"mana","cost":{"tap":true,"sacrificeSelf":true},"effects":[{"do":"addMana","options":"WUBRG","n":3}],"text":"生け贄で好きな1色を3つ"}],"unsupported":[]}
+Thoughtseize: {"abilities":[{"kind":"spell","effects":[{"do":"move","what":{"kind":"cards","zone":"hand","owner":"opponent","not":["land"],"count":1,"chooser":"you"},"to":"graveyard","how":"discard"},{"do":"change","what":{"kind":"player","who":"you"},"stat":"life","delta":-2}],"text":"相手の土地以外を1枚捨てさせ、2点失う"}],"unsupported":[]}
+Marsh Flats: {"abilities":[{"kind":"activated","cost":{"tap":true,"life":1,"sacrificeSelf":true},"effects":[{"do":"move","what":{"kind":"cards","zone":"library","owner":"you","subtypes":["Plains","Swamp"],"count":1,"chooser":"you"},"to":"battlefield"},{"do":"shuffle","owner":"you"}],"text":"平地か沼を探して出す"}],"unsupported":[]}
+Swords to Plowshares: {"abilities":[{"kind":"spell","targets":[{"id":"t","sel":{"kind":"cards","types":["creature"]}}],"effects":[{"do":"move","what":{"kind":"ref","ref":"t"},"to":"exile","as":"x"},{"do":"change","what":{"kind":"player","who":"controllerOf","ref":"x"},"stat":"life","delta":{"of":"power","ref":"x"}}],"text":"クリーチャーを追放し、そのパワーぶん相手がライフを得る"}],"unsupported":[]}
+Wasteland: {"abilities":[{"kind":"mana","cost":{"tap":true},"effects":[{"do":"addMana","options":"C"}]},{"kind":"activated","cost":{"tap":true,"sacrificeSelf":true},"targets":[{"id":"t","sel":{"kind":"cards","types":["land"],"not":["basic"]}}],"effects":[{"do":"move","what":{"kind":"ref","ref":"t"},"to":"graveyard","how":"destroy"}],"text":"基本でない土地を破壊"}],"unsupported":[]}`;
 
 export interface Compiled {
   key: string;
@@ -176,7 +139,7 @@ export async function compileCard(app: App, apiKey: string, key: string, overwri
     const parsed = JSON.parse(json ?? "");
     const abilities = sanitizeAbilities(parsed.abilities);
     const unsupported: string[] = (Array.isArray(parsed.unsupported) ? parsed.unsupported : []).map((u: unknown) => String(u));
-    for (const a of abilities) for (const e of a.effects) if (e.op === "unsupported") unsupported.push(e.text);
+    for (const a of abilities) unsupported.push(...unsupportedIn(a.effects));
     if (!app.vault.getAbstractFileByPath(RULE_DIR)) {
       if (!app.vault.getAbstractFileByPath("Bot")) await app.vault.createFolder("Bot");
       await app.vault.createFolder(RULE_DIR);
