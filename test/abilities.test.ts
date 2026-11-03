@@ -96,3 +96,11 @@ console.log("abilities ok");
   assert.equal(statusOf(withBuiltin({ ...amass, id: "evoke", keyword: "evoke", params: { cost: "{R}" } })!), "done");
   assert.equal(withBuiltin(done), undefined, "処理がある能力は、上書きしない");
 }
+{
+  // 処理済みでも、「処理はまだ無い」の古い説明が残っていれば、実際の効果に直す
+  const { withBuiltin } = await import("../src/abilities");
+  const old = lib({ id: "evoke", effect: "Evoke (キーワード能力。処理はまだ無い)", params: { cost: "{R}" }, ability: { kind: "altCost", alt: { mana: "$cost", evoke: true }, effects: [] } });
+  const fixed = withBuiltin(old)!;
+  assert.ok(!fixed.effect.includes("処理はまだ無い") && fixed.effect.includes("想起"));
+  assert.equal(withBuiltin(fixed), undefined, "直したあとは、何もしない");
+}

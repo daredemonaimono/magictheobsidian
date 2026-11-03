@@ -161,12 +161,18 @@ export const BUILTIN_ABILITIES: Record<string, unknown> = {
   evoke: { kind: "altCost", alt: { mana: "$cost", evoke: true }, effects: [], text: "想起 $cost (出たとき生け贄にする)" },
 };
 
-// 同梱の処理があって、まだ処理が無い能力に、処理を入れる。入れたら新しい定義、無ければ undefined
+// 同梱の処理があって、処理が無い能力に、処理を入れる。「処理はまだ無い」という古い説明も、実際の効果に直す。変えたら新しい定義、無ければ undefined
+export const BUILTIN_EFFECTS: Record<string, string> = {
+  amass: "動員 {n} ({type}): あなたが軍団(Army)をコントロールしていなければ、0/0 の黒の {type}・軍団のトークンを1体作る。軍団を1体選び、+1/+1 カウンターを {n} 個置き、{type} を加える。",
+  evoke: "想起 {cost}: このクリーチャー呪文を、マナコストの代わりに {cost} を払って唱えてもよい。想起で唱えたなら、出たとき生け贄にする。",
+};
 export function withBuiltin(lib: LibAbility): LibAbility | undefined {
   const ab = BUILTIN_ABILITIES[lib.id];
-  if (!ab || lib.ability) return undefined;
+  if (!ab) return undefined;
+  const stale = lib.effect.includes("処理はまだ無い");
+  if (lib.ability && !stale) return undefined;
   const { needs: _needs, ...rest } = lib;
-  const next: LibAbility = { ...rest, ability: ab };
+  const next: LibAbility = { ...rest, ability: lib.ability ?? ab, effect: stale ? (BUILTIN_EFFECTS[lib.id] ?? lib.effect) : lib.effect };
   return checkAbility(next).ok ? next : undefined;
 }
 
