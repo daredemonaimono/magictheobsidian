@@ -323,6 +323,26 @@ const rat = (n = "Rat", pw = 2, th = 2, oracle = "", type = "Creature — Rat") 
   assert.ok(land?.tapped, "タップ状態で出る土地");
   assert.equal(def("Shock", "Land", "", 0, 0, "You may pay 2 life. If you don't, Shock enters tapped.").entersTapped, false, "条件つきは読まない");
 }
+
+// ---- 手動のプレイヤーは、止まると決めたステップでだけ優先権を聞かれる ----
+{
+  const ritual = def("Dark Ritual", "Instant", "{B}", 0, 0, "", [{ kind: "spell", effects: [{ op: "addMana", options: "B", n: 3 }] }]);
+  const run = async (stops?: import("../src/engine").Phase[]) => {
+    const phases: string[] = [];
+    const me: Controller = async (_g, d) => {
+      if (d.type === "priority") phases.push(_g.s.phase);
+      return d.type === "priority" ? pass : d.type === "attackers" ? [] : ([] as Block[]);
+    };
+    const g = new Game([pad, pad], 3, [me, greedy], { manual: [true, false], opening: false, first: 0, stops });
+    g.s.players[0].hand = [{ uid: 9001, def: ritual, owner: 0 }];
+    g.s.players[0].field = [mkPerm(swamp, 9002, 0)];
+    await g.play(1);
+    return phases;
+  };
+  const byDefault = await run();
+  assert.ok(!byDefault.includes("upkeep") && byDefault.includes("main1"), "既定では、アップキープでは止まらず、メインで止まる");
+  assert.ok((await run(["upkeep"])).includes("upkeep"), "止まるステップにすれば、アップキープでも聞かれる");
+}
 console.log("engine ok");
 
 // ---- 処理の記録の読み取り ----

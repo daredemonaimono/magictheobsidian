@@ -24,11 +24,12 @@ export interface Settings {
   dashboardTab: boolean; // 新しいタブ (空のタブ) をダッシュボードにする
   currency: string; // 資産価格の通貨 (EUR で取れた価格はこれに換算する)
   botModel: string; // ボットの試しで使うモデル
+  battleStops: string[]; // Bot 対戦で、あなたが優先権で止まるステップ
   botKey: string; // Claude API キーの保存名 (値は Obsidian のキーチェーンに入り、ここには書かない)
   sidebar: boolean; // カード一覧を右サイドバーに出す。オフなら画面内の検索欄 (従来の表示)
 }
 
-export const DEFAULT_SETTINGS: Settings = { textLang: "en", cardLang: "en", sidebar: true, listArt: true, dashboardTab: true, currency: "USD", botModel: "claude-haiku-5-5", botKey: "" };
+export const DEFAULT_SETTINGS: Settings = { textLang: "en", cardLang: "en", sidebar: true, listArt: true, dashboardTab: true, currency: "USD", botModel: "claude-haiku-5-5", botKey: "", battleStops: ["main1", "main2", "end"] };
 
 export class SettingsTab extends PluginSettingTab {
   constructor(app: App, plugin: Plugin, private settings: Settings, private save: () => Promise<void>, private onSidebar: () => void) {

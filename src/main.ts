@@ -76,6 +76,7 @@ export default class MagicTheObsidian extends Plugin {
       currency: d.currency ?? DEFAULT_SETTINGS.currency,
       botModel: d.botModel ?? DEFAULT_SETTINGS.botModel,
       botKey: d.botKey ?? DEFAULT_SETTINGS.botKey,
+      battleStops: Array.isArray(d.battleStops) ? d.battleStops : DEFAULT_SETTINGS.battleStops,
     };
     priceStore.prices = d.prices ?? {};
     priceStore.updated = d.pricesUpdated ?? "";
@@ -92,7 +93,7 @@ export default class MagicTheObsidian extends Plugin {
     );
     this.registerView(DECK_VIEW, (leaf) => new DeckView(leaf, this.settings));
     this.registerView(DASHBOARD_VIEW, (leaf) => new DashboardView(leaf, { collection: () => void this.openOrReveal(COLLECTION_VIEW), deck: () => void this.openOrReveal(DECKLIST_VIEW), cards: () => void this.openOrReveal(CARDS_VIEW), bot: () => void this.openBot(BOT_VIEW), battle: () => void this.openBot(BATTLE_VIEW) }));
-    this.registerView(BATTLE_VIEW, (leaf) => new BattleView(leaf, this.settings, () => this.app.secretStorage.getSecret(this.settings.botKey)));
+    this.registerView(BATTLE_VIEW, (leaf) => new BattleView(leaf, this.settings, () => this.app.secretStorage.getSecret(this.settings.botKey), () => saveAll()));
     this.registerView(BOT_VIEW, (leaf) => new BotView(leaf, this.settings, () => this.app.secretStorage.getSecret(this.settings.botKey)));
     this.registerView(BOTLOG_VIEW, (leaf) => new BotLogView(leaf, this.settings));
     this.registerView(CARDS_VIEW, (leaf) => new CardsView(leaf, this.settings));

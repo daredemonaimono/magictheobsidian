@@ -65,12 +65,13 @@ export class BattleView extends ItemView {
   private blocker?: number;
   private chooser?: { label: string; action: PriorityAction }[]; // 1枚で複数の行動があるとき、選ばせる
   private thinking = false;
+  private warned = false; // マナが残ったままのパスを、1回止めた
   private stats = { calls: 0, tokens: 0, cost: 0 };
   private result = "";
   private board!: HTMLElement;
   private infoEl!: HTMLElement;
 
-  constructor(leaf: WorkspaceLeaf, private settings: Settings, private getKey: () => string | null) {
+  constructor(leaf: WorkspaceLeaf, private settings: Settings, private getKey: () => string | null, private save_: () => Promise<void>) {
     super(leaf);
   }
 
@@ -146,7 +147,7 @@ export class BattleView extends ItemView {
     this.result = "";
     botBus.clear();
     const seed = Math.floor(Math.random() * 2 ** 31);
-    const g = (this.game = new Game([a.defs, b.defs], seed, [this.human, this.bot(b, key)], { manual: [true, false] }));
+    const g = (this.game = new Game([a.defs, b.defs], seed, [this.human, this.bot(b, key)], { manual: [true, false], stops: this.settings.battleStops as Phase[] }));
     g.onLog = (l) => botBus.addLog(l);
     g.onChange = () => this.render();
     botBus.addLog(`あなた: ${a.name} / ボット: ${b.name} (${MODELS[this.model].label}, ${this.think ? "思考深め" : "思考浅め"})`);
@@ -210,6 +211,7 @@ export class BattleView extends ItemView {
       this.pairs = [];
       this.blocker = undefined;
       this.chooser = undefined;
+      this.warned = false;
       this.pending = { d, resolve, reject };
       this.render();
     });
@@ -418,7 +420,16 @@ export class BattleView extends ItemView {
     this.side(this.board, g, 1);
     const mid = this.board.createDiv("mtg-bmid");
     const steps = mid.createDiv("mtg-bsteps");
-    for (const [ph, label] of PHASES) steps.createSpan({ text: label, cls: ph === s.phase && !this.result ? "is-on" : "" });
+    for (const [ph, label] of PHASES) {
+      // クリックで、そのステップで止まる / 止まらないを切り替える (下線 = 止まる)
+      const el = steps.createSpan({ text: label, cls: `${ph === s.phase && !this.result ? "is-on" : ""} ${g.stops.has(ph) ? "is-stop" : ""}`, attr: { "aria-label": "クリックで、このステップで止まる/止まらないを切り替える" } });
+      el.onclick = () => {
+        g.stops.has(ph) ? g.stops.delete(ph) : g.stops.add(ph);
+        this.settings.battleStops = [...g.stops];
+        void this.save_();
+        this.render();
+      };
+    }
     if (s.stack.length) {
       const st = mid.createDiv("mtg-brow");
       st.createSpan({ text: "スタック: ", cls: "mtg-dim" });
@@ -434,8 +445,14 @@ export class BattleView extends ItemView {
         prompt.createEl("button", { text: "やめる" }).onclick = () => ((this.chooser = undefined), this.render());
         return void this.side(this.board, g, 0);
       }
-      prompt.createSpan({ text: s.stack.length ? "あなたの優先権 (スタックにある)" : "あなたの優先権: 土地などをクリックしてマナを出し、光るカードを出す" });
-      prompt.createEl("button", { text: s.stack.length ? "解決へ(パス)" : s.phase.startsWith("main") ? "メイン終了(パス)" : "パス", cls: "mod-cta" }).onclick = () => this.answer({ kind: "pass" });
+      const stepName = PHASES.find((x) => x[0] === s.phase)![1];
+      prompt.createSpan({ text: s.stack.length ? `あなたの優先権 (${stepName}・スタックにある)` : `あなたの優先権 (${stepName}): 土地などをクリックしてマナを出し、光るカードを出す` });
+      const pool = s.players[0].pool;
+      const label = s.stack.length ? "解決へ(パス)" : s.phase.startsWith("main") ? "メイン終了(パス)" : "パス";
+      prompt.createEl("button", { text: pool.length ? (this.warned ? `マナ ${pool.join("")} が消える。本当にパス` : `${label} (マナ ${pool.join("")} が消える)`) : label, cls: "mod-cta" }).onclick = () => {
+        if (pool.length && !this.warned) return ((this.warned = true), this.render()); // マナが残っているときは、もう1回押すまで進めない
+        this.answer({ kind: "pass" });
+      };
     } else if (p.d.type === "choice") {
       prompt.createSpan({ text: p.d.hand ? `${p.d.prompt} (手札をクリック)` : p.d.prompt });
       if (!p.d.hand) p.d.options.forEach((o, i) => (prompt.createEl("button", { text: o }).onclick = () => this.answer(i)));

@@ -274,6 +274,7 @@ function rng(seed: number) {
 }
 
 const MAIN: Phase[] = ["main1", "main2"];
+export const DEFAULT_STOPS: Phase[] = ["main1", "main2", "end"];
 const usable = (p: Perm) => !p.tapped && !(isCreature(p.def) && p.sick && !hasKw(p.def, "haste"));
 
 export class Game {
@@ -288,9 +289,11 @@ export class Game {
   // manual[i] = true のプレイヤーは、マナを手でタップして出す (false は、唱えるとき自動でタップする)
   // opts.manual[i] = true のプレイヤーは、マナを手でタップする。opts.first = 先攻 (省略するとダイスで決める)。opts.opening = false で、先攻決めとマリガンを省く
   private manual: boolean[];
+  stops: Set<Phase>; // 手動のプレイヤーが優先権で止まるステップ (スタックに何かあるときは、常に止まる)
   private first: number | undefined;
   private opening: boolean;
-  constructor(decks: CardDef[][], public seed: number, private controllers: Controller[], opts: { manual?: boolean[]; first?: number; opening?: boolean } = {}) {
+  constructor(decks: CardDef[][], public seed: number, private controllers: Controller[], opts: { manual?: boolean[]; first?: number; opening?: boolean; stops?: Phase[] } = {}) {
+    this.stops = new Set(opts.stops ?? DEFAULT_STOPS);
     this.manual = opts.manual ?? [false, false];
     this.first = opts.first;
     this.opening = opts.opening ?? true;
@@ -492,7 +495,9 @@ export class Game {
     while (s.winner === undefined) {
       const actions = this.actions(p);
       // 行動がパスと「マナのタップ」だけなら聞かない (呼び出しの節約)
-      const meaningful = actions.filter((x) => x.kind !== "pass" && x.kind !== "tapMana");
+      // 手動のプレイヤーは、止まると決めたステップか、スタックに何かあるときだけ聞く (アップキープなどで、勝手に止まらない)
+      const stopHere = !this.manual[p] || s.stack.length > 0 || this.stops.has(s.phase);
+      const meaningful = stopHere ? actions.filter((x) => x.kind !== "pass" && x.kind !== "tapMana") : [];
       const a = meaningful.length === 0 ? ({ kind: "pass" } as PriorityAction) : await this.ask<PriorityAction>({ type: "priority", player: p, actions });
       if (a.kind === "pass") {
         if (++passes >= 2) {
