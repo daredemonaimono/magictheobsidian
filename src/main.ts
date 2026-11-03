@@ -9,7 +9,8 @@ import { CARDS_VIEW, CardsView } from "./CardsView";
 import { DASHBOARD_VIEW, DashboardView } from "./DashboardView";
 import { DECKLIST_VIEW, DeckListView } from "./DeckListView";
 import { DECK_VIEW, DeckView } from "./DeckView";
-import { writeCatalog } from "./catalog";
+import { initRuleStore, migrateToRulebook } from "./rulestore";
+import { RULEBOOK_VIEW, RulebookView } from "./RulebookView";
 import { BOT_VIEW, BotView } from "./BotView";
 import { BATTLE_VIEW, BattleView } from "./BattleView";
 import { BOTLOG_VIEW, BotLogView } from "./BotLogView";
@@ -78,7 +79,7 @@ export default class MagicTheObsidian extends Plugin {
       botModel: d.botModel ?? DEFAULT_SETTINGS.botModel,
       botKey: d.botKey ?? DEFAULT_SETTINGS.botKey,
       autoRules: d.autoRules ?? DEFAULT_SETTINGS.autoRules,
-      catalogVersion: d.catalogVersion ?? "",
+      rulebookMigrated: d.rulebookMigrated ?? false,
       battleStops: Array.isArray(d.battleStops) ? d.battleStops : DEFAULT_SETTINGS.battleStops,
     };
     priceStore.prices = d.prices ?? {};
@@ -95,7 +96,8 @@ export default class MagicTheObsidian extends Plugin {
       }),
     );
     this.registerView(DECK_VIEW, (leaf) => new DeckView(leaf, this.settings));
-    this.registerView(DASHBOARD_VIEW, (leaf) => new DashboardView(leaf, { collection: () => void this.openOrReveal(COLLECTION_VIEW), deck: () => void this.openOrReveal(DECKLIST_VIEW), cards: () => void this.openOrReveal(CARDS_VIEW), bot: () => void this.openBot(BOT_VIEW), battle: () => void this.openBot(BATTLE_VIEW) }));
+    this.registerView(DASHBOARD_VIEW, (leaf) => new DashboardView(leaf, { collection: () => void this.openOrReveal(COLLECTION_VIEW), deck: () => void this.openOrReveal(DECKLIST_VIEW), cards: () => void this.openOrReveal(CARDS_VIEW), rulebook: () => void this.openOrReveal(RULEBOOK_VIEW), bot: () => void this.openBot(BOT_VIEW), battle: () => void this.openBot(BATTLE_VIEW) }));
+    this.registerView(RULEBOOK_VIEW, (leaf) => new RulebookView(leaf, this.settings, () => this.app.secretStorage.getSecret(this.settings.botKey)));
     this.registerView(BATTLE_VIEW, (leaf) => new BattleView(leaf, this.settings, () => this.app.secretStorage.getSecret(this.settings.botKey), () => saveAll()));
     this.registerView(BOT_VIEW, (leaf) => new BotView(leaf, this.settings, () => this.app.secretStorage.getSecret(this.settings.botKey)));
     this.registerView(BOTLOG_VIEW, (leaf) => new BotLogView(leaf, this.settings));
@@ -122,22 +124,22 @@ export default class MagicTheObsidian extends Plugin {
     this.registerEvent(ws.on("layout-change", () => void this.syncSidebar()));
     // デッキ画面のメイン/サイドのタブを押したとき、サイドバーが畳まれていたら開く
     this.registerEvent((ws as unknown as { on(n: string, cb: () => void): EventRef }).on("mtg-show-list", () => void this.showList(ws.getActiveViewOfType(DeckView)?.leaf)));
-    // 効果の型のカタログ (Bot/Types/) を、プラグインが更新されたときに書き直す
-    const updateCatalog = async (force = false) => {
-      if (!force && this.settings.catalogVersion === this.manifest.version) return;
+    // ルールブックの保存先 (隠しフォルダ)。旧い置き場 (vault の Bot/Rules, Bot/Types) からの移行は、1回だけ
+    initRuleStore(this.manifest.dir ?? ".obsidian/plugins/magictheobsidian");
+    const migrate = async () => {
+      if (this.settings.rulebookMigrated) return;
       try {
-        const r = await writeCatalog(this.app, this.manifest.version);
-        this.settings.catalogVersion = this.manifest.version;
+        const r = await migrateToRulebook(this.app);
+        this.settings.rulebookMigrated = true;
         await saveAll();
-        if (force) new Notice(`Bot/Types/ に書き出した: 型 ${r.types} 件、未実装の効果 ${r.unsupported} 件`);
+        if (r.rules || r.memos) new Notice(`ルールブックへ移した: 処理の記録 ${r.rules} 件、型のメモ ${r.memos} 件 (vault のノートは、ゴミ箱に入れた)`, 10000);
       } catch (e) {
         console.error(e);
-        if (force) new Notice(`書き出せない: ${(e as Error).message}`);
+        new Notice(`ルールブックへの移行に失敗: ${(e as Error).message}`, 10000);
       }
     };
-    this.addCommand({ id: "write-type-catalog", name: "Write effect type catalog (Bot/Types)", callback: () => void updateCatalog(true) });
     ws.onLayoutReady(() => {
-      void updateCatalog();
+      void migrate();
       this.dashboardIfEmpty(ws.getMostRecentLeaf());
       void this.syncSidebar();
     });
@@ -172,6 +174,7 @@ export default class MagicTheObsidian extends Plugin {
         }
       },
     });
+    this.addCommand({ id: "open-rulebook", name: "Open rulebook", callback: () => void this.openOrReveal(RULEBOOK_VIEW) });
     this.addCommand({ id: "open-bot", name: "Open bot trial (solo)", callback: () => void this.openBot(BOT_VIEW) });
     this.addCommand({ id: "open-bot-battle", name: "Open bot battle (you vs bot)", callback: () => void this.openBot(BATTLE_VIEW) });
     this.addCommand({ id: "open-dashboard", name: "Open dashboard", callback: () => void this.openOrReveal(DASHBOARD_VIEW) });

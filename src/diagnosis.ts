@@ -1,6 +1,6 @@
 import { App, TFile, moment, normalizePath } from "obsidian";
 import { cardInfo, oracleEnglish } from "./cards";
-import { RULE_DIR, VOCAB_VERSION, isStale, loadRule, needsRule } from "./cardrules";
+import { VOCAB_VERSION, loadRule, needsRule, staleRule } from "./cardrules";
 import { DiagCard, renderDiagnosis, smokeTest } from "./diagnose";
 import { makeDef } from "./engine";
 
@@ -14,8 +14,6 @@ export async function runDiagnosis(app: App, deckName: string, keys: string[]): 
     if (!info) continue;
     const oracle = await oracleEnglish(app, key);
     const rule = await loadRule(app, key);
-    const file = app.vault.getAbstractFileByPath(normalizePath(`${RULE_DIR}/${key}.md`));
-    const fm = file instanceof TFile ? app.metadataCache.getFileCache(file)?.frontmatter : undefined;
     const num = (v?: string) => (v !== undefined && /^-?\d+$/.test(v) ? Number(v) : undefined);
     const def = makeDef({ key, name: info.name, typeLine: info.typeLine, manaCost: info.manaCost, cmc: info.cmc, power: num(info.power) ?? 0, toughness: num(info.toughness) ?? 1, oracle, abilities: rule?.abilities, keywords: info.keywords });
     cards.push({
@@ -29,9 +27,9 @@ export async function runDiagnosis(app: App, deckName: string, keys: string[]): 
       keywords: info.keywords ? def.keywords : undefined,
       abilities: rule ? def.abilities : undefined,
       unsupported: rule?.unsupported ?? [],
-      status: fm?.status,
-      vocab: typeof fm?.vocab === "number" ? fm.vocab : undefined,
-      stale: isStale(app, key),
+      status: rule?.status,
+      vocab: rule?.vocab,
+      stale: staleRule(rule),
       needsRule: needsRule(info.typeLine, oracle),
       smoke: rule || !needsRule(info.typeLine, oracle) ? await smokeTest(def) : undefined,
     });

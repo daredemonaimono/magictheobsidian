@@ -3,6 +3,7 @@ import { cardInfo, oracleEnglish, refetchCard } from "./cards";
 import { Settings } from "./settings";
 import { DECK_DIR, parseDeck } from "./deck";
 import { loadRule, needsRule } from "./cardrules";
+import { CardBrief, formatCardList } from "./botinfo";
 import { CardDef, makeDef } from "./engine";
 
 export interface BattleDeck {
@@ -15,18 +16,12 @@ export interface BattleDeck {
 
 export const deckFiles = (app: App) => app.vault.getFiles().filter((f) => f.path.startsWith(`${DECK_DIR}/`) && f.extension === "md");
 
-// ボットに、エンジンが動かせない効果を伝える (動かない効果のために、カードを使ってしまわないように)
-function note(typeLine: string, oracle: string, rule?: { unsupported: string[] }): string {
-  if (!rule) return needsRule(typeLine, oracle) ? " ⚠エンジンは、このカードの効果をまだ実行できない(処理の記録が無い)" : "";
-  return rule.unsupported.length ? ` ⚠エンジンが実行できない部分(何も起きない): ${rule.unsupported.join(" / ")}` : "";
-}
-
 // メインのカードだけ使う (サイド・トークン・コマンダーは使わない)
 export async function loadBattleDeck(app: App, file: TFile): Promise<BattleDeck> {
   const content = await app.vault.cachedRead(file);
   const deck = parseDeck(content);
   const defs: CardDef[] = [];
-  const lines: string[] = [];
+  const briefs: CardBrief[] = [];
   let noStats = 0;
   for (const [key, e] of deck.main) {
     const info = cardInfo(app, key);
@@ -37,10 +32,10 @@ export async function loadBattleDeck(app: App, file: TFile): Promise<BattleDeck>
     if (/\bCreature\b/.test(info.typeLine) && (info.power === undefined || info.keywords === undefined)) noStats++;
     const def = makeDef({ key, name: info.name, typeLine: info.typeLine, manaCost: info.manaCost, cmc: info.cmc, power: num(info.power, 0), toughness: num(info.toughness, 1), oracle, abilities: rule?.abilities, keywords: info.keywords });
     for (let i = 0; i < e.n; i++) defs.push(def);
-    lines.push(`${e.n}x ${info.name} ${info.manaCost} [${info.typeLine}${info.power !== undefined ? ` ${info.power}/${info.toughness}` : ""}] ${oracle.replace(/\s+/g, " ").slice(0, 300)}${note(info.typeLine, oracle, rule)}`);
+    briefs.push({ n: e.n, name: info.name, manaCost: info.manaCost, typeLine: info.typeLine, power: info.power, toughness: info.toughness, oracle, abilities: rule?.abilities, unsupported: rule?.unsupported ?? [], needsRule: needsRule(info.typeLine, oracle) });
   }
   const m = content.match(/\n## 動き方\n([\s\S]*?)(?=\n## |$)/);
-  return { name: file.basename, defs, playbook: m?.[1].trim() ?? "", list: lines.join("\n"), noStats };
+  return { name: file.basename, defs, playbook: m?.[1].trim() ?? "", list: formatCardList(briefs), noStats };
 }
 
 // パワー・タフネスやキーワードが無い古いクリーチャーのノート (メインのカードだけ)

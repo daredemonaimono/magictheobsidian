@@ -2,6 +2,7 @@ import { ItemView, Notice, WorkspaceLeaf, moment, normalizePath } from "obsidian
 import { BattleDeck, deckFiles, fetchStats, loadBattleDeck, statsMissing } from "./battledeck";
 import { botBus } from "./botbus";
 import { cardEl } from "./cardEl";
+import { engineSummary } from "./botinfo";
 import { ensureRules } from "./cardrules";
 import { parseDeck } from "./deck";
 import { MODELS, askClaude } from "./claude";
@@ -272,7 +273,7 @@ export class BattleView extends ItemView {
   }
 
   private bot(deck: BattleDeck, key: string): Controller {
-    const system = `${SYSTEM}\n\n# デッキ: ${deck.name}\n## 使い方のメモ\n${deck.playbook || "(なし)"}\n## カード\n${deck.list}`;
+    const system = `${SYSTEM}\n\n# このエンジンについて\n${engineSummary()}\n\n# デッキ: ${deck.name}\n## 使い方のメモ\n${deck.playbook || "(なし)"}\n\n# デッキのカード (カードごとの「エンジンの理解」と「使っている型」は、ルールブックの記録)\n${deck.list}`;
     return async (g, d) => {
       const nameOf = (uid: number) => g.card(uid)?.def.name ?? "?";
       const stat = (uid: number) => {

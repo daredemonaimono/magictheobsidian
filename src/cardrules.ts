@@ -1,12 +1,12 @@
-import { App, TFile, normalizePath } from "obsidian";
+import { App } from "obsidian";
 import { cardInfo, oracleEnglish } from "./cards";
 import { askClaude } from "./claude";
 import { Ability, normalizeAbility, unsupportedIn } from "./effects";
 import { KEYWORDS, parseKeywords } from "./engine";
+import { readRuleText, writeRuleText } from "./rulestore";
 
 // カードごとの処理の記録 (Bot/Rules/<カード名>.md)。初回だけ AI (Claude) が効果テキストから作り、
 // 以後は対戦エンジンが機械的に実行する。じゅまが読んで直してよい (直したものは上書きしない)
-export const RULE_DIR = "Bot/Rules";
 export const COMPILE_MODEL = "claude-sonnet-5-5";
 // 効果の部品を増やしたら上げる。古い版で作った「一部未対応」の記録は、「ルール化」で作り直す
 export const VOCAB_VERSION = 3;
@@ -16,8 +16,6 @@ export function sanitizeAbilities(raw: unknown): Ability[] {
 }
 
 // ---- 読み書き ----
-
-const path = (key: string) => normalizePath(`${RULE_DIR}/${key}.md`);
 
 // エンジンが、キーワードとして自分で動かすもの (飛行・速攻・瞬速・威迫・絆魂・影など)。AI が「未対応」に書いても、未対応としては扱わない
 export function isKeywordNoise(text: string): boolean {
@@ -29,32 +27,68 @@ export const realUnsupported = (list: string[]) => [...new Set(list.map((t) => t
 export interface Rule {
   abilities: Ability[];
   unsupported: string[]; // 「未対応」の文 (エンジンで動かない部分)
+  status?: string; // ok / partial / manual
+  vocab?: number; // 作ったときの部品の版
 }
 
-// 記録があればその内容、無ければ undefined (エンジンは効果テキストのマナ能力だけを持つ)
-export async function loadRule(app: App, key: string): Promise<Rule | undefined> {
-  const f = app.vault.getAbstractFileByPath(path(key));
-  if (!(f instanceof TFile)) return undefined;
-  const text = await app.vault.cachedRead(f);
+// 本文 (ルール md) を読んで、能力・未対応・status を取り出す
+export function parseRule(text: string): Rule | undefined {
   const m = text.match(/```json\n([\s\S]*?)\n```/);
   if (!m) return undefined;
   try {
     const abilities = sanitizeAbilities(JSON.parse(m[1]).abilities);
     const section = text.match(/## 未対応\n\n([\s\S]*?)\n\n##/)?.[1] ?? "";
     const unsupported = realUnsupported(section.split("\n").map((l) => l.replace(/^- /, "")).filter((l) => l.trim() !== "なし"));
-    return { abilities, unsupported };
+    const vocab = Number(text.match(/^vocab: (\d+)$/m)?.[1]);
+    return { abilities, unsupported, status: text.match(/^status: (\S+)$/m)?.[1], vocab: Number.isFinite(vocab) ? vocab : undefined };
   } catch {
     return undefined; // 壊れていたら記録が無いものとして扱う (直すまで効果は動かない)
   }
 }
 
+// 記録があればその内容、無ければ undefined (エンジンは効果テキストのマナ能力だけを持つ)
+export async function loadRule(app: App, key: string): Promise<Rule | undefined> {
+  const text = await readRuleText(app, key);
+  return text === undefined ? undefined : parseRule(text);
+}
+
 export const loadAbilities = async (app: App, key: string) => (await loadRule(app, key))?.abilities;
 
-// 古い版の部品で作った「一部未対応」の記録か (「ルール化」で作り直す対象。status を manual に変えると守られる)
-export function isStale(app: App, key: string): boolean {
-  const f = app.vault.getAbstractFileByPath(path(key));
-  const fm = f instanceof TFile ? app.metadataCache.getFileCache(f)?.frontmatter : undefined;
-  return !!fm && fm.status === "partial" && (typeof fm.vocab !== "number" || fm.vocab < VOCAB_VERSION);
+// 古い版の部品で作った「一部未対応」の記録か (「ルール化」で作り直す対象。status を manual にすると守られる)
+export const staleRule = (r?: Rule) => !!r && r.status === "partial" && (r.vocab === undefined || r.vocab < VOCAB_VERSION);
+export async function isStale(app: App, key: string): Promise<boolean> {
+  return staleRule(await loadRule(app, key));
+}
+
+// ルール md の本文を作る
+export function ruleText(key: string, oracle: string, abilities: Ability[], unsupported: string[], meta: { by: string; status?: string; note?: string }): string {
+  return [
+    "---",
+    "mtg: bot-rule",
+    `card: "[[${key}]]"`,
+    `generated_by: ${meta.by}`,
+    `status: ${meta.status ?? (unsupported.length ? "partial" : "ok")}`,
+    `vocab: ${VOCAB_VERSION}`,
+    ...(meta.note ? [`instruction: ${JSON.stringify(meta.note)}`] : []),
+    "---",
+    "",
+    "AI が作った処理の記録。対戦エンジンが機械的に実行する。ルールブック画面から直せる。status が partial のものは、効果の部品が増えたときに作り直される(manual と ok は作り直されない)。",
+    "",
+    "## オラクルテキスト",
+    "",
+    oracle,
+    "",
+    "## 未対応",
+    "",
+    ...(unsupported.length ? unsupported.map((u) => `- ${u}`) : ["- なし"]),
+    "",
+    "## 処理",
+    "",
+    "```json",
+    JSON.stringify({ abilities }, null, 1),
+    "```",
+    "",
+  ].join("\n");
 }
 
 // 記録が要るカードか: 基本土地と、キーワードしか持たないカードは要らない
@@ -137,58 +171,52 @@ export interface Compiled {
   error?: string;
 }
 
+// AI の返事 (JSON) を、検証した能力と未対応にする
+export function parseProposal(text: string): { abilities: Ability[]; unsupported: string[] } {
+  const parsed = JSON.parse(text.match(/\{[\s\S]*\}/)?.[0] ?? "");
+  const abilities = sanitizeAbilities(parsed.abilities);
+  const found: string[] = (Array.isArray(parsed.unsupported) ? parsed.unsupported : []).map((u: unknown) => String(u));
+  for (const a of abilities) found.push(...unsupportedIn(a.effects));
+  return { abilities, unsupported: realUnsupported(found) }; // キーワードや、重複を除く
+}
+
 // 1枚の処理を AI に作らせて保存する。既にあれば何もしない (手で直したものを守る)
 export async function compileCard(app: App, apiKey: string, key: string, overwrite = false): Promise<Compiled> {
   const info = cardInfo(app, key);
   if (!info) return { key, ok: false, unsupported: [], cost: 0, error: "カードのノートが無い" };
-  const existing = app.vault.getAbstractFileByPath(path(key));
-  if (existing && !overwrite) return { key, ok: true, unsupported: [], cost: 0 };
+  if ((await readRuleText(app, key)) !== undefined && !overwrite) return { key, ok: true, unsupported: [], cost: 0 };
   const oracle = await oracleEnglish(app, key);
   try {
     const r = await askClaude(apiKey, COMPILE_MODEL, SPEC, `カード: ${info.name}\nタイプ: ${info.typeLine}\nマナコスト: ${info.manaCost}\n\nオラクルテキスト:\n${oracle}`, true);
-    const json = r.text.match(/\{[\s\S]*\}/)?.[0];
-    const parsed = JSON.parse(json ?? "");
-    const abilities = sanitizeAbilities(parsed.abilities);
-    const found: string[] = (Array.isArray(parsed.unsupported) ? parsed.unsupported : []).map((u: unknown) => String(u));
-    for (const a of abilities) found.push(...unsupportedIn(a.effects));
-    const unsupported = realUnsupported(found); // キーワードや、重複を除く
-    if (!app.vault.getAbstractFileByPath(RULE_DIR)) {
-      if (!app.vault.getAbstractFileByPath("Bot")) await app.vault.createFolder("Bot");
-      await app.vault.createFolder(RULE_DIR);
-    }
-    const body = [
-        "---",
-        "mtg: bot-rule",
-        `card: "[[${key}]]"`,
-        `generated_by: ${COMPILE_MODEL}`,
-        `status: ${unsupported.length ? "partial" : "ok"}`,
-        `vocab: ${VOCAB_VERSION}`,
-        "tags: [mtg/bot-rule]",
-        "---",
-        "",
-        "AI が初回だけ作った処理の記録。対戦エンジンが機械的に実行する。直してよい。status が partial のものは、効果の部品が増えたときに作り直されるので、手で直したら status を manual にする(manual と ok は上書きされない)。",
-        "",
-        "## オラクルテキスト",
-        "",
-        oracle,
-        "",
-        "## 未対応",
-        "",
-        ...(unsupported.length ? unsupported.map((u) => `- ${u}`) : ["- なし"]),
-        "",
-        "## 処理",
-        "",
-        "```json",
-        JSON.stringify({ abilities }, null, 1),
-        "```",
-        "",
-      ].join("\n");
-    if (existing instanceof TFile) await app.vault.modify(existing, body);
-    else await app.vault.create(path(key), body);
+    const { abilities, unsupported } = parseProposal(r.text);
+    await writeRuleText(app, key, ruleText(key, oracle, abilities, unsupported, { by: COMPILE_MODEL }), overwrite);
     return { key, ok: true, unsupported, cost: r.cost };
   } catch (e) {
     return { key, ok: false, unsupported: [], cost: 0, error: (e as Error).message };
   }
+}
+
+export interface Proposal {
+  before: Rule | undefined;
+  after: { abilities: Ability[]; unsupported: string[] };
+  cost: number;
+}
+
+// あなたの指示で、記録の案を作る (保存はしない。前後を見せて、確認してから保存する)
+export async function proposeUpdate(app: App, apiKey: string, key: string, instruction: string): Promise<Proposal> {
+  const info = cardInfo(app, key);
+  if (!info) throw new Error("カードのノートが無い");
+  const oracle = await oracleEnglish(app, key);
+  const before = await loadRule(app, key);
+  const current = before ? JSON.stringify({ abilities: before.abilities, unsupported: before.unsupported }) : "(記録なし)";
+  const r = await askClaude(apiKey, COMPILE_MODEL, SPEC, `カード: ${info.name}\nタイプ: ${info.typeLine}\nマナコスト: ${info.manaCost}\n\nオラクルテキスト:\n${oracle}\n\n今の記録:\n${current}\n\nあなたへの指示 (この指示に沿って、記録を作り直す。指示に無い部分は、今の記録のまま残す):\n${instruction}`, true);
+  return { before, after: parseProposal(r.text), cost: r.cost };
+}
+
+// 案を保存する。手で直したものなので status は manual (作り直されない)。直す前の版は、1つ前の分だけ残る
+export async function saveProposal(app: App, key: string, after: { abilities: Ability[]; unsupported: string[] }, instruction: string) {
+  const oracle = await oracleEnglish(app, key);
+  await writeRuleText(app, key, ruleText(key, oracle, after.abilities, after.unsupported, { by: COMPILE_MODEL, status: "manual", note: instruction }), true);
 }
 
 export interface EnsureResult {
@@ -205,8 +233,8 @@ export async function ensureRules(app: App, apiKey: string, keys: string[], opts
   for (const key of new Set(keys)) {
     const info = cardInfo(app, key);
     if (!info) continue;
-    if (app.vault.getAbstractFileByPath(path(key))) {
-      if (opts.includeStale && isStale(app, key)) todo.push({ key, redo: true });
+    if ((await readRuleText(app, key)) !== undefined) {
+      if (opts.includeStale && (await isStale(app, key))) todo.push({ key, redo: true });
       continue;
     }
     if (needsRule(info.typeLine, await oracleEnglish(app, key))) todo.push({ key, redo: false });

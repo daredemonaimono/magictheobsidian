@@ -490,13 +490,13 @@ console.log("engine ok");
 }
 {
   // 型のカタログ (md の元データ) が、コードの実体と合っている
-  const { TYPE_ENTRIES, collectUsage } = await import("../src/typecatalog");
+  const { TYPE_ENTRIES, collectUsage, titleOf } = await import("../src/typecatalog");
   const { STEP_VERBS } = await import("../src/effects");
   const { KEYWORDS } = await import("../src/engine");
   const { SPEC } = await import("../src/cardrules");
   const ids = new Set(TYPE_ENTRIES.map((e) => e.id));
   assert.equal(ids.size, TYPE_ENTRIES.length, "id が重複しない");
-  assert.equal(new Set(TYPE_ENTRIES.map((e) => e.title)).size, TYPE_ENTRIES.length, "タイトルが重複しない (ファイル名になる)");
+  assert.equal(new Set(TYPE_ENTRIES.map((e) => titleOf(e).toLowerCase())).size, TYPE_ENTRIES.length, "英語のタイトルが、大文字小文字を無視しても重複しない (ファイル名になる)");
   for (const v of STEP_VERBS) {
     assert.ok(ids.has(`verb.${v}`), `命令 ${v} がカタログにある`);
     if (v !== "unsupported") assert.ok(SPEC.includes(`"do":"${v}"`), `命令 ${v} が AI への指示書にある`);
@@ -506,5 +506,21 @@ console.log("engine ok");
     { kind: "triggered", trigger: { event: "upkeep" }, targets: [{ id: "t", sel: { kind: "any" } }], effects: [{ do: "flip", lose: [{ do: "change", what: { kind: "ref", ref: "t" }, stat: "damage", delta: { of: "power", ref: "t" } }] }] },
   ]);
   for (const id of ["kind.triggered", "event.upkeep", "sel.targets", "sel.any", "verb.flip", "verb.change", "sel.ref", "amount.of"]) assert.ok(used.has(id), `使用の集計: ${id}`);
+}
+{
+  // ボットに渡す説明: カテゴリごとに整理され、カードごとにエンジンの理解と、動かない部分が付く
+  const { engineSummary, formatCardList } = await import("../src/botinfo");
+  const sum = engineSummary();
+  assert.ok(sum.includes("## エンジンが実行できること") && sum.includes("- 命令: 移す") && sum.includes("- キーワード:") && sum.includes("## まだできないこと") && sum.includes("トークン"), "実行できること・まだできないことが、カテゴリごとに並ぶ");
+  assert.ok(!sum.includes("審判モード"), "未実装の審判モードは、ボットの説明に出さない");
+  const list = formatCardList([
+    { n: 4, name: "Thoughtseize", manaCost: "{B}", typeLine: "Sorcery", oracle: "Target player reveals their hand.", abilities: [{ kind: "spell", effects: [{ do: "change", what: { kind: "player", who: "you" }, stat: "life", delta: -2 }, { do: "unsupported", text: "reveal" }] }], unsupported: ["reveal"], needsRule: true },
+    { n: 3, name: "Bear", manaCost: "{1}{G}", typeLine: "Creature — Bear", power: "2", toughness: "2", oracle: "", unsupported: [], needsRule: false },
+    { n: 2, name: "Swamp", manaCost: "", typeLine: "Basic Land — Swamp", oracle: "", unsupported: [], needsRule: false },
+    { n: 1, name: "Mystery", manaCost: "{2}", typeLine: "Artifact", oracle: "Does a thing.", unsupported: [], needsRule: true },
+  ]);
+  assert.ok(list.indexOf("## クリーチャー (3枚)") < list.indexOf("## 呪文(インスタント・ソーサリー) (4枚)") && list.indexOf("## 呪文") < list.indexOf("## 土地 (2枚)"), "種類ごとの順に並ぶ");
+  assert.ok(list.includes("エンジンの理解: 唱えて解決したとき") && list.includes("使っている型: Spell effect, change") && list.includes("⚠エンジンが実行できない部分(何も起きない): reveal"), "理解・型・動かない部分が付く");
+  assert.ok(list.includes("処理の記録が無い"), "記録の無いカードは、そう書く");
 }
 console.log("diagnose ok");

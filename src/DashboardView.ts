@@ -6,6 +6,7 @@ export interface DashboardActions {
   collection: () => void;
   deck: () => void;
   cards: () => void;
+  rulebook: () => void;
   bot: () => void;
   battle: () => void;
 }
@@ -35,6 +36,7 @@ export class DashboardView extends ItemView {
     row.createEl("button", { text: "コレクション" }).onclick = () => this.actions.collection();
     row.createEl("button", { text: "デッキ" }).onclick = () => this.actions.deck();
     row.createEl("button", { text: "カード" }).onclick = () => this.actions.cards();
+    row.createEl("button", { text: "ルールブック" }).onclick = () => this.actions.rulebook();
     row.createEl("button", { text: "Bot (試し)" }).onclick = () => this.actions.bot();
     row.createEl("button", { text: "Bot 対戦 (仮)" }).onclick = () => this.actions.battle();
   }

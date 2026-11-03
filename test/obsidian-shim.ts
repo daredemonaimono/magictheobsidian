@@ -12,3 +12,4 @@ export async function requestUrl(o: { url: string; method?: string; body?: strin
 export class TFile {}
 export const normalizePath = (p: string) => p;
 export const parseYaml = (s: string) => s;
+export class TFolder {}

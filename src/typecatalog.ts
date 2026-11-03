@@ -7,6 +7,28 @@ export type Status = "implemented" | "partial" | "planned";
 export const CATEGORIES = ["能力の種類", "命令", "何を(選び方)", "どれだけ", "条件", "きっかけ", "コスト", "キーワード", "ゲームのルール", "未実装"] as const;
 export type Category = (typeof CATEGORIES)[number];
 
+// ノートのタイトル (ファイル名) とフォルダ名は英語。日本語の名前は ja に持つ (aliases に入るので、日本語でも検索できる)
+export const CATEGORY_EN: Record<Category, string> = {
+  能力の種類: "Ability kinds", 命令: "Instructions", "何を(選び方)": "Selectors", どれだけ: "Amounts", 条件: "Conditions", きっかけ: "Triggers", コスト: "Costs", キーワード: "Keywords", ゲームのルール: "Game rules", 未実装: "Not implemented",
+};
+
+export const EN_TITLES: Record<string, string> = {
+  "kind.spell": "Spell effect", "kind.activated": "Activated ability", "kind.mana": "Mana ability", "kind.triggered": "Triggered ability",
+  "verb.move": "move", "verb.change": "change", "verb.addMana": "addMana", "verb.shuffle": "shuffle", "verb.flip": "flip", "verb.if": "if", "verb.may": "may", "verb.unsupported": "unsupported",
+  "sel.cards": "cards", "sel.player": "player", "sel.any": "any", "sel.ref": "ref", "sel.targets": "targets",
+  "amount.number": "number", "amount.of": "of", "amount.count": "count", "amount.x": "X",
+  "cond.cmp": "cmp", "cond.has": "has", "cond.did": "did",
+  "event.upkeep": "upkeep", "event.etb": "etb", "event.dies": "dies", "event.more": "More triggers",
+  "cost.tap": "tap", "cost.mana": "mana", "cost.life": "life", "cost.sacrificeSelf": "sacrificeSelf", "cost.more": "More costs",
+  "kw.landwalk": "landwalk", "kw.more": "More keywords",
+  "rule.turn": "Turn and steps", "rule.priority": "Priority and stack", "rule.mana": "Mana pool", "rule.land": "Land drop", "rule.sick": "Summoning sickness", "rule.stack": "Targets and fizzle",
+  "rule.opening": "Dice and mulligan", "rule.hand": "Hand size", "rule.combat": "Combat damage", "rule.state": "State-based actions", "rule.random": "Randomness and replay", "rule.tapland": "Enters tapped",
+  "todo.token": "Tokens", "todo.counter": "Counters", "todo.static": "Static effects", "todo.duration": "Duration effects", "todo.replace": "Replacement effects", "todo.altcost": "Alternative and additional costs",
+  "todo.counterspell": "Counterspells", "todo.control": "Control and copy", "todo.attach": "Auras and equipment", "todo.pw": "Planeswalkers", "todo.faces": "Multi-face cards", "todo.history": "Turn history", "todo.spent": "Mana spent tracking", "todo.judge": "Judge mode",
+};
+
+export const titleOf = (e: TypeEntry) => (e.id.startsWith("kw.") && !EN_TITLES[e.id] ? e.id.slice(3) : (EN_TITLES[e.id] ?? e.id));
+
 export interface TypeEntry {
   id: string; // 例: verb.move
   category: Category;
