@@ -7,7 +7,7 @@ export type Phase = "upkeep" | "draw" | "main1" | "beginCombat" | "attackers" | 
 
 // ---- 能力と効果 (カードごとの処理の記録。Bot/Rules/ のノートに JSON で保存され、エンジンが機械的に実行する) ----
 // 書き方 (型・検証・日本語表示) は effects.ts にある
-import { Ability, AltCost, Amount, CardSel, Cond, PlayerSel, Selector, Step, TargetDef, Who, Zone, normalizeAbility } from "./effects";
+import { Ability, AltCost, Amount, CardSel, Cond, PlayerSel, Selector, Step, TargetDef, TokenDef, Who, Zone, normalizeAbility } from "./effects";
 export type { Ability, Step, Who };
 
 export interface CardDef {
@@ -41,6 +41,11 @@ export interface Perm extends Card {
   blockOrder?: number; // 1体に複数でブロックされたとき、ダメージを割り振る順
   blocked?: boolean; // 攻撃クリーチャーが、ブロックされた (ブロッカーが後で死んでも、ブロックされたまま)
   deathtouched?: boolean; // 接死のダメージを受けた
+  token?: boolean; // トークン (戦場を離れたら消える)
+  evoked?: boolean; // 想起で唱えられた
+  base?: CardDef; // カウンターやタイプの追加を受ける前の姿 (def は、それらを反映した今の姿。戦場を離れたら base に戻る)
+  counters?: Record<string, number>;
+  addedTypes?: string[]; // 加えられたサブタイプ
 }
 export interface Player {
   life: number;
@@ -56,6 +61,7 @@ export interface StackItem {
   def: CardDef; // 表示用 (呪文ならそのカード、能力なら出どころ)
   controller: number;
   card?: Card; // 呪文のとき
+  evoked?: boolean; // 想起で唱えた呪文 (戦場に出たとき、生け贄になる)
   copy?: boolean; // 呪文のコピー (解決したら、消える。墓地へは行かない)
   ability?: Ability; // 能力のとき
   targets?: Record<string, Target>; // 唱えたとき・起動したときに選んだ対象
@@ -70,6 +76,7 @@ export interface Snap {
 interface Result {
   n: number;
   snaps: Snap[];
+  uids?: number[]; // 戦場のパーマネントを置いた/作った命令の結果 (あとの命令が、同じものを指せる)
 }
 interface Ctx {
   self?: StackItem; // いま解決している呪文・能力 (コピーするとき)
@@ -577,10 +584,32 @@ export class Game {
   }
 
   // 場に出す (出たときの誘発を拾う)
-  private enter(card: Card, controller: number) {
-    const perm: Perm = { ...card, controller, tapped: card.def.entersTapped, sick: true, damage: 0, attacking: false };
+  private enter(card: Card, controller: number, opts: { evoked?: boolean; token?: boolean } = {}) {
+    const perm: Perm = { ...card, controller, tapped: card.def.entersTapped, sick: true, damage: 0, attacking: false, ...(opts.token ? { token: true } : {}), ...(opts.evoked ? { evoked: true } : {}) };
     this.s.players[controller].field.push(perm);
+    // 想起: 生け贄の誘発を先に積む = 自身の出たときの能力が先に解決される。shortcut: 積む順は選ばせない (常にこの順)。両方を選ぶ必要が出たら、choose で聞く
+    if (opts.evoked) {
+      const target: Target = { kind: "card", uid: perm.uid, zone: "battlefield", snap: this.snap(perm) };
+      const ab: Ability = { kind: "triggered", trigger: { event: "etb" }, text: "想起: 生け贄にする", effects: [{ do: "move", what: { kind: "ref", ref: "evoked" }, to: "graveyard", how: "sacrifice" }] };
+      this.s.stack.push({ def: perm.def, controller, ability: ab, targets: { evoked: target } });
+      this.log(`誘発: ${perm.def.name} (${ab.text})`);
+    }
     this.fire("etb", perm);
+    return perm;
+  }
+
+  // 戦場を離れるパーマネントを、他のゾーンに置くカードにする。トークンは消える (undefined)
+  private leaves(perm: Perm): Card | undefined {
+    return perm.token ? undefined : { uid: perm.uid, def: perm.base ?? perm.def, owner: perm.owner };
+  }
+
+  // カウンターとサブタイプを反映して、今の姿 (def) を作り直す
+  private refresh(perm: Perm) {
+    const base = (perm.base ??= perm.def);
+    const plus = perm.counters?.["+1/+1"] ?? 0;
+    const add = (perm.addedTypes ?? []).filter((t) => !new RegExp(`\\b${t}\\b`, "i").test(base.typeLine));
+    const typeLine = add.length ? `${base.typeLine}${base.typeLine.includes("—") ? "" : " —"} ${add.join(" ")}` : base.typeLine;
+    perm.def = { ...base, power: base.power + plus, toughness: base.toughness + plus, typeLine };
   }
 
   private payCost(p: number, tap: number[], manaCost?: string) {
@@ -628,8 +657,8 @@ export class Game {
         const alt = a.alt !== undefined ? card.def.abilities[a.alt].alt! : undefined;
         if (alt) await this.payAlt(p, card, alt, a.tap);
         else this.payCost(p, a.tap, card.def.manaCost);
-        s.stack.push({ def: card.def, controller: p, card, targets });
-        this.log(`プレイヤー${p + 1}: 唱える ${card.def.name} ${alt ? "(代替コスト)" : card.def.manaCost}`);
+        s.stack.push({ def: card.def, controller: p, card, targets, ...(alt?.evoke ? { evoked: true } : {}) });
+        this.log(`プレイヤー${p + 1}: 唱える ${card.def.name} ${alt?.evoke ? `(想起 ${alt.mana ?? ""})` : alt ? "(代替コスト)" : card.def.manaCost}`);
       }
     }
     this.onChange?.();
@@ -660,7 +689,8 @@ export class Game {
   private sacrifice(perm: Perm) {
     const pl = this.s.players[perm.controller];
     pl.field.splice(pl.field.indexOf(perm), 1);
-    this.s.players[perm.owner].graveyard.push({ uid: perm.uid, def: perm.def, owner: perm.owner });
+    const card = this.leaves(perm);
+    if (card) this.s.players[perm.owner].graveyard.push(card);
   }
 
   private async resolveTop() {
@@ -683,7 +713,7 @@ export class Game {
     } else {
       const card = item.card!;
       if (isPermanent(card.def)) {
-        this.enter(card, item.controller);
+        this.enter(card, item.controller, { evoked: item.evoked });
         this.log(`${card.def.name} が場に出る`);
       } else {
         if (!defs.length) this.log(`${card.def.name} を解決 (効果は未実装)`);
@@ -910,6 +940,21 @@ export class Game {
         case "move":
           await this.move(e, ctx);
           break;
+        case "create":
+          this.createTokens(e, ctx);
+          break;
+        case "counters":
+          await this.putCounters(e, ctx);
+          break;
+        case "addType":
+          for (const f of await this.resolveWhat(e.what, ctx, "サブタイプを加えるパーマネントを選ぶ")) {
+            if (f.zone !== "battlefield") continue;
+            const perm = f.obj as Perm;
+            (perm.addedTypes ??= []).push(e.subtype);
+            this.refresh(perm);
+            this.log(`${perm.def.name} に ${e.subtype} を加える`);
+          }
+          break;
         case "change":
           await this.change(e, ctx);
           break;
@@ -917,7 +962,7 @@ export class Game {
           this.log(`未対応の効果: ${e.text}`);
           break;
       }
-      this.checkState();
+      // 状況起因処理は、能力の解決が終わってから (resolveTop / perform)。途中で見ると、0/0 のトークンにカウンターを置く前に死んでしまう
     }
   }
 
@@ -926,8 +971,8 @@ export class Game {
     if (what.kind === "cards") return this.selectCards(what, ctx, why);
     if (what.kind === "ref") {
       const t = ctx.targets[what.ref];
-      const uids = t?.kind === "card" ? [t.uid] : (ctx.results[what.ref]?.snaps ?? []).map(() => -1);
-      return uids.flatMap((u) => (u >= 0 && this.targetLegal(t) ? [this.locate(u)!] : [])).map((l) => ({ obj: l.obj, zone: l.zone, player: l.player }));
+      const uids = t?.kind === "card" ? [t.uid] : (ctx.results[what.ref]?.uids ?? (ctx.results[what.ref]?.snaps ?? []).map(() => -1));
+      return uids.flatMap((u) => ((t ? this.targetLegal(t) : true) && u >= 0 && this.locate(u) ? [this.locate(u)!] : [])).map((l) => ({ obj: l.obj, zone: l.zone, player: l.player }));
     }
     return [];
   }
@@ -958,28 +1003,54 @@ export class Game {
         continue;
       }
       (from as (Card | Perm)[]).splice(idx, 1);
-      const card: Card = { uid: f.obj.uid, def: f.obj.def, owner: f.obj.owner };
+      const card: Card | undefined = perm ? this.leaves(perm) : { uid: f.obj.uid, def: f.obj.def, owner: f.obj.owner };
       if (as) (as.n++, as.snaps.push(this.snap(f.obj)));
       switch (e.to) {
         case "battlefield":
-          this.enter(card, me);
+          if (card) this.enter(card, me);
           break;
         case "graveyard":
-          owner.graveyard.push(card);
+          if (card) owner.graveyard.push(card);
           if (perm) this.fire("dies", perm);
           break;
         case "exile":
-          owner.exile.push(card);
+          if (card) owner.exile.push(card);
           break;
         case "hand":
-          owner.hand.push(card);
+          if (card) owner.hand.push(card);
           break;
         case "library":
-          e.position === "bottom" ? owner.library.push(card) : owner.library.unshift(card);
+          if (card) e.position === "bottom" ? owner.library.push(card) : owner.library.unshift(card);
           break;
       }
       const Z: Record<string, string> = { battlefield: "戦場", hand: "手札", library: "山札", graveyard: "墓地", exile: "追放領域" };
-      this.log(`${card.def.name} (プレイヤー${f.player + 1}): ${Z[f.zone]} → ${Z[e.to]}${e.how === "destroy" ? " (破壊)" : e.how === "discard" ? " (捨てる)" : ""}`);
+      this.log(`${f.obj.def.name} (プレイヤー${f.player + 1}): ${Z[f.zone]} → ${Z[e.to]}${e.how === "destroy" ? " (破壊)" : e.how === "discard" ? " (捨てる)" : ""}`);
+    }
+  }
+
+  // トークンを作る (コントローラーの戦場に出る。出たときの誘発は、トークンには無い)
+  private createTokens(e: Extract<Step, { do: "create" }>, ctx: Ctx) {
+    const t: TokenDef = e.token;
+    const n = Math.max(0, this.evalAmount(e.n, ctx));
+    const as: Result | undefined = e.as ? (ctx.results[e.as] = { n: 0, snaps: [], uids: [] }) : undefined;
+    for (let i = 0; i < n; i++) {
+      const def: CardDef = { ...makeDef({ key: `token:${t.name}`, name: t.name, typeLine: `Token ${t.types}`, manaCost: "", cmc: 0, power: t.power, toughness: t.toughness, oracle: "", keywords: t.keywords }), colors: t.colors ?? [] };
+      const perm = this.enter({ uid: this.nextUid++, def, owner: ctx.controller }, ctx.controller, { token: true });
+      if (as) (as.n++, as.snaps.push(this.snap(perm)), as.uids!.push(perm.uid));
+      this.log(`プレイヤー${ctx.controller + 1}: トークン ${t.power}/${t.toughness} ${t.name} を作る`);
+    }
+  }
+
+  private async putCounters(e: Extract<Step, { do: "counters" }>, ctx: Ctx) {
+    const n = Math.max(0, this.evalAmount(e.n, ctx));
+    const as: Result | undefined = e.as ? (ctx.results[e.as] = { n: 0, snaps: [], uids: [] }) : undefined;
+    for (const f of await this.resolveWhat(e.what, ctx, "カウンターを置くパーマネントを選ぶ")) {
+      if (f.zone !== "battlefield" || !n) continue;
+      const perm = f.obj as Perm;
+      perm.counters = { ...perm.counters, [e.counter]: (perm.counters?.[e.counter] ?? 0) + n };
+      this.refresh(perm);
+      if (as) (as.n++, as.snaps.push(this.snap(perm)), as.uids!.push(perm.uid));
+      this.log(`${perm.def.name} に ${e.counter} カウンターを ${n} 個置く (${perm.def.power}/${perm.def.toughness})`);
     }
   }
 
@@ -1140,7 +1211,8 @@ export class Game {
       for (const p of [...pl.field]) {
         if (isCreature(p.def) && (p.def.toughness <= 0 || (!hasKw(p.def, "indestructible") && (p.damage >= p.def.toughness || (p.deathtouched && p.damage > 0))))) {
           pl.field.splice(pl.field.indexOf(p), 1);
-          s.players[p.owner].graveyard.push({ uid: p.uid, def: p.def, owner: p.owner });
+          const dead = this.leaves(p);
+          if (dead) s.players[p.owner].graveyard.push(dead);
           this.log(`${p.def.name} が死ぬ (プレイヤー${i + 1})`);
           this.fire("dies", p);
         }

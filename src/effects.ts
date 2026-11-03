@@ -49,7 +49,19 @@ export type Step =
   | { do: "if"; cond: Cond; then: Step[]; else?: Step[] }
   | { do: "may"; steps: Step[]; who?: Who | PlayerSel; cost?: { mana?: string } } // who = 決める人 (支払うコストがあれば、その人が払う)。cost = してもよいが、払うなら
   | { do: "copy"; what: Selector; by?: PlayerSel; newTargets?: boolean; color?: string } // スタックの呪文 (self = いま解決している呪文) のコピーを作る。コピーは、先に解決される。by = コピーを持つ人。newTargets = 新しい対象を選んでもよい。color = コピーの色
+  | { do: "create"; token: TokenDef; n?: Amount; as?: string } // トークンを n 体 (既定 1) 作る。コントローラーの戦場に出る
+  | { do: "counters"; what: Selector; counter: string; n: Amount; as?: string } // 戦場のパーマネントにカウンターを n 個置く。"+1/+1" はパワー・タフネスに足される
+  | { do: "addType"; what: Selector; subtype: string } // 戦場のパーマネントに、サブタイプを加える (すでにあれば何もしない)
   | { do: "unsupported"; text: string };
+
+export interface TokenDef {
+  name: string;
+  types: string; // タイプ行 ("Creature — Zombie Army")。Token は自動で付く
+  power: number;
+  toughness: number;
+  colors?: string[]; // 色 (W U B R G)。無ければ無色
+  keywords?: string[];
+}
 
 export interface AbilityCost {
   tap?: boolean;
@@ -63,6 +75,7 @@ export interface AltCost {
   exileFromHand?: { sel: CardSel; n: number }; // 自分の手札から n 枚を追放する
   life?: number;
   mana?: string; // 別のマナコスト
+  evoke?: boolean; // 想起: この唱え方で出たパーマネントは、出たとき生け贄になる (誘発。自身の出たときの能力より後に解決される)
   unless?: "yourTurn" | "notYourTurn"; // 条件: 自分のターンでないときだけ、など
 }
 export interface Suspend {
@@ -89,7 +102,7 @@ export interface Ability {
   text?: string; // 表示用
 }
 
-export const STEP_VERBS = ["move", "change", "addMana", "shuffle", "flip", "if", "may", "copy", "unsupported"] as const; // 命令の種類 (型のカタログと、AI への指示書が、これと合っているか、テストで確かめる)
+export const STEP_VERBS = ["move", "change", "addMana", "shuffle", "flip", "if", "may", "copy", "create", "counters", "addType", "unsupported"] as const; // 命令の種類 (型のカタログと、AI への指示書が、これと合っているか、テストで確かめる)
 
 // ---- 検証 (知らない形は「未対応」にして、能力の残りは動かす) ----
 
@@ -199,6 +212,22 @@ export function sanitizeSteps(raw: unknown): Step[] {
         const by = selector(e.by);
         return { do: "copy", what, ...(by && by.kind === "player" ? { by } : {}), ...(e.newTargets ? { newTargets: true } : {}), ...(typeof e.color === "string" && COLORS.includes(e.color) ? { color: e.color } : {}) };
       }
+      case "create": {
+        const t = (e.token ?? {}) as Record<string, unknown>;
+        if (typeof t.name !== "string" || typeof t.types !== "string") return bad();
+        const token: TokenDef = { name: t.name, types: t.types, power: num(t.power, 0), toughness: num(t.toughness, 0), ...(strs(t.colors, COLORS)?.length ? { colors: strs(t.colors, COLORS) } : {}), ...(strs(t.keywords)?.length ? { keywords: strs(t.keywords)!.map((k) => k.toLowerCase()) } : {}) };
+        return { do: "create", token, ...(e.n !== undefined ? { n: amount(e.n) } : {}), ...as };
+      }
+      case "counters": {
+        const what = selector(e.what);
+        if (!what || (what.kind !== "cards" && what.kind !== "ref") || typeof e.counter !== "string") return bad();
+        return { do: "counters", what, counter: e.counter, n: amount(e.n ?? 1), ...as };
+      }
+      case "addType": {
+        const what = selector(e.what);
+        if (!what || (what.kind !== "cards" && what.kind !== "ref") || typeof e.subtype !== "string") return bad();
+        return { do: "addType", what, subtype: e.subtype };
+      }
       case "unsupported":
         return bad();
       default:
@@ -278,7 +307,7 @@ export function normalizeAbility(raw: unknown, macros?: Map<string, Macro>): Abi
       const o = (x ?? {}) as Record<string, unknown>;
       return o.sel ? { sel: cardSel(o.sel), n: num(o.n) } : undefined;
     };
-    const out: AltCost = { ...(pick(alt.sacrifice) ? { sacrifice: pick(alt.sacrifice) } : {}), ...(pick(alt.exileFromHand) ? { exileFromHand: pick(alt.exileFromHand) } : {}), ...(alt.life ? { life: num(alt.life) } : {}), ...(typeof alt.mana === "string" ? { mana: alt.mana } : {}), ...(alt.unless === "yourTurn" || alt.unless === "notYourTurn" ? { unless: alt.unless } : {}) };
+    const out: AltCost = { ...(pick(alt.sacrifice) ? { sacrifice: pick(alt.sacrifice) } : {}), ...(pick(alt.exileFromHand) ? { exileFromHand: pick(alt.exileFromHand) } : {}), ...(alt.life ? { life: num(alt.life) } : {}), ...(typeof alt.mana === "string" ? { mana: alt.mana } : {}), ...(alt.evoke ? { evoke: true } : {}), ...(alt.unless === "yourTurn" || alt.unless === "notYourTurn" ? { unless: alt.unless } : {}) };
     if (!out.sacrifice && !out.exileFromHand && !out.life && !out.mana) return { kind: "altCost", effects: [{ do: "unsupported", text: `未対応の代替コスト: ${JSON.stringify(a.alt ?? a)}` }] };
     ab.alt = out;
   }
@@ -365,6 +394,14 @@ export function describeStep(s: Step): string {
     }
     case "copy":
       return `${describeSel(s.what)} のコピーを作る${s.by ? `(持つのは ${describeSel(s.by)})` : ""}${s.color ? `。コピーは${s.color}色` : ""}${s.newTargets ? "。新しい対象を選んでもよい" : ""}`;
+    case "create": {
+      const t = s.token;
+      return `${t.power}/${t.toughness} の${t.colors?.length ? `${t.colors.join("")}色の` : ""}${t.types}・トークン「${t.name}」を ${describeAmount(s.n)} 体作る${s.as ? ` →「${s.as}」` : ""}`;
+    }
+    case "counters":
+      return `${describeSel(s.what)} に ${s.counter} カウンターを ${describeAmount(s.n)} 個置く${s.as ? ` →「${s.as}」` : ""}`;
+    case "addType":
+      return `${describeSel(s.what)} に ${s.subtype} を加える`;
     default:
       return `【未対応】${s.text}`;
   }
@@ -388,6 +425,7 @@ export function describeAbility(a: Ability): string {
         a.alt.life ? `${a.alt.life} 点のライフを払う` : "",
         a.alt.mana ? `${a.alt.mana} を払う` : "",
         "ことで、マナコストの代わりに唱えられる",
+        a.alt.evoke ? " (想起: 出たとき生け贄にする)" : "",
       ].join("")
     : "";
   const sus = a.suspend ? `手札から ${a.suspend.cost} を払って追放し、時間カウンターを ${a.suspend.n} 個置く。自分のアップキープに1個取り除き、最後の1個を取り除いたとき、マナコストを払わずに唱えてもよい` : "";
@@ -435,7 +473,10 @@ export function validateMacro(raw: unknown): { macro?: Macro; error?: string } {
 }
 
 export function substitute(node: unknown, args: Record<string, unknown>): unknown {
-  if (typeof node === "string") return node.startsWith("$") && node.slice(1) in args ? args[node.slice(1)] : node;
+  if (typeof node === "string") {
+    if (node.startsWith("$") && node.slice(1) in args) return args[node.slice(1)]; // 全体が $名前: 値の型のまま入る
+    return node.replace(/\$([A-Za-z_]\w*)/g, (m, k) => (k in args ? String(args[k]) : m)); // 文の途中の $名前: 文字になる ("$type Army" → "Orc Army")
+  }
   if (Array.isArray(node)) return node.map((x) => substitute(x, args));
   if (node && typeof node === "object") return Object.fromEntries(Object.entries(node).map(([k, v]) => [k, substitute(v, args)]));
   return node;

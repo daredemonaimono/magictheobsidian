@@ -131,7 +131,7 @@ export const SPEC = `あなたは Magic: The Gathering の対戦エンジンの�
 # Ability
 - kind: "mana" (マナを出す起動型能力。スタックを使わない) / "activated" (起動型能力) / "triggered" (誘発型能力) / "spell" (インスタント・ソーサリーを唱えて解決したときの効果)
 - kind: "static" (常在型能力。戦場にある間ずっと働く。いまは「起動の禁止」だけ): {"kind":"static","restrictions":[{"type":"cantActivate","what":CardSel}],"effects":[]}。what に合うパーマネントの、起動型能力 (マナ能力を含む) が起動できなくなる。what の owner を省くと、両方のプレイヤーに効く
-- kind: "altCost" (代替コスト。マナコストの代わりに払って唱えられる): {"kind":"altCost","alt":{"sacrifice":{"sel":CardSel,"n":2},"exileFromHand":{"sel":CardSel,"n":1},"life":1,"mana":"{R}","unless":"notYourTurn"|"yourTurn"},"effects":[],"text":"..."}。alt は、使うものだけ書く。呪文の効果は、別の spell 能力に書く
+- kind: "altCost" (代替コスト。マナコストの代わりに払って唱えられる): {"kind":"altCost","alt":{"sacrifice":{"sel":CardSel,"n":2},"exileFromHand":{"sel":CardSel,"n":1},"life":1,"mana":"{R}","evoke":true,"unless":"notYourTurn"|"yourTurn"},"effects":[],"text":"..."}。alt は、使うものだけ書く。呪文の効果は、別の spell 能力に書く
 - kind: "suspend" (待機): {"kind":"suspend","suspend":{"n":1,"cost":"{R}"},"effects":[]}。呪文の効果は、別の spell 能力に書く
 - cost (mana / activated): {"tap": true, "mana": "{1}{W}", "life": 1, "sacrificeSelf": true}。使うものだけ書く
 - trigger (triggered): {"event": "upkeep" | "etb" | "dies", "whose": "you" | "opponent" | "each"}。upkeep の whose は、誰のアップキープの開始時か。etb は「このカードが戦場に出たとき」、dies は「このカードが死亡したとき」だけ
@@ -156,6 +156,9 @@ export const SPEC = `あなたは Magic: The Gathering の対戦エンジンの�
 - {"do":"if","cond":Cond,"then":[Step...],"else":[Step...]}
 - {"do":"may","steps":[Step...],"who":PlayerSel,"cost":{"mana":"{R}{R}"}}  「してもよい」。who が "opponent" なら相手が決める。PlayerSel なら、その人 (例: 対象のコントローラー)。cost があれば、してもよい人が、そのマナを払う
 - {"do":"copy","what":Selector,"newTargets":true,"color":"R","by":PlayerSel}  スタックの呪文のコピーを作る。what は {"kind":"self"} (いま解決している呪文) か、targets の ref (スタックの呪文)。コピーは先に解決される
+- {"do":"create","token":{"name":"Zombie Army","types":"Creature — Zombie Army","power":0,"toughness":0,"colors":["B"],"keywords":["flying"]},"n":1,"as":"tok"}  トークンを n 体 (既定 1) 作る (自分の戦場に出る)。colors は無ければ無色。as をつけると、あとの命令が「いま作ったもの」を {"kind":"ref","ref":"tok"} で指せる
+- {"do":"counters","what":Selector,"counter":"+1/+1","n":Amount,"as":"c"}  戦場のパーマネントにカウンターを n 個置く。+1/+1 は、パワーとタフネスに足される。what に合うものが複数なら、コントローラーが選ぶ。as をつけると、置いたものを ref で指せる
+- {"do":"addType","what":Selector,"subtype":"Orc"}  戦場のパーマネントにサブタイプを加える (すでに持っていれば何もしない)
 - {"do":"unsupported","text":"..."}  効果の一部だけ対応できないとき、その部分に入れる
 
 # Selector (何を)
@@ -176,7 +179,7 @@ export const SPEC = `あなたは Magic: The Gathering の対戦エンジンの�
 
 # キーワード能力
 次のキーワードは、エンジンが自分で動かすので、abilities にも unsupported にも書かない: flying haste vigilance flash reach trample first strike double strike deathtouch lifelink menace defender indestructible hexproof shroud intimidate fear skulk shadow と、〜walk (土地渡り)。
-これら以外のキーワード (evoke / kicker / flashback / ward / protection など) は、unsupported に書く。
+これら以外のキーワード (kicker / flashback / ward / protection など) は、unsupported に書く。
 
 # 能力にしないもの (unsupported に書く)
 常在型能力のうち「起動の禁止」以外 (+1/+1 の修整、コストの増減、攻撃・ブロックの制限など)、代替コスト・追加コスト、置換効果、トークンを作る、カウンターを置く、ターン終了時までの一時的な効果、
@@ -194,7 +197,7 @@ abilities の中に {"ref":"能力のid","args":{"n":1}} と書くと、末尾�
 ability に書けない (関数が足りない) 能力は、ability を省いて needs を書く (「未処理」で登録される)。
 
 # 今の命令では書けないとき (needs)
-その文は、effects に {"do":"unsupported","text":"原文"} として残し、needs に、新しい関数の仕様を書く: {"name":"createToken","title":"トークンを作る","description":"どう動くか","inputs":"受け取るもの","state":"必要なゲームの状態","waitFor":["todo.token"]}。
+その文は、effects に {"do":"unsupported","text":"原文"} として残し、needs に、新しい関数の仕様を書く: {"name":"destroyEnteredThisTurn","title":"今ターン出たものを破壊する","description":"どう動くか","inputs":"受け取るもの","state":"必要なゲームの状態","waitFor":["todo.history"]}。
 waitFor は、末尾の「まだ実装されていない型」の id から、いちばん近いものを選ぶ。当てはまるものが無ければ、"todo." + name にする。needs は、無ければ省く。
 
 # 出力 (拡張)
@@ -212,6 +215,8 @@ Fireblast: {"abilities":[{"kind":"altCost","alt":{"sacrifice":{"sel":{"kind":"ca
 Fork: {"abilities":[{"kind":"spell","targets":[{"id":"s","sel":{"kind":"cards","zone":"stack","types":["instant","sorcery"]}}],"effects":[{"do":"copy","what":{"kind":"ref","ref":"s"},"newTargets":true,"color":"R"}],"text":"インスタント・ソーサリーのコピー(赤)"}],"unsupported":[]}
 Chain Lightning: {"abilities":[{"kind":"spell","targets":[{"id":"t","sel":{"kind":"any"}}],"effects":[{"do":"change","what":{"kind":"ref","ref":"t"},"stat":"damage","delta":3},{"do":"may","who":{"kind":"player","who":"controllerOf","ref":"t"},"cost":{"mana":"{R}{R}"},"steps":[{"do":"copy","what":{"kind":"self"},"by":{"kind":"player","who":"controllerOf","ref":"t"},"newTargets":true}]}],"text":"3点。対象のコントローラーは RR でコピーしてよい"}],"unsupported":[]}
 Rift Bolt: {"abilities":[{"kind":"suspend","suspend":{"n":1,"cost":"{R}"},"effects":[]},{"kind":"spell","targets":[{"id":"t","sel":{"kind":"any"}}],"effects":[{"do":"change","what":{"kind":"ref","ref":"t"},"stat":"damage","delta":3}],"text":"3点のダメージ"}],"unsupported":[]}
+Amass Orcs 1 (共有の能力。引数 n, type): [{"do":"if","cond":{"has":{"kind":"cards","subtypes":["Army"],"owner":"you"}},"then":[],"else":[{"do":"create","token":{"name":"$type Army","types":"Creature — $type Army","power":0,"toughness":0,"colors":["B"]}}]},{"do":"counters","what":{"kind":"cards","subtypes":["Army"],"owner":"you","count":1},"counter":"+1/+1","n":"$n","as":"army"},{"do":"addType","what":{"kind":"ref","ref":"army"},"subtype":"$type"}]  (Army が無ければ 0/0 のトークンを先に作り、Army を1体選んで、カウンターを置き、種族を加える)
+Evoke {R} (共有の能力。引数 cost): {"kind":"altCost","alt":{"mana":"$cost","evoke":true},"effects":[],"text":"想起 $cost (出たとき生け贄にする)"}  (想起で唱えると、出たあとに生け贄になる誘発が自動で積まれる。自身の出たときの能力は、別の triggered 能力に書く)
 Wasteland: {"abilities":[{"kind":"mana","cost":{"tap":true},"effects":[{"do":"addMana","options":"C"}]},{"kind":"activated","cost":{"tap":true,"sacrificeSelf":true},"targets":[{"id":"t","sel":{"kind":"cards","types":["land"],"not":["basic"]}}],"effects":[{"do":"move","what":{"kind":"ref","ref":"t"},"to":"graveyard","how":"destroy"}],"text":"基本でない土地を破壊"}],"unsupported":[]}`;
 
 export interface Compiled {

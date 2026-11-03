@@ -562,7 +562,8 @@ console.log("engine ok");
   assert.equal(p.needs[0].waitFor.length, 2);
   assert.deepEqual(p.unsupported, ["Then amass Orcs 1."]);
   const item = { id: "p1", key: "Bowmasters", instruction: "x", needs: p.needs, created: "", status: "waiting" as const };
-  assert.ok(!isReady(item), "待っている型が未実装の間は、まだ");
+  assert.ok(!isReady({ ...item, needs: [{ ...p.needs[0], waitFor: ["todo.replace"] }] }), "待っている型が未実装の間は、まだ");
+  assert.ok(isReady(item), "トークンとカウンターが実装されたので、アマスの更新ができる");
   assert.ok(isReady({ ...item, needs: [{ ...p.needs[0], waitFor: ["verb.move"] }] }), "待っている型が実装されたら、更新できる");
   assert.ok(!isReady({ ...item, needs: [{ ...p.needs[0], waitFor: ["todo.unknownFunction"] }] }), "カタログに無い型は、実装されるまで待つ");
 }
@@ -699,3 +700,62 @@ console.log("engine ok");
   assert.equal((await smokeTest(fireblast)).status, "ok", "Fireblast も動く");
 }
 console.log("diagnose ok");
+
+// ---- トークン・カウンター (Amass) と想起 (Evoke) ----
+{
+  const { expandSteps, substitute } = await import("../src/effects");
+  const amassSteps = [
+    { do: "if", cond: { has: { kind: "cards", subtypes: ["Army"], owner: "you" } }, then: [], else: [{ do: "create", token: { name: "$type Army", types: "Creature — $type Army", power: 0, toughness: 0, colors: ["B"] } }] },
+    { do: "counters", what: { kind: "cards", subtypes: ["Army"], owner: "you", count: 1 }, counter: "+1/+1", n: "$n", as: "army" },
+    { do: "addType", what: { kind: "ref", ref: "army" }, subtype: "$type" },
+  ];
+  assert.equal(((substitute(amassSteps, { n: 2, type: "Orc" }) as typeof amassSteps)[0].else![0] as { token: { name: string } }).token.name, "Orc Army", "文の途中の $名前 も、引数が入る");
+  assert.equal(expandSteps([], new Map()).length, 0);
+  const amass = (n: number) => def(`Amass${n}`, "Sorcery", "{0}", 0, 0, "", [{ kind: "spell", effects: substitute(amassSteps, { n, type: "Orc" }) as never }]);
+  const g = world([amass(2), amass(1)], [], [greedy, greedy], [false, false]);
+  await g.play(1);
+  const armies = g.s.players[0].field.filter((p) => /\bArmy\b/.test(p.def.typeLine));
+  assert.equal(armies.length, 1, "Army が無ければ作り、あれば増やさない");
+  assert.equal(`${armies[0].def.power}/${armies[0].def.toughness}`, "3/3", "カウンターが合わせて 3 個。0/0 のトークンは、置く前に死なない");
+  assert.ok(/Orc/.test(armies[0].def.typeLine) && armies[0].token, "Orc の Army トークン");
+  assert.equal(armies[0].counters?.["+1/+1"], 3);
+  // トークンは、戦場を離れたら消える
+  armies[0].damage = 3;
+  (g as unknown as { checkState(): void }).checkState();
+  assert.equal(g.s.players[0].field.filter((p) => p.token).length, 0, "死んだトークンは戦場から消える");
+  assert.ok(!g.s.players[0].graveyard.some((c) => /Army/.test(c.def.name)), "トークンは墓地に残らない");
+  // カウンターを置かれたカードは、戦場を離れると元の姿に戻る
+  const ab = def("Cubs", "Creature — Bear", "{1}", 2, 2);
+  const g2 = world([], [ab], [greedy, greedy], [false, false]);
+  const cub = g2.s.players[0].field[0];
+  const put = def("Pump", "Sorcery", "{0}", 0, 0, "", [{ kind: "spell", effects: [{ do: "counters", what: { kind: "cards", types: ["creature"], owner: "you", count: 1 }, counter: "+1/+1", n: 2 }] }]);
+  g2.s.players[0].hand = [{ uid: 3000, def: put, owner: 0 }];
+  await g2.play(1);
+  assert.equal(cub.def.power, 4, "+1/+1 カウンター 2 個で 4/4");
+  cub.damage = 4;
+  (g2 as unknown as { checkState(): void }).checkState();
+  const back = g2.s.players[0].graveyard.find((c) => c.def.name === "Cubs");
+  assert.equal(back?.def.power, 2, "墓地では、カウンターを反映する前の 2/2");
+}
+{
+  // 想起: 代替コストで唱えると、出たあとに生け贄の誘発。自身の出たときの能力が先に解決される
+  const elem = def("Elemental", "Creature — Elemental", "{3}{R}{R}", 3, 3, "", [
+    { kind: "altCost", alt: { mana: "{R}", evoke: true }, effects: [] },
+    { kind: "triggered", trigger: { event: "etb" }, effects: [{ do: "change", what: { kind: "player", who: "opponent" }, stat: "damage", delta: 3 }] },
+  ]);
+  const g = world([elem], [mountain], [greedy, greedy], [false, false]);
+  await g.play(1);
+  assert.equal(g.s.players[1].life, 17, "出たときの能力は解決される");
+  assert.ok(g.s.players[0].graveyard.some((c) => c.def.name === "Elemental") && !g.s.players[0].field.some((p) => p.def.name === "Elemental"), "生け贄になって墓地へ");
+  const i = g.s.log.findIndex((l) => l.includes("想起 {R}"));
+  assert.ok(i >= 0, "想起で唱えたログ");
+  const dmg = g.s.log.findIndex((l) => l.includes("3 点") && !l.includes("想起"));
+  const sac = g.s.log.findIndex((l, k) => k > i && l.includes("Elemental") && l.includes("戦場 → 墓地"));
+  assert.ok(dmg > 0 && sac > dmg, "ダメージ (出たとき) が先、生け贄が後");
+  // 通常のコストで唱えれば、生け贄にならない
+  const normal: Controller = async (_g, d) => (d.type === "priority" ? (d.actions.find((a) => a.kind === "cast" && a.alt === undefined) ?? pass) : d.type === "attackers" ? [] : ([] as Block[]));
+  const g2 = world([elem], Array(5).fill(mountain), [normal, greedy], [false, false]);
+  await g2.play(1);
+  assert.ok(g2.s.players[0].field.some((p) => p.def.name === "Elemental" && !p.evoked), "通常のコストなら戦場に残る");
+}
+console.log("token counter evoke ok");
