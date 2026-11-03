@@ -238,3 +238,4 @@ button.mtg-color .mtg-sym { width: 20px; height: 20px; display: block; }
 .mtg-rb-bar { display: flex; gap: 8px; margin: 6px 0; }
 .mtg-rb-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .mtg-rb-proposal { margin-top: 8px; padding: 8px; border: 1px solid var(--interactive-accent); border-radius: 8px; }
+.mtg-rb-used { font-weight: 700; color: var(--text-accent); }

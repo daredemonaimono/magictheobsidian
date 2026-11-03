@@ -591,4 +591,22 @@ console.log("engine ok");
   assert.equal((await import("../src/effects")).normalizeAbility({ kind: "static", restrictions: [{ type: "pt", what: {} }] })!.effects[0].do, "unsupported", "知らない常在型能力は、未対応");
   assert.equal(await (await import("../src/diagnose")).smokeTest(rod).then((r) => r.status), "ok", "動作テスト (診断) でも確認できる");
 }
+{
+  // 似たカードの記録を探す
+  const { oracleTokens, pickSimilar, similarity } = await import("../src/similar");
+  const tk = oracleTokens("Thoughtseize deals 2 damage to you. (reminder) {B}", "Thoughtseize");
+  assert.ok(tk.has("~") && tk.has("n") && tk.has("m") && !tk.has("reminder"), "カード名・数字・マナ記号は、そろえる。括弧の注釈は除く");
+  const ex = (name: string, oracle: string, clean = true) => ({ key: name, name, oracle, json: "{}", clean });
+  const pool = [
+    ex("Thoughtseize", "Target player reveals their hand. You choose a nonland card from it. That player discards that card. You lose 2 life."),
+    ex("Lightning Bolt", "Lightning Bolt deals 3 damage to any target."),
+    ex("Mana Crypt", "At the beginning of your upkeep, flip a coin. If you lose the flip, Mana Crypt deals 3 damage to you. {T}: Add {C}{C}."),
+  ];
+  const duress = { name: "Duress", oracle: "Target opponent reveals their hand. You choose a noncreature, nonland card from it. That player discards that card." };
+  assert.equal(pickSimilar(duress, pool, 1)[0].name, "Thoughtseize", "手札を公開して捨てさせるカードは、Thoughtseize が一番近い");
+  assert.deepEqual(pickSimilar({ name: "Zzz", oracle: "Draw seven cards, then shuffle your library." }, pool), [], "似ていなければ、出さない");
+  const two = [ex("Dirty", "Target player reveals their hand. You choose a nonland card from it. That player discards that card.", false), ex("Clean", "Target player reveals their hand. You choose a nonland card from it. That player discards that card.")];
+  assert.equal(pickSimilar(duress, two, 1)[0].name, "Clean", "同じ近さなら、未対応の無い記録を優先する");
+  assert.ok(similarity(new Set(["a", "b"]), new Set(["a", "b"])) === 1 && similarity(new Set(["a"]), new Set(["b"])) === 0);
+}
 console.log("diagnose ok");

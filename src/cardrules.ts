@@ -3,10 +3,11 @@ import { cardInfo, oracleEnglish } from "./cards";
 import { askClaude } from "./claude";
 import { Ability, Macro, macrosUsedIn, normalizeAbility, unsupportedIn, validateMacro } from "./effects";
 import { getMacros, saveMacro } from "./macros";
+import { Example, formatExamples, pickSimilar } from "./similar";
 import { TYPE_ENTRIES } from "./typecatalog";
 import { NeedSpec, PendingItem, newPendingId, readPending, writePending } from "./pending";
 import { KEYWORDS, parseKeywords } from "./engine";
-import { readRuleText, writeRuleText } from "./rulestore";
+import { readRuleText, ruleKeys, writeRuleText } from "./rulestore";
 
 // カードごとの処理の記録 (Bot/Rules/<カード名>.md)。初回だけ AI (Claude) が効果テキストから作り、
 // 以後は対戦エンジンが機械的に実行する。じゅまが読んで直してよい (直したものは上書きしない)
@@ -188,6 +189,22 @@ export interface Compiled {
   error?: string;
 }
 
+// 似たカードの記録 (参考例)。同じ書き方に揃えるため、既にある記録から、原文が近いものを数件、選ぶ
+export async function similarBlock(app: App, key: string, name: string, oracle: string): Promise<string> {
+  const pool: Example[] = [];
+  for (const k of await ruleKeys(app)) {
+    if (k === key) continue;
+    const text = await readRuleText(app, k);
+    const json = text?.match(/```json\n([\s\S]*?)\n```/)?.[1];
+    const o = text?.match(/## オラクルテキスト\n\n([\s\S]*?)\n\n## 未対応/)?.[1];
+    if (!text || !json || !o) continue;
+    const unsup = text.match(/## 未対応\n\n([\s\S]*?)\n\n##/)?.[1] ?? "";
+    pool.push({ key: k, name: cardInfo(app, k)?.name ?? k, oracle: o, json, clean: realUnsupported(unsup.split("\n").map((l) => l.replace(/^- /, "")).filter((l) => l.trim() !== "なし")).length === 0 });
+  }
+  const picked = pickSimilar({ name, oracle }, pool);
+  return picked.length ? `\n\n# 似たカードの記録 (参考。書き方をこれに揃える。ただし、このカードの原文に合わせる)\n${formatExamples(picked)}` : "";
+}
+
 // 指示書の末尾に付ける、いまの登録済みのマクロと、まだ実装されていない型
 export function specFor(macros: Map<string, Macro>): string {
   const ms = [...macros.values()].map((m) => `- ${m.name}(${m.params.join(", ")}): ${m.title} — ${m.description}`);
@@ -252,7 +269,7 @@ export async function compileCard(app: App, apiKey: string, key: string, overwri
   const oracle = await oracleEnglish(app, key);
   try {
     const macros = await getMacros(app);
-    const r = await askClaude(apiKey, COMPILE_MODEL, specFor(macros), `カード: ${info.name}\nタイプ: ${info.typeLine}\nマナコスト: ${info.manaCost}\n\nオラクルテキスト:\n${oracle}`, true);
+    const r = await askClaude(apiKey, COMPILE_MODEL, specFor(macros), `カード: ${info.name}\nタイプ: ${info.typeLine}\nマナコスト: ${info.manaCost}\n\nオラクルテキスト:\n${oracle}${await similarBlock(app, key, info.name, oracle)}`, true);
     const p = parseProposal(r.text, macros);
     await applyProposal(app, key, p, "", { backup: overwrite });
     return { key, ok: true, unsupported: p.unsupported, cost: r.cost };
@@ -276,7 +293,7 @@ export async function proposeUpdate(app: App, apiKey: string, key: string, instr
   const macros = await getMacros(app);
   const rawText = await readRuleText(app, key);
   const current = rawText?.match(/```json\n([\s\S]*?)\n```/)?.[1];
-  const r = await askClaude(apiKey, COMPILE_MODEL, specFor(macros), `カード: ${info.name}\nタイプ: ${info.typeLine}\nマナコスト: ${info.manaCost}\n\nオラクルテキスト:\n${oracle}\n\n今の記録:\n${current ?? "(記録なし)"}\n\nあなたが書いた処理 (この内容に沿って、記録を作り直す。書かれていない部分は、今の記録のまま残す。既にある関数・マクロで書けるものは、それで書く。足りない部分は needs に書く):\n${instruction}`, true);
+  const r = await askClaude(apiKey, COMPILE_MODEL, specFor(macros), `カード: ${info.name}\nタイプ: ${info.typeLine}\nマナコスト: ${info.manaCost}\n\nオラクルテキスト:\n${oracle}\n\n今の記録:\n${current ?? "(記録なし)"}\n\nあなたが書いた処理 (この内容に沿って、記録を作り直す。書かれていない部分は、今の記録のまま残す。既にある関数・マクロで書けるものは、それで書く。足りない部分は needs に書く):\n${instruction}${await similarBlock(app, key, info.name, oracle)}`, true);
   return { before, data: parseProposal(r.text, macros), cost: r.cost };
 }
 

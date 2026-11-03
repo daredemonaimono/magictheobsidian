@@ -22,6 +22,7 @@ export class RulebookView extends ItemView {
   private tab: Tab = "types";
   private search = "";
   private statusFilter = "all";
+  private groupBy: "usage" | "category" | "status" = "usage"; // 型の並べ方。カテゴリは、見た目の整理 (動きには関係しない)
   private deckOnly = true;
   private cardFilter = "all";
   private expanded = new Set<string>(); // 開いている行
@@ -151,15 +152,29 @@ export class RulebookView extends ItemView {
     const filter = createDiv("mtg-rb-filters");
     this.body.appendChild(filter);
     new Setting(filter).setName("状態").addDropdown((d) => d.addOptions({ all: "すべて", implemented: "✅ 実装済み", partial: "🟡 一部だけ", planned: "⬜ 未実装" }).setValue(this.statusFilter).onChange((v) => ((this.statusFilter = v), this.render())));
+    new Setting(filter).setName("並べ方").setDesc("カテゴリは、見やすくするための整理で、動きには関係しない").addDropdown((d) => d.addOptions({ usage: "使っているカードが多い順", status: "状態別(未実装が先)", category: "カテゴリ別" }).setValue(this.groupBy).onChange((v) => ((this.groupBy = v as typeof this.groupBy), this.render())));
     const matches = (e: TypeEntry) => (this.statusFilter === "all" || e.status === this.statusFilter) && (!this.search || [e.id, e.title, titleOf(e), e.summary].some((t) => t.toLowerCase().includes(this.search)));
-    for (const cat of CATEGORIES) {
-      const entries = TYPE_ENTRIES.filter((e) => e.category === cat && matches(e));
-      if (!entries.length) continue;
-      const all = TYPE_ENTRIES.filter((e) => e.category === cat);
+    const used = (e: TypeEntry) => this.data!.usage.get(e.id)?.size ?? 0;
+    const list = TYPE_ENTRIES.filter(matches);
+    const count = (st: Status) => TYPE_ENTRIES.filter((e) => e.status === st).length;
+    this.body.createDiv({ text: `✅ 実装済み ${count("implemented")} / 🟡 一部だけ ${count("partial")} / ⬜ 未実装 ${count("planned")} — ${list.length} 件を表示`, cls: "mtg-dim" });
+    const section = (title: string, entries: TypeEntry[]) => {
+      if (!entries.length) return;
       const det = this.body.createEl("details", { cls: "mtg-rb-cat" });
       det.open = true;
-      det.createEl("summary", { text: `${CATEGORY_EN[cat]} (${cat}) — ✅${all.filter((e) => e.status === "implemented").length} 🟡${all.filter((e) => e.status === "partial").length} ⬜${all.filter((e) => e.status === "planned").length}` });
+      det.createEl("summary", { text: title });
       for (const e of entries) this.typeRow(det, e);
+    };
+    if (this.groupBy === "usage") {
+      // 使っているカードが多い順 (動作の一覧。カテゴリは、各行の小さなタグ)
+      section("動作・ルールの一覧", [...list].sort((a, b) => used(b) - used(a) || a.title.localeCompare(b.title)));
+    } else if (this.groupBy === "status") {
+      for (const [st, label] of [["planned", "⬜ 未実装"], ["partial", "🟡 一部だけ"], ["implemented", "✅ 実装済み"]] as const) section(`${label} — ${list.filter((e) => e.status === st).length} 件`, list.filter((e) => e.status === st).sort((a, b) => used(b) - used(a)));
+    } else {
+      for (const cat of CATEGORIES) {
+        const all = TYPE_ENTRIES.filter((e) => e.category === cat);
+        section(`${CATEGORY_EN[cat]} (${cat}) — ✅${all.filter((e) => e.status === "implemented").length} 🟡${all.filter((e) => e.status === "partial").length} ⬜${all.filter((e) => e.status === "planned").length}`, list.filter((e) => e.category === cat));
+      }
     }
     // マクロ (命令の組み合わせに名前をつけた部品。あなたと AI が作る)
     const macros = [...this.data!.macros.values()].filter((m) => !this.search || [m.name, m.title, m.description].some((t) => t.toLowerCase().includes(this.search)));
@@ -199,7 +214,8 @@ export class RulebookView extends ItemView {
     head.createSpan({ text: titleOf(e), cls: "mtg-rb-title" });
     head.createSpan({ text: e.title.match(/\((.+)\)$/)?.[1] ?? (e.title !== titleOf(e) ? e.title : ""), cls: "mtg-dim" });
     const n = this.data!.usage.get(e.id)?.size ?? 0;
-    if (n) head.createSpan({ text: `${n}枚`, cls: "mtg-dim" });
+    if (n) head.createSpan({ text: `${n}枚`, cls: "mtg-rb-used" });
+    head.createSpan({ text: CATEGORY_EN[e.category], cls: "mtg-rb-tag" });
     const waiting = this.pendingItems.filter((p) => p.status === "waiting" && p.needs.some((x) => x.waitFor.includes(e.id))).length;
     if (waiting) head.createSpan({ text: `実装待ち ${waiting}件`, cls: "mtg-rb-req" });
     row.createDiv({ text: e.summary, cls: "mtg-rb-summary" });
