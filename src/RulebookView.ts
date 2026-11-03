@@ -1,6 +1,9 @@
 import { ItemView, Notice, Setting, WorkspaceLeaf } from "obsidian";
+import { LibAbility, instantiate, keywordId, statusOf } from "./abilities";
+import { Completion, completeAbility, completeAll, migrateRecords, reassignCards, smokeAbility } from "./abilityai";
+import { deleteAbility, saveAbility } from "./abilitystore";
 import { Proposal, ProposalData, applyProposal, compileCard, parseRule, proposeUpdate, saveProposal, staleRule } from "./cardrules";
-import { Ability, describeAbility } from "./effects";
+import { Ability, describeAbility, normalizeAbility } from "./effects";
 import { deleteMacro } from "./macros";
 import { PendingItem, isReady, readPending, writePending } from "./pending";
 import { RbCard, Rulebook, collectRulebook, findCards } from "./rulebook";
@@ -12,14 +15,14 @@ export const RULEBOOK_VIEW = "mtg-rulebook";
 
 const MARK: Record<Status, string> = { implemented: "✅", partial: "🟡", planned: "⬜" };
 const STATUS_JA: Record<Status, string> = { implemented: "実装済み", partial: "一部だけ", planned: "未実装" };
-type Tab = "types" | "cards" | "unsupported" | "pending";
+type Tab = "abilities" | "cards" | "todo"; // 能力 (共有の能力の辞書) / カード / 未処理
 
 const problem = (c: RbCard): string => (c.needs && !c.rule ? "記録なし" : staleRule(c.rule) ? "古い記録" : c.rule?.unsupported.length ? "一部未対応" : c.rule ? "OK" : "不要");
 
 // ルールブック: 実装されているルール(型)・マクロと、カードごとの処理の記録を見る・書く。保存先は隠しフォルダ (rulestore.ts)
 // 注意: View / Component の名前 (open, close, load など) を、メンバーに使わない (test/viewnames.test.ts が確かめる)
 export class RulebookView extends ItemView {
-  private tab: Tab = "types";
+  private tab: Tab = "abilities";
   private search = "";
   private statusFilter = "all";
   private groupBy: "usage" | "category" | "status" = "usage"; // 型の並べ方。カテゴリは、見た目の整理 (動きには関係しない)
@@ -62,13 +65,12 @@ export class RulebookView extends ItemView {
         this.tab = t;
         tabs.querySelectorAll("button").forEach((x) => x.removeClass("is-on"));
         b.addClass("is-on");
-        void this.refresh(t === "pending");
+        void this.refresh(t === "todo");
       };
     };
-    tabBtn("types", "型・マクロ");
-    tabBtn("cards", "カードの記録");
-    tabBtn("unsupported", "未実装の効果");
-    tabBtn("pending", "実装待ち");
+    tabBtn("abilities", "能力");
+    tabBtn("cards", "カード");
+    tabBtn("todo", "未処理");
     const search = head.createEl("input", { type: "text", placeholder: "検索" });
     let timer = 0;
     search.oninput = () => {
@@ -99,10 +101,9 @@ export class RulebookView extends ItemView {
   private render() {
     this.body.empty();
     if (!this.data) return;
-    if (this.tab === "types") this.renderTypes();
+    if (this.tab === "abilities") this.renderAbilities();
     else if (this.tab === "cards") this.renderCards();
-    else if (this.tab === "unsupported") this.renderUnsupported();
-    else this.renderPending();
+    else this.renderTodo();
   }
 
   // ---- 共通の部品 ----
@@ -148,19 +149,19 @@ export class RulebookView extends ItemView {
 
   // ---- 型・マクロ ----
 
-  private renderTypes() {
+  private renderTypes(root: HTMLElement) {
     const filter = createDiv("mtg-rb-filters");
-    this.body.appendChild(filter);
+    root.appendChild(filter);
     new Setting(filter).setName("状態").addDropdown((d) => d.addOptions({ all: "すべて", implemented: "✅ 実装済み", partial: "🟡 一部だけ", planned: "⬜ 未実装" }).setValue(this.statusFilter).onChange((v) => ((this.statusFilter = v), this.render())));
     new Setting(filter).setName("並べ方").setDesc("カテゴリは、見やすくするための整理で、動きには関係しない").addDropdown((d) => d.addOptions({ usage: "使っているカードが多い順", status: "状態別(未実装が先)", category: "カテゴリ別" }).setValue(this.groupBy).onChange((v) => ((this.groupBy = v as typeof this.groupBy), this.render())));
     const matches = (e: TypeEntry) => (this.statusFilter === "all" || e.status === this.statusFilter) && (!this.search || [e.id, e.title, titleOf(e), e.summary].some((t) => t.toLowerCase().includes(this.search)));
     const used = (e: TypeEntry) => this.data!.usage.get(e.id)?.size ?? 0;
     const list = TYPE_ENTRIES.filter(matches);
     const count = (st: Status) => TYPE_ENTRIES.filter((e) => e.status === st).length;
-    this.body.createDiv({ text: `✅ 実装済み ${count("implemented")} / 🟡 一部だけ ${count("partial")} / ⬜ 未実装 ${count("planned")} — ${list.length} 件を表示`, cls: "mtg-dim" });
+    root.createDiv({ text: `✅ 実装済み ${count("implemented")} / 🟡 一部だけ ${count("partial")} / ⬜ 未実装 ${count("planned")} — ${list.length} 件を表示`, cls: "mtg-dim" });
     const section = (title: string, entries: TypeEntry[]) => {
       if (!entries.length) return;
-      const det = this.body.createEl("details", { cls: "mtg-rb-cat" });
+      const det = root.createEl("details", { cls: "mtg-rb-cat" });
       det.open = true;
       det.createEl("summary", { text: title });
       for (const e of entries) this.typeRow(det, e);
@@ -175,35 +176,6 @@ export class RulebookView extends ItemView {
         const all = TYPE_ENTRIES.filter((e) => e.category === cat);
         section(`${CATEGORY_EN[cat]} (${cat}) — ✅${all.filter((e) => e.status === "implemented").length} 🟡${all.filter((e) => e.status === "partial").length} ⬜${all.filter((e) => e.status === "planned").length}`, list.filter((e) => e.category === cat));
       }
-    }
-    // マクロ (命令の組み合わせに名前をつけた部品。あなたと AI が作る)
-    const macros = [...this.data!.macros.values()].filter((m) => !this.search || [m.name, m.title, m.description].some((t) => t.toLowerCase().includes(this.search)));
-    const det = this.body.createEl("details", { cls: "mtg-rb-cat" });
-    det.open = true;
-    det.createEl("summary", { text: `Macros (マクロ) — ${this.data!.macros.size} 件` });
-    if (!macros.length) det.createDiv({ text: "まだありません。カードの「処理を書く」で、AI が、同じ組み合わせを部品にして、ここに登録します。", cls: "mtg-dim" });
-    for (const m of macros) {
-      const row = det.createDiv("mtg-rb-entry");
-      const head = row.createDiv("mtg-rb-entry-head");
-      head.createSpan({ text: "🧩" });
-      head.createSpan({ text: m.name, cls: "mtg-rb-title" });
-      head.createSpan({ text: m.title, cls: "mtg-dim" });
-      const n = this.data!.macroUsage.get(m.name)?.size ?? 0;
-      if (n) head.createSpan({ text: `${n}枚`, cls: "mtg-dim" });
-      row.createDiv({ text: `(${m.params.join(", ")}) ${m.description}`, cls: "mtg-rb-summary" });
-      const isOpen = this.expanded.has(`macro:${m.name}`);
-      head.onclick = () => (isOpen ? this.expanded.delete(`macro:${m.name}`) : this.expanded.add(`macro:${m.name}`), this.render());
-      if (!isOpen) continue;
-      const body = row.createDiv("mtg-rb-detail");
-      body.createEl("h4", { text: "中身(命令の並び。\"$名前\" は引数)" });
-      body.createEl("pre").createEl("code", { text: JSON.stringify(m.steps, null, 1) });
-      body.createEl("h4", { text: "使っているカード" });
-      this.cardChips(body.createDiv("mtg-rb-chips"), this.data!.macroUsage.get(m.name) ?? []);
-      body.createEl("button", { text: "このマクロを削除" }).onclick = async () => {
-        if ((this.data!.macroUsage.get(m.name)?.size ?? 0) > 0) return void new Notice("使っているカードがあるので、削除できない (先に、そのカードの記録を直す)");
-        await deleteMacro(this.app, m.name);
-        await this.refresh(true);
-      };
     }
   }
 
@@ -241,6 +213,198 @@ export class RulebookView extends ItemView {
     };
     area.oninput = () => (window.clearTimeout(t), (t = window.setTimeout(() => void save(), 500)));
     area.onchange = () => void save();
+  }
+
+  // ---- 能力 (共有の能力の辞書) ----
+
+  private abilityText(l: LibAbility): string {
+    if (l.keyword && !l.ability) return `エンジンのキーワード (${l.keyword})`;
+    const raw = instantiate(l);
+    const ab = raw ? normalizeAbility(raw) : undefined;
+    return ab ? describeAbility(ab) : "(処理がまだ無い)";
+  }
+
+  private abilityRow(parent: HTMLElement, l: LibAbility, mode: "done" | "todo") {
+    const st = statusOf(l);
+    const cards = this.data!.abilityUsage.get(l.id) ?? new Set<string>();
+    const row = parent.createDiv("mtg-rb-entry");
+    const head = row.createDiv("mtg-rb-entry-head");
+    head.createSpan({ text: st === "done" ? "✅" : st === "needs" ? "🔧" : "⬜" });
+    head.createSpan({ text: l.title, cls: "mtg-rb-title" });
+    head.createSpan({ text: l.id, cls: "mtg-dim" });
+    if (l.keyword) head.createSpan({ text: "キーワード", cls: "mtg-rb-tag" });
+    if (cards.size) head.createSpan({ text: `${cards.size}枚`, cls: "mtg-rb-used" });
+    row.createDiv({ text: l.effect, cls: "mtg-rb-summary" });
+    const key = `ability:${l.id}`;
+    const isOpen = this.expanded.has(key);
+    head.onclick = () => (isOpen ? this.expanded.delete(key) : this.expanded.add(key), this.render());
+    if (!isOpen) return;
+    const body = row.createDiv("mtg-rb-detail");
+    body.createEl("h4", { text: "処理(関数)" });
+    body.createDiv({ text: this.abilityText(l), cls: "mtg-rb-text" });
+    if (Object.keys(l.params).length) {
+      body.createEl("h4", { text: "引数(既定値)" });
+      body.createDiv({ text: Object.entries(l.params).map(([k, v]) => `${k} = ${JSON.stringify(v)}`).join("、"), cls: "mtg-rb-text" });
+    }
+    if (l.examples.length) {
+      body.createEl("h4", { text: "照合の例" });
+      l.examples.forEach((e) => body.createDiv({ text: e, cls: "mtg-rb-text" }));
+    }
+    if (l.needs?.length) {
+      body.createEl("h4", { text: "新しい関数が要る(実装待ち)" });
+      for (const n of l.needs) {
+        body.createDiv({ text: `${n.title} (${n.name}): ${n.description}`, cls: "mtg-rb-text" });
+        body.createDiv({ text: `受け取るもの: ${n.inputs || "-"} / 必要な状態: ${n.state || "-"} / 待つ型: ${n.waitFor.join(", ")}`, cls: "mtg-dim" });
+      }
+    }
+    body.createEl("h4", { text: "使っているカード" });
+    this.cardChips(body.createDiv("mtg-rb-chips"), cards);
+    if (mode === "todo") this.completeBox(body, l);
+    if (!l.keyword || l.ability) {
+      const det = body.createEl("details");
+      det.createEl("summary", { text: "定義(JSON)を直接直す" });
+      const raw = det.createEl("textarea", { cls: "mtg-rb-json", attr: { rows: "12" } });
+      raw.value = JSON.stringify(l, null, 1);
+      det.createEl("button", { text: "保存" }).onclick = async () => {
+        try {
+          const v = (await import("./abilities")).validateLib(JSON.parse(raw.value));
+          if (!v.lib) return void new Notice(`保存できない: ${v.error}`);
+          await saveAbility(this.app, v.lib);
+          new Notice("保存した");
+          await this.refresh(true);
+        } catch (e) {
+          new Notice(`JSON が読めない: ${(e as Error).message}`);
+        }
+      };
+    }
+    if (!l.keyword) {
+      body.createEl("button", { text: "この能力を削除" }).onclick = async () => {
+        if (cards.size) return void new Notice("使っているカードがあるので、削除できない");
+        await deleteAbility(this.app, l.id);
+        await this.refresh(true);
+      };
+    }
+  }
+
+  private renderAbilities() {
+    const d = this.data!;
+    const all = [...d.library.values()];
+    const done = all.filter((l) => statusOf(l) === "done");
+    const todo = all.length - done.length;
+    this.body.createDiv({ text: `能力 ${all.length} 件 — ✅ 処理済み ${done.length} / 未処理・実装待ち ${todo} (未処理タブ)。能力は、カードが共有する部品。カード固有の能力は、カードタブで見る。`, cls: "mtg-dim" });
+    // 既存のカードの記録を、能力に分ける (まだ ref を使っていない記録)
+    const old = d.cards.filter((c) => c.rule && !(c.rule.refs?.length));
+    if (old.length) {
+      const bar = this.body.createDiv("mtg-rb-bar");
+      const b = bar.createEl("button", { text: `既存の記録 ${old.length} 枚を、能力に分ける (AI)`, cls: "mod-cta" });
+      b.onclick = async () => {
+        const key = this.getKey();
+        if (!key) return void new Notice("設定で Claude の API キーを選ぶ");
+        b.disabled = true;
+        const n = new Notice("記録を能力に分けています…", 0);
+        const r = await migrateRecords(this.app, key, (i, t, k) => n.setMessage(`記録を能力に分けています… ${i}/${t} (${k})`));
+        n.hide();
+        new Notice(`${r.migrated.length} 枚を分けた ($${r.cost.toFixed(3)})${r.failed.length ? ` · 失敗 ${r.failed.length} 枚` : ""}。直す前の版は、各カードに1つ前の分が残っている`, 10000);
+        await this.refresh(true);
+      };
+    }
+    const used = (l: LibAbility) => d.abilityUsage.get(l.id)?.size ?? 0;
+    const rows = done.filter((l) => !this.search || [l.id, l.title, l.effect].some((t) => t.toLowerCase().includes(this.search))).sort((a, b) => used(b) - used(a) || a.title.localeCompare(b.title));
+    const det = this.body.createEl("details", { cls: "mtg-rb-cat" });
+    det.open = true;
+    det.createEl("summary", { text: `処理済みの能力 — ${rows.length} 件(使っているカードが多い順)` });
+    if (!rows.length) det.createDiv({ text: "まだありません。「既存の記録を、能力に分ける」か、カードの登録で、増えていきます。", cls: "mtg-dim" });
+    for (const l of rows) this.abilityRow(det, l, "done");
+    // 関数の一覧 (エンジンにできること)。能力の処理は、これを組み合わせて書く
+    const fn = this.body.createEl("details", { cls: "mtg-rb-cat" });
+    fn.createEl("summary", { text: `関数の一覧(エンジンにできること) — ${TYPE_ENTRIES.length} 件` });
+    this.renderTypes(fn.createDiv());
+  }
+
+  // ---- 未処理 ----
+
+  // 未処理の能力に、処理を補う。指示を書いて「補完して」→ 案 (日本語) を見て保存。保存したら、割り振られていなかったカードを、割り振り直す
+  private completeBox(body: HTMLElement, l: LibAbility) {
+    body.createEl("h4", { text: "補完する" });
+    const hint = body.createEl("textarea", { cls: "mtg-rb-memo", attr: { rows: "2", placeholder: "例: トランプルは、エンジンのキーワードに割り当てる / 空のまま「補完して」で、効果の文と照合の例から作る" } });
+    const box = body.createDiv();
+    const make = body.createEl("button", { text: "補完して", cls: "mod-cta" });
+    make.onclick = async () => {
+      const key = this.getKey();
+      if (!key) return void new Notice("設定で Claude の API キーを選ぶ");
+      make.disabled = true;
+      box.empty();
+      const note = new Notice("AI が処理を作成中…", 0);
+      try {
+        const c: Completion = await completeAbility(this.app, key, l.id, hint.value.trim());
+        note.hide();
+        box.createEl("h5", { text: `案 (費用 $${c.cost.toFixed(3)})` });
+        box.createDiv({ text: this.abilityText(c.lib), cls: "mtg-rb-text" });
+        if (c.lib.needs?.length) c.lib.needs.forEach((n) => box.createDiv({ text: `新しい関数が要る: ${n.title} (${n.name}): ${n.description}`, cls: "mtg-rb-text" }));
+        if (c.error) box.createDiv({ text: `⚠ ${c.error}`, cls: "mtg-rb-text" });
+        const act = box.createDiv("mtg-rb-bar");
+        act.createEl("button", { text: c.lib.needs?.length ? "実装待ちとして保存" : "この処理で保存", cls: "mod-cta" }).onclick = async () => {
+          if (c.error && !c.lib.needs?.length) return void new Notice(`保存できない: ${c.error}`);
+          await saveAbility(this.app, c.lib);
+          new Notice("保存した。割り振られていなかったカードを、割り振り直す…");
+          const k2 = this.getKey();
+          if (k2 && !c.lib.needs?.length) {
+            const r = await reassignCards(this.app, k2);
+            new Notice(`割り振り直した: ${r.changed.length} 枚 ($${r.cost.toFixed(3)})`);
+          }
+          await this.refresh(true);
+        };
+        act.createEl("button", { text: "やめる" }).onclick = () => box.empty();
+      } catch (e) {
+        note.hide();
+        new Notice(`失敗: ${(e as Error).message}`);
+      }
+      make.disabled = false;
+    };
+  }
+
+  private renderTodo() {
+    const d = this.data!;
+    const todo = [...d.library.values()].filter((l) => statusOf(l) !== "done" && (!this.search || [l.id, l.title, l.effect].some((t) => t.toLowerCase().includes(this.search))));
+    this.body.createDiv({ text: "処理がまだ無い能力と、カード固有の動かない部分。指示で補完すると、能力タブに移る。新しい関数が要るものは、実装待ち(🔧)になる。", cls: "mtg-dim" });
+    const bar = this.body.createDiv("mtg-rb-bar");
+    const all = bar.createEl("button", { text: "原文から補完(安全なものは、そのまま保存)", cls: "mod-cta" });
+    all.onclick = async () => {
+      const key = this.getKey();
+      if (!key) return void new Notice("設定で Claude の API キーを選ぶ");
+      all.disabled = true;
+      const n = new Notice("未処理の能力を補完しています…", 0);
+      const r = await completeAll(this.app, key, (i, t, id) => n.setMessage(`未処理の能力を補完しています… ${i}/${t} (${id})`));
+      if (r.done.length) {
+        n.setMessage("割り振られていなかったカードを、割り振り直しています…");
+        const re = await reassignCards(this.app, key);
+        r.cost += re.cost;
+      }
+      n.hide();
+      new Notice(`補完: ${r.done.length} 件を処理済みにした / 残り ${r.left.length} 件 ($${r.cost.toFixed(3)})`, 10000);
+      await this.refresh(true);
+    };
+    bar.createEl("button", { text: "カードを割り振り直す" }).onclick = async () => {
+      const key = this.getKey();
+      if (!key) return void new Notice("設定で Claude の API キーを選ぶ");
+      const n = new Notice("割り振り直しています…", 0);
+      const r = await reassignCards(this.app, key, (i, t, k) => n.setMessage(`割り振り直しています… ${i}/${t} (${k})`));
+      n.hide();
+      new Notice(`割り振り直した: ${r.changed.length} 枚 ($${r.cost.toFixed(3)})`);
+      await this.refresh(true);
+    };
+    const sec = this.body.createEl("details", { cls: "mtg-rb-cat" });
+    sec.open = true;
+    sec.createEl("summary", { text: `未処理・実装待ちの能力 — ${todo.length} 件` });
+    if (!todo.length) sec.createDiv({ text: "ありません。", cls: "mtg-dim" });
+    for (const l of todo.sort((a, b) => (d.abilityUsage.get(b.id)?.size ?? 0) - (d.abilityUsage.get(a.id)?.size ?? 0))) this.abilityRow(sec, l, "todo");
+    const own = this.body.createEl("details", { cls: "mtg-rb-cat" });
+    own.open = true;
+    own.createEl("summary", { text: "カード固有の動かない部分" });
+    this.renderUnsupported(own);
+    const pend = this.body.createEl("details", { cls: "mtg-rb-cat" });
+    pend.createEl("summary", { text: `新しい関数が要る処理(実装待ち) — ${this.pendingItems.filter((p) => p.status === "waiting").length} 件` });
+    this.renderPending(pend);
   }
 
   // ---- カード ----
@@ -286,6 +450,19 @@ export class RulebookView extends ItemView {
       body.createEl("h4", { text: "動かない部分(未対応)" });
       c.rule.unsupported.forEach((u) => body.createDiv({ text: `⚠ ${u}`, cls: "mtg-rb-text" }));
     }
+    body.createEl("h4", { text: "割り振られた能力(自動で割り振られる。原文と見比べて確認する)" });
+    const refs = c.rule?.refs ?? [];
+    const own = (c.rule?.abilities.length ?? 0) - refs.filter((r) => this.data!.library.get(r.ability)?.ability).length;
+    for (const k of c.keywords) {
+      const l = this.data!.library.get(keywordId(k));
+      body.createDiv({ text: `${l && statusOf(l) === "done" ? "✅" : "⬜"} ${l?.title ?? k} (キーワード) — ${l?.effect ?? "ライブラリに無い"}`, cls: "mtg-rb-text" });
+    }
+    for (const r of refs) {
+      const l = this.data!.library.get(r.ability);
+      body.createDiv({ text: `${l && statusOf(l) === "done" ? "✅" : "⬜"} ${l?.title ?? r.ability} ${Object.keys(r.args).length ? JSON.stringify(r.args) : ""} — ${l?.effect ?? "ライブラリに見つからない"}`, cls: "mtg-rb-text" });
+    }
+    if (own > 0) body.createDiv({ text: `＋ このカード固有の能力 ${own} 件(上の「エンジンの理解」のうち、能力に割り振られていないもの)`, cls: "mtg-rb-text" });
+    if (!c.keywords.length && !refs.length && own <= 0) body.createDiv({ text: "なし", cls: "mtg-dim" });
     this.editor(body, c);
   }
 
@@ -317,6 +494,21 @@ export class RulebookView extends ItemView {
       note.hide();
       make.disabled = false;
     };
+    if (c.rule || c.needs) {
+      bar.createEl("button", { text: "割り振り直す" }).onclick = async () => {
+        const key = this.getKey();
+        if (!key) return void new Notice("設定で Claude の API キーを選ぶ");
+        const n = new Notice("AI が割り振り直しています…", 0);
+        try {
+          const instruction = "能力ライブラリを使って、割り振り直す。登録済みの能力で書けるものは ref で書き、キーワードはエンジンに任せ、残りは、このカード固有の能力として書く。";
+          this.proposal = { key: c.key, p: await proposeUpdate(this.app, key, c.key, instruction), instruction };
+        } catch (e) {
+          new Notice(`失敗: ${(e as Error).message}`);
+        }
+        n.hide();
+        this.render();
+      };
+    }
     if (c.rule) {
       void hasBackup(this.app, c.key).then((has) => {
         if (!has) return;
@@ -352,12 +544,12 @@ export class RulebookView extends ItemView {
 
   // ---- 未実装の効果 ----
 
-  private renderUnsupported() {
+  private renderUnsupported(root: HTMLElement) {
     const rows = [...this.data!.unsupported.entries()].filter(([t]) => !this.search || t.toLowerCase().includes(this.search)).sort((a, b) => b[1].size - a[1].size || a[0].localeCompare(b[0]));
-    this.body.createDiv({ text: "カードの記録に残っている「未対応」の文を、同じ文ごとにまとめたもの(カードが多い順)。直すには、カードの記録タブで、そのカードの「処理を書く」を使う。", cls: "mtg-dim" });
-    if (!rows.length) this.body.createDiv({ text: "未対応の効果はありません。" });
+    root.createDiv({ text: "カードの記録に残っている「未対応」の文を、同じ文ごとにまとめたもの(カードが多い順)。直すには、カードの記録タブで、そのカードの「処理を書く」を使う。", cls: "mtg-dim" });
+    if (!rows.length) root.createDiv({ text: "未対応の効果はありません。" });
     for (const [text, keys] of rows) {
-      const row = this.body.createDiv("mtg-rb-entry");
+      const row = root.createDiv("mtg-rb-entry");
       row.createDiv({ text: `⚠ ${text}`, cls: "mtg-rb-title" });
       this.cardChips(row.createDiv("mtg-rb-chips"), keys);
     }
@@ -385,15 +577,15 @@ export class RulebookView extends ItemView {
     await writePending(this.app, this.pendingItems);
     n.hide();
     new Notice("更新案を作った。「実装待ち」タブで確認して、保存する", 8000);
-    if (this.tab === "pending") this.render();
+    if (this.tab === "todo") this.render();
   }
 
-  private renderPending() {
-    this.body.createDiv({ text: "今の関数では書けない処理(AI が、新しい関数の仕様を書いたもの)。Claude Code に「実装待ちを見て」と伝えると、読んで、関数を作る。実装されると、元の記録の更新案が、ここに出る。", cls: "mtg-dim" });
+  private renderPending(root: HTMLElement) {
+    root.createDiv({ text: "今の関数では書けない処理(AI が、新しい関数の仕様を書いたもの)。Claude Code に「実装待ちを見て」と伝えると、読んで、関数を作る。実装されると、元の記録の更新案が、ここに出る。", cls: "mtg-dim" });
     const items = this.pendingItems.filter((p) => !this.search || p.key.toLowerCase().includes(this.search) || p.needs.some((n) => n.title.toLowerCase().includes(this.search)));
-    if (!items.length) this.body.createDiv({ text: "実装待ちはありません。" });
+    if (!items.length) root.createDiv({ text: "実装待ちはありません。" });
     for (const it of items.sort((a, b) => Number(b.status === "waiting") - Number(a.status === "waiting") || b.created.localeCompare(a.created))) {
-      const row = this.body.createDiv("mtg-rb-entry");
+      const row = root.createDiv("mtg-rb-entry");
       const head = row.createDiv("mtg-rb-entry-head");
       const ready = isReady(it);
       head.createSpan({ text: it.status === "done" ? "✅" : it.proposal ? "📝" : ready ? "🔔" : "⏳" });

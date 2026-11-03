@@ -9,6 +9,7 @@ import { CARDS_VIEW, CardsView } from "./CardsView";
 import { DASHBOARD_VIEW, DashboardView } from "./DashboardView";
 import { DECKLIST_VIEW, DeckListView } from "./DeckListView";
 import { DECK_VIEW, DeckView } from "./DeckView";
+import { initAbilityStore, seedKeywords } from "./abilitystore";
 import { initMacroStore } from "./macros";
 import { initPendingStore } from "./pending";
 import { initRuleStore, migrateToRulebook } from "./rulestore";
@@ -131,6 +132,7 @@ export default class MagicTheObsidian extends Plugin {
     initRuleStore(pluginDir);
     initMacroStore(pluginDir);
     initPendingStore(pluginDir);
+    initAbilityStore(pluginDir);
     const migrate = async () => {
       if (this.settings.rulebookMigrated) return;
       try {
@@ -145,6 +147,7 @@ export default class MagicTheObsidian extends Plugin {
     };
     ws.onLayoutReady(() => {
       void migrate();
+      void seedKeywords(this.app).catch(console.error); // エンジンが動かすキーワードを、能力ライブラリに入れておく
       this.dashboardIfEmpty(ws.getMostRecentLeaf());
       void this.syncSidebar();
     });

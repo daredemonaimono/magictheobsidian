@@ -4,6 +4,8 @@ import { Rule, loadRule, needsRule } from "./cardrules";
 import { loadCollection } from "./collection";
 import { DECK_DIR, parseDeck } from "./deck";
 import { collectUsage } from "./typecatalog";
+import { LibAbility, keywordId, statusOf } from "./abilities";
+import { getLibrary } from "./abilitystore";
 import { Macro, macrosUsedIn } from "./effects";
 import { getMacros } from "./macros";
 import { readRuleText, ruleKeys } from "./rulestore";
@@ -18,6 +20,7 @@ export interface RbCard {
   inCollection: boolean;
   rule?: Rule;
   needs: boolean; // 記録が要るカードか
+  keywords: string[]; // Scryfall のキーワード (英語)
 }
 
 export interface Rulebook {
@@ -26,6 +29,8 @@ export interface Rulebook {
   unsupported: Map<string, Set<string>>; // 未対応の文 → カードの key
   macros: Map<string, Macro>; // 登録されているマクロ
   macroUsage: Map<string, Set<string>>; // マクロの名前 → カードの key
+  library: Map<string, LibAbility>; // 能力ライブラリ
+  abilityUsage: Map<string, Set<string>>; // 能力の id → カードの key (ref で使っているもの + キーワードを持つカード)
 }
 
 export async function collectRulebook(app: App): Promise<Rulebook> {
@@ -40,6 +45,8 @@ export async function collectRulebook(app: App): Promise<Rulebook> {
   const usage = new Map<string, Set<string>>();
   const unsupported = new Map<string, Set<string>>();
   const macros = await getMacros(app);
+  const library = await getLibrary(app);
+  const abilityUsage = new Map<string, Set<string>>();
   const macroUsage = new Map<string, Set<string>>();
   const add = (m: Map<string, Set<string>>, id: string, key: string) => (m.get(id) ?? m.set(id, new Set()).get(id)!).add(key);
   for (const key of keys) {
@@ -47,7 +54,7 @@ export async function collectRulebook(app: App): Promise<Rulebook> {
     if (!info) continue;
     const oracle = await oracleEnglish(app, key);
     const rule = await loadRule(app, key);
-    cards.push({ key, name: info.name, typeLine: info.typeLine, oracle, decks: decksOf.get(key) ?? [], inCollection: coll.has(key), rule, needs: needsRule(info.typeLine, oracle) });
+    cards.push({ key, name: info.name, typeLine: info.typeLine, oracle, decks: decksOf.get(key) ?? [], inCollection: coll.has(key), rule, needs: needsRule(info.typeLine, oracle), keywords: info.keywords ?? [] });
     if (rule) {
       const m = (await readRuleText(app, key))?.match(/```json\n([\s\S]*?)\n```/)?.[1];
       if (m) {
@@ -60,11 +67,12 @@ export async function collectRulebook(app: App): Promise<Rulebook> {
       for (const id of collectUsage(rule.abilities)) add(usage, id, key);
       for (const u of rule.unsupported) add(unsupported, u, key);
     }
-    for (const k of info.keywords ?? []) add(usage, `kw.${k.toLowerCase()}`, key);
+    for (const k of info.keywords ?? []) (add(usage, `kw.${k.toLowerCase()}`, key), add(abilityUsage, keywordId(k), key));
+    for (const r of rule?.refs ?? []) add(abilityUsage, r.ability, key);
   }
   for (const w of ["islandwalk", "swampwalk", "mountainwalk", "forestwalk", "plainswalk"]) for (const k of usage.get(`kw.${w}`) ?? []) add(usage, "kw.landwalk", k);
   cards.sort((a, b) => a.name.localeCompare(b.name));
-  return { cards, usage, unsupported, macros, macroUsage };
+  return { cards, usage, unsupported, macros, macroUsage, library, abilityUsage };
 }
 
 // 全カード (Cards/ のノート) から、名前で探す。ルールブックの検索用
@@ -78,7 +86,7 @@ export async function findCards(app: App, query: string, exclude: Set<string>): 
   for (const c of localCards(app)) {
     if (exclude.has(c.file.basename) || !(c.name.toLowerCase().includes(query) || (c.nameLocal ?? "").toLowerCase().includes(query))) continue;
     const oracle = await oracleEnglish(app, c.file.basename);
-    out.push({ key: c.file.basename, name: c.name, typeLine: c.typeLine, oracle, decks: [], inCollection: false, rule: await loadRule(app, c.file.basename), needs: needsRule(c.typeLine, oracle) });
+    out.push({ key: c.file.basename, name: c.name, typeLine: c.typeLine, oracle, decks: [], inCollection: false, rule: await loadRule(app, c.file.basename), needs: needsRule(c.typeLine, oracle), keywords: c.keywords ?? [] });
     if (out.length >= 20) break;
   }
   return out;

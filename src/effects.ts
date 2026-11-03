@@ -434,7 +434,7 @@ export function validateMacro(raw: unknown): { macro?: Macro; error?: string } {
   return { macro: { name: m.name, title: typeof m.title === "string" ? m.title : m.name, description: typeof m.description === "string" ? m.description : "", params, steps: m.steps } };
 }
 
-function substitute(node: unknown, args: Record<string, unknown>): unknown {
+export function substitute(node: unknown, args: Record<string, unknown>): unknown {
   if (typeof node === "string") return node.startsWith("$") && node.slice(1) in args ? args[node.slice(1)] : node;
   if (Array.isArray(node)) return node.map((x) => substitute(x, args));
   if (node && typeof node === "object") return Object.fromEntries(Object.entries(node).map(([k, v]) => [k, substitute(v, args)]));
