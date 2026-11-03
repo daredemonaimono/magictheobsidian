@@ -1,5 +1,6 @@
 import { App, normalizePath } from "obsidian";
-import { LibAbility, keywordEntries, libMd, parseLibMd, unknownKeyword, withBuiltin } from "./abilities";
+import { LibAbility, inlineRefs, keywordEntries, libMd, parseLibMd, unknownKeyword, withBuiltin } from "./abilities";
+import { readRuleText, ruleKeys, writeRuleText } from "./rulestore";
 import { cardInfo } from "./cards";
 
 // 能力ライブラリの保存先: ルールブックの隠しフォルダ (<プラグインのフォルダ>/rulebook/abilities/<id>.md)
@@ -71,4 +72,34 @@ export async function ensureKeywordEntries(app: App, keys: string[]): Promise<st
     }
   }
   return made;
+}
+
+// 共有の能力 (名詞でないもの) を廃止する: 記録の ref をカード固有の能力に展開して、使われなくなった定義を消す。何度やっても、同じ結果
+export async function retireLibrary(app: App): Promise<{ cards: number; removed: number }> {
+  const lib = await getLibrary(app);
+  const used = new Set<string>();
+  let cards = 0;
+  for (const key of await ruleKeys(app)) {
+    const text = await readRuleText(app, key);
+    const m = text?.match(/```json\n([\s\S]*?)\n```/);
+    if (!text || !m) continue;
+    try {
+      const parsed = JSON.parse(m[1]);
+      const raw: unknown[] = Array.isArray(parsed.abilities) ? parsed.abilities : [];
+      const r = inlineRefs(raw, lib);
+      for (const x of r.raw) if (typeof (x as { ref?: unknown })?.ref === "string") used.add((x as { ref: string }).ref);
+      if (!r.changed) continue;
+      await writeRuleText(app, key, text.replace(m[0], () => "```json\n" + JSON.stringify({ ...parsed, abilities: r.raw }, null, 1) + "\n```"), true);
+      cards++;
+    } catch {
+      /* 壊れた記録は、触らない */
+    }
+  }
+  let removed = 0;
+  for (const l of [...lib.values()]) {
+    if (l.keyword || used.has(l.id)) continue; // 名詞と、まだ使われているものは残す
+    await deleteAbility(app, l.id);
+    removed++;
+  }
+  return { cards, removed };
 }

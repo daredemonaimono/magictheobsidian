@@ -555,12 +555,12 @@ console.log("engine ok");
     unsupported: [],
   });
   const p = parseProposal(reply, table);
-  assert.equal(p.macros.length, 1, "新しいマクロを1つ作る (命令の名前のものは作れない)");
-  assert.ok(p.errors.some((e) => e.includes("作れない")), "作れないマクロは、理由が付く");
-  assert.equal(p.abilities[0].effects[0].do, "change", "新しいマクロも展開して読める");
+  assert.equal(p.macros.length, 0, "関数は、AI は作れない");
+  assert.ok(p.errors.some((e) => e.includes("作れない")), "作ろうとしたら、理由が付く");
+  assert.equal(p.abilities[0].effects[0].do, "unsupported", "無い関数は、未対応になる");
   assert.equal(p.raw.length, 1);
   assert.equal(p.needs[0].waitFor.length, 2);
-  assert.deepEqual(p.unsupported, ["Then amass Orcs 1."]);
+  assert.deepEqual(p.unsupported, ["マクロ「pingTwo」が見つからない", "Then amass Orcs 1."], "作れなかった関数を使った部分は、未対応に残る");
   const item = { id: "p1", key: "Bowmasters", instruction: "x", needs: p.needs, created: "", status: "waiting" as const };
   assert.ok(!isReady({ ...item, needs: [{ ...p.needs[0], waitFor: ["todo.replace"] }] }), "待っている型が未実装の間は、まだ");
   assert.ok(isReady(item), "トークンとカウンターが実装されたので、アマスの更新ができる");
@@ -759,3 +759,42 @@ console.log("diagnose ok");
   assert.ok(g2.s.players[0].field.some((p) => p.def.name === "Elemental" && !p.evoked), "通常のコストなら戦場に残る");
 }
 console.log("token counter evoke ok");
+
+// ---- 関数 (同梱のマクロ): 意味のまとまりで呼ぶ ----
+{
+  const { BUILTIN_MACROS, expandSteps } = await import("../src/effects");
+  const table = new Map(BUILTIN_MACROS.map((m) => [m.name, m]));
+  const call = (macro: string, args: Record<string, unknown>) => ({ do: "use", macro, args });
+  const spell = (name: string, steps: unknown[]) => def(name, "Sorcery", "{0}", 0, 0, "", [{ kind: "spell", effects: expandSteps(steps, table) as never }]);
+  const g = world([spell("Seize", [call("discardCards", { owner: "opponent", n: 1, chooser: "you", not: ["land"] }), call("loseLife", { who: "you", n: 2 }), call("drawCards", { who: "you", n: 1 })])], [], [greedy, greedy], [false, false]);
+  g.s.players[1].hand = [{ uid: 5000, def: mountain, owner: 1 }, { uid: 5001, def: bear, owner: 1 }];
+  const lib0 = g.s.players[0].library.length;
+  await g.play(1);
+  assert.deepEqual(g.s.players[1].hand.map((c) => c.def.name), ["Mountain"], "土地以外だけ捨てさせる");
+  assert.equal(g.s.players[0].life, 18, "loseLife: 自分が 2 点失う");
+  assert.equal(g.s.players[0].library.length, lib0 - 1, "drawCards: 1 枚引く (先攻の最初のターンは、ターンの引く分は無い)");
+  const g2 = world([spell("Zap", [call("dealDamage", { what: { kind: "player", who: "opponent" }, n: 3 }), call("gainLife", { who: "you", n: 4 })])], [], [greedy, greedy], [false, false]);
+  await g2.play(1);
+  assert.equal(g2.s.players[1].life, 17, "dealDamage");
+  assert.equal(g2.s.players[0].life, 24, "gainLife");
+}
+{
+  // 共有の能力 (名詞でないもの) の廃止: ref は、カード固有の能力に展開される
+  const { inlineRefs } = await import("../src/abilities");
+  const L = (o: Record<string, unknown>) => (await_validate(o));
+  function await_validate(o: Record<string, unknown>) {
+    return { title: String(o.id), effect: "x", params: {}, examples: [], created: "", ...o } as never;
+  }
+  const lib = new Map<string, never>([
+    ["etbPing", L({ id: "etbPing", params: { n: 1 }, ability: { kind: "triggered", trigger: { event: "etb" }, effects: [{ do: "change", what: { kind: "player", who: "opponent" }, stat: "damage", delta: "$n" }] } })],
+    ["amass", L({ id: "amass", keyword: "amass" })],
+    ["evoke", L({ id: "evoke", keyword: "evoke", ability: { kind: "altCost", alt: { mana: "$cost", evoke: true }, effects: [] } })],
+  ]);
+  const r = inlineRefs([{ ref: "etbPing", args: { n: 3 } }, { ref: "amass", args: { n: 1 } }, { ref: "evoke", args: { cost: "{R}" } }, { kind: "spell", effects: [] }], lib);
+  assert.ok(r.changed);
+  assert.equal(r.raw.length, 3, "amass の ref は外れ、他は残る");
+  assert.equal((r.raw[0] as { effects: { delta: number }[] }).effects[0].delta, 3, "共有の能力は、引数を入れて、固有の能力になる");
+  assert.equal((r.raw[1] as { ref: string }).ref, "evoke", "名詞 (キーワード) の ref は、そのまま");
+  assert.equal(inlineRefs(r.raw, lib).changed, false, "もう一度やっても、変わらない");
+}
+console.log("functions ok");

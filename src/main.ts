@@ -9,7 +9,7 @@ import { CARDS_VIEW, CardsView } from "./CardsView";
 import { DASHBOARD_VIEW, DashboardView } from "./DashboardView";
 import { DECKLIST_VIEW, DeckListView } from "./DeckListView";
 import { DECK_VIEW, DeckView } from "./DeckView";
-import { initAbilityStore, seedKeywords } from "./abilitystore";
+import { initAbilityStore, retireLibrary, seedKeywords } from "./abilitystore";
 import { initMacroStore } from "./macros";
 import { initPendingStore } from "./pending";
 import { initRuleStore, migrateToRulebook } from "./rulestore";
@@ -147,7 +147,7 @@ export default class MagicTheObsidian extends Plugin {
     };
     ws.onLayoutReady(() => {
       void migrate();
-      void seedKeywords(this.app).catch(console.error); // エンジンが動かすキーワードを、能力ライブラリに入れておく
+      void seedKeywords(this.app).then(() => retireLibrary(this.app)).catch(console.error); // 名詞 (キーワード) を入れ、共有の能力は、カード固有の能力に展開する
       this.dashboardIfEmpty(ws.getMostRecentLeaf());
       void this.syncSidebar();
     });

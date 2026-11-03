@@ -455,7 +455,13 @@ export const AMASS_STEPS: unknown[] = [
   { do: "counters", what: { kind: "cards", subtypes: ["Army"], owner: "you", count: 1 }, counter: "+1/+1", n: "$n", as: "army" },
   { do: "addType", what: { kind: "ref", ref: "army" }, subtype: "$type" },
 ];
+const PLAYER = (v: string) => ({ kind: "player", who: v });
 export const BUILTIN_MACROS: Macro[] = [
+  { name: "drawCards", title: "カードを引く", description: "who ('you' か 'opponent') が n 枚引く", params: ["who", "n"], steps: [{ do: "move", how: "draw", what: { kind: "cards", zone: "library", owner: "$who", top: true, count: "$n" }, to: "hand" }] },
+  { name: "discardCards", title: "手札を捨てる", description: "owner ('you' か 'opponent') の手札から n 枚を、chooser ('you' か 'opponent') が選んで捨てさせる。not に ['land'] を入れると、土地以外だけ", params: ["owner", "n", "chooser", "not"], steps: [{ do: "move", how: "discard", what: { kind: "cards", zone: "hand", owner: "$owner", not: "$not", count: "$n", chooser: "$chooser" }, to: "graveyard" }] },
+  { name: "dealDamage", title: "ダメージを与える", description: "what (対象の ref 例 {kind:'ref',ref:'t'}、または {kind:'player',who:'opponent'}) に n 点のダメージ", params: ["what", "n"], steps: [{ do: "change", what: "$what", stat: "damage", delta: "$n" }] },
+  { name: "gainLife", title: "ライフを得る", description: "who ('you' か 'opponent') が n 点のライフを得る", params: ["who", "n"], steps: [{ do: "change", what: PLAYER("$who"), stat: "life", delta: "$n" }] },
+  { name: "loseLife", title: "ライフを失う", description: "who ('you' か 'opponent') が n 点のライフを失う (n は正の数)", params: ["who", "n"], steps: [{ do: "change", what: PLAYER("$who"), stat: "life", delta: "-$n" }] },
   { name: "amass", title: "動員 (Amass)", description: "動員 N (種族 T)。Army が無ければ 0/0 の黒の T・Army トークンを作り、Army を1体選んで +1/+1 カウンターを N 個置き、T を加える。能力の途中 (「〜したあと、動員 Orcs 1」) で使う", params: ["n", "type"], steps: AMASS_STEPS },
 ];
 
@@ -485,6 +491,7 @@ export function validateMacro(raw: unknown): { macro?: Macro; error?: string } {
 export function substitute(node: unknown, args: Record<string, unknown>): unknown {
   if (typeof node === "string") {
     if (node.startsWith("$") && node.slice(1) in args) return args[node.slice(1)]; // 全体が $名前: 値の型のまま入る
+    if (node.startsWith("-$") && typeof args[node.slice(2)] === "number") return -(args[node.slice(2)] as number); // "-$n": 負の数 (ライフを失うなど)
     return node.replace(/\$([A-Za-z_]\w*)/g, (m, k) => (k in args ? String(args[k]) : m)); // 文の途中の $名前: 文字になる ("$type Army" → "Orc Army")
   }
   if (Array.isArray(node)) return node.map((x) => substitute(x, args));

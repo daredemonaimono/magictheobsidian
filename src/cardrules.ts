@@ -185,23 +185,21 @@ export const SPEC = `あなたは Magic: The Gathering の対戦エンジンの�
 常在型能力のうち「起動の禁止」以外 (+1/+1 の修整、コストの増減、攻撃・ブロックの制限など)、代替コスト・追加コスト、置換効果、トークンを作る、カウンターを置く、ターン終了時までの一時的な効果、
 「このカードが戦場に出たとき」「アップキープの開始時」「死亡したとき」以外のきっかけ (攻撃したとき、カードを引いたとき、呪文を唱えたとき) の誘発型能力、「呪文を打ち消す」「コントロールを得る」「コピーする」、装備・オーラ・プレインズウォーカー能力。
 
-# マクロ (命令の組み合わせに、名前をつけた部品)
-effects の中で {"do":"use","macro":"名前","args":{"引数":値}} と書ける。使えるマクロは、末尾の「登録済みのマクロ」。
-同じ組み合わせが、他のカードにも出てきそうなときは、newMacros で新しいマクロを作ってよい: {"name":"英数字の名前","title":"日本語の名前","description":"何をするか","params":["n"],"steps":[命令...]}。
-steps の中では、"$n" のように引数を使える。steps に使える命令は、move change addMana shuffle flip if may use だけ (unsupported は入れない)。
+# 関数 (エンジンの部品。中身は固定。あなたは、選んで呼ぶだけ)
+カードの固有の能力の effects は、末尾の「使える関数」を呼んで書く: {"do":"use","macro":"関数名","args":{"引数":値}}。例: 相手の手札から土地以外を1枚、自分が選んで捨てさせる = {"do":"use","macro":"discardCards","args":{"owner":"opponent","n":1,"chooser":"you","not":["land"]}}。
+関数で書けるものは、必ず関数で書く (move や change を自分で組み立て直さない)。関数に無い動きは、下の命令 (move change addMana create counters addType shuffle flip if may copy) で書いてよい。
+新しい関数や、新しい共有の能力は、作らない (newMacros / newAbilities は無視される)。足りない動きは、needs に仕様として書く。
 
-# 能力ライブラリ (共有の能力)
-abilities の中に {"ref":"能力のid","args":{"n":1}} と書くと、末尾の「登録済みの能力」を使える。ref で書けるものは、必ず ref で書く (自分で組み立て直さない)。args は、その能力の引数 (params) の値。
-カード固有の能力 (そのカードだけのもの) は、今まで通り、そのまま書く。例: 飛行は、エンジンのキーワードなので何も書かない。残りの「戦場に出たとき〜」は、このカードの固有の能力として書く。
-他のカードにも出そうで、末尾に無い能力 (数や色だけが違うもの) は、newAbilities に登録して、このカードは ref で使う: {"id":"英数字","title":"日本語の名前","effect":"実際の効果の日本語の標準の文。引数は {n}","params":{"n":1},"examples":["英語の原文。引数の所は {n}"],"ability":{能力。引数は "$n"}}。
-ability に書けない (関数が足りない) 能力は、ability を省いて needs を書く (「未処理」で登録される)。
+# 名詞 (引用されるもの。飛行・想起など、カードの能力が呼び出すもの)
+abilities の中に {"ref":"名詞のid","args":{"cost":"{R}"}} と書くと、末尾の「登録済みの名詞」を使える。args は、その名詞の引数 (params) の値。
+カード固有の能力 (そのカードだけのもの) は、そのまま書く。例: 飛行は、エンジンのキーワードなので何も書かない。残りの「戦場に出たとき〜」は、このカードの固有の能力として書く。「〜したら飛行になる」のような、名詞を与える能力も、固有の能力として書く (まだ実装されていないので、needs に書く)。
 
 # 今の命令では書けないとき (needs)
 その文は、effects に {"do":"unsupported","text":"原文"} として残し、needs に、新しい関数の仕様を書く: {"name":"destroyEnteredThisTurn","title":"今ターン出たものを破壊する","description":"どう動くか","inputs":"受け取るもの","state":"必要なゲームの状態","waitFor":["todo.history"]}。
 waitFor は、末尾の「まだ実装されていない型」の id から、いちばん近いものを選ぶ。当てはまるものが無ければ、"todo." + name にする。needs は、無ければ省く。
 
 # 出力 (拡張)
-{"abilities":[...],"newAbilities":[...],"newMacros":[...],"needs":[...],"unsupported":[...]}  (newAbilities / newMacros / needs は、無ければ省く)
+{"abilities":[...],"needs":[...],"unsupported":[...]}  (needs は、無ければ省く)
 
 # 例
 Mana Crypt: {"abilities":[{"kind":"mana","cost":{"tap":true},"effects":[{"do":"addMana","options":"C","n":2}],"text":"無色2"},{"kind":"triggered","trigger":{"event":"upkeep","whose":"you"},"effects":[{"do":"flip","lose":[{"do":"change","what":{"kind":"player","who":"you"},"stat":"damage","delta":3}]}],"text":"コインに負けたら3点"}],"unsupported":[]}
@@ -249,10 +247,10 @@ export function specFor(macros: Map<string, Macro>, lib: Map<string, LibAbility>
   const ms = [...macros.values()].map((m) => `- ${m.name}(${m.params.join(", ")}): ${m.title} — ${m.description}`);
   const planned = TYPE_ENTRIES.filter((e) => e.status === "planned").map((e) => `- ${e.id}: ${e.title} — ${e.summary}`);
   // 登録済みの能力: エンジンのキーワードは除く。多いときは、このカードの原文に近いものだけ
-  const all = [...lib.values()].filter((l) => !(l.keyword && !l.ability));
+  const all = [...lib.values()].filter((l) => l.keyword && l.ability); // 名詞 (処理を持つキーワード)
   const near = all.length > 40 ? pickSimilar({ name: "", oracle }, all.map((l) => ({ key: l.id, name: l.id, oracle: `${l.examples.join(" ")} ${l.effect}`, json: "", clean: true })), 30, 0.03).map((e) => e.key) : all.map((l) => l.id);
   const ls = all.filter((l) => near.includes(l.id)).map((l) => `- ${l.id}(${Object.entries(l.params).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(", ")}): ${l.title} — ${l.effect}${l.ability ? "" : " [未処理]"}${l.examples[0] ? `\n  例: ${l.examples[0]}` : ""}`);
-  return `${SPEC}\n\n# 登録済みの能力\n${ls.length ? ls.join("\n") : "(まだ無い)"}\n\n# 登録済みのマクロ\n${ms.length ? ms.join("\n") : "(まだ無い)"}\n\n# まだ実装されていない型 (needs の waitFor の候補)\n${planned.join("\n")}`;
+  return `${SPEC}\n\n# 登録済みの名詞\n${ls.length ? ls.join("\n") : "(まだ無い)"}\n\n# 使える関数\n${ms.length ? ms.join("\n") : "(まだ無い)"}\n\n# まだ実装されていない型 (needs の waitFor の候補)\n${planned.join("\n")}`;
 }
 
 export interface ProposalData {
@@ -271,20 +269,11 @@ export function parseProposal(text: string, existing: Map<string, Macro> = new M
   const errors: string[] = [];
   const table = new Map(existing);
   const macros: Macro[] = [];
-  for (const raw of Array.isArray(parsed.newMacros) ? parsed.newMacros : []) {
-    const v = validateMacro(raw);
-    if (!v.macro) errors.push(`マクロを作れない: ${v.error}`);
-    else if (existing.has(v.macro.name)) errors.push(`マクロ「${v.macro.name}」は既にある (上書きしない)`);
-    else (macros.push(v.macro), table.set(v.macro.name, v.macro));
-  }
   const libTable = new Map(lib);
   const libAbilities: LibAbility[] = [];
-  for (const r of Array.isArray(parsed.newAbilities) ? parsed.newAbilities : []) {
-    const v = validateLib(r);
-    if (!v.lib) errors.push(`能力を登録できない: ${v.error}`);
-    else if (lib.has(v.lib.id)) errors.push(`能力「${v.lib.id}」は既にある (上書きしない。ref で使う)`);
-    else (libAbilities.push(v.lib), libTable.set(v.lib.id, v.lib));
-  }
+  // 関数と名詞は、エンジンのもの。AI は作れない (足りなければ needs)
+  if (Array.isArray(parsed.newMacros) && parsed.newMacros.length) errors.push("関数は、AI は作れない (無視した)。足りない動きは needs に書く");
+  if (Array.isArray(parsed.newAbilities) && parsed.newAbilities.length) errors.push("共有の能力は、AI は作れない (無視した)。カード固有の能力として書く");
   const rawAbilities: unknown[] = Array.isArray(parsed.abilities) ? parsed.abilities : [];
   const raw = rawAbilities.filter((a) => (a as { ref?: unknown })?.ref !== undefined || normalizeAbility(a, table));
   const abilities = sanitizeAbilities(raw, table, libTable);

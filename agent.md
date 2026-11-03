@@ -22,12 +22,12 @@ Obsidian を Magic: The Gathering 専用のソフトにするプラグイン。�
 |---|---|---|
 | 食材 | ゲームの中の物 | カード、プレイヤー、ライフ、マナ、山札、墓地。型が働きかける対象 |
 | 調理の動作 | **コード(エンジン)の関数** | 移す、変える、マナを出す、コピー、…。動きは、ここにしか無い |
-| レシピ | **カードの記録 + 能力ライブラリ**(ルールブック) | 能力ライブラリ = 共有の能力 1 つにつき 1 つの定義(実際の効果・引数・照合の例・処理)。カードの記録 = 「どの共有の能力を、どの引数で使うか(ref)」+ そのカードだけの固有の能力。マクロは、手順のまとまりに名前をつけたもの |
+| レシピ | **カードの記録**(固有の能力) | 「どの関数を、どの引数で呼ぶか」+ 名詞 (ref) の呼び出し。関数と名詞は、エンジンのもの。AI は、選ぶだけで、作らない |
 | 調理ロボット | **エンジン** `src/engine.ts` | レシピを読み、1工程ずつ機械的に実行する。できない工程は飛ばして、ログに「未対応」と出す |
 | レシピを書く料理人 | **記録を作る AI**(Sonnet 5.5) | カードの効果テキストを読んで、ロボットにできる動作だけで記録を書く。足りない部分は、仕様書(`needs`)を書く |
 | ロボットの技術者 | **Claude Code(自分)** | 実装待ちの仕様書を読んで、新しい動作をコード + テストで足す。リリースは、ユーザーが言ったときだけ |
 | 注文する客 | **対戦ボット**(Haiku など) | エンジンが出した「いまの行動の一覧」から1つ選ぶ。ルールの違反は、そもそも選べない |
-| お客の本人 | **ユーザー** | 動作の確認は、Obsidian で自分で行う。ルールブックで、記録を直す・「処理を書く」で指示する |
+| お客の本人 | **ユーザー** | 動作の確認は、Obsidian で自分で行う。ルールブック(名詞・関数・カード・未処理の 4 タブ。見るのは、実装されているかどうか)で、記録を直す・「処理を書く」で指示する |
 
 - AI に渡すのは、コードが作った**文章**(指示書、型の一覧、カードの記録の日本語訳)。AI はファイルを直接読まない。
 - 対戦中に、AI がカードの効果を解釈することは無い。記録を、エンジンが機械的に実行する。
@@ -51,9 +51,9 @@ Obsidian を Magic: The Gathering 専用のソフトにするプラグイン。�
 - `Bot/Diagnostics/` デッキの診断(エンジンの理解を日本語で、原文と並べたもの)
 
 **隠しフォルダ(vault の索引に入らない。プラグインのフォルダの中)** `<vault>/.obsidian/plugins/magictheobsidian/rulebook/`
-- `abilities/<id>.md` **能力ライブラリ**(共有の能力。本文の JSON が元データ)。エンジンのキーワードも入る
+- `abilities/<id>.md` **名詞**(飛行・想起など、引用されるもの。本文の JSON が元データ)。エンジンのキーワードも入る。名詞でない共有の能力は廃止 (起動時に `retireLibrary` が、記録の ref をカード固有の能力に展開して、定義を消す)
 - `cards/<カード名>.md` カードの記録(ルール md。本文に JSON。共有の能力は `{"ref","args"}`、固有の能力は直接書く)。`backup/` は、直す前の版(1つ前の分だけ)
-- `macros/<名前>.json` マクロ
+- `macros/<名前>.json` ユーザーが作った古いマクロ。**関数**は、コードに同梱 (`effects.ts` の `BUILTIN_MACROS`: drawCards / discardCards / dealDamage / gainLife / loseLife / amass)。AI は、関数も名詞も作れない (newMacros / newAbilities は無視)
 - `pending.json` **実装待ち**(カード固有の処理で、AI が書いた、新しい関数の仕様書)。能力ライブラリの能力にも、`needs`(実装待ちの仕様書)がつくことがある(状態 `needs`)
 - `memos.json` 型のメモ
 - ユーザーの vault のデータは、アプリを通さずに書き換えない(読むのは、よい)。
@@ -62,7 +62,7 @@ Obsidian を Magic: The Gathering 専用のソフトにするプラグイン。�
 - `engine.ts` 対戦エンジン(ゾーン、ターン、優先権、スタック、マナ、戦闘、能力の実行、コピー、待機、代替コスト)
 - `effects.ts` 記録の書き方(型・検証・マクロ展開・日本語表示)
 - `typecatalog.ts` **型のカタログ(実装状況の唯一の元データ)**。ルールブックの画面と、ボットへの説明は、ここから作る
-- `abilities.ts` / `abilitystore.ts` / `abilityai.ts` 能力ライブラリ(型・検証・ref の展開・md、保存先、補完・割り振り直し・移行の AI)
+- `abilities.ts` / `abilitystore.ts` / `abilityai.ts` 名詞(型・検証・ref の展開・md、保存先、補完・割り振り直しの AI。共有の能力の廃止 `retireLibrary`)
 - `cardrules.ts` 記録を作る・直す AI(指示書 `SPEC`、案の検証、似たカードの例、保存)
 - `similar.ts` 似たカードの記録を探す
 - `rulestore.ts` / `macros.ts` / `pending.ts` 隠しフォルダの保存先
@@ -75,7 +75,7 @@ Obsidian を Magic: The Gathering 専用のソフトにするプラグイン。�
 
 - **確認はユーザーがする**。自分は、ビルドとテスト(`npm test`)まで。画面と API 呼び出しは、動かしていなければ、「動かしていない」と、はっきり言う。分からないことを、分かったように言わない。
 - **リリースは、ユーザーが「リリースして」と言ったときだけ**。手順: `manifest.json` / `package.json` / `versions.json` の版を上げる → `npm run build` → `npm test` → コミット(`git -c user.name=daredemonai -c user.email=daredemonai@gmail.com`、末尾に Co-Authored-By) → `git push` → `gh release create <版> main.js manifest.json styles.css`。README も、同じ版で更新する。
-- **「実装待ちを見て」と言われたら**: ユーザーの vault の `rulebook/pending.json` と、`rulebook/abilities/` のうち状態が `needs` のもの(本文 JSON の `needs`)を読み、仕様書ごとに、(1) エンジンに関数を足す (2) テストを書く (3) `typecatalog.ts` の型を更新する(`waitFor` の id が、「未実装」でなくなると、元のカードの更新案が作られる。新しい id のときは、同じ id の型を足す) (4) `SPEC`(AI への指示書)に、書き方と例を足す (5) README を直す。(6) 能力の途中で使う動作 (Amass など) は、同梱のマクロ (`effects.ts` の `BUILTIN_MACROS`。ルールブックに同じ名前が無ければ使える) にする。その能力の処理も、`abilities.ts` の `BUILTIN_ABILITIES` (id → 能力) に同梱する。リリースして起動すると、処理待ち (`needs`) の同じ id の能力に自動で入り、未処理から外れる (AI を使わない。`seedKeywords` → `withBuiltin`)。
+- **「実装待ちを見て」と言われたら**: ユーザーの vault の `rulebook/pending.json` と、`rulebook/abilities/` のうち状態が `needs` のもの(本文 JSON の `needs`)を読み、仕様書ごとに、(1) エンジンに関数を足す (2) テストを書く (3) `typecatalog.ts` の型を更新する(`waitFor` の id が、「未実装」でなくなると、元のカードの更新案が作られる。新しい id のときは、同じ id の型を足す) (4) `SPEC`(AI への指示書)に、書き方と例を足す (5) README を直す。(6) 繰り返し使われる動作 (捨てる・ダメージ・マナ・引く・Amass など) は、意味のまとまりの関数として `BUILTIN_MACROS` に同梱する。名詞 (キーワード) の処理も、`abilities.ts` の `BUILTIN_ABILITIES` (id → 能力) に同梱する。リリースして起動すると、処理待ち (`needs`) の同じ id の能力に自動で入り、未処理から外れる (AI を使わない。`seedKeywords` → `withBuiltin`)。
 - **型や動作を足したら**: カタログ(`typecatalog.ts`)、指示書(`SPEC`)、テストを、必ず一緒に直す。食い違いは、テストが検出する(命令の種類・キーワードがカタログと指示書にあるか)。
 - **画面クラス(`*View.ts`)のメンバー名**: Obsidian 本体の `open` `close` `load` などと重ねない(画面が空白になる。`test/viewnames.test.ts` が確かめる)。
 - **ファイルを書くときの注意**: シェルの heredoc (`cat <<EOF`) で TypeScript を書くと、バックスラッシュ(正規表現の `\{` や `\n`)が二重になりやすい。長いコードは、Write ツールで書くか、書いたあとに、正規表現と文字列の `\\` を grep して確かめる(0.38.0 で、AI の返事から JSON を取り出す正規表現が壊れて、補完が必ず JSON エラーになった)。AI の返事の JSON は、`claude.ts` の `extractJson()` で取り出す。

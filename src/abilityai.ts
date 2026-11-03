@@ -96,7 +96,7 @@ export async function reassignCards(app: App, apiKey: string, progress?: (done: 
   for (const key of todo) {
     progress?.(++n, todo.length, key);
     try {
-      const pr = await proposeUpdate(app, apiKey, key, "能力ライブラリが増えた。いまの未対応の部分を、登録済みの能力 (ref) で書き直せるなら、書き直す。ref で書けないものと、既に動いている部分は、いまのまま残す。");
+      const pr = await proposeUpdate(app, apiKey, key, "名詞や関数が増えた。いまの未対応の部分を、関数や名詞 (ref) で書き直せるなら、書き直す。書けないものと、既に動いている部分は、いまのまま残す。");
       out.cost += pr.cost;
       if (pr.data.unsupported.length < (pr.before?.unsupported.length ?? 99)) {
         await applyProposal(app, key, pr.data, "", { status: pr.before?.status === "manual" ? "manual" : undefined, backup: true });
@@ -104,31 +104,6 @@ export async function reassignCards(app: App, apiKey: string, progress?: (done: 
       }
     } catch {
       /* 失敗したカードは、そのまま */
-    }
-  }
-  return out;
-}
-
-// 既存のカードの記録 (ref を使っていないもの) を、能力ライブラリの形に直す。ライブラリは、1枚ごとに育つ
-export async function migrateRecords(app: App, apiKey: string, progress?: (done: number, total: number, key: string) => void): Promise<{ migrated: string[]; failed: string[]; cost: number }> {
-  await seedKeywords(app);
-  const out = { migrated: [] as string[], failed: [] as string[], cost: 0 };
-  const keys: string[] = [];
-  for (const key of await ruleKeys(app)) {
-    const rule = await loadRule(app, key);
-    if (rule && !rule.refs?.length) keys.push(key);
-  }
-  await ensureKeywordEntries(app, keys);
-  let n = 0;
-  for (const key of keys) {
-    progress?.(++n, keys.length, key);
-    try {
-      const pr = await proposeUpdate(app, apiKey, key, "いまの記録を、能力ライブラリの形に直す。登録済みの能力で書けるものは ref で書く。他のカードにも出そうな能力 (数や色だけが違うもの) は、newAbilities に登録して ref で使う。このカードだけの能力は、いまのまま (カード固有) 残す。動きは、変えない。");
-      out.cost += pr.cost;
-      await applyProposal(app, key, pr.data, "", { status: pr.before?.status === "manual" ? "manual" : undefined, backup: true });
-      out.migrated.push(key);
-    } catch {
-      out.failed.push(key);
     }
   }
   return out;

@@ -66,10 +66,10 @@ const reply = JSON.stringify({
   ],
 });
 const p = parseProposal(reply, new Map(), new Map([[drawN.id, drawN]]));
-assert.equal(p.libAbilities.length, 1, "新しい共有の能力を1つ登録する (既にある id・不正な id は、作らない)");
-assert.equal(p.errors.length, 2);
+assert.equal(p.libAbilities.length, 0, "共有の能力は、AI は作れない (無視する)");
+assert.equal(p.errors.length, 1);
 assert.equal(p.raw.length, 3, "ref は、そのまま記録に残る");
-assert.equal(p.abilities.length, 3, "新しい能力も、展開して読める");
+assert.equal(p.abilities.length, 3, "登録されていない ref は、未処理の能力として残る");
 assert.equal(await smokeAbility(drawN), "ok", "ライブラリの能力そのものも、仮のカードにして、動作テストできる");
 assert.equal(await smokeAbility(lib({ id: "noProc" })), "failed", "処理が無い能力は、動作テストに通らない");
 {
@@ -84,17 +84,16 @@ assert.equal(await smokeAbility(lib({ id: "noProc" })), "failed", "処理が無�
 console.log("abilities ok");
 
 {
-  // 同梱の処理: 実装待ちの Amass / Evoke が、起動時に処理済みになる
+  // 同梱の処理: 実装待ちの Evoke が、起動時に処理済みになる
   const { withBuiltin, statusOf, instantiate } = await import("../src/abilities");
-  const need = { name: "amass", title: "", description: "", inputs: "", state: "", waitFor: ["todo.token"] };
-  const amass = { id: "amass", title: "Amass", effect: "x", params: { n: 1, type: "Orc" }, examples: [], keyword: "amass", needs: [need], created: "" };
-  assert.equal(statusOf(amass), "needs");
-  const done = withBuiltin(amass)!;
+  const need = { name: "evokeCast", title: "", description: "", inputs: "", state: "", waitFor: ["cost.more"] };
+  const evoke = { id: "evoke", title: "Evoke", effect: "x", params: { cost: "{R}" }, examples: [], keyword: "evoke", needs: [need], created: "" };
+  assert.equal(statusOf(evoke), "needs");
+  const done = withBuiltin(evoke)!;
   assert.equal(statusOf(done), "done", "同梱の処理で処理済みになる");
   assert.ok(!done.needs, "実装待ちの仕様書は外れる");
-  assert.ok(JSON.stringify(instantiate(done, { n: 2, type: "Zombie" })).includes('"Zombie Army"'));
-  assert.equal(statusOf(withBuiltin({ ...amass, id: "evoke", keyword: "evoke", params: { cost: "{R}" } })!), "done");
-  assert.equal(withBuiltin(done), undefined, "処理がある能力は、上書きしない");
+  assert.ok(JSON.stringify(instantiate(done, { cost: "{1}{R}" })).includes('"{1}{R}"'));
+  assert.equal(withBuiltin(lib({ id: "amass", keyword: "amass" })), undefined, "amass は関数になった (名詞ではない)");
 }
 {
   // 処理済みでも、「処理はまだ無い」の古い説明が残っていれば、実際の効果に直す

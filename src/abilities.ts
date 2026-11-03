@@ -1,7 +1,7 @@
 // 能力ライブラリ (共有の能力)。1つの能力につき1つの定義: 実際の効果 (日本語)・引数・照合の例・処理 (関数の並び)。
 // カードの記録は、{"ref":"能力のid","args":{...}} でこれを使う。カード固有の能力は、これまで通り、記録の中に直接書く。
 // Obsidian に依存しない部分 (型・検証・展開・md の書き読み)。保存先は abilitystore.ts。
-import { AMASS_STEPS, Ability, normalizeAbility, substitute, unsupportedIn } from "./effects";
+import { BUILTIN_MACROS, Ability, normalizeAbility, substitute, unsupportedIn } from "./effects";
 import { KEYWORDS } from "./engine";
 import type { NeedSpec } from "./pending";
 import { TYPE_ENTRIES } from "./typecatalog";
@@ -149,13 +149,11 @@ export function keywordEntries(): LibAbility[] {
 
 // リリースに同梱する処理。ライブラリに同じ id の能力があって、まだ処理が無ければ、起動時に入れる (AI を使わない)
 export const BUILTIN_ABILITIES: Record<string, unknown> = {
-  amass: { kind: "spell", effects: AMASS_STEPS, text: "動員 $n ($type)" },
   evoke: { kind: "altCost", alt: { mana: "$cost", evoke: true }, effects: [], text: "想起 $cost (出たとき生け贄にする)" },
 };
 
 // 同梱の処理があって、処理が無い能力に、処理を入れる。「処理はまだ無い」という古い説明も、実際の効果に直す。変えたら新しい定義、無ければ undefined
 export const BUILTIN_EFFECTS: Record<string, string> = {
-  amass: "動員 {n} ({type}): あなたが軍団(Army)をコントロールしていなければ、0/0 の黒の {type}・軍団のトークンを1体作る。軍団を1体選び、+1/+1 カウンターを {n} 個置き、{type} を加える。能力の途中で使うときは、命令 {\"do\":\"use\",\"macro\":\"amass\",\"args\":{\"n\":1,\"type\":\"Orc\"}} と書く (ref ではなく)。",
   evoke: "想起 {cost}: このクリーチャー呪文を、マナコストの代わりに {cost} を払って唱えてもよい。想起で唱えたなら、出たとき生け贄にする。",
 };
 export function withBuiltin(lib: LibAbility): LibAbility | undefined {
@@ -177,3 +175,25 @@ export function unknownKeyword(k: string, lib: Map<string, LibAbility>): LibAbil
 }
 
 export type { Ability };
+
+// ---- 能力ライブラリの廃止: 名詞 (キーワード) 以外の共有の能力は、カード固有の能力に展開する ----
+
+const FUNCTION_IDS = new Set(BUILTIN_MACROS.map((m) => m.name));
+
+// 記録の abilities の ref を、展開する。名詞 (キーワード) の ref はそのまま。同梱の関数と同じ id の ref は、外す (関数は、命令として書く)
+export function inlineRefs(raw: unknown[], lib: Map<string, LibAbility>): { raw: unknown[]; changed: boolean } {
+  let changed = false;
+  const out = raw.flatMap((x): unknown[] => {
+    const o = (x ?? {}) as Record<string, unknown>;
+    if (typeof o.ref !== "string") return [x];
+    const l = lib.get(o.ref);
+    if (FUNCTION_IDS.has(o.ref)) return (changed = true), [];
+    if (!l || l.keyword || !l.ability) return [x];
+    changed = true;
+    return [instantiate(l, (o.args && typeof o.args === "object" ? o.args : {}) as Record<string, unknown>)];
+  });
+  return { raw: out, changed };
+}
+
+// 廃止してよい共有の能力か (名詞でない。処理があるか、同梱の関数と同じ id)
+export const retirable = (l: LibAbility) => !l.keyword && (!!l.ability || FUNCTION_IDS.has(l.id));
