@@ -9,14 +9,6 @@ import { CARDS_VIEW, CardsView } from "./CardsView";
 import { DASHBOARD_VIEW, DashboardView } from "./DashboardView";
 import { DECKLIST_VIEW, DeckListView } from "./DeckListView";
 import { DECK_VIEW, DeckView } from "./DeckView";
-import { initAbilityStore, retireLibrary, seedKeywords } from "./abilitystore";
-import { initMacroStore } from "./macros";
-import { initPendingStore } from "./pending";
-import { initRuleStore, migrateToRulebook } from "./rulestore";
-import { RULEBOOK_VIEW, RulebookView } from "./RulebookView";
-import { BOT_VIEW, BotView } from "./BotView";
-import { BATTLE_VIEW, BattleView } from "./BattleView";
-import { BOTLOG_VIEW, BotLogView } from "./BotLogView";
 import { fetchCard, fileSafe } from "./scryfall";
 import { priceStore, updateCollectionPrices } from "./prices";
 import { DEFAULT_SETTINGS, Settings, SettingsTab } from "./settings";
@@ -79,11 +71,6 @@ export default class MagicTheObsidian extends Plugin {
       listArt: d.listArt ?? DEFAULT_SETTINGS.listArt,
       dashboardTab: d.dashboardTab ?? DEFAULT_SETTINGS.dashboardTab,
       currency: d.currency ?? DEFAULT_SETTINGS.currency,
-      botModel: d.botModel ?? DEFAULT_SETTINGS.botModel,
-      botKey: d.botKey ?? DEFAULT_SETTINGS.botKey,
-      autoRules: d.autoRules ?? DEFAULT_SETTINGS.autoRules,
-      rulebookMigrated: d.rulebookMigrated ?? false,
-      battleStops: Array.isArray(d.battleStops) ? d.battleStops : DEFAULT_SETTINGS.battleStops,
     };
     priceStore.prices = d.prices ?? {};
     priceStore.updated = d.pricesUpdated ?? "";
@@ -99,11 +86,7 @@ export default class MagicTheObsidian extends Plugin {
       }),
     );
     this.registerView(DECK_VIEW, (leaf) => new DeckView(leaf, this.settings));
-    this.registerView(DASHBOARD_VIEW, (leaf) => new DashboardView(leaf, { collection: () => void this.openOrReveal(COLLECTION_VIEW), deck: () => void this.openOrReveal(DECKLIST_VIEW), cards: () => void this.openOrReveal(CARDS_VIEW), rulebook: () => void this.openOrReveal(RULEBOOK_VIEW), bot: () => void this.openBot(BOT_VIEW), battle: () => void this.openBot(BATTLE_VIEW) }));
-    this.registerView(RULEBOOK_VIEW, (leaf) => new RulebookView(leaf, this.settings, () => this.app.secretStorage.getSecret(this.settings.botKey)));
-    this.registerView(BATTLE_VIEW, (leaf) => new BattleView(leaf, this.settings, () => this.app.secretStorage.getSecret(this.settings.botKey), () => saveAll()));
-    this.registerView(BOT_VIEW, (leaf) => new BotView(leaf, this.settings, () => this.app.secretStorage.getSecret(this.settings.botKey)));
-    this.registerView(BOTLOG_VIEW, (leaf) => new BotLogView(leaf, this.settings));
+    this.registerView(DASHBOARD_VIEW, (leaf) => new DashboardView(leaf, { collection: () => void this.openOrReveal(COLLECTION_VIEW), deck: () => void this.openOrReveal(DECKLIST_VIEW), cards: () => void this.openOrReveal(CARDS_VIEW) }));
     this.registerView(CARDS_VIEW, (leaf) => new CardsView(leaf, this.settings));
     this.registerView(
       DECKLIST_VIEW,
@@ -127,27 +110,7 @@ export default class MagicTheObsidian extends Plugin {
     this.registerEvent(ws.on("layout-change", () => void this.syncSidebar()));
     // デッキ画面のメイン/サイドのタブを押したとき、サイドバーが畳まれていたら開く
     this.registerEvent((ws as unknown as { on(n: string, cb: () => void): EventRef }).on("mtg-show-list", () => void this.showList(ws.getActiveViewOfType(DeckView)?.leaf)));
-    // ルールブックの保存先 (隠しフォルダ)。旧い置き場 (vault の Bot/Rules, Bot/Types) からの移行は、1回だけ
-    const pluginDir = this.manifest.dir ?? ".obsidian/plugins/magictheobsidian";
-    initRuleStore(pluginDir);
-    initMacroStore(pluginDir);
-    initPendingStore(pluginDir);
-    initAbilityStore(pluginDir);
-    const migrate = async () => {
-      if (this.settings.rulebookMigrated) return;
-      try {
-        const r = await migrateToRulebook(this.app);
-        this.settings.rulebookMigrated = true;
-        await saveAll();
-        if (r.rules || r.memos) new Notice(`ルールブックへ移した: 処理の記録 ${r.rules} 件、型のメモ ${r.memos} 件 (vault のノートは、ゴミ箱に入れた)`, 10000);
-      } catch (e) {
-        console.error(e);
-        new Notice(`ルールブックへの移行に失敗: ${(e as Error).message}`, 10000);
-      }
-    };
     ws.onLayoutReady(() => {
-      void migrate();
-      void seedKeywords(this.app).then(() => retireLibrary(this.app)).catch(console.error); // 名詞 (キーワード) を入れ、共有の能力は、カード固有の能力に展開する
       this.dashboardIfEmpty(ws.getMostRecentLeaf());
       void this.syncSidebar();
     });
@@ -182,9 +145,6 @@ export default class MagicTheObsidian extends Plugin {
         }
       },
     });
-    this.addCommand({ id: "open-rulebook", name: "Open rulebook", callback: () => void this.openOrReveal(RULEBOOK_VIEW) });
-    this.addCommand({ id: "open-bot", name: "Open bot trial (solo)", callback: () => void this.openBot(BOT_VIEW) });
-    this.addCommand({ id: "open-bot-battle", name: "Open bot battle (you vs bot)", callback: () => void this.openBot(BATTLE_VIEW) });
     this.addCommand({ id: "open-dashboard", name: "Open dashboard", callback: () => void this.openOrReveal(DASHBOARD_VIEW) });
     this.addRibbonIcon("layout-dashboard", "Magic the Obsidian", () => void this.openOrReveal(DASHBOARD_VIEW));
     this.addCommand({
@@ -256,18 +216,6 @@ export default class MagicTheObsidian extends Plugin {
     const open = ws.getLeavesOfType(type)[0];
     if (open) return void ws.revealLeaf(open);
     await ws.getLeaf(true).setViewState({ type, active: true });
-  }
-
-  // Bot の試し: メインに Bot 画面、右サイドバーにカード効果とログ
-  private async openBot(type: string) {
-    const ws = this.app.workspace;
-    await this.openOrReveal(type);
-    let log = ws.getLeavesOfType(BOTLOG_VIEW)[0];
-    if (!log) {
-      log = ws.getRightLeaf(false)!;
-      await log.setViewState({ type: BOTLOG_VIEW, active: false });
-    }
-    await ws.revealLeaf(log);
   }
 
   private deckLeaves() {
