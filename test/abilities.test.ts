@@ -82,3 +82,17 @@ assert.equal(await smokeAbility(lib({ id: "noProc" })), "failed", "処理が無�
   assert.throws(() => extractJson('{"ability":{"kind":"spell"'), /JSON として読めない/, "途中で切れた返事は、分かるエラーにする");
 }
 console.log("abilities ok");
+
+{
+  // 同梱の処理: 実装待ちの Amass / Evoke が、起動時に処理済みになる
+  const { withBuiltin, statusOf, instantiate } = await import("../src/abilities");
+  const need = { name: "amass", title: "", description: "", inputs: "", state: "", waitFor: ["todo.token"] };
+  const amass = { id: "amass", title: "Amass", effect: "x", params: { n: 1, type: "Orc" }, examples: [], keyword: "amass", needs: [need], created: "" };
+  assert.equal(statusOf(amass), "needs");
+  const done = withBuiltin(amass)!;
+  assert.equal(statusOf(done), "done", "同梱の処理で処理済みになる");
+  assert.ok(!done.needs, "実装待ちの仕様書は外れる");
+  assert.ok(JSON.stringify(instantiate(done, { n: 2, type: "Zombie" })).includes('"Zombie Army"'));
+  assert.equal(statusOf(withBuiltin({ ...amass, id: "evoke", keyword: "evoke", params: { cost: "{R}" } })!), "done");
+  assert.equal(withBuiltin(done), undefined, "処理がある能力は、上書きしない");
+}

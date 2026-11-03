@@ -1,5 +1,5 @@
 import { App, normalizePath } from "obsidian";
-import { LibAbility, keywordEntries, libMd, parseLibMd, unknownKeyword } from "./abilities";
+import { LibAbility, keywordEntries, libMd, parseLibMd, unknownKeyword, withBuiltin } from "./abilities";
 import { cardInfo } from "./cards";
 
 // 能力ライブラリの保存先: ルールブックの隠しフォルダ (<プラグインのフォルダ>/rulebook/abilities/<id>.md)
@@ -46,6 +46,13 @@ export async function seedKeywords(app: App): Promise<number> {
   for (const k of keywordEntries()) {
     if (lib.has(k.id)) continue;
     await saveAbility(app, k);
+    n++;
+  }
+  // 同梱の処理 (Amass など) を、処理待ちの能力に入れる
+  for (const l of [...lib.values()]) {
+    const next = withBuiltin(l);
+    if (!next) continue;
+    await saveAbility(app, next);
     n++;
   }
   return n;

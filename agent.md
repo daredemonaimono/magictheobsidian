@@ -75,7 +75,7 @@ Obsidian を Magic: The Gathering 専用のソフトにするプラグイン。�
 
 - **確認はユーザーがする**。自分は、ビルドとテスト(`npm test`)まで。画面と API 呼び出しは、動かしていなければ、「動かしていない」と、はっきり言う。分からないことを、分かったように言わない。
 - **リリースは、ユーザーが「リリースして」と言ったときだけ**。手順: `manifest.json` / `package.json` / `versions.json` の版を上げる → `npm run build` → `npm test` → コミット(`git -c user.name=daredemonai -c user.email=daredemonai@gmail.com`、末尾に Co-Authored-By) → `git push` → `gh release create <版> main.js manifest.json styles.css`。README も、同じ版で更新する。
-- **「実装待ちを見て」と言われたら**: ユーザーの vault の `rulebook/pending.json` と、`rulebook/abilities/` のうち状態が `needs` のもの(本文 JSON の `needs`)を読み、仕様書ごとに、(1) エンジンに関数を足す (2) テストを書く (3) `typecatalog.ts` の型を更新する(`waitFor` の id が、「未実装」でなくなると、元のカードの更新案が作られる。新しい id のときは、同じ id の型を足す) (4) `SPEC`(AI への指示書)に、書き方と例を足す (5) README を直す。
+- **「実装待ちを見て」と言われたら**: ユーザーの vault の `rulebook/pending.json` と、`rulebook/abilities/` のうち状態が `needs` のもの(本文 JSON の `needs`)を読み、仕様書ごとに、(1) エンジンに関数を足す (2) テストを書く (3) `typecatalog.ts` の型を更新する(`waitFor` の id が、「未実装」でなくなると、元のカードの更新案が作られる。新しい id のときは、同じ id の型を足す) (4) `SPEC`(AI への指示書)に、書き方と例を足す (5) README を直す。(6) その能力の処理も、`abilities.ts` の `BUILTIN_ABILITIES` (id → 能力) に同梱する。リリースして起動すると、処理待ち (`needs`) の同じ id の能力に自動で入り、未処理から外れる (AI を使わない。`seedKeywords` → `withBuiltin`)。
 - **型や動作を足したら**: カタログ(`typecatalog.ts`)、指示書(`SPEC`)、テストを、必ず一緒に直す。食い違いは、テストが検出する(命令の種類・キーワードがカタログと指示書にあるか)。
 - **画面クラス(`*View.ts`)のメンバー名**: Obsidian 本体の `open` `close` `load` などと重ねない(画面が空白になる。`test/viewnames.test.ts` が確かめる)。
 - **ファイルを書くときの注意**: シェルの heredoc (`cat <<EOF`) で TypeScript を書くと、バックスラッシュ(正規表現の `\{` や `\n`)が二重になりやすい。長いコードは、Write ツールで書くか、書いたあとに、正規表現と文字列の `\\` を grep して確かめる(0.38.0 で、AI の返事から JSON を取り出す正規表現が壊れて、補完が必ず JSON エラーになった)。AI の返事の JSON は、`claude.ts` の `extractJson()` で取り出す。

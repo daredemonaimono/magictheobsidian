@@ -147,11 +147,35 @@ export function keywordEntries(): LibAbility[] {
   });
 }
 
+// リリースに同梱する処理。ライブラリに同じ id の能力があって、まだ処理が無ければ、起動時に入れる (AI を使わない)
+export const BUILTIN_ABILITIES: Record<string, unknown> = {
+  amass: {
+    kind: "spell",
+    effects: [
+      { do: "if", cond: { has: { kind: "cards", subtypes: ["Army"], owner: "you" } }, then: [], else: [{ do: "create", token: { name: "$type Army", types: "Creature — $type Army", power: 0, toughness: 0, colors: ["B"] } }] },
+      { do: "counters", what: { kind: "cards", subtypes: ["Army"], owner: "you", count: 1 }, counter: "+1/+1", n: "$n", as: "army" },
+      { do: "addType", what: { kind: "ref", ref: "army" }, subtype: "$type" },
+    ],
+    text: "動員 $n ($type)",
+  },
+  evoke: { kind: "altCost", alt: { mana: "$cost", evoke: true }, effects: [], text: "想起 $cost (出たとき生け贄にする)" },
+};
+
+// 同梱の処理があって、まだ処理が無い能力に、処理を入れる。入れたら新しい定義、無ければ undefined
+export function withBuiltin(lib: LibAbility): LibAbility | undefined {
+  const ab = BUILTIN_ABILITIES[lib.id];
+  if (!ab || lib.ability) return undefined;
+  const { needs: _needs, ...rest } = lib;
+  const next: LibAbility = { ...rest, ability: ab };
+  return checkAbility(next).ok ? next : undefined;
+}
+
 // 未処理のキーワード: カードが持つキーワード (Scryfall の keywords) のうち、エンジンもライブラリも処理を持たないもの
 export function unknownKeyword(k: string, lib: Map<string, LibAbility>): LibAbility | undefined {
   const id = keywordId(k);
   if (lib.has(id) || KEYWORDS.includes(k.toLowerCase())) return undefined;
-  return { id, title: k, effect: `${k} (キーワード能力。処理はまだ無い)`, params: {}, examples: [k], keyword: k.toLowerCase(), created: new Date().toISOString() };
+  const e: LibAbility = { id, title: k, effect: `${k} (キーワード能力。処理はまだ無い)`, params: {}, examples: [k], keyword: k.toLowerCase(), created: new Date().toISOString() };
+  return withBuiltin(e) ?? e;
 }
 
 export type { Ability };
