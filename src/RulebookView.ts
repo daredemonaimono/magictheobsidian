@@ -21,7 +21,7 @@ export class RulebookView extends ItemView {
   private statusFilter = "all";
   private deckOnly = true;
   private cardFilter = "all";
-  private open = new Set<string>();
+  private expanded = new Set<string>(); // 開いている行 (View の open() と名前が重ならないように)
   private data?: Rulebook;
   private memos: Record<string, Memo> = {};
   private body!: HTMLElement;
@@ -121,9 +121,9 @@ export class RulebookView extends ItemView {
     const n = this.data!.usage.get(e.id)?.size ?? 0;
     if (n) head.createSpan({ text: `${n}枚`, cls: "mtg-dim" });
     row.createDiv({ text: e.summary, cls: "mtg-rb-summary" });
-    const open = this.open.has(e.id);
-    head.onclick = () => (open ? this.open.delete(e.id) : this.open.add(e.id), this.render());
-    if (!open) return;
+    const isOpen = this.expanded.has(e.id);
+    head.onclick = () => (isOpen ? this.expanded.delete(e.id) : this.expanded.add(e.id), this.render());
+    if (!isOpen) return;
     const body = row.createDiv("mtg-rb-detail");
     const sec = (title: string, text?: string) => text && (body.createEl("h4", { text: title }), body.createDiv({ text, cls: "mtg-rb-text" }));
     sec("どう実装されているか", e.impl);
@@ -174,9 +174,9 @@ export class RulebookView extends ItemView {
     head.createSpan({ text: p, cls: "mtg-dim" });
     if (c.decks.length) head.createSpan({ text: c.decks.join(", "), cls: "mtg-rb-tag" });
     if (c.inCollection) head.createSpan({ text: "コレクション", cls: "mtg-rb-tag" });
-    const open = this.open.has(`card:${c.key}`);
-    head.onclick = () => (open ? this.open.delete(`card:${c.key}`) : this.open.add(`card:${c.key}`), this.render());
-    if (!open) return;
+    const isOpen = this.expanded.has(`card:${c.key}`);
+    head.onclick = () => (isOpen ? this.expanded.delete(`card:${c.key}`) : this.expanded.add(`card:${c.key}`), this.render());
+    if (!isOpen) return;
     const body = row.createDiv("mtg-rb-detail");
     const a = body.createEl("a", { text: "カードのノートを開く" });
     a.onclick = () => void this.app.workspace.openLinkText(c.key, "", true);
