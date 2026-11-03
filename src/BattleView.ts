@@ -3,7 +3,7 @@ import { BattleDeck, deckFiles, loadBattleDeck } from "./battledeck";
 import { botBus } from "./botbus";
 import { cardEl } from "./cardEl";
 import { MODELS, askClaude } from "./claude";
-import { Block, Card, CardDef, Controller, Decision, Game, Perm, Phase, PriorityAction, isCreature, isLand } from "./engine";
+import { Answer, Block, Card, Controller, Decision, Game, Perm, Phase, PriorityAction, isCreature, isLand } from "./engine";
 import { fileSafe } from "./scryfall";
 import { Settings } from "./settings";
 
@@ -59,10 +59,11 @@ export class BattleView extends ItemView {
   private game?: Game;
   private running = false;
   private stopFlag = false;
-  private pending?: { d: Decision; resolve: (a: PriorityAction | number[] | Block[]) => void; reject: (e: Error) => void };
+  private pending?: { d: Decision; resolve: (a: Answer) => void; reject: (e: Error) => void };
   private sel = new Set<number>(); // 攻撃宣言で選んだ uid / ブロック待ちの自分のクリーチャー
   private pairs: Block[] = [];
   private blocker?: number;
+  private chooser?: { label: string; action: PriorityAction }[]; // 1枚で複数の行動があるとき、選ばせる
   private thinking = false;
   private stats = { calls: 0, tokens: 0, cost: 0 };
   private result = "";
@@ -145,7 +146,7 @@ export class BattleView extends ItemView {
     this.result = "";
     botBus.clear();
     const seed = Math.floor(Math.random() * 2 ** 31);
-    const g = (this.game = new Game([a.defs, b.defs], seed, [this.human, this.bot(b, key)]));
+    const g = (this.game = new Game([a.defs, b.defs], seed, [this.human, this.bot(b, key)], [true, false]));
     g.onLog = (l) => botBus.addLog(l);
     g.onChange = () => this.render();
     botBus.addLog(`あなた: ${a.name} / ボット: ${b.name} (${MODELS[this.model].label}, ${this.think ? "思考深め" : "思考浅め"})`);
@@ -208,11 +209,12 @@ export class BattleView extends ItemView {
       this.sel.clear();
       this.pairs = [];
       this.blocker = undefined;
+      this.chooser = undefined;
       this.pending = { d, resolve, reject };
       this.render();
     });
 
-  private answer(a: PriorityAction | number[] | Block[]) {
+  private answer(a: Answer) {
     const p = this.pending;
     if (!p) return;
     this.pending = undefined;
@@ -238,7 +240,8 @@ export class BattleView extends ItemView {
       `相手の場: ${field(1 - me)}`,
       `あなたの墓地: ${names(you.graveyard)} / 相手の墓地: ${names(opp.graveyard)}`,
       `相手の手札: ${opp.hand.length} 枚 / 山札: あなた ${you.library.length}, 相手 ${opp.library.length}`,
-      `スタック: ${s.stack.length ? s.stack.map((x) => x.card.def.name).join(" → ") : "空"}`,
+      `マナプール: あなた ${you.pool.join("") || "なし"}`,
+      `スタック: ${s.stack.length ? s.stack.map((x) => (x.ability ? `${x.def.name}の能力` : x.def.name)).join(" → ") : "空"}`,
       `直近のログ:\n${s.log.slice(-8).join("\n")}`,
     ].join("\n");
   }
@@ -251,15 +254,24 @@ export class BattleView extends ItemView {
         const p = g.perm(uid);
         return p ? `${p.def.name} ${p.def.power}/${p.def.toughness}${p.def.keywords.length ? ` [${p.def.keywords.join(",")}]` : ""}` : nameOf(uid);
       };
+      const label = (a: PriorityAction) => {
+        if (a.kind === "pass") return "パス";
+        if (a.kind === "land") return `土地を出す: ${nameOf(a.uid)}`;
+        if (a.kind === "cast") return `唱える: ${nameOf(a.uid)}`;
+        if (a.kind === "activate") return `起動: ${nameOf(a.uid)}${g.perm(a.uid)?.def.abilities[a.index]?.text ? ` (${g.perm(a.uid)!.def.abilities[a.index].text})` : ""}`;
+        return `マナを出す: ${nameOf(a.uid)}`;
+      };
       let ask = "";
       if (d.type === "priority") {
-        ask = `選べる行動:\n${d.actions.map((a, i) => `${i + 1}. ${a.kind === "pass" ? "パス" : `${a.kind === "land" ? "土地を出す" : "唱える"}: ${nameOf(a.uid)}`}`).join("\n")}\n返事: {"action": 番号, "reason": "20字以内"}`;
+        ask = `選べる行動:\n${d.actions.map((a, i) => `${i + 1}. ${label(a)}`).join("\n")}\n返事: {"action": 番号, "reason": "20字以内"}`;
+      } else if (d.type === "choice") {
+        ask = `${d.prompt}\n選択肢:\n${d.options.map((o, i) => `${i + 1}. ${o}`).join("\n")}\n返事: {"choice": 番号, "reason": "20字以内"}`;
       } else if (d.type === "attackers") {
         ask = `攻撃できるクリーチャー:\n${d.eligible.map((u, i) => `${i + 1}. ${stat(u)}`).join("\n")}\n攻撃するものの番号を配列で。攻撃しないなら []。返事: {"attack": [番号...], "reason": "20字以内"}`;
       } else {
         ask = `攻撃してくる:\n${d.attackers.map((u, i) => `${i + 1}. ${stat(u)}`).join("\n")}\nブロックできる:\n${d.eligible.map((u, i) => `${i + 1}. ${stat(u)}`).join("\n")}\nブロックしないなら []。返事: {"blocks": [[ブロッカーの番号, 攻撃の番号], ...], "reason": "20字以内"}`;
       }
-      const fallback = d.type === "priority" ? d.actions[d.actions.length - 1] : d.type === "attackers" ? [] : [];
+      const fallback: Answer = d.type === "priority" ? d.actions[d.actions.length - 1] : d.type === "choice" ? 0 : [];
       for (let tries = 0; tries < 2; tries++) {
         if (this.stopFlag) throw new Error("停止");
         this.thinking = true;
@@ -274,14 +286,17 @@ export class BattleView extends ItemView {
         if (d.type === "priority") {
           const n = Number(r.text.match(/"action"\s*:\s*"?(\d+)/)?.[1]);
           const a = d.actions[n - 1];
-          if (a) return note(a.kind === "pass" ? "パス" : `${a.kind === "land" ? "土地" : "唱える"} ${nameOf(a.uid)}`), a;
+          if (a) return note(label(a)), a;
+        } else if (d.type === "choice") {
+          const n = Number(r.text.match(/"choice"\s*:\s*"?(\d+)/)?.[1]);
+          if (n >= 1 && n <= d.options.length) return note(d.options[n - 1]), n - 1;
         } else if (d.type === "attackers") {
           const arr = arrayOf(r.text, "attack");
           if (arr) {
             const uids = arr.map((n) => d.eligible[Number(n) - 1]).filter((u) => u !== undefined);
             return note(uids.length ? `攻撃 ${uids.map(nameOf).join(", ")}` : "攻撃しない"), uids;
           }
-        } else {
+        } else if (d.type === "blockers") {
           const arr = arrayOf(r.text, "blocks");
           if (arr) {
             const blocks = arr
@@ -306,12 +321,29 @@ export class BattleView extends ItemView {
     return el;
   }
 
+  // 自分のカードをクリックして、マナを出す / 能力を起動する。行動が複数なら選ばせる
+  private acts(perm: Perm): { cls?: string; onClick?: () => void } {
+    const p = this.pending;
+    if (!p || p.d.type !== "priority" || perm.controller !== 0) return {};
+    const list = p.d.actions.filter((a): a is Extract<PriorityAction, { kind: "tapMana" | "activate" }> => (a.kind === "tapMana" || a.kind === "activate") && a.uid === perm.uid);
+    if (!list.length) return {};
+    const label = (a: (typeof list)[number]) => (a.kind === "tapMana" ? `マナを出す${a.color ? ` (${a.color})` : ""}` : `起動: ${perm.def.abilities[a.index]?.text ?? "能力"}`);
+    return {
+      cls: "is-playable",
+      onClick: () => {
+        if (list.length === 1) return this.answer(list[0]);
+        this.chooser = list.map((a) => ({ label: `${perm.def.name}: ${label(a)}`, action: a }));
+        this.render();
+      },
+    };
+  }
+
   private side(parent: HTMLElement, g: Game, i: number) {
     const s = g.s;
     const pl = s.players[i];
     const me = i === 0;
     const box = parent.createDiv(`mtg-bside${me ? "" : " is-opp"}`);
-    const head = box.createDiv({ text: `${me ? "あなた" : "ボット"}  ライフ ${pl.life}  ·  手札 ${pl.hand.length}  ·  山札 ${pl.library.length}`, cls: "mtg-bhead" });
+    const head = box.createDiv({ text: `${me ? "あなた" : "ボット"}  ライフ ${pl.life}  ·  手札 ${pl.hand.length}  ·  山札 ${pl.library.length}${pl.pool.length ? `  ·  マナ ${pl.pool.join("")}` : ""}`, cls: "mtg-bhead" });
     if (s.active === i) head.createSpan({ text: "  ▶ ターン", cls: "mtg-dim" });
     const main = box.createDiv("mtg-bmain");
     const field = main.createDiv("mtg-bfield");
@@ -341,9 +373,14 @@ export class BattleView extends ItemView {
           this.render();
         };
       }
+      if (!click) {
+        const a = this.acts(perm);
+        click = a.onClick;
+        if (a.cls) cls.push(a.cls);
+      }
       this.perm(others, perm, { cls: cls.join(" "), onClick: click });
     }
-    for (const perm of pl.field.filter((x) => isLand(x.def))) this.perm(lands, perm);
+    for (const perm of pl.field.filter((x) => isLand(x.def))) this.perm(lands, perm, this.acts(perm));
     const pile = (title: string, cards: Card[], faceUp: boolean) => {
       const b = piles.createDiv("mtg-bpile");
       b.createDiv({ text: `${title} ${cards.length}`, cls: "mtg-dim" });
@@ -355,9 +392,12 @@ export class BattleView extends ItemView {
     if (me) {
       const hand = box.createDiv("mtg-brow mtg-bhand");
       for (const c of pl.hand) {
-        const act = p?.d.type === "priority" ? p.d.actions.find((a) => a.kind !== "pass" && g.card(a.uid)?.def.key === c.def.key) : undefined;
-        const el = cardEl(this.app, hand, c.def, act ? "is-playable" : "");
-        if (act) el.onclick = () => this.answer(act);
+        const acts = p?.d.type === "priority" ? p.d.actions.filter((a) => (a.kind === "land" || a.kind === "cast") && g.card(a.uid)?.def.key === c.def.key) : [];
+        const ready = acts.find((a) => a.kind === "land" || (a.kind === "cast" && a.tap.length === 0)); // プールで払える
+        const soft = acts.find((a) => a.kind === "cast" && a.tap.length > 0); // 土地をタップすれば唱えられる
+        const el = cardEl(this.app, hand, c.def, ready ? "is-playable" : soft ? "is-soft" : "");
+        if (ready) el.onclick = () => this.answer(ready);
+        else if (soft) el.onclick = () => new Notice("先に土地などをクリックして、マナを出す");
       }
     } else {
       const hand = box.createDiv("mtg-brow mtg-bhand");
@@ -378,15 +418,23 @@ export class BattleView extends ItemView {
     if (s.stack.length) {
       const st = mid.createDiv("mtg-brow");
       st.createSpan({ text: "スタック: ", cls: "mtg-dim" });
-      for (const x of s.stack) cardEl(this.app, st, x.card.def);
+      for (const x of s.stack) cardEl(this.app, st, x.def, x.ability ? "is-small" : "");
     }
     const prompt = mid.createDiv("mtg-bprompt");
     const p = this.pending;
     if (this.result) prompt.createSpan({ text: this.result });
     else if (!p) prompt.createSpan({ text: this.thinking ? "ボットが考え中…" : "…" });
     else if (p.d.type === "priority") {
-      prompt.createSpan({ text: s.stack.length ? "あなたの優先権 (スタックに呪文がある)" : "あなたの優先権: 光っているカードを出せる" });
+      if (this.chooser) {
+        for (const c of this.chooser) prompt.createEl("button", { text: c.label }).onclick = () => this.answer(c.action);
+        prompt.createEl("button", { text: "やめる" }).onclick = () => ((this.chooser = undefined), this.render());
+        return void this.side(this.board, g, 0);
+      }
+      prompt.createSpan({ text: s.stack.length ? "あなたの優先権 (スタックにある)" : "あなたの優先権: 土地などをクリックしてマナを出し、光るカードを出す" });
       prompt.createEl("button", { text: s.stack.length ? "解決へ(パス)" : s.phase.startsWith("main") ? "メイン終了(パス)" : "パス", cls: "mod-cta" }).onclick = () => this.answer({ kind: "pass" });
+    } else if (p.d.type === "choice") {
+      prompt.createSpan({ text: p.d.prompt });
+      p.d.options.forEach((o, i) => (prompt.createEl("button", { text: o }).onclick = () => this.answer(i)));
     } else if (p.d.type === "attackers") {
       prompt.createSpan({ text: "攻撃するクリーチャーを選ぶ" });
       prompt.createEl("button", { text: `攻撃宣言 (${this.sel.size}体)`, cls: "mod-cta" }).onclick = () => this.answer([...this.sel]);

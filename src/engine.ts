@@ -6,6 +6,40 @@
 
 export type Phase = "upkeep" | "draw" | "main1" | "beginCombat" | "attackers" | "blockers" | "damage" | "endCombat" | "main2" | "end";
 
+// ---- 能力と効果 (カードごとの処理の記録。Bot/Rules/ のノートに JSON で保存され、エンジンが機械的に実行する) ----
+
+export type Who = "you" | "opponent";
+export interface TargetSpec {
+  controller?: Who | "any";
+  types?: ("creature" | "land" | "artifact" | "enchantment" | "planeswalker" | "permanent")[];
+  nonbasic?: boolean; // 基本でない土地だけ
+}
+// 効果の部品。足りないものは「未対応」にして記録され、あとから増やす
+export type Op =
+  | { op: "addMana"; options: string; n?: number } // options = 出せる色 ("B" / "WB" / "WUBRG")。複数なら1度だけ色を選び、n 個出す
+  | { op: "draw"; n: number; who?: Who }
+  | { op: "gainLife"; n: number; who?: Who }
+  | { op: "loseLife"; n: number; who?: Who }
+  | { op: "damage"; n: number; to: Who | "creature" | "any" }
+  | { op: "flip"; win?: Op[]; lose?: Op[] } // コイン投げ (seed つきの乱数)
+  | { op: "destroy"; target: TargetSpec }
+  | { op: "exile"; target: TargetSpec }
+  | { op: "unsupported"; text: string };
+export interface AbilityCost {
+  tap?: boolean;
+  mana?: string; // "{1}{W}"
+  life?: number;
+  sacrificeSelf?: boolean;
+}
+export interface Ability {
+  kind: "mana" | "activated" | "triggered" | "spell";
+  cost?: AbilityCost; // mana / activated
+  trigger?: { event: "upkeep" | "etb" | "dies"; whose?: Who | "each" }; // triggered。upkeep の whose = 誰のアップキープか
+  optional?: boolean; // 「〜してもよい」
+  effects: Op[];
+  text?: string; // 表示用
+}
+
 export interface CardDef {
   key: string; // Cards/ のファイル名
   name: string;
@@ -15,7 +49,8 @@ export interface CardDef {
   power: number;
   toughness: number;
   keywords: string[]; // 小文字: flying, haste, vigilance, flash, reach
-  mana: string[]; // タップで出るマナ。1要素 = 1マナで、出せる色の集合 ("WB" = 白か黒、"C" = 無色)
+  abilities: Ability[];
+  mana: string[]; // タップだけで出るマナ (自動の支払い用)。1要素 = 1マナで、出せる色の集合 ("WB" = 白か黒、"C" = 無色)
   oracle: string;
 }
 export interface Card {
@@ -37,11 +72,15 @@ export interface Player {
   hand: Card[];
   field: Perm[];
   graveyard: Card[];
+  exile: Card[];
+  pool: string[]; // マナプール (ステップの終わりに空になる)
   drewEmpty: boolean;
 }
 export interface StackItem {
-  card: Card;
+  def: CardDef; // 表示用 (呪文ならそのカード、能力なら出どころ)
   controller: number;
+  card?: Card; // 呪文のとき
+  ability?: Ability; // 能力のとき
 }
 export interface State {
   players: Player[];
@@ -54,14 +93,21 @@ export interface State {
   log: string[];
 }
 
-export type PriorityAction = { kind: "pass" } | { kind: "land"; uid: number } | { kind: "cast"; uid: number; tap: number[] };
+export type PriorityAction =
+  | { kind: "pass" }
+  | { kind: "land"; uid: number }
+  | { kind: "cast"; uid: number; tap: number[] } // tap = マナプールで足りない分を払うためにタップするマナ源 (空 = プールだけで払える)
+  | { kind: "tapMana"; uid: number; color?: string } // マナ能力。タップしてマナプールに出す (手動のプレイヤーだけ)
+  | { kind: "activate"; uid: number; index: number; tap: number[] };
 export type Decision =
   | { type: "priority"; player: number; actions: PriorityAction[] }
   | { type: "attackers"; player: number; eligible: number[] }
-  | { type: "blockers"; player: number; attackers: number[]; eligible: number[] };
+  | { type: "blockers"; player: number; attackers: number[]; eligible: number[] }
+  | { type: "choice"; player: number; prompt: string; options: string[] };
 export type Block = { attacker: number; blocker: number };
-// priority → PriorityAction / attackers → number[] (攻撃する uid) / blockers → Block[]
-export type Controller = (g: Game, d: Decision) => Promise<PriorityAction | number[] | Block[]>;
+// priority → PriorityAction / attackers → number[] (攻撃する uid) / blockers → Block[] / choice → 選んだ番号 (0 始まり)
+export type Answer = PriorityAction | number[] | Block[] | number;
+export type Controller = (g: Game, d: Decision) => Promise<Answer>;
 export interface Step {
   player: number;
   type: Decision["type"];
@@ -107,8 +153,24 @@ export function parseMana(typeLine: string, oracle: string): string[] {
   return units.filter(Boolean);
 }
 
-export function makeDef(p: { key: string; name: string; typeLine: string; manaCost: string; cmc: number; power?: number; toughness?: number; oracle: string }): CardDef {
-  return { ...p, power: p.power ?? 0, toughness: p.toughness ?? 0, keywords: parseKeywords(p.oracle), mana: parseMana(p.typeLine, p.oracle) };
+// タップだけで出る (追加のコストが無い) マナ能力を、1マナずつの色の集合にする。自動の支払いで使う
+export function simpleMana(abilities: Ability[]): string[] {
+  const units: string[] = [];
+  for (const a of abilities) {
+    if (a.kind !== "mana" || !a.cost?.tap || a.cost.mana || a.cost.life || a.cost.sacrificeSelf) continue;
+    for (const e of a.effects) if (e.op === "addMana") for (let i = 0; i < (e.n ?? 1); i++) units.push(e.options);
+  }
+  return units;
+}
+
+// abilities が無いときは、効果テキストから読めるマナ能力だけを持つ
+export function makeDef(p: { key: string; name: string; typeLine: string; manaCost: string; cmc: number; power?: number; toughness?: number; oracle: string; abilities?: Ability[] }): CardDef {
+  const abilities: Ability[] =
+    p.abilities ??
+    (parseMana(p.typeLine, p.oracle).length
+      ? [{ kind: "mana", cost: { tap: true }, effects: parseMana(p.typeLine, p.oracle).map((options) => ({ op: "addMana" as const, options })) }]
+      : []);
+  return { ...p, power: p.power ?? 0, toughness: p.toughness ?? 0, keywords: parseKeywords(p.oracle), abilities, mana: simpleMana(abilities) };
 }
 
 export const isLand = (d: CardDef) => /\bLand\b/.test(d.typeLine);
@@ -171,6 +233,20 @@ export function planPayment(cost: Cost, sources: Perm[]): number[] | null {
   return dfs(0, new Set());
 }
 
+// マナプールで払える分を先に使う。残りのコストを返す (プールは破壊的に減る)
+export function spendPool(cost: Cost, pool: string[]): Cost {
+  const rest: Cost = { generic: cost.generic, colored: [] };
+  for (const opts of cost.colored) {
+    const i = pool.findIndex((m) => opts.includes(m));
+    if (i >= 0) pool.splice(i, 1);
+    else rest.colored.push(opts);
+  }
+  const use = Math.min(rest.generic, pool.length);
+  pool.splice(0, use);
+  rest.generic -= use;
+  return rest;
+}
+
 // ---- ゲーム ----
 
 function rng(seed: number) {
@@ -183,25 +259,28 @@ function rng(seed: number) {
 }
 
 const MAIN: Phase[] = ["main1", "main2"];
+const usable = (p: Perm) => !p.tapped && !(isCreature(p.def) && p.sick && !hasKw(p.def, "haste"));
 
 export class Game {
   s: State;
   history: Step[] = [];
   private nextUid = 1;
+  private rand: () => number;
   onLog?: (line: string) => void;
   onChange?: () => void; // 盤面が変わったとき (画面の更新用)
 
-  // decks[i] = i 番目のプレイヤーのデッキ。先攻は 0 番。seed を同じにすると、シャッフルが同じになる
-  constructor(decks: CardDef[][], public seed: number, private controllers: Controller[]) {
-    const rand = rng(seed);
+  // decks[i] = i 番目のプレイヤーのデッキ。先攻は 0 番。seed を同じにすると、シャッフルもコイン投げも同じになる。
+  // manual[i] = true のプレイヤーは、マナを手でタップして出す (false は、唱えるとき自動でタップする)
+  constructor(decks: CardDef[][], public seed: number, private controllers: Controller[], private manual: boolean[] = [false, false]) {
+    this.rand = rng(seed);
     this.s = { players: [], active: 0, turn: 0, phase: "upkeep", stack: [], landDropped: false, log: [] };
     decks.forEach((deck, owner) => {
       const library = deck.map((def) => ({ uid: this.nextUid++, def, owner }));
       for (let i = library.length - 1; i > 0; i--) {
-        const j = Math.floor(rand() * (i + 1));
+        const j = Math.floor(this.rand() * (i + 1));
         [library[i], library[j]] = [library[j], library[i]];
       }
-      this.s.players.push({ life: 20, library, hand: library.splice(0, 7), field: [], graveyard: [], drewEmpty: false });
+      this.s.players.push({ life: 20, library, hand: library.splice(0, 7), field: [], graveyard: [], exile: [], pool: [], drewEmpty: false });
     });
   }
 
@@ -212,7 +291,7 @@ export class Game {
 
   private other = (p: number) => 1 - p;
   card(uid: number): Card | undefined {
-    for (const p of this.s.players) for (const c of [...p.hand, ...p.field, ...p.graveyard, ...p.library]) if (c.uid === uid) return c;
+    for (const p of this.s.players) for (const c of [...p.hand, ...p.field, ...p.graveyard, ...p.exile, ...p.library]) if (c.uid === uid) return c;
     return undefined;
   }
   perm(uid: number): Perm | undefined {
@@ -237,9 +316,11 @@ export class Game {
       s.phase = phase;
       this.onChange?.();
       await this.priorityRound();
+      for (const pl of s.players) pl.pool = []; // マナはステップの終わりに消える
       return s.winner === undefined;
     };
     s.phase = "upkeep";
+    this.fire("upkeep");
     if (!(await step("upkeep"))) return;
     s.phase = "draw";
     if (s.turn > 1) this.draw(s.active); // 先攻の最初のターンは引かない
@@ -263,7 +344,7 @@ export class Game {
   private draw(p: number) {
     const pl = this.s.players[p];
     const c = pl.library.shift();
-    if (!c) return void (pl.drewEmpty = true, this.log(`プレイヤー${p + 1}: 山札が無い`), this.checkState());
+    if (!c) return void ((pl.drewEmpty = true), this.log(`プレイヤー${p + 1}: 山札が無い`), this.checkState());
     pl.hand.push(c);
     this.log(`プレイヤー${p + 1}: ドロー (${p === 0 ? c.def.name : "?"})`);
   }
@@ -282,6 +363,13 @@ export class Game {
 
   // ---- 優先権 ----
 
+  // コストを払えるなら、プールで足りない分のためにタップするマナ源の uid (空 = プールだけで払える)。払えなければ null
+  private payment(p: number, manaCost: string): number[] | null {
+    const pl = this.s.players[p];
+    const rest = spendPool(parseCost(manaCost), [...pl.pool]);
+    return planPayment(rest, pl.field.filter((x) => usable(x) && x.def.mana.length));
+  }
+
   actions(p: number): PriorityAction[] {
     const s = this.s;
     const pl = s.players[p];
@@ -297,18 +385,45 @@ export class Game {
       }
       const instantSpeed = /\bInstant\b/.test(c.def.typeLine) || hasKw(c.def, "flash");
       if (!sorcery && !instantSpeed) continue;
-      const sources = pl.field.filter((x) => !x.tapped && x.def.mana.length && !(isCreature(x.def) && x.sick && !hasKw(x.def, "haste")));
-      const tap = planPayment(parseCost(c.def.manaCost), sources);
+      const tap = this.payment(p, c.def.manaCost);
       if (tap) acts.push({ kind: "cast", uid: c.uid, tap });
+    }
+    for (const perm of pl.field) {
+      perm.def.abilities.forEach((ab, index) => {
+        if (ab.kind !== "mana" && ab.kind !== "activated") return;
+        const cost = ab.cost ?? {};
+        const simple = ab.kind === "mana" && cost.tap && !cost.mana && !cost.life && !cost.sacrificeSelf;
+        if (cost.tap && !usable(perm)) return;
+        if (simple) {
+          // 手動のプレイヤーだけ、タップしてマナを出せる。単独のマナで色を選べるものは、色ごとに行動を作る
+          if (!this.manual[p]) return;
+          const units = ab.effects.filter((e): e is Extract<Op, { op: "addMana" }> => e.op === "addMana");
+          if (units.length === 1 && (units[0].n ?? 1) === 1 && units[0].options.length > 1) for (const color of units[0].options) acts.push({ kind: "tapMana", uid: perm.uid, color });
+          else acts.push({ kind: "tapMana", uid: perm.uid });
+          return;
+        }
+        if (cost.life !== undefined && pl.life <= cost.life) return;
+        const tapped = cost.tap ? [perm.uid] : [];
+        const others = cost.mana ? this.payment(p, cost.mana) : [];
+        if (!others) return;
+        acts.push({ kind: "activate", uid: perm.uid, index, tap: [...tapped, ...others.filter((u) => u !== perm.uid)] });
+      });
     }
     acts.push({ kind: "pass" });
     return acts;
   }
 
-  private async ask<T>(d: Decision): Promise<T> {
+  private async ask<T extends Answer>(d: Decision): Promise<T> {
     const answer = await this.controllers[d.player](this, d);
     this.history.push({ player: d.player, type: d.type, answer });
     return answer as T;
+  }
+
+  // 選択肢が1つなら聞かずにそれを選ぶ
+  private async choose(player: number, prompt: string, options: string[]): Promise<number> {
+    if (options.length <= 1) return 0;
+    const n = await this.ask<number>({ type: "choice", player, prompt, options });
+    return Number.isInteger(n) && n >= 0 && n < options.length ? n : 0;
   }
 
   private async priorityRound() {
@@ -317,55 +432,230 @@ export class Game {
     let passes = 0;
     while (s.winner === undefined) {
       const actions = this.actions(p);
-      // 選べるのがパスだけなら聞かない (呼び出しの節約)
-      const a = actions.length === 1 ? actions[0] : await this.ask<PriorityAction>({ type: "priority", player: p, actions });
+      // 行動がパスと「マナのタップ」だけなら聞かない (呼び出しの節約)
+      const meaningful = actions.filter((x) => x.kind !== "pass" && x.kind !== "tapMana");
+      const a = meaningful.length === 0 ? ({ kind: "pass" } as PriorityAction) : await this.ask<PriorityAction>({ type: "priority", player: p, actions });
       if (a.kind === "pass") {
         if (++passes >= 2) {
           if (!s.stack.length) return;
-          this.resolveTop();
+          await this.resolveTop();
           passes = 0;
           p = s.active;
         } else p = this.other(p);
         continue;
       }
       passes = 0;
-      const chosen = actions.find((x) => x.kind === a.kind && "uid" in x && "uid" in a && x.uid === a.uid);
-      if (!chosen) throw new Error(`選べない行動: ${JSON.stringify(a)}`);
-      this.perform(p, chosen);
+      const key = JSON.stringify(a);
+      const chosen = actions.find((x) => JSON.stringify(x) === key);
+      if (!chosen) throw new Error(`選べない行動: ${key}`);
+      await this.perform(p, chosen);
     }
   }
 
-  private perform(p: number, a: PriorityAction) {
+  // 場に出す (出たときの誘発を拾う)
+  private enter(card: Card, controller: number) {
+    const perm: Perm = { ...card, controller, tapped: false, sick: true, damage: 0, attacking: false };
+    this.s.players[controller].field.push(perm);
+    this.fire("etb", perm);
+  }
+
+  private payCost(p: number, tap: number[], manaCost?: string) {
+    const pl = this.s.players[p];
+    if (manaCost) spendPool(parseCost(manaCost), pl.pool);
+    for (const uid of tap) this.perm(uid)!.tapped = true;
+  }
+
+  private async perform(p: number, a: PriorityAction) {
     const s = this.s;
     const pl = s.players[p];
     if (a.kind === "pass") return;
-    const i = pl.hand.findIndex((c) => c.uid === a.uid);
-    const [card] = pl.hand.splice(i, 1);
-    if (a.kind === "land") {
-      pl.field.push({ ...card, controller: p, tapped: false, sick: true, damage: 0, attacking: false });
-      s.landDropped = true;
-      this.log(`プレイヤー${p + 1}: 土地を出す ${card.def.name}`);
+    if (a.kind === "tapMana") {
+      const perm = this.perm(a.uid)!;
+      perm.tapped = true;
+      const units = perm.def.abilities.find((x) => x.kind === "mana" && x.cost?.tap && !x.cost.mana && !x.cost.life && !x.cost.sacrificeSelf)!.effects;
+      for (const e of units) if (e.op === "addMana") for (let i = 0; i < (e.n ?? 1); i++) pl.pool.push(a.color ?? e.options[0]);
+      this.log(`プレイヤー${p + 1}: ${perm.def.name} をタップ (マナ ${pl.pool.join("")})`);
+    } else if (a.kind === "activate") {
+      const perm = this.perm(a.uid)!;
+      const ab = perm.def.abilities[a.index];
+      this.payCost(p, a.tap, ab.cost?.mana);
+      if (ab.cost?.life) pl.life -= ab.cost.life;
+      if (ab.cost?.sacrificeSelf) this.sacrifice(perm);
+      this.log(`プレイヤー${p + 1}: 起動 ${perm.def.name}${ab.text ? ` (${ab.text})` : ""}`);
+      if (ab.kind === "mana") await this.runEffects(ab.effects, { controller: p, source: perm.def }); // マナ能力はスタックを使わない
+      else s.stack.push({ def: perm.def, controller: p, ability: ab });
+      this.checkState();
     } else {
-      for (const uid of a.tap) this.perm(uid)!.tapped = true;
-      s.stack.push({ card, controller: p });
-      this.log(`プレイヤー${p + 1}: 唱える ${card.def.name} ${card.def.manaCost}`);
+      const i = pl.hand.findIndex((c) => c.uid === a.uid);
+      const [card] = pl.hand.splice(i, 1);
+      if (a.kind === "land") {
+        this.enter(card, p);
+        s.landDropped = true;
+        this.log(`プレイヤー${p + 1}: 土地を出す ${card.def.name}`);
+      } else {
+        this.payCost(p, a.tap, card.def.manaCost);
+        s.stack.push({ def: card.def, controller: p, card });
+        this.log(`プレイヤー${p + 1}: 唱える ${card.def.name} ${card.def.manaCost}`);
+      }
     }
     this.onChange?.();
   }
 
-  private resolveTop() {
+  private sacrifice(perm: Perm) {
+    const pl = this.s.players[perm.controller];
+    pl.field.splice(pl.field.indexOf(perm), 1);
+    this.s.players[perm.owner].graveyard.push({ uid: perm.uid, def: perm.def, owner: perm.owner });
+  }
+
+  private async resolveTop() {
     const s = this.s;
     const item = s.stack.pop()!;
-    const pl = s.players[item.controller];
-    if (isPermanent(item.card.def)) {
-      pl.field.push({ ...item.card, controller: item.controller, tapped: false, sick: true, damage: 0, attacking: false });
-      this.log(`${item.card.def.name} が場に出る`);
+    if (item.ability) {
+      if (item.ability.optional && (await this.choose(item.controller, `${item.def.name}: ${item.ability.text ?? "能力"} を使う?`, ["使う", "使わない"])) === 1) return;
+      this.log(`${item.def.name} の能力を解決`);
+      await this.runEffects(item.ability.effects, { controller: item.controller, source: item.def });
     } else {
-      s.players[item.card.owner].graveyard.push(item.card);
-      this.log(`${item.card.def.name} を解決 (効果は未実装)`);
+      const card = item.card!;
+      if (isPermanent(card.def)) {
+        this.enter(card, item.controller);
+        this.log(`${card.def.name} が場に出る`);
+      } else {
+        const spell = card.def.abilities.filter((a) => a.kind === "spell");
+        if (!spell.length) this.log(`${card.def.name} を解決 (効果は未実装)`);
+        else {
+          this.log(`${card.def.name} を解決`);
+          for (const a of spell) await this.runEffects(a.effects, { controller: item.controller, source: card.def });
+        }
+        s.players[card.owner].graveyard.push(card);
+      }
     }
     this.checkState();
     this.onChange?.();
+  }
+
+  // ---- 誘発 ----
+
+  // event の誘発型能力をスタックに積む。upkeep = ターンプレイヤーのアップキープ。etb / dies = subject 自身
+  private fire(event: "upkeep" | "etb" | "dies", subject?: Perm) {
+    const s = this.s;
+    const sources = event === "upkeep" ? s.players.flatMap((pl) => pl.field) : subject ? [subject] : [];
+    // ターンプレイヤーの能力を先に積む (後に解決される)
+    sources.sort((a, b) => Number(b.controller === s.active) - Number(a.controller === s.active));
+    for (const src of sources) {
+      for (const ab of src.def.abilities) {
+        if (ab.kind !== "triggered" || ab.trigger?.event !== event) continue;
+        if (event === "upkeep") {
+          const w = ab.trigger.whose ?? "you";
+          if (w === "you" && src.controller !== s.active) continue;
+          if (w === "opponent" && src.controller === s.active) continue;
+        }
+        s.stack.push({ def: src.def, controller: src.controller, ability: ab });
+        this.log(`誘発: ${src.def.name}${ab.text ? ` (${ab.text})` : ""}`);
+      }
+    }
+  }
+
+  // ---- 効果の実行 ----
+
+  private candidates(spec: TargetSpec, controller: number): Perm[] {
+    return this.s.players
+      .flatMap((pl) => pl.field)
+      .filter((p) => {
+        const c = spec.controller ?? "any";
+        if (c === "you" && p.controller !== controller) return false;
+        if (c === "opponent" && p.controller === controller) return false;
+        const types = spec.types ?? ["permanent"];
+        const ok = types.some((t) => (t === "permanent" ? true : t === "land" ? isLand(p.def) : t === "creature" ? isCreature(p.def) : new RegExp(`\\b${t}\\b`, "i").test(p.def.typeLine)));
+        if (!ok) return false;
+        if (spec.nonbasic && /\bBasic\b/.test(p.def.typeLine)) return false;
+        return true;
+      });
+  }
+
+  private async pickPerm(spec: TargetSpec, controller: number, what: string): Promise<Perm | undefined> {
+    const list = this.candidates(spec, controller);
+    if (!list.length) return void this.log(`${what}: 対象が無い`);
+    const i = await this.choose(controller, `${what}: 対象を選ぶ`, list.map((p) => `${p.def.name} (プレイヤー${p.controller + 1})`));
+    return list[i];
+  }
+
+  private who(w: Who | undefined, controller: number) {
+    return w === "opponent" ? this.other(controller) : controller;
+  }
+
+  private async runEffects(effects: Op[], ctx: { controller: number; source: CardDef }): Promise<void> {
+    const s = this.s;
+    const me = ctx.controller;
+    for (const e of effects) {
+      if (s.winner !== undefined) return;
+      switch (e.op) {
+        case "addMana": {
+          const n = e.n ?? 1;
+          const color = e.options[await this.choose(me, "マナの色を選ぶ", e.options.split(""))];
+          for (let i = 0; i < n; i++) s.players[me].pool.push(color);
+          this.log(`プレイヤー${me + 1}: マナ ${color.repeat(n)} (プール ${s.players[me].pool.join("")})`);
+          break;
+        }
+        case "draw":
+          for (let i = 0; i < e.n; i++) this.draw(this.who(e.who, me));
+          break;
+        case "gainLife":
+        case "loseLife": {
+          const p = this.who(e.who, me);
+          s.players[p].life += e.op === "gainLife" ? e.n : -e.n;
+          this.log(`プレイヤー${p + 1}: ライフ ${e.op === "gainLife" ? "+" : "-"}${e.n} (${s.players[p].life})`);
+          break;
+        }
+        case "damage": {
+          if (e.to === "you" || e.to === "opponent") {
+            const p = this.who(e.to, me);
+            s.players[p].life -= e.n;
+            this.log(`${ctx.source.name} が プレイヤー${p + 1} に ${e.n} 点 (${s.players[p].life})`);
+          } else {
+            const perms = this.candidates({ types: ["creature"] }, me);
+            const opts = [...perms.map((p) => `${p.def.name} (プレイヤー${p.controller + 1})`), ...(e.to === "any" ? ["プレイヤー1", "プレイヤー2"] : [])];
+            if (!opts.length) {
+              this.log(`${ctx.source.name}: 対象が無い`);
+              break;
+            }
+            const i = await this.choose(me, `${ctx.source.name}: ${e.n} 点のダメージの対象を選ぶ`, opts);
+            if (i < perms.length) {
+              perms[i].damage += e.n;
+              this.log(`${ctx.source.name} が ${perms[i].def.name} に ${e.n} 点`);
+            } else {
+              const p = i - perms.length;
+              s.players[p].life -= e.n;
+              this.log(`${ctx.source.name} が プレイヤー${p + 1} に ${e.n} 点 (${s.players[p].life})`);
+            }
+          }
+          break;
+        }
+        case "flip": {
+          const win = this.rand() < 0.5;
+          this.log(`コイン投げ: ${win ? "勝ち" : "負け"}`);
+          await this.runEffects((win ? e.win : e.lose) ?? [], ctx);
+          break;
+        }
+        case "destroy":
+        case "exile": {
+          const t = await this.pickPerm(e.target, me, `${ctx.source.name}`);
+          if (!t) break;
+          const pl = s.players[t.controller];
+          pl.field.splice(pl.field.indexOf(t), 1);
+          const card: Card = { uid: t.uid, def: t.def, owner: t.owner };
+          if (e.op === "destroy") {
+            s.players[t.owner].graveyard.push(card);
+            this.fire("dies", t);
+          } else s.players[t.owner].exile.push(card);
+          this.log(`${t.def.name} を${e.op === "destroy" ? "破壊" : "追放"}`);
+          break;
+        }
+        case "unsupported":
+          this.log(`未対応の効果: ${e.text}`);
+          break;
+      }
+      this.checkState();
+    }
   }
 
   // ---- 戦闘 ----
@@ -435,6 +725,7 @@ export class Game {
           pl.field.splice(pl.field.indexOf(p), 1);
           s.players[p.owner].graveyard.push({ uid: p.uid, def: p.def, owner: p.owner });
           this.log(`${p.def.name} が死ぬ (プレイヤー${i + 1})`);
+          this.fire("dies", p);
         }
       }
     }

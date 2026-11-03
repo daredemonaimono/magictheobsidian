@@ -7,3 +7,8 @@ export async function requestUrl(o: { url: string; method?: string; body?: strin
   });
   return { status: res.status, json: await res.json() };
 }
+
+// 純粋な関数のテストで、型や名前だけ必要な分 (実際には使わない)
+export class TFile {}
+export const normalizePath = (p: string) => p;
+export const parseYaml = (s: string) => s;

@@ -1,4 +1,5 @@
 import { App, ItemView, Modal, Notice, Setting, TFile, ViewStateResult, WorkspaceLeaf, moment } from "obsidian";
+import { compileCard, needsRule, RULE_DIR } from "./cardrules";
 import { CARD_DIR, cardImage, cardInfo, cardText, oracleEnglish, printingImage, printingOf, readPrintings, refetchCard, setLocalText, updateLegality } from "./cards";
 import { CREATABLE, FORMATS, formatOf, judge } from "./rules";
 import { loadCollection } from "./collection";
@@ -174,6 +175,43 @@ export class DeckView extends ItemView {
       infoBtn.disabled = false;
       void this.renderStack();
       void this.renderFooter();
+    };
+    // 対戦用の「カードの処理の記録」を、まだ無いカードだけ AI (Sonnet 5.5) に作らせる。初回だけで、あとは対戦エンジンが機械的に実行する
+    const ruleBtn = this.el.tabs.createEl("button", { text: "ルール化" });
+    ruleBtn.onclick = async () => {
+      const apiKey = this.app.secretStorage.getSecret(this.settings.botKey);
+      if (!apiKey) return void new Notice("設定で Claude の API キーを選ぶ");
+      ruleBtn.disabled = true;
+      const notice = new Notice("処理の記録を作成中…", 0);
+      try {
+        const keys = [...new Set((["commander", "main", "side", "token"] as Board[]).flatMap((b) => [...this.deck[b].keys()]))];
+        const todo: string[] = [];
+        for (const k of keys) {
+          const info = cardInfo(this.app, k);
+          if (!info || this.app.vault.getAbstractFileByPath(`${RULE_DIR}/${k}.md`)) continue;
+          if (needsRule(info.typeLine, await oracleEnglish(this.app, k))) todo.push(k);
+        }
+        let done = 0;
+        let cost = 0;
+        const partial: string[] = [];
+        const failed: string[] = [];
+        for (const k of todo) {
+          notice.setMessage(`処理の記録を作成中… ${++done}/${todo.length} (${k})`);
+          const r = await compileCard(this.app, apiKey, k);
+          cost += r.cost;
+          if (!r.ok) failed.push(`${k}: ${r.error}`);
+          else if (r.unsupported.length) partial.push(k);
+        }
+        notice.hide();
+        new Notice(
+          `処理の記録: ${todo.length - failed.length} 枚を作成 ($${cost.toFixed(3)})${partial.length ? ` · 一部未対応 ${partial.length} 枚` : ""}${failed.length ? ` · 失敗 ${failed.length} 枚 (${failed[0]})` : ""}`,
+          8000,
+        );
+      } catch (e) {
+        notice.hide();
+        new Notice(`処理の記録の作成に失敗: ${(e as Error).message}`);
+      }
+      ruleBtn.disabled = false;
     };
     void this.renderHeader();
     void this.renderFooter();

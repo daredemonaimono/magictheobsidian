@@ -1,8 +1,8 @@
 import assert from "node:assert";
-import { Block, CardDef, Controller, Game, Perm, PriorityAction, makeDef, parseCost, parseKeywords, parseMana, planPayment } from "../src/engine";
+import { Ability, Block, CardDef, Controller, Decision, Game, Perm, PriorityAction, makeDef, parseCost, parseKeywords, parseMana, planPayment } from "../src/engine";
 
-const def = (name: string, typeLine: string, manaCost: string, power = 0, toughness = 0, oracle = ""): CardDef =>
-  makeDef({ key: name, name, typeLine, manaCost, cmc: (manaCost.match(/\{[^}]+\}/g) ?? []).length, power, toughness, oracle });
+const def = (name: string, typeLine: string, manaCost: string, power = 0, toughness = 0, oracle = "", abilities?: Ability[]): CardDef =>
+  makeDef({ key: name, name, typeLine, manaCost, cmc: (manaCost.match(/\{[^}]+\}/g) ?? []).length, power, toughness, oracle, abilities });
 const mountain = def("Mountain", "Basic Land — Mountain", "");
 const bear = def("Bear", "Creature — Bear", "{1}{R}", 2, 2);
 
@@ -96,4 +96,139 @@ const blockAll: Controller = async (_g, d) => {
   await g.play(1);
   assert.equal(g.s.players[1].life, 18, "飛行は地上のクリーチャーにブロックされない");
 }
+
+// ---- マナプールと手動のタップ ----
+const mkPerm = (d: CardDef, uid: number, owner: number): Perm => ({ uid, def: d, owner, controller: owner, tapped: false, sick: false, damage: 0, attacking: false });
+const world = (handA: CardDef[], fieldA: CardDef[], controllers: Controller[], manual = [true, false]) => {
+  const g = new Game([pad, pad], 3, controllers, manual);
+  let uid = 2000;
+  g.s.players[0].hand = handA.map((d) => ({ uid: uid++, def: d, owner: 0 }));
+  g.s.players[0].field = fieldA.map((d) => mkPerm(d, uid++, 0));
+  g.s.players[1].hand = [];
+  return g;
+};
+const swamp = def("Swamp", "Basic Land — Swamp", "");
+const pass: PriorityAction = { kind: "pass" };
+{
+  // 手動: 土地をタップ → マナプール → 唱える (プールだけで払える)
+  const cub = def("Cub", "Creature — Bear", "{R}", 2, 2);
+  const seen: string[] = [];
+  const me: Controller = async (_g, d) => {
+    if (d.type !== "priority") return d.type === "attackers" ? [] : ([] as Block[]);
+    const t = d.actions.find((a) => a.kind === "tapMana");
+    const cast = d.actions.find((a) => a.kind === "cast" && a.tap.length === 0);
+    if (cast) {
+      seen.push("cast tap=0");
+      return cast;
+    }
+    return t ?? pass;
+  };
+  const g = world([cub], [mountain], [me, greedy]);
+  await g.play(1);
+  assert.deepEqual(seen, ["cast tap=0"].slice(0, seen.length));
+  assert.ok(g.s.players[0].field.some((p) => p.def.name === "Cub"), "タップしたマナで唱えられた");
+  assert.deepEqual(g.s.players[0].pool, [], "プールはステップの終わりに空になる");
+}
+{
+  // 手動のプレイヤーには、プールが空でも「タップすれば唱えられる」カードが出る (tap が空でない)
+  const cub = def("Cub", "Creature — Bear", "{R}", 2, 2);
+  let first: PriorityAction | undefined;
+  const me: Controller = async (_g, d) => {
+    if (d.type === "priority") first ??= d.actions.find((a) => a.kind === "cast");
+    return d.type === "priority" ? pass : d.type === "attackers" ? [] : ([] as Block[]);
+  };
+  const g = world([cub], [mountain], [me, greedy]);
+  g.s.phase = "main1";
+  const acts = g.actions(0);
+  assert.ok(acts.some((a) => a.kind === "tapMana"));
+  assert.equal((acts.find((a) => a.kind === "cast") as { tap: number[] }).tap.length, 1);
+  void first;
+}
+{
+  // Dark Ritual (呪文でマナを出す) → プールで3マナの呪文を唱える。Black Lotus (生け贄 + 色の選択)
+  const ritual = def("Dark Ritual", "Instant", "{B}", 0, 0, "", [{ kind: "spell", effects: [{ op: "addMana", options: "B", n: 3 }] }]);
+  const zombie = def("Zombie", "Creature — Zombie", "{B}{B}{B}", 3, 3);
+  const lotus = def("Lotus", "Artifact", "{0}", 0, 0, "", [{ kind: "mana", cost: { tap: true, sacrificeSelf: true }, effects: [{ op: "addMana", options: "WUBRG", n: 3 }] }]);
+  const me: Controller = async (g, d) => {
+    if (d.type === "choice") return d.options.indexOf("B");
+    if (d.type !== "priority") return d.type === "attackers" ? [] : ([] as Block[]);
+    if (g.s.phase !== "main1") return pass;
+    const cast = d.actions.find((a) => a.kind === "cast" && (a as { uid: number }).uid && g.card(a.uid)?.def.name === "Zombie" && a.tap.length === 0);
+    if (cast) return cast;
+    const lot = d.actions.find((a) => a.kind === "activate");
+    if (lot) return lot;
+    const rit = d.actions.find((a) => a.kind === "cast" && g.card(a.uid)?.def.name === "Dark Ritual");
+    const tap = d.actions.find((a) => a.kind === "tapMana");
+    if (g.s.stack.length === 0 && rit && g.s.players[0].pool.length > 0 && !g.s.players[0].field.some((p) => p.def.name === "Zombie")) return rit;
+    return tap ?? pass;
+  };
+  const g = world([ritual, zombie], [swamp], [me, greedy]);
+  g.s.phase = "main1";
+  await g.play(1);
+  assert.ok(g.s.players[0].field.some((p) => p.def.name === "Zombie"), "Swamp → Dark Ritual → BBB で Zombie");
+  const g2 = world([zombie], [lotus], [me, greedy]);
+  await g2.play(1);
+  assert.ok(g2.s.players[0].field.some((p) => p.def.name === "Zombie"), "Black Lotus を生け贄にして BBB");
+  assert.ok(!g2.s.players[0].field.some((p) => p.def.name === "Lotus"), "Lotus は墓地へ");
+}
+
+// ---- 誘発 (アップキープのコイン投げ) と、出たときの誘発 ----
+{
+  const crypt2 = def("Crypt", "Artifact", "{0}", 0, 0, "", [
+    { kind: "triggered", trigger: { event: "upkeep", whose: "you" }, effects: [{ op: "flip", lose: [{ op: "damage", n: 3, to: "you" }] }] },
+  ]);
+  const run = async () => {
+    const g = world([], [crypt2], [greedy, greedy], [false, false]);
+    await g.play(8);
+    return g;
+  };
+  const g = await run();
+  const flips = g.s.log.filter((l) => l.startsWith("コイン投げ")).length;
+  assert.equal(flips, 4, "自分のアップキープ (ターン 1,3,5,7) ごとに1回");
+  const lost = g.s.log.filter((l) => l === "コイン投げ: 負け").length;
+  assert.equal(g.s.players[0].life, 20 - 3 * lost, "負けた回数だけ3点");
+  assert.deepEqual((await run()).s.log, g.s.log, "同じ seed なら、コイン投げも同じ");
+}
+{
+  const owl = def("Owl", "Creature — Bird", "{R}", 1, 1, "", [{ kind: "triggered", trigger: { event: "etb" }, effects: [{ op: "draw", n: 2 }] }]);
+  const g = world([mountain, owl], [], [greedy, greedy], [false, false]);
+  const before = g.s.players[0].library.length;
+  await g.play(1);
+  assert.equal(g.s.players[0].library.length, before - 2, "出たときに2枚引く");
+}
+// ---- 対象を選ぶ効果 ----
+{
+  const bolt = def("Bolt", "Instant", "{R}", 0, 0, "", [{ kind: "spell", effects: [{ op: "destroy", target: { controller: "opponent", types: ["creature"] } }] }]);
+  const wolf = def("Wolf", "Creature — Wolf", "{G}", 2, 2);
+  const asked: Decision[] = [];
+  const me: Controller = async (_g, d) => {
+    if (d.type === "choice") return asked.push(d), 0;
+    if (d.type === "priority") return d.actions.find((a) => a.kind === "land") ?? d.actions.find((a) => a.kind === "cast") ?? pass;
+    return d.type === "attackers" ? [] : ([] as Block[]);
+  };
+  const g = world([mountain, bolt], [], [me, greedy], [false, false]);
+  g.s.players[1].field = [mkPerm(wolf, 5000, 1)];
+  await g.play(1);
+  assert.equal(g.s.players[1].field.length, 0, "対象が1つなら聞かずに破壊する");
+  assert.equal(asked.length, 0);
+  assert.ok(g.s.players[1].graveyard.some((c) => c.def.name === "Wolf"));
+}
 console.log("engine ok");
+
+// ---- 処理の記録の読み取り ----
+{
+  const { sanitizeAbilities, needsRule } = await import("../src/cardrules");
+  const abs = sanitizeAbilities([
+    { kind: "triggered", trigger: { event: "upkeep" }, effects: [{ op: "flip", lose: [{ op: "damage", n: 3, to: "you" }] }] },
+    { kind: "spell", effects: [{ op: "teleport", text: "x" }, { op: "addMana", options: "Z" }] },
+    { kind: "bogus", effects: [] },
+    { kind: "triggered", trigger: { event: "attacks" }, effects: [] },
+  ]);
+  assert.equal(abs.length, 2, "知らない種類・きっかけの能力は捨てる");
+  assert.equal(abs[0].trigger?.whose, "you");
+  assert.deepEqual(abs[1].effects.map((e) => e.op), ["unsupported", "unsupported"], "知らない効果は未対応にする");
+  assert.equal(needsRule("Basic Land — Swamp", ""), false);
+  assert.equal(needsRule("Creature — Bird", "Flying\nHaste"), false);
+  assert.equal(needsRule("Creature — Bird", "Flying\nWhen this enters, draw a card."), true);
+  console.log("rules ok");
+}
