@@ -1,5 +1,6 @@
 import { App, TFile } from "obsidian";
-import { cardInfo, oracleEnglish } from "./cards";
+import { cardInfo, oracleEnglish, refetchCard } from "./cards";
+import { Settings } from "./settings";
 import { DECK_DIR, parseDeck } from "./deck";
 import { loadRule, needsRule } from "./cardrules";
 import { CardDef, makeDef } from "./engine";
@@ -32,12 +33,39 @@ export async function loadBattleDeck(app: App, file: TFile): Promise<BattleDeck>
     if (!info) continue;
     const oracle = (await oracleEnglish(app, key)).replace(/\s+\n/g, "\n").trim();
     const rule = await loadRule(app, key);
-    const num = (v?: string) => (v !== undefined && /^-?\d+$/.test(v) ? Number(v) : 0); // "*" などは 0 にする (簡略)
+    const num = (v: string | undefined, fallback: number) => (v !== undefined && /^-?\d+$/.test(v) ? Number(v) : fallback); // "*" や "1+*" は計算できないので、パワー 0・タフネス 1 にする (簡略。出てすぐ死なないように)
     if (/\bCreature\b/.test(info.typeLine) && (info.power === undefined || info.keywords === undefined)) noStats++;
-    const def = makeDef({ key, name: info.name, typeLine: info.typeLine, manaCost: info.manaCost, cmc: info.cmc, power: num(info.power), toughness: num(info.toughness), oracle, abilities: rule?.abilities, keywords: info.keywords });
+    const def = makeDef({ key, name: info.name, typeLine: info.typeLine, manaCost: info.manaCost, cmc: info.cmc, power: num(info.power, 0), toughness: num(info.toughness, 1), oracle, abilities: rule?.abilities, keywords: info.keywords });
     for (let i = 0; i < e.n; i++) defs.push(def);
     lines.push(`${e.n}x ${info.name} ${info.manaCost} [${info.typeLine}${info.power !== undefined ? ` ${info.power}/${info.toughness}` : ""}] ${oracle.replace(/\s+/g, " ").slice(0, 300)}${note(info.typeLine, oracle, rule)}`);
   }
   const m = content.match(/\n## 動き方\n([\s\S]*?)(?=\n## |$)/);
   return { name: file.basename, defs, playbook: m?.[1].trim() ?? "", list: lines.join("\n"), noStats };
+}
+
+// パワー・タフネスやキーワードが無い古いクリーチャーのノート (メインのカードだけ)
+export async function statsMissing(app: App, file: TFile): Promise<string[]> {
+  const deck = parseDeck(await app.vault.cachedRead(file));
+  return [...deck.main.keys()].filter((k) => {
+    const i = cardInfo(app, k);
+    return i && /\bCreature\b/.test(i.typeLine) && (i.power === undefined || i.keywords === undefined);
+  });
+}
+
+// 無いものを Scryfall から取り直す (API キーは要らない)。取れなかったカード名と理由を返す
+export async function fetchStats(app: App, settings: Settings, keys: string[], progress?: (done: number) => void): Promise<string[]> {
+  const failed: string[] = [];
+  let done = 0;
+  for (const k of keys) {
+    try {
+      await refetchCard(app, settings, k);
+    } catch (e) {
+      failed.push(`${k} (${(e as Error).message})`);
+    }
+    progress?.(++done);
+    await new Promise((r) => setTimeout(r, 100)); // Scryfall の負荷配慮
+  }
+  // ノートの更新が、Obsidian の読み取り (metadataCache) に反映されるのを待つ
+  for (let i = 0; i < 15 && keys.some((k) => !failed.some((f) => f.startsWith(`${k} `)) && cardInfo(app, k)?.power === undefined && /\bCreature\b/.test(cardInfo(app, k)?.typeLine ?? "")); i++) await new Promise((r) => setTimeout(r, 200));
+  return failed;
 }

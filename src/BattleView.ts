@@ -1,5 +1,5 @@
 import { ItemView, Notice, WorkspaceLeaf, moment, normalizePath } from "obsidian";
-import { BattleDeck, deckFiles, loadBattleDeck } from "./battledeck";
+import { BattleDeck, deckFiles, fetchStats, loadBattleDeck, statsMissing } from "./battledeck";
 import { botBus } from "./botbus";
 import { cardEl } from "./cardEl";
 import { MODELS, askClaude } from "./claude";
@@ -136,10 +136,17 @@ export class BattleView extends ItemView {
     if (!mine || !theirs) return void new Notice("自分とボットのデッキを選ぶ");
     const key = this.getKey();
     if (!key) return void new Notice("設定で Claude の API キーを選ぶ");
+    // パワー・タフネスが無いクリーチャー (古いノート) は、先に Scryfall から取る。取れないと 0/0 で、出てすぐ死ぬ
+    const missing = [...new Set([...(await statsMissing(this.app, mine)), ...(await statsMissing(this.app, theirs))])];
+    if (missing.length) {
+      const n = new Notice(`クリーチャーのパワー・タフネスを取得中… 0/${missing.length}`, 0);
+      const failed = await fetchStats(this.app, this.settings, missing, (d) => n.setMessage(`クリーチャーのパワー・タフネスを取得中… ${d}/${missing.length}`));
+      n.hide();
+      if (failed.length) new Notice(`パワー・タフネスを取れなかった: ${failed.join(", ")}\nCards/ のノートの power: / toughness: を手で書いても使える`, 12000);
+    }
     const [a, b] = [await loadBattleDeck(this.app, mine), await loadBattleDeck(this.app, theirs)];
     if (a.defs.length < 7 || b.defs.length < 7) return void new Notice("メインのカードが7枚未満のデッキがある");
-    const missing = a.noStats + b.noStats;
-    if (missing) new Notice(`パワー・タフネスが無いクリーチャーが ${missing} 種ある (0/0 として扱う)。デッキ画面の「情報取得」で補える`, 8000);
+    if (a.noStats + b.noStats) new Notice(`パワー・タフネスが無いクリーチャーが ${a.noStats + b.noStats} 種ある (0/0 として扱う)`, 8000);
 
     this.running = true;
     this.stopFlag = false;

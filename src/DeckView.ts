@@ -145,12 +145,14 @@ export class DeckView extends ItemView {
         }
         let fetched = 0;
         let failedCards = 0;
+        const failedNames: string[] = [];
         for (const k of noText) {
           notice.setMessage(`情報を取得中… ${++fetched}/${noText.length}`);
           try {
             await refetchCard(this.app, this.settings, k);
-          } catch {
+          } catch (e) {
             failedCards++;
+            failedNames.push(`${k} (${(e as Error).message})`);
           }
           await new Promise((r) => setTimeout(r, 100)); // Scryfall の負荷配慮
         }
@@ -166,7 +168,7 @@ export class DeckView extends ItemView {
         notice.hide();
         new Notice(
           `情報を取得: 取り直し ${noText.length} 枚・価格 ${ids.size} 件` +
-            (failed || failedCards ? ` (失敗 ${failed + failedCards} 回。取れた分だけ更新した)` : ""),
+            (failed || failedCards ? ` (失敗 ${failed + failedCards} 回。取れた分だけ更新した${failedNames.length ? `。取り直せなかったカード: ${failedNames.slice(0, 3).join(", ")}` : ""})` : ""),
         );
       } catch (e) {
         notice.hide();
