@@ -265,6 +265,7 @@ export class BattleView extends ItemView {
       `あなたの場: ${field(me)}`,
       `相手の場: ${field(1 - me)}`,
       `あなたの墓地: ${names(you.graveyard)} / 相手の墓地: ${names(opp.graveyard)}`,
+      `あなたの追放領域: ${you.exile.length ? you.exile.map((c) => `${c.def.name}${c.time ? ` (待機、時間カウンター${c.time})` : ""}`).join(", ") : "なし"}`,
       `相手の手札: ${opp.hand.length} 枚 / 山札: あなた ${you.library.length}, 相手 ${opp.library.length}`,
       `マナプール: あなた ${you.pool.join("") || "なし"}`,
       `スタック: ${s.stack.length ? s.stack.map((x) => (x.ability ? `${x.def.name}の能力` : x.def.name)).join(" → ") : "空"}`,
@@ -283,7 +284,8 @@ export class BattleView extends ItemView {
       const label = (a: PriorityAction) => {
         if (a.kind === "pass") return "パス";
         if (a.kind === "land") return `土地を出す: ${nameOf(a.uid)}`;
-        if (a.kind === "cast") return `唱える: ${nameOf(a.uid)}`;
+        if (a.kind === "cast") return a.alt !== undefined ? `唱える(代替コスト${g.card(a.uid)?.def.abilities[a.alt]?.text ? `: ${g.card(a.uid)!.def.abilities[a.alt].text}` : ""}): ${nameOf(a.uid)}` : `唱える: ${nameOf(a.uid)}`;
+        if (a.kind === "suspend") return `待機する: ${nameOf(a.uid)}`;
         if (a.kind === "activate") return `起動: ${nameOf(a.uid)}${g.perm(a.uid)?.def.abilities[a.index]?.text ? ` (${g.perm(a.uid)!.def.abilities[a.index].text})` : ""}`;
         return `マナを出す: ${nameOf(a.uid)}`;
       };
@@ -420,13 +422,25 @@ export class BattleView extends ItemView {
     if (me) {
       const hand = box.createDiv("mtg-brow mtg-bhand");
       for (const c of pl.hand) {
-        const acts = p?.d.type === "priority" ? p.d.actions.filter((a) => (a.kind === "land" || a.kind === "cast") && g.card(a.uid)?.def.key === c.def.key) : [];
-        const ready = acts.find((a) => a.kind === "land" || (a.kind === "cast" && a.tap.length === 0)); // プールで払える
-        const soft = acts.find((a) => a.kind === "cast" && a.tap.length > 0); // 土地をタップすれば唱えられる
+        const acts = p?.d.type === "priority" ? p.d.actions.filter((a) => (a.kind === "land" || a.kind === "cast" || a.kind === "suspend") && g.card(a.uid)?.def.key === c.def.key) : [];
+        const normal = acts.find((a) => a.kind === "cast" && a.alt === undefined);
+        const others = acts.filter((a) => a.kind === "suspend" || (a.kind === "cast" && a.alt !== undefined)); // 代替コスト・待機
+        const ready = acts.find((a) => a.kind === "land" || (a.kind === "cast" && a.alt === undefined && a.tap.length === 0)); // プールで払える
+        const soft = acts.find((a) => a.kind === "cast" && a.alt === undefined && a.tap.length > 0); // 土地をタップすれば唱えられる
         const pick = p?.d.type === "choice" ? p.d.hand?.indexOf(c.uid) : undefined; // 手札から選ぶ (捨てる・下に置く)
-        const el = cardEl(this.app, hand, c.def, pick !== undefined && pick >= 0 ? "is-playable" : ready ? "is-playable" : soft ? "is-soft" : "");
+        const variants = [...(ready ? [ready] : []), ...others.filter((a) => a.kind !== "cast" || a.tap.length === 0 || a.alt !== undefined)];
+        const el = cardEl(this.app, hand, c.def, pick !== undefined && pick >= 0 ? "is-playable" : variants.length ? "is-playable" : soft ? "is-soft" : "");
         if (pick !== undefined && pick >= 0) el.onclick = () => this.answer(pick);
-        else if (ready) el.onclick = () => this.answer(ready);
+        else if (others.length) {
+          // 代替コスト・待機があるときは、どの方法で唱えるかを選ばせる
+          el.onclick = () => {
+            this.chooser = variants.map((a) => ({
+              label: a.kind === "suspend" ? `${c.def.name}: 待機する` : a.kind === "cast" && a.alt !== undefined ? `${c.def.name}: 代替コストで唱える${c.def.abilities[a.alt]?.text ? ` (${c.def.abilities[a.alt].text})` : ""}` : a.kind === "land" ? `${c.def.name}: 土地を出す` : `${c.def.name}: 通常のコストで唱える`,
+              action: a,
+            }));
+            this.render();
+          };
+        } else if (ready) el.onclick = () => this.answer(ready);
         else if (soft) el.onclick = () => new Notice("先に土地などをクリックして、マナを出す");
       }
     } else {

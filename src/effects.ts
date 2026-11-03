@@ -3,7 +3,7 @@
 // 古い記録 (v2: {"op": ...}) も読めて、同じ意味の v3 に変換される (AI を呼び直さなくてよい)。
 
 export type Who = "you" | "opponent";
-export type Zone = "library" | "hand" | "battlefield" | "graveyard" | "exile";
+export type Zone = "library" | "hand" | "battlefield" | "graveyard" | "exile" | "stack"; // stack = スタックの呪文 (対象にする・コピーする)。移す先には使えない
 export type CmpOp = "<" | "<=" | "=" | ">=" | ">";
 export interface Cmp {
   op: CmpOp;
@@ -19,6 +19,7 @@ export interface CardSel {
   zone?: Zone; // 既定は戦場
   owner?: Who | "any"; // 戦場ではコントローラー
   types?: string[]; // どれか (creature / land / artifact / enchantment / planeswalker / instant / sorcery / permanent)
+  colors?: string[]; // どれか (W U B R G)。マナコストの色。「黒のカード」など
   subtypes?: string[]; // どれか (Plains / Swamp など)
   supertypes?: string[]; // すべて (legendary / basic / snow)。「伝説の〜」「基本〜」
   not?: string[]; // 除く (land / basic / creature / legendary など)
@@ -31,9 +32,10 @@ export interface CardSel {
   top?: boolean; // 山札の一番上から (選ばない)
 }
 export type PlayerSel = { kind: "player"; who: Who | "each" | "controllerOf"; ref?: string };
+export type SelfSel = { kind: "self" }; // いま解決している呪文・能力そのもの (コピーするときなど)
 export type AnySel = { kind: "any" }; // 「いずれか1つの対象」(クリーチャー・プレインズウォーカー・プレイヤー)
 export type RefSel = { kind: "ref"; ref: string }; // 名前のついた対象・前の命令の結果
-export type Selector = CardSel | PlayerSel | AnySel | RefSel;
+export type Selector = CardSel | PlayerSel | AnySel | RefSel | SelfSel;
 
 export type Cond = { cmp: [Amount, CmpOp, Amount] } | { has: CardSel } | { did: string };
 
@@ -45,7 +47,8 @@ export type Step =
   | { do: "shuffle"; owner: Who }
   | { do: "flip"; win?: Step[]; lose?: Step[] }
   | { do: "if"; cond: Cond; then: Step[]; else?: Step[] }
-  | { do: "may"; steps: Step[]; who?: Who }
+  | { do: "may"; steps: Step[]; who?: Who | PlayerSel; cost?: { mana?: string } } // who = 決める人 (支払うコストがあれば、その人が払う)。cost = してもよいが、払うなら
+  | { do: "copy"; what: Selector; by?: PlayerSel; newTargets?: boolean; color?: string } // スタックの呪文 (self = いま解決している呪文) のコピーを作る。コピーは、先に解決される。by = コピーを持つ人。newTargets = 新しい対象を選んでもよい。color = コピーの色
   | { do: "unsupported"; text: string };
 
 export interface AbilityCost {
@@ -53,6 +56,18 @@ export interface AbilityCost {
   mana?: string; // "{1}{W}"
   life?: number;
   sacrificeSelf?: boolean;
+}
+// 代替コスト: マナコストの代わりに払う。どれか1つ以上を組み合わせられる
+export interface AltCost {
+  sacrifice?: { sel: CardSel; n: number }; // 自分のパーマネントを n 個生け贄にする
+  exileFromHand?: { sel: CardSel; n: number }; // 自分の手札から n 枚を追放する
+  life?: number;
+  mana?: string; // 別のマナコスト
+  unless?: "yourTurn" | "notYourTurn"; // 条件: 自分のターンでないときだけ、など
+}
+export interface Suspend {
+  n: number; // 時間カウンターの数
+  cost: string; // 待機コスト ("{R}")
 }
 export interface TargetDef {
   id: string;
@@ -62,8 +77,10 @@ export interface TargetDef {
 export type Restriction = { type: "cantActivate"; what: CardSel }; // what に合うパーマネントの、起動型能力・マナ能力は、起動できない
 
 export interface Ability {
-  kind: "mana" | "activated" | "triggered" | "spell" | "static";
+  kind: "mana" | "activated" | "triggered" | "spell" | "static" | "altCost" | "suspend";
   restrictions?: Restriction[]; // static のとき
+  alt?: AltCost; // altCost のとき (その呪文を、このコストで唱えられる)
+  suspend?: Suspend; // suspend のとき (手札から待機できる)
   cost?: AbilityCost;
   trigger?: { event: "upkeep" | "etb" | "dies"; whose?: Who | "each" };
   optional?: boolean; // 「〜してもよい」
@@ -72,13 +89,15 @@ export interface Ability {
   text?: string; // 表示用
 }
 
-export const STEP_VERBS = ["move", "change", "addMana", "shuffle", "flip", "if", "may", "unsupported"] as const; // 命令の種類 (型のカタログと、AI への指示書が、これと合っているか、テストで確かめる)
+export const STEP_VERBS = ["move", "change", "addMana", "shuffle", "flip", "if", "may", "copy", "unsupported"] as const; // 命令の種類 (型のカタログと、AI への指示書が、これと合っているか、テストで確かめる)
 
 // ---- 検証 (知らない形は「未対応」にして、能力の残りは動かす) ----
 
 const TYPES = ["creature", "land", "artifact", "enchantment", "planeswalker", "instant", "sorcery", "permanent", "card"];
-const ZONES: Zone[] = ["library", "hand", "battlefield", "graveyard", "exile"];
-const KINDS = ["mana", "activated", "triggered", "spell", "static"];
+const ZONES: Zone[] = ["library", "hand", "battlefield", "graveyard", "exile", "stack"];
+const DEST_ZONES: Zone[] = ["library", "hand", "battlefield", "graveyard", "exile"]; // 移す先
+const COLORS = ["W", "U", "B", "R", "G"];
+const KINDS = ["mana", "activated", "triggered", "spell", "static", "altCost", "suspend"];
 const EVENTS = ["upkeep", "etb", "dies"];
 const NOTS = ["land", "basic", "creature", "legendary", "artifact", "enchantment"];
 const num = (x: unknown, d = 1) => (typeof x === "number" && Number.isFinite(x) ? Math.max(0, Math.floor(x)) : d);
@@ -96,6 +115,8 @@ export function cardSel(x: unknown): CardSel {
   if (s.owner === "you" || s.owner === "opponent" || s.owner === "any") out.owner = s.owner;
   const types = strs(s.types, TYPES);
   if (types?.length) out.types = types;
+  const cols = strs(s.colors, COLORS);
+  if (cols?.length) out.colors = cols;
   const sup = strs(s.supertypes, ["legendary", "basic", "snow"]);
   if (sup?.length) out.supertypes = sup;
   const sub = strs(s.subtypes);
@@ -125,6 +146,7 @@ function selector(x: unknown): Selector | undefined {
   const s = (x ?? {}) as Record<string, unknown>;
   if (s.kind === "player") return { kind: "player", who: s.who === "opponent" || s.who === "each" || s.who === "controllerOf" ? s.who : "you", ...(typeof s.ref === "string" ? { ref: s.ref } : {}) };
   if (s.kind === "any") return { kind: "any" };
+  if (s.kind === "self") return { kind: "self" };
   if (s.kind === "ref" && typeof s.ref === "string") return { kind: "ref", ref: s.ref };
   if (s.kind === "cards") return cardSel(s);
   return undefined;
@@ -147,7 +169,7 @@ export function sanitizeSteps(raw: unknown): Step[] {
     switch (e.do) {
       case "move": {
         const what = selector(e.what);
-        if (!what || !ZONES.includes(e.to as Zone)) return bad();
+        if (!what || !DEST_ZONES.includes(e.to as Zone)) return bad();
         return { do: "move", what, to: e.to as Zone, ...(["draw", "destroy", "sacrifice", "discard"].includes(String(e.how)) ? { how: e.how as "draw" } : {}), ...(e.position === "bottom" || e.position === "top" ? { position: e.position } : {}), ...as };
       }
       case "change": {
@@ -166,8 +188,17 @@ export function sanitizeSteps(raw: unknown): Step[] {
         const c = cond(e.cond);
         return c ? { do: "if", cond: c, then: sanitizeSteps(e.then), else: sanitizeSteps(e.else) } : bad();
       }
-      case "may":
-        return { do: "may", steps: sanitizeSteps(e.steps), ...(e.who === "opponent" ? { who: "opponent" as const } : {}) };
+      case "may": {
+        const who = e.who === "opponent" ? ("opponent" as const) : selector(e.who);
+        const c = (e.cost ?? {}) as Record<string, unknown>;
+        return { do: "may", steps: sanitizeSteps(e.steps), ...(who && who !== "opponent" && who.kind === "player" ? { who } : who === "opponent" ? { who } : {}), ...(typeof c.mana === "string" ? { cost: { mana: c.mana } } : {}) };
+      }
+      case "copy": {
+        const what = selector(e.what);
+        if (!what || (what.kind !== "self" && what.kind !== "ref")) return bad();
+        const by = selector(e.by);
+        return { do: "copy", what, ...(by && by.kind === "player" ? { by } : {}), ...(e.newTargets ? { newTargets: true } : {}), ...(typeof e.color === "string" && COLORS.includes(e.color) ? { color: e.color } : {}) };
+      }
       case "unsupported":
         return bad();
       default:
@@ -241,13 +272,28 @@ export function normalizeAbility(raw: unknown, macros?: Map<string, Macro>): Abi
     if (!rs.length) return { kind: "static", effects: [{ do: "unsupported", text: `未対応の常在型能力: ${JSON.stringify(a.restrictions ?? a)}` }] };
     ab.restrictions = rs;
   }
+  if (ab.kind === "altCost") {
+    const alt = (a.alt ?? {}) as Record<string, unknown>;
+    const pick = (x: unknown) => {
+      const o = (x ?? {}) as Record<string, unknown>;
+      return o.sel ? { sel: cardSel(o.sel), n: num(o.n) } : undefined;
+    };
+    const out: AltCost = { ...(pick(alt.sacrifice) ? { sacrifice: pick(alt.sacrifice) } : {}), ...(pick(alt.exileFromHand) ? { exileFromHand: pick(alt.exileFromHand) } : {}), ...(alt.life ? { life: num(alt.life) } : {}), ...(typeof alt.mana === "string" ? { mana: alt.mana } : {}), ...(alt.unless === "yourTurn" || alt.unless === "notYourTurn" ? { unless: alt.unless } : {}) };
+    if (!out.sacrifice && !out.exileFromHand && !out.life && !out.mana) return { kind: "altCost", effects: [{ do: "unsupported", text: `未対応の代替コスト: ${JSON.stringify(a.alt ?? a)}` }] };
+    ab.alt = out;
+  }
+  if (ab.kind === "suspend") {
+    const sp = (a.suspend ?? {}) as Record<string, unknown>;
+    if (typeof sp.cost !== "string") return { kind: "suspend", effects: [{ do: "unsupported", text: `未対応の待機: ${JSON.stringify(a.suspend ?? a)}` }] };
+    ab.suspend = { n: num(sp.n), cost: sp.cost };
+  }
   if (a.optional) ab.optional = true;
   if (typeof a.text === "string") ab.text = a.text;
   const targets: TargetDef[] = [...hoist];
   if (Array.isArray(a.targets)) {
     for (const t of a.targets as Record<string, unknown>[]) {
       const sel = selector(t.sel);
-      if (typeof t.id === "string" && sel && sel.kind !== "ref") targets.push({ id: t.id, sel });
+      if (typeof t.id === "string" && sel && sel.kind !== "ref" && sel.kind !== "self") targets.push({ id: t.id, sel });
     }
   }
   if (targets.length) ab.targets = targets;
@@ -257,7 +303,7 @@ export function normalizeAbility(raw: unknown, macros?: Map<string, Macro>): Abi
 // ---- 日本語での表示 (診断画面・ログ・記録の確認用) ----
 
 const T_JA: Record<string, string> = { creature: "クリーチャー", land: "土地", artifact: "アーティファクト", enchantment: "エンチャント", planeswalker: "プレインズウォーカー", instant: "インスタント", sorcery: "ソーサリー", permanent: "パーマネント", card: "カード", basic: "基本土地", legendary: "伝説の" };
-const Z_JA: Record<Zone, string> = { library: "山札", hand: "手札", battlefield: "戦場", graveyard: "墓地", exile: "追放領域" };
+const Z_JA: Record<Zone, string> = { library: "山札", hand: "手札", battlefield: "戦場", graveyard: "墓地", exile: "追放領域", stack: "スタック" };
 const OWNER_JA = (o?: Who | "any") => (o === "you" ? "自分の" : o === "opponent" ? "相手の" : "");
 const CMP_JA: Record<CmpOp, string> = { "<": "未満", "<=": "以下", "=": "", ">=": "以上", ">": "より大きい" };
 
@@ -271,6 +317,7 @@ export function describeAmount(a: Amount | "all" | undefined): string {
 
 export function describeSel(s: Selector): string {
   if (s.kind === "ref") return `「${s.ref}」`;
+  if (s.kind === "self") return "この呪文";
   if (s.kind === "any") return "いずれか1つ(クリーチャー・プレイヤー)";
   if (s.kind === "player") return s.who === "you" ? "自分" : s.who === "opponent" ? "相手" : s.who === "each" ? "各プレイヤー" : `「${s.ref ?? "?"}」のコントローラー`;
   const parts = [
@@ -312,8 +359,12 @@ export function describeStep(s: Step): string {
       return `コインを投げる${s.win?.length ? `。勝ったら: ${s.win.map(describeStep).join("、")}` : ""}${s.lose?.length ? `。負けたら: ${s.lose.map(describeStep).join("、")}` : ""}`;
     case "if":
       return `もし ${describeCond(s.cond)} なら: ${s.then.map(describeStep).join("、")}${s.else?.length ? `。そうでなければ: ${s.else.map(describeStep).join("、")}` : ""}`;
-    case "may":
-      return `${s.who === "opponent" ? "相手が" : ""}してもよい: ${s.steps.map(describeStep).join("、")}`;
+    case "may": {
+      const who = s.who === undefined ? "" : s.who === "opponent" ? "相手が" : s.who === "you" ? "" : `${describeSel(s.who)}が`;
+      return `${who}${s.cost?.mana ? `${s.cost.mana} を払って` : ""}してもよい: ${s.steps.map(describeStep).join("、")}`;
+    }
+    case "copy":
+      return `${describeSel(s.what)} のコピーを作る${s.by ? `(持つのは ${describeSel(s.by)})` : ""}${s.color ? `。コピーは${s.color}色` : ""}${s.newTargets ? "。新しい対象を選んでもよい" : ""}`;
     default:
       return `【未対応】${s.text}`;
   }
@@ -325,11 +376,22 @@ export function describeCost(c?: AbilityCost): string {
 }
 
 export function describeAbility(a: Ability): string {
-  const head = { spell: "唱えて解決したとき", activated: "起動", mana: "マナ能力", static: "常在型(戦場にある間)", triggered: `誘発 (${a.trigger?.event === "upkeep" ? `${a.trigger.whose === "opponent" ? "相手" : a.trigger.whose === "each" ? "各プレイヤー" : "自分"}のアップキープの開始時` : a.trigger?.event === "etb" ? "戦場に出たとき" : a.trigger?.event === "dies" ? "死亡したとき" : "?"})` }[a.kind];
+  const head = { spell: "唱えて解決したとき", activated: "起動", mana: "マナ能力", static: "常在型(戦場にある間)", altCost: "代替コスト", suspend: "待機", triggered: `誘発 (${a.trigger?.event === "upkeep" ? `${a.trigger.whose === "opponent" ? "相手" : a.trigger.whose === "each" ? "各プレイヤー" : "自分"}のアップキープの開始時` : a.trigger?.event === "etb" ? "戦場に出たとき" : a.trigger?.event === "dies" ? "死亡したとき" : "?"})` }[a.kind];
   const cost = describeCost(a.cost);
   const targets = a.targets?.length ? `対象: ${a.targets.map((t) => `「${t.id}」= ${describeSel(t.sel)}`).join("、")}。` : "";
   const rest = (a.restrictions ?? []).map((r) => `${describeSel({ ...r.what, count: undefined })} の起動型能力 (マナ能力を含む) は起動できない`).join("、");
-  return `${head}${cost ? ` [${cost}]` : ""}${a.optional ? " (任意)" : ""}: ${targets}${rest}${rest && a.effects.length ? "、" : ""}${a.effects.map(describeStep).join("、")}`;
+  const alt = a.alt
+    ? [
+        a.alt.unless === "notYourTurn" ? "自分のターンでないとき、" : a.alt.unless === "yourTurn" ? "自分のターンのとき、" : "",
+        a.alt.sacrifice ? `${describeSel(a.alt.sacrifice.sel)} を ${a.alt.sacrifice.n} つ生け贄にする` : "",
+        a.alt.exileFromHand ? `手札の ${describeSel({ ...a.alt.exileFromHand.sel, zone: undefined, count: undefined })} を ${a.alt.exileFromHand.n} 枚追放する` : "",
+        a.alt.life ? `${a.alt.life} 点のライフを払う` : "",
+        a.alt.mana ? `${a.alt.mana} を払う` : "",
+        "ことで、マナコストの代わりに唱えられる",
+      ].join("")
+    : "";
+  const sus = a.suspend ? `手札から ${a.suspend.cost} を払って追放し、時間カウンターを ${a.suspend.n} 個置く。自分のアップキープに1個取り除き、最後の1個を取り除いたとき、マナコストを払わずに唱えてもよい` : "";
+  return `${head}${cost ? ` [${cost}]` : ""}${a.optional ? " (任意)" : ""}: ${targets}${rest}${alt}${sus}${(rest || alt || sus) && a.effects.length ? "、" : ""}${a.effects.map(describeStep).join("、")}`;
 }
 
 // 入れ子の中も含めて、「未対応」の文を集める

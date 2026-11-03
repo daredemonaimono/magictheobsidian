@@ -609,4 +609,93 @@ console.log("engine ok");
   assert.equal(pickSimilar(duress, two, 1)[0].name, "Clean", "同じ近さなら、未対応の無い記録を優先する");
   assert.ok(similarity(new Set(["a", "b"]), new Set(["a", "b"])) === 1 && similarity(new Set(["a"]), new Set(["b"])) === 0);
 }
+{
+  // 代替コスト (Fireblast), コピー (Fork / Chain Lightning), 待機 (Rift Bolt)
+  const any = (id = "t") => ({ id, sel: { kind: "any" as const } });
+  const dmg = (n: number, ref = "t"): import("../src/effects").Step => ({ do: "change", what: { kind: "ref", ref }, stat: "damage", delta: n });
+  const fireblast = def("Fireblast", "Instant", "{4}{R}{R}", 0, 0, "", [
+    { kind: "altCost", alt: { sacrifice: { sel: { kind: "cards", types: ["land"], subtypes: ["Mountain"] }, n: 2 } }, effects: [] },
+    { kind: "spell", targets: [any()], effects: [dmg(4)] },
+  ]);
+  const mtn = (n: number) => Array(n).fill(mountain);
+  const oppOpt = (d: { options: string[] }) => Math.max(0, d.options.findIndex((o) => o.startsWith("相手")));
+  const burner: Controller = async (g, d) => {
+    if (d.type === "choice") return d.options.findIndex((o) => o.startsWith("相手")) >= 0 ? oppOpt(d) : 0;
+    if (d.type === "priority") return d.actions.find((a) => a.kind === "cast" && a.alt !== undefined) ?? d.actions.find((a) => a.kind === "cast") ?? pass;
+    return d.type === "attackers" ? [] : ([] as Block[]);
+  };
+  {
+    const one = world([fireblast], mtn(1).map((d) => d), [burner, greedy], [false, false]);
+    one.s.phase = "main1";
+    assert.ok(!one.actions(0).some((a) => a.kind === "cast" && a.alt !== undefined), "山が1つでは、代替コストは払えない");
+    const g = world([fireblast], mtn(2), [burner, greedy], [false, false]);
+    g.s.phase = "main1";
+    assert.ok(g.actions(0).some((a) => a.kind === "cast" && a.alt === 0 && a.tap.length === 0), "山が2つあれば、マナ無しで唱えられる");
+    await g.play(1);
+    assert.equal(g.s.players[1].life, 16, "4点のダメージ");
+    assert.equal(g.s.players[0].field.filter((p) => p.def.name === "Mountain").length, 0, "山を2つ生け贄にした");
+    assert.ok(g.s.players[0].graveyard.some((c) => c.def.name === "Fireblast"));
+    // 条件: 自分のターンでないときだけ
+    const force = def("Force", "Instant", "{3}{B}{B}", 0, 0, "", [{ kind: "altCost", alt: { exileFromHand: { sel: { kind: "cards", colors: ["B"] }, n: 1 }, unless: "notYourTurn" }, effects: [] }, { kind: "spell", effects: [] }]);
+    const black = def("Blk", "Creature — Rat", "{B}", 1, 1);
+    const f = world([force, black], [], [greedy, greedy], [false, false]);
+    f.s.phase = "main1";
+    assert.ok(!f.actions(0).some((a) => a.kind === "cast" && a.alt !== undefined), "自分のターンには、代替コストは使えない");
+    f.s.active = 1;
+    f.s.phase = "upkeep";
+    assert.ok(f.actions(0).some((a) => a.kind === "cast" && a.alt !== undefined), "相手のターンなら、手札の黒のカードを追放して唱えられる");
+  }
+  {
+    // Fork: 自分の Lightning Bolt のコピーを、赤で作り、先に解決する
+    const bolt = def("Bolt", "Instant", "{R}", 0, 0, "", [{ kind: "spell", targets: [any()], effects: [dmg(3)] }]);
+    const fork = def("Fork", "Instant", "{R}{R}", 0, 0, "", [{ kind: "spell", targets: [{ id: "s", sel: { kind: "cards", zone: "stack", types: ["instant", "sorcery"] } }], effects: [{ do: "copy", what: { kind: "ref", ref: "s" }, newTargets: true, color: "R" }] }]);
+    const me: Controller = async (g, d) => {
+      if (d.type === "choice") return d.options.findIndex((o) => o.startsWith("相手")) >= 0 ? oppOpt(d) : 0;
+      if (d.type !== "priority") return d.type === "attackers" ? [] : ([] as Block[]);
+      const hand = g.s.players[0].hand.map((c) => c.def.name);
+      const bolt1 = d.actions.find((a) => a.kind === "cast" && g.card(a.uid)?.def.name === "Bolt");
+      const fork1 = d.actions.find((a) => a.kind === "cast" && g.card(a.uid)?.def.name === "Fork");
+      if (g.s.stack.length === 0 && bolt1 && hand.includes("Fork")) return bolt1;
+      if (g.s.stack.length > 0 && fork1) return fork1;
+      return pass;
+    };
+    const g = world([bolt, fork], mtn(3), [me, greedy], [false, false]);
+    await g.play(1);
+    assert.equal(g.s.players[1].life, 14, "コピーと元の呪文で 3 + 3 点");
+    assert.ok(g.s.log.some((l) => l.includes("のコピーを作る (R色)")), "コピーは赤");
+    assert.equal(g.s.players[0].graveyard.filter((c) => c.def.name === "Bolt").length, 1, "コピーは、解決したら消える (墓地は、元の Bolt の1枚)");
+  }
+  {
+    // Chain Lightning: 対象のコントローラーが RR を払ってコピーし、新しい対象を選べる
+    const chain = def("Chain", "Sorcery", "{R}", 0, 0, "", [{ kind: "spell", targets: [any()], effects: [dmg(3), { do: "may", who: { kind: "player", who: "controllerOf", ref: "t" }, cost: { mana: "{R}{R}" }, steps: [{ do: "copy", what: { kind: "self" }, by: { kind: "player", who: "controllerOf", ref: "t" }, newTargets: true }] }] }]);
+    const p1: Controller = async (_g, d) => (d.type === "choice" ? (d.options.some((o) => o.includes("新しい対象")) ? 0 : d.options.some((o) => o.includes("払ってもよい")) ? 0 : Math.max(0, d.options.findIndex((o) => o.startsWith("相手")))) : d.type === "priority" ? pass : d.type === "attackers" ? [] : ([] as Block[]));
+    const g = world([chain], mtn(1), [burner, p1], [false, false]);
+    g.s.players[1].field = [mkPerm(mountain, 9100, 1), mkPerm(mountain, 9101, 1)];
+    await g.play(1);
+    assert.equal(g.s.players[1].life, 17, "最初の3点");
+    assert.equal(g.s.players[0].life, 17, "対象にされた側が RR を払ってコピーし、元の呪文の持ち主を対象にした (3点)");
+    assert.ok(g.s.players[1].field.every((p) => p.tapped), "コピーのコストで、山をタップした");
+  }
+  {
+    // 待機: Rift Bolt
+    const rift = def("Rift", "Sorcery", "{2}{R}", 0, 0, "", [{ kind: "suspend", suspend: { n: 1, cost: "{R}" }, effects: [] }, { kind: "spell", targets: [any()], effects: [dmg(3)] }]);
+    const me: Controller = async (_g, d) => {
+      if (d.type === "choice") return d.options.some((o) => o.startsWith("相手")) ? oppOpt(d) : 0;
+      if (d.type === "priority") return d.actions.find((a) => a.kind === "suspend") ?? pass;
+      return d.type === "attackers" ? [] : ([] as Block[]);
+    };
+    const g = world([rift], mtn(1), [me, greedy], [false, false]);
+    await g.play(1);
+    assert.equal(g.s.players[0].exile.find((c) => c.def.name === "Rift")?.time, 1, "待機で追放され、時間カウンターが1つ載る");
+    assert.equal(g.s.players[1].life, 20, "まだ唱えていない");
+    await g.play(3);
+    assert.equal(g.s.players[1].life, 17, "次の自分のアップキープで、カウンターが0になり、唱えて3点");
+    assert.ok(g.s.players[0].graveyard.some((c) => c.def.name === "Rift") && g.s.log.some((l) => l.includes("待機から唱える")));
+  }
+  // 診断 (動作テスト) でも、確認できる
+  const { smokeTest } = await import("../src/diagnose");
+  const forkDef = def("Fork", "Instant", "{R}{R}", 0, 0, "", [{ kind: "spell", targets: [{ id: "s", sel: { kind: "cards", zone: "stack", types: ["instant", "sorcery"] } }], effects: [{ do: "copy", what: { kind: "ref", ref: "s" }, newTargets: true, color: "R" }] }]);
+  assert.equal((await smokeTest(forkDef)).status, "ok", "Fork は、動作テストでも動く");
+  assert.equal((await smokeTest(fireblast)).status, "ok", "Fireblast も動く");
+}
 console.log("diagnose ok");

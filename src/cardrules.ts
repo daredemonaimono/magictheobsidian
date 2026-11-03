@@ -111,6 +111,8 @@ export const SPEC = `あなたは Magic: The Gathering の対戦エンジンの�
 # Ability
 - kind: "mana" (マナを出す起動型能力。スタックを使わない) / "activated" (起動型能力) / "triggered" (誘発型能力) / "spell" (インスタント・ソーサリーを唱えて解決したときの効果)
 - kind: "static" (常在型能力。戦場にある間ずっと働く。いまは「起動の禁止」だけ): {"kind":"static","restrictions":[{"type":"cantActivate","what":CardSel}],"effects":[]}。what に合うパーマネントの、起動型能力 (マナ能力を含む) が起動できなくなる。what の owner を省くと、両方のプレイヤーに効く
+- kind: "altCost" (代替コスト。マナコストの代わりに払って唱えられる): {"kind":"altCost","alt":{"sacrifice":{"sel":CardSel,"n":2},"exileFromHand":{"sel":CardSel,"n":1},"life":1,"mana":"{R}","unless":"notYourTurn"|"yourTurn"},"effects":[],"text":"..."}。alt は、使うものだけ書く。呪文の効果は、別の spell 能力に書く
+- kind: "suspend" (待機): {"kind":"suspend","suspend":{"n":1,"cost":"{R}"},"effects":[]}。呪文の効果は、別の spell 能力に書く
 - cost (mana / activated): {"tap": true, "mana": "{1}{W}", "life": 1, "sacrificeSelf": true}。使うものだけ書く
 - trigger (triggered): {"event": "upkeep" | "etb" | "dies", "whose": "you" | "opponent" | "each"}。upkeep の whose は、誰のアップキープの開始時か。etb は「このカードが戦場に出たとき」、dies は「このカードが死亡したとき」だけ
 - targets: 「対象の〜」を取るとき、[{"id": "t", "sel": CardSel | {"kind":"any"} | {"kind":"player","who":"you"|"opponent"|"each"}}]。effects からは {"kind":"ref","ref":"t"} で参照する。{"kind":"any"} は「クリーチャーかプレイヤー(かプレインズウォーカー)のいずれか1つ」
@@ -132,13 +134,14 @@ export const SPEC = `あなたは Magic: The Gathering の対戦エンジンの�
 - {"do":"shuffle","owner":"you"|"opponent"}
 - {"do":"flip","win":[Step...],"lose":[Step...]}  コイン投げ
 - {"do":"if","cond":Cond,"then":[Step...],"else":[Step...]}
-- {"do":"may","steps":[Step...]}  「してもよい」。who が opponent なら相手が決める
+- {"do":"may","steps":[Step...],"who":PlayerSel,"cost":{"mana":"{R}{R}"}}  「してもよい」。who が "opponent" なら相手が決める。PlayerSel なら、その人 (例: 対象のコントローラー)。cost があれば、してもよい人が、そのマナを払う
+- {"do":"copy","what":Selector,"newTargets":true,"color":"R","by":PlayerSel}  スタックの呪文のコピーを作る。what は {"kind":"self"} (いま解決している呪文) か、targets の ref (スタックの呪文)。コピーは先に解決される
 - {"do":"unsupported","text":"..."}  効果の一部だけ対応できないとき、その部分に入れる
 
 # Selector (何を)
 - {"kind":"cards", ...}  カード。次の穴が使える (全部省略可):
-  zone (library/hand/battlefield/graveyard/exile。既定は battlefield) / owner (you/opponent/any。戦場ではコントローラー、他のゾーンでは持ち主) /
-  types (どれか。creature land artifact enchantment planeswalker instant sorcery permanent card) / subtypes (どれか。Plains Swamp など) / supertypes (すべて。legendary basic snow。「伝説のクリーチャー」は types:["creature"], supertypes:["legendary"]) /
+  zone (library/hand/battlefield/graveyard/exile/stack。既定は battlefield。stack はスタックの呪文で、対象にする・コピーするときに使う) / owner (you/opponent/any。戦場ではコントローラー、他のゾーンでは持ち主) /
+  types (どれか。creature land artifact enchantment planeswalker instant sorcery permanent card) / subtypes (どれか。Plains Swamp など) / supertypes (すべて。legendary basic snow。「伝説のクリーチャー」は types:["creature"], supertypes:["legendary"]) / colors (どれか。W U B R G。「黒のカード」) /
   not (除く。land basic creature legendary artifact enchantment。「基本でない土地」は types:["land"], not:["basic"]) / name / cmc {"op":"<=","n":3} / power {"op":">=","n":4} /
   count (数 または "all"。既定は 1) / upTo (「N 枚まで」なら true) / chooser (選ぶ人。you / opponent。既定は能力のコントローラー。「相手に〜を選ばせる」は opponent、「あなたが選ぶ」は you) / top (山札の一番上から。選ばない)
 - {"kind":"player","who":"you"|"opponent"|"each"|"controllerOf","ref":"名前"}  プレイヤー。controllerOf は、ref のカードのコントローラー
@@ -179,6 +182,10 @@ Thoughtseize: {"abilities":[{"kind":"spell","effects":[{"do":"move","what":{"kin
 Marsh Flats: {"abilities":[{"kind":"activated","cost":{"tap":true,"life":1,"sacrificeSelf":true},"effects":[{"do":"move","what":{"kind":"cards","zone":"library","owner":"you","subtypes":["Plains","Swamp"],"count":1,"chooser":"you"},"to":"battlefield"},{"do":"shuffle","owner":"you"}],"text":"平地か沼を探して出す"}],"unsupported":[]}
 Swords to Plowshares: {"abilities":[{"kind":"spell","targets":[{"id":"t","sel":{"kind":"cards","types":["creature"]}}],"effects":[{"do":"move","what":{"kind":"ref","ref":"t"},"to":"exile","as":"x"},{"do":"change","what":{"kind":"player","who":"controllerOf","ref":"x"},"stat":"life","delta":{"of":"power","ref":"x"}}],"text":"クリーチャーを追放し、そのパワーぶん相手がライフを得る"}],"unsupported":[]}
 Null Rod / Collector Ouphe: {"abilities":[{"kind":"static","restrictions":[{"type":"cantActivate","what":{"kind":"cards","types":["artifact"]}}],"effects":[],"text":"アーティファクトの起動型能力(マナ能力を含む)は起動できない"}],"unsupported":[]}
+Fireblast: {"abilities":[{"kind":"altCost","alt":{"sacrifice":{"sel":{"kind":"cards","types":["land"],"subtypes":["Mountain"]},"n":2}},"effects":[],"text":"山を2つ生け贄にして唱えられる"},{"kind":"spell","targets":[{"id":"t","sel":{"kind":"any"}}],"effects":[{"do":"change","what":{"kind":"ref","ref":"t"},"stat":"damage","delta":4}],"text":"4点のダメージ"}],"unsupported":[]}
+Fork: {"abilities":[{"kind":"spell","targets":[{"id":"s","sel":{"kind":"cards","zone":"stack","types":["instant","sorcery"]}}],"effects":[{"do":"copy","what":{"kind":"ref","ref":"s"},"newTargets":true,"color":"R"}],"text":"インスタント・ソーサリーのコピー(赤)"}],"unsupported":[]}
+Chain Lightning: {"abilities":[{"kind":"spell","targets":[{"id":"t","sel":{"kind":"any"}}],"effects":[{"do":"change","what":{"kind":"ref","ref":"t"},"stat":"damage","delta":3},{"do":"may","who":{"kind":"player","who":"controllerOf","ref":"t"},"cost":{"mana":"{R}{R}"},"steps":[{"do":"copy","what":{"kind":"self"},"by":{"kind":"player","who":"controllerOf","ref":"t"},"newTargets":true}]}],"text":"3点。対象のコントローラーは RR でコピーしてよい"}],"unsupported":[]}
+Rift Bolt: {"abilities":[{"kind":"suspend","suspend":{"n":1,"cost":"{R}"},"effects":[]},{"kind":"spell","targets":[{"id":"t","sel":{"kind":"any"}}],"effects":[{"do":"change","what":{"kind":"ref","ref":"t"},"stat":"damage","delta":3}],"text":"3点のダメージ"}],"unsupported":[]}
 Wasteland: {"abilities":[{"kind":"mana","cost":{"tap":true},"effects":[{"do":"addMana","options":"C"}]},{"kind":"activated","cost":{"tap":true,"sacrificeSelf":true},"targets":[{"id":"t","sel":{"kind":"cards","types":["land"],"not":["basic"]}}],"effects":[{"do":"move","what":{"kind":"ref","ref":"t"},"to":"graveyard","how":"destroy"}],"text":"基本でない土地を破壊"}],"unsupported":[]}`;
 
 export interface Compiled {

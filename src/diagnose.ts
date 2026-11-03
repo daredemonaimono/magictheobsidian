@@ -18,7 +18,7 @@ const oddLand = makeDef({ key: "Odd", name: "Odd Land", typeLine: "Land", manaCo
 const rock = makeDef({ key: "Rock", name: "Rock", typeLine: "Artifact", manaCost: "{1}", cmc: 1, oracle: "" });
 
 // 仮の盤面で 1 回走らせる。subject を手札に置く (onField なら、最初から場に置く)
-async function run(def: CardDef, onField: boolean, turns: number) {
+async function run(def: CardDef, onField: boolean, turns: number, needStack = false) {
   const pad: CardDef[] = [];
   for (let i = 0; i < 6; i++) pad.push(basic("Plains", "Plains"), basic("Swamp", "Swamp"), basic("Island", "Island"), basic("Mountain", "Mountain"), basic("Forest", "Forest"), dummy);
   const done = new Set<string>();
@@ -44,6 +44,14 @@ async function run(def: CardDef, onField: boolean, turns: number) {
   p0.field = Array.from({ length: 10 }, () => perm(wild, 0));
   p1.field = [perm(dummy, 1), perm(oddLand, 1), perm(rock, 1)];
   p1.hand = [dummy, oddLand, dummy].map((d) => ({ uid: uid++, def: d, owner: 1 }));
+  if (needStack) {
+    // スタックの呪文を対象にするカード (Fork など): 相手の呪文を、先にスタックに置いておく
+    const ping = makeDef({ key: "Ping", name: "Ping", typeLine: "Instant", manaCost: "{R}", cmc: 1, oracle: "", abilities: [{ kind: "spell", effects: [{ do: "change", what: { kind: "player", who: "you" }, stat: "damage", delta: 1 }] }] });
+    p1.hand.push({ uid: uid++, def: ping, owner: 1 });
+    p1.field.push(perm(wild, 1));
+    const c = { uid: uid++, def: ping, owner: 1 };
+    g.s.stack.push({ def: ping, controller: 1, card: c, targets: {} });
+  }
   if (onField) p0.field.push(perm(def, 0));
   else p0.hand = [{ uid: uid++, def, owner: 0 }];
   const before = JSON.stringify([p0.life, p1.life, p0.hand.length, p1.hand.length, p0.library.length, p1.library.length, p0.graveyard.length, p1.graveyard.length, p0.field.length, p1.field.length, p0.exile.length, p1.exile.length]);
@@ -75,7 +83,7 @@ export async function smokeTest(def: CardDef): Promise<Smoke> {
   if (!abilities.length) return { status: "skipped", notes: ["能力の記録が無い (キーワードだけ・バニラ、または記録なし)"] };
   const notes: string[] = [];
   try {
-    const a = await run(def, false, 1);
+    const a = await run(def, false, 1, abilities.some((x) => x.targets?.some((t) => t.sel.kind === "cards" && t.sel.zone === "stack")));
     const unsupported = a.log.filter((l) => l.startsWith("未対応の効果"));
     unsupported.forEach((l) => notes.push(l));
     const needsField = abilities.some((x) => x.kind === "triggered" && x.trigger?.event !== "etb");
