@@ -37,20 +37,20 @@ const greedy: Controller = async (g, d) => {
 };
 {
   const deck = [...Array(24).fill(mountain), ...Array(16).fill(bear)];
-  const g = new Game([deck, deck], 1, [greedy, greedy]);
+  const g = new Game([deck, deck], 1, [greedy, greedy], { opening: false });
   await g.play(80);
   assert.notEqual(g.s.winner, undefined, "決着がつく");
   const lands = g.s.log.filter((l) => l.includes("土地を出す")).length;
   assert.ok(lands <= g.s.turn, "土地は1ターンに1枚まで");
   // 同じ seed なら同じ展開
-  const g2 = new Game([deck, deck], 1, [greedy, greedy]);
+  const g2 = new Game([deck, deck], 1, [greedy, greedy], { opening: false });
   await g2.play(80);
   assert.deepEqual(g2.s.log, g.s.log);
 }
 
 // ---- 召喚酔いと速攻 ----
 const setup = (a: CardDef[], b: CardDef[], handA: CardDef[], handB: CardDef[] = [], fieldB: CardDef[] = []) => {
-  const g = new Game([a, b], 7, [greedy, greedy]);
+  const g = new Game([a, b], 7, [greedy, greedy], { opening: false });
   let uid = 1000;
   const card = (d: CardDef, owner: number) => ({ uid: uid++, def: d, owner });
   g.s.players[0].hand = handA.map((d) => card(d, 0));
@@ -103,7 +103,7 @@ const blockAll: Controller = async (_g, d) => {
 // ---- マナプールと手動のタップ ----
 const mkPerm = (d: CardDef, uid: number, owner: number): Perm => ({ uid, def: d, owner, controller: owner, tapped: false, sick: false, damage: 0, attacking: false });
 const world = (handA: CardDef[], fieldA: CardDef[], controllers: Controller[], manual = [true, false]) => {
-  const g = new Game([pad, pad], 3, controllers, manual);
+  const g = new Game([pad, pad], 3, controllers, { manual, opening: false });
   let uid = 2000;
   g.s.players[0].hand = handA.map((d) => ({ uid: uid++, def: d, owner: 0 }));
   g.s.players[0].field = fieldA.map((d) => mkPerm(d, uid++, 0));
@@ -265,6 +265,63 @@ const rat = (n = "Rat", pw = 2, th = 2, oracle = "", type = "Creature — Rat") 
   const plain = setup(pad, pad, [mountain, kill], [], [rat("Plain")]);
   await plain.play(1);
   assert.ok(gone(plain, 1, "Plain"), "(対照) 呪禁が無ければ破壊される");
+}
+
+// ---- ダイス・マリガン・手札上限・タップインの土地 ----
+{
+  const asked: string[] = [];
+  let mulls = 0;
+  const me: Controller = async (g, d) => {
+    if (d.type === "choice") {
+      asked.push(d.prompt);
+      if (d.prompt.startsWith("初手をキープ")) return mulls++ < 1 ? 1 : 0; // 1回マリガンしてキープ
+      return 0;
+    }
+    return greedy(g, d);
+  };
+  const deck = [...Array(24).fill(mountain), ...Array(16).fill(bear)];
+  const g = new Game([deck, deck], 5, [me, greedy], { first: 0 });
+  await g.play(0); // 初手だけ
+  assert.equal(g.s.players[0].hand.length, 6, "1回マリガンで 7 - 1 = 6 枚");
+  assert.equal(g.s.players[0].library.length, 34, "引き直した 7 枚 + 下に戻した 1 枚");
+  assert.ok(asked.some((p) => p.startsWith("ライブラリーの下に置く")), "下に置くカードを選ぶ");
+  assert.ok(g.s.log.some((l) => l.includes("マリガン (1 回目)")));
+}
+{
+  const answers: [number, string][] = [];
+  const pick = (who: number): Controller => async (g, d) => {
+    if (d.type === "choice" && d.prompt.startsWith("ダイスに勝った")) return answers.push([who, d.prompt]), 1; // 後攻を選ぶ
+    return greedy(g, d);
+  };
+  const deck = [...Array(24).fill(mountain), ...Array(16).fill(bear)];
+  const g = new Game([deck, deck], 9, [pick(0), pick(1)]);
+  await g.play(1);
+  assert.equal(answers.length, 1, "ダイスに勝った人だけが選ぶ");
+  assert.equal(g.s.active, 1 - answers[0][0], "後攻を選ぶと、相手が先攻");
+}
+{
+  const zed = def("Zed", "Instant", "{9}", 0, 0);
+  const prompts: string[] = [];
+  const me: Controller = async (g, d) => {
+    if (d.type === "choice") {
+      prompts.push(d.prompt);
+      return d.options.indexOf("Zed") >= 0 ? d.options.indexOf("Zed") : 0;
+    }
+    return d.type === "priority" ? pass : d.type === "attackers" ? [] : ([] as Block[]);
+  };
+  const g = world([...Array(8).fill(mountain), zed], [], [me, greedy], [false, false]);
+  await g.play(1);
+  assert.equal(prompts.length, 2, "手札 9 枚 → 7 枚まで、2 枚を自分で選んで捨てる");
+  assert.ok(g.s.players[0].graveyard.some((c) => c.def.name === "Zed"), "選んだカードが捨てられる");
+  assert.equal(g.s.players[0].hand.length, 7);
+}
+{
+  const tapland = def("Tapland", "Land", "", 0, 0, "Tapland enters tapped.\n{T}: Add {R}.");
+  const g = world([tapland], [], [greedy, greedy], [false, false]);
+  await g.play(1);
+  const land = g.s.players[0].field.find((p) => p.def.name === "Tapland");
+  assert.ok(land?.tapped, "タップ状態で出る土地");
+  assert.equal(def("Shock", "Land", "", 0, 0, "You may pay 2 life. If you don't, Shock enters tapped.").entersTapped, false, "条件つきは読まない");
 }
 console.log("engine ok");
 

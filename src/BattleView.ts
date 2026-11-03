@@ -89,7 +89,7 @@ export class BattleView extends ItemView {
     root.empty();
     root.addClass("mtg-bot");
     root.createEl("h3", { text: "Bot 対戦(仮)" });
-    root.createDiv({ text: "あなたがプレイヤー1(先攻)、ボットがプレイヤー2。呪文の効果はまだ実行されない。クリーチャーを出して、攻撃とブロックで戦う。", cls: "mtg-dim" });
+    root.createDiv({ text: "あなたがプレイヤー1、ボットがプレイヤー2。先攻・後攻はダイスで決まり、勝った人が選ぶ。マリガンはロンドン式。", cls: "mtg-dim" });
     const bar = root.createDiv("mtg-botbar");
     const pick = (label: string, set: (v: string) => void, cur: string) => {
       const sel = bar.createEl("select", { attr: { "aria-label": label } });
@@ -146,7 +146,7 @@ export class BattleView extends ItemView {
     this.result = "";
     botBus.clear();
     const seed = Math.floor(Math.random() * 2 ** 31);
-    const g = (this.game = new Game([a.defs, b.defs], seed, [this.human, this.bot(b, key)], [true, false]));
+    const g = (this.game = new Game([a.defs, b.defs], seed, [this.human, this.bot(b, key)], { manual: [true, false] }));
     g.onLog = (l) => botBus.addLog(l);
     g.onChange = () => this.render();
     botBus.addLog(`あなた: ${a.name} / ボット: ${b.name} (${MODELS[this.model].label}, ${this.think ? "思考深め" : "思考浅め"})`);
@@ -397,8 +397,10 @@ export class BattleView extends ItemView {
         const acts = p?.d.type === "priority" ? p.d.actions.filter((a) => (a.kind === "land" || a.kind === "cast") && g.card(a.uid)?.def.key === c.def.key) : [];
         const ready = acts.find((a) => a.kind === "land" || (a.kind === "cast" && a.tap.length === 0)); // プールで払える
         const soft = acts.find((a) => a.kind === "cast" && a.tap.length > 0); // 土地をタップすれば唱えられる
-        const el = cardEl(this.app, hand, c.def, ready ? "is-playable" : soft ? "is-soft" : "");
-        if (ready) el.onclick = () => this.answer(ready);
+        const pick = p?.d.type === "choice" ? p.d.hand?.indexOf(c.uid) : undefined; // 手札から選ぶ (捨てる・下に置く)
+        const el = cardEl(this.app, hand, c.def, pick !== undefined && pick >= 0 ? "is-playable" : ready ? "is-playable" : soft ? "is-soft" : "");
+        if (pick !== undefined && pick >= 0) el.onclick = () => this.answer(pick);
+        else if (ready) el.onclick = () => this.answer(ready);
         else if (soft) el.onclick = () => new Notice("先に土地などをクリックして、マナを出す");
       }
     } else {
@@ -435,8 +437,8 @@ export class BattleView extends ItemView {
       prompt.createSpan({ text: s.stack.length ? "あなたの優先権 (スタックにある)" : "あなたの優先権: 土地などをクリックしてマナを出し、光るカードを出す" });
       prompt.createEl("button", { text: s.stack.length ? "解決へ(パス)" : s.phase.startsWith("main") ? "メイン終了(パス)" : "パス", cls: "mod-cta" }).onclick = () => this.answer({ kind: "pass" });
     } else if (p.d.type === "choice") {
-      prompt.createSpan({ text: p.d.prompt });
-      p.d.options.forEach((o, i) => (prompt.createEl("button", { text: o }).onclick = () => this.answer(i)));
+      prompt.createSpan({ text: p.d.hand ? `${p.d.prompt} (手札をクリック)` : p.d.prompt });
+      if (!p.d.hand) p.d.options.forEach((o, i) => (prompt.createEl("button", { text: o }).onclick = () => this.answer(i)));
     } else if (p.d.type === "attackers") {
       prompt.createSpan({ text: "攻撃するクリーチャーを選ぶ" });
       prompt.createEl("button", { text: `攻撃宣言 (${this.sel.size}体)`, cls: "mod-cta" }).onclick = () => this.answer([...this.sel]);

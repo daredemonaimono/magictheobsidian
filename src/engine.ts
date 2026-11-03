@@ -48,6 +48,7 @@ export interface CardDef {
   cmc: number;
   power: number;
   toughness: number;
+  entersTapped: boolean; // 「戦闘領域に出るに際してタップ状態で出る」(条件なし) の土地・カード
   keywords: string[]; // 小文字: flying, haste, vigilance, flash, reach
   abilities: Ability[];
   mana: string[]; // タップだけで出るマナ (自動の支払い用)。1要素 = 1マナで、出せる色の集合 ("WB" = 白か黒、"C" = 無色)
@@ -106,7 +107,7 @@ export type Decision =
   | { type: "priority"; player: number; actions: PriorityAction[] }
   | { type: "attackers"; player: number; eligible: number[] }
   | { type: "blockers"; player: number; attackers: number[]; eligible: number[]; legal: Block[] } // legal = ブロックしてよい組 (飛行・威嚇などの制限を満たすもの)
-  | { type: "choice"; player: number; prompt: string; options: string[] };
+  | { type: "choice"; player: number; prompt: string; options: string[]; hand?: number[] }; // hand = 選択肢が手札のカードのとき、その uid (画面で手札をクリックして選べる)
 export type Block = { attacker: number; blocker: number };
 // priority → PriorityAction / attackers → number[] (攻撃する uid) / blockers → Block[] / choice → 選んだ番号 (0 始まり)
 export type Answer = PriorityAction | number[] | Block[] | number;
@@ -180,7 +181,9 @@ export function makeDef(p: { key: string; name: string; typeLine: string; manaCo
       : []);
   // Scryfall のキーワード一覧 (言語に依らず英語) と、効果テキストから読んだものを合わせる
   const keywords = [...new Set([...parseKeywords(p.oracle), ...(p.keywords ?? []).map((k) => k.toLowerCase()).filter((k) => KEYWORDS.includes(k))])];
-  return { ...p, power: p.power ?? 0, toughness: p.toughness ?? 0, keywords, abilities, mana: simpleMana(abilities) };
+  // 条件つき (unless / if / may) は読まない
+  const entersTapped = p.oracle.split("\n").some((l) => /\benters(?: the battlefield)? tapped\.?\s*$/i.test(l) && !/\b(unless|if|may)\b/i.test(l));
+  return { ...p, power: p.power ?? 0, toughness: p.toughness ?? 0, keywords, abilities, mana: simpleMana(abilities), entersTapped };
 }
 
 export const isLand = (d: CardDef) => /\bLand\b/.test(d.typeLine);
@@ -283,17 +286,28 @@ export class Game {
 
   // decks[i] = i 番目のプレイヤーのデッキ。先攻は 0 番。seed を同じにすると、シャッフルもコイン投げも同じになる。
   // manual[i] = true のプレイヤーは、マナを手でタップして出す (false は、唱えるとき自動でタップする)
-  constructor(decks: CardDef[][], public seed: number, private controllers: Controller[], private manual: boolean[] = [false, false]) {
+  // opts.manual[i] = true のプレイヤーは、マナを手でタップする。opts.first = 先攻 (省略するとダイスで決める)。opts.opening = false で、先攻決めとマリガンを省く
+  private manual: boolean[];
+  private first: number | undefined;
+  private opening: boolean;
+  constructor(decks: CardDef[][], public seed: number, private controllers: Controller[], opts: { manual?: boolean[]; first?: number; opening?: boolean } = {}) {
+    this.manual = opts.manual ?? [false, false];
+    this.first = opts.first;
+    this.opening = opts.opening ?? true;
     this.rand = rng(seed);
     this.s = { players: [], active: 0, turn: 0, phase: "upkeep", stack: [], landDropped: false, log: [] };
     decks.forEach((deck, owner) => {
       const library = deck.map((def) => ({ uid: this.nextUid++, def, owner }));
-      for (let i = library.length - 1; i > 0; i--) {
-        const j = Math.floor(this.rand() * (i + 1));
-        [library[i], library[j]] = [library[j], library[i]];
-      }
+      this.shuffle(library);
       this.s.players.push({ life: 20, library, hand: library.splice(0, 7), field: [], graveyard: [], exile: [], pool: [], drewEmpty: false });
     });
+  }
+
+  private shuffle<T>(a: T[]) {
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(this.rand() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
   }
 
   log(line: string) {
@@ -312,6 +326,8 @@ export class Game {
 
   async play(maxTurns = 60) {
     this.log(`対戦開始 (seed ${this.seed})`);
+    if (this.opening) await this.openingHands();
+    this.first ??= 0;
     while (this.s.winner === undefined && this.s.turn < maxTurns) await this.turn();
     if (this.s.winner === undefined) this.log(`${maxTurns} ターンで打ち切り`);
   }
@@ -320,7 +336,7 @@ export class Game {
   private async turn() {
     const s = this.s;
     s.turn++;
-    s.active = (s.turn - 1) % 2;
+    s.active = (this.first! + s.turn - 1) % 2;
     s.landDropped = false;
     s.players[s.active].field.forEach((p) => ((p.tapped = false), (p.sick = false)));
     this.log(`--- ターン ${s.turn} (プレイヤー${s.active + 1}) ---`);
@@ -350,7 +366,7 @@ export class Game {
     }
     for (const pl of s.players) for (const p of pl.field) (p.attacking = false), (p.blocking = undefined), (p.blocked = false);
     if (!(await step("endCombat")) || !(await step("main2")) || !(await step("end"))) return;
-    this.cleanup();
+    await this.cleanup();
   }
 
   private draw(p: number) {
@@ -361,15 +377,46 @@ export class Game {
     this.log(`プレイヤー${p + 1}: ドロー (${p === 0 ? c.def.name : "?"})`);
   }
 
-  private cleanup() {
+  // ダイスで先攻・後攻を決め (勝った人が選ぶ)、マリガン (ロンドン式: 引き直して、キープした後に枚数ぶんをライブラリーの下に置く)
+  private async openingHands() {
+    const s = this.s;
+    if (this.first === undefined) {
+      const winner = this.rand() < 0.5 ? 0 : 1;
+      const c = await this.choose(winner, "ダイスに勝った。先攻・後攻を選ぶ", ["先攻", "後攻"]);
+      this.first = c === 0 ? winner : 1 - winner;
+      this.log(`プレイヤー${winner + 1} がダイスに勝ち、${c === 0 ? "先攻" : "後攻"}を選んだ`);
+    }
+    for (const p of [this.first, 1 - this.first]) {
+      const pl = s.players[p];
+      let n = 0;
+      while (n < 6 && (await this.choose(p, `初手をキープするか (マリガン ${n} 回済み)`, ["キープ", "マリガン"], undefined)) === 1) {
+        n++;
+        pl.library.push(...pl.hand);
+        pl.hand = [];
+        this.shuffle(pl.library);
+        pl.hand = pl.library.splice(0, 7);
+        this.log(`プレイヤー${p + 1}: マリガン (${n} 回目)`);
+        this.onChange?.();
+      }
+      for (let i = 0; i < n; i++) {
+        const idx = await this.choose(p, `ライブラリーの下に置くカードを選ぶ (あと${n - i}枚)`, pl.hand.map((c) => c.def.name), pl.hand.map((c) => c.uid));
+        pl.library.push(...pl.hand.splice(idx, 1));
+        this.onChange?.();
+      }
+      this.log(`プレイヤー${p + 1}: ${n ? `${n} 回マリガンして` : ""}キープ (${pl.hand.length} 枚)`);
+    }
+  }
+
+  private async cleanup() {
     const s = this.s;
     for (const pl of s.players) for (const p of pl.field) (p.damage = 0), (p.deathtouched = false);
     const me = s.players[s.active];
     while (me.hand.length > 7) {
-      me.hand.sort((a, b) => a.def.cmc - b.def.cmc);
-      const c = me.hand.pop()!;
+      const i = await this.choose(s.active, `手札が ${me.hand.length} 枚。捨てるカードを選ぶ`, me.hand.map((c) => c.def.name), me.hand.map((c) => c.uid));
+      const [c] = me.hand.splice(i, 1);
       me.graveyard.push(c);
       this.log(`プレイヤー${s.active + 1}: 手札上限で捨てる (${c.def.name})`);
+      this.onChange?.();
     }
   }
 
@@ -432,9 +479,9 @@ export class Game {
   }
 
   // 選択肢が1つなら聞かずにそれを選ぶ
-  private async choose(player: number, prompt: string, options: string[]): Promise<number> {
+  private async choose(player: number, prompt: string, options: string[], hand?: number[]): Promise<number> {
     if (options.length <= 1) return 0;
-    const n = await this.ask<number>({ type: "choice", player, prompt, options });
+    const n = await this.ask<number>({ type: "choice", player, prompt, options, hand });
     return Number.isInteger(n) && n >= 0 && n < options.length ? n : 0;
   }
 
@@ -466,7 +513,7 @@ export class Game {
 
   // 場に出す (出たときの誘発を拾う)
   private enter(card: Card, controller: number) {
-    const perm: Perm = { ...card, controller, tapped: false, sick: true, damage: 0, attacking: false };
+    const perm: Perm = { ...card, controller, tapped: card.def.entersTapped, sick: true, damage: 0, attacking: false };
     this.s.players[controller].field.push(perm);
     this.fire("etb", perm);
   }
