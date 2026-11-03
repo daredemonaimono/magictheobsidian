@@ -1,6 +1,6 @@
 import { App } from "obsidian";
 import { cardInfo, oracleEnglish } from "./cards";
-import { askClaude } from "./claude";
+import { askClaude, extractJson } from "./claude";
 import { LibAbility, PLACEHOLDER, Ref, expandRefs, keywordId, statusOf, validateLib } from "./abilities";
 import { ensureKeywordEntries, getLibrary, saveAbility } from "./abilitystore";
 import { Ability, Macro, macrosUsedIn, normalizeAbility, unsupportedIn, validateMacro } from "./effects";
@@ -261,7 +261,7 @@ export interface ProposalData {
 
 // AI の返事 (JSON) を、検証した能力・マクロ・実装待ちにする
 export function parseProposal(text: string, existing: Map<string, Macro> = new Map(), lib: Map<string, LibAbility> = new Map()): ProposalData {
-  const parsed = JSON.parse(text.match(/\{[\s\S]*\}/)?.[0] ?? "");
+  const parsed = extractJson(text);
   const errors: string[] = [];
   const table = new Map(existing);
   const macros: Macro[] = [];

@@ -2,7 +2,7 @@ import { App } from "obsidian";
 import { LibAbility, PLACEHOLDER, checkAbility, instantiate, statusOf, validateLib } from "./abilities";
 import { deleteAbility, ensureKeywordEntries, getLibrary, saveAbility, seedKeywords } from "./abilitystore";
 import { applyProposal, loadRule, proposeUpdate, specFor } from "./cardrules";
-import { askClaude } from "./claude";
+import { askClaude, extractJson } from "./claude";
 import { COMPILE_MODEL } from "./cardrules";
 import { smokeTest } from "./diagnose";
 import { Ability, normalizeAbility } from "./effects";
@@ -36,10 +36,10 @@ export async function completeAbility(app: App, apiKey: string, id: string, inst
     apiKey,
     COMPILE_MODEL,
     specFor(await getMacros(app), lib, `${cur.effect} ${cur.examples.join(" ")}`) + COMPLETE,
-    `能力のid: ${cur.id}\\n名前: ${cur.title}\\n効果: ${cur.effect}\\n引数: ${JSON.stringify(cur.params)}\\n照合の例:\\n${cur.examples.map((e) => `- ${e}`).join("\\n") || "- なし"}\\n${cur.ability ? `今の処理: ${JSON.stringify(cur.ability)}\\n` : ""}${instruction ? `\\nあなたの指示:\\n${instruction}` : ""}`,
+    `能力のid: ${cur.id}\n名前: ${cur.title}\n効果: ${cur.effect}\n引数: ${JSON.stringify(cur.params)}\n照合の例:\n${cur.examples.map((e) => `- ${e}`).join("\n") || "- なし"}\n${cur.ability ? `今の処理: ${JSON.stringify(cur.ability)}\n` : ""}${instruction ? `\nあなたの指示:\n${instruction}` : ""}`,
     true,
   );
-  const parsed = JSON.parse(r.text.match(/\\{[\\s\\S]*\\}/)?.[0] ?? "");
+  const parsed = extractJson(r.text);
   const v = validateLib({ ...cur, ability: parsed.ability, params: parsed.params ?? cur.params, examples: [...new Set([...cur.examples, ...(Array.isArray(parsed.examples) ? parsed.examples : [])])], needs: parsed.ability ? undefined : parsed.needs });
   if (!v.lib) return { lib: cur, cost: r.cost, error: v.error };
   const chk = v.lib.ability ? checkAbility(v.lib) : { ok: false, error: "処理が無い (関数が足りない)" };

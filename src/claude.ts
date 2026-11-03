@@ -25,7 +25,7 @@ export async function askClaude(key: string, model: string, system: string, user
     headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
     body: JSON.stringify({
       model,
-      max_tokens: think || !thinking ? 4096 : 800,
+      max_tokens: think || !thinking ? 8192 : 800,
       ...(thinking ? { thinking } : {}),
       cache_control: { type: "ephemeral" },
       output_config: { effort: "low" },
@@ -43,4 +43,35 @@ export async function askClaude(key: string, model: string, system: string, user
   const inCost = ((u.input_tokens ?? 0) + 1.25 * (u.cache_creation_input_tokens ?? 0) + 0.1 * (u.cache_read_input_tokens ?? 0)) * p.in;
   const text = (res.json.content as { type: string; text?: string }[]).filter((b) => b.type === "text").map((b) => b.text).join("");
   return { text, inTokens, outTokens, cost: (inCost + outTokens * p.out) / 1e6 };
+}
+
+// AI の返事から、最初の JSON のオブジェクトを取り出す。前置きの文や ```json の囲み、文字列の中の { } があっても、括弧の対応で切り出す。
+// 読めなければ、返事の先頭を付けて、エラーにする (途中で切れたときも、ここで分かる)
+export function extractJson(text: string): any {
+  const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  for (const src of [fence?.[1], text]) {
+    if (!src) continue;
+    for (let i = src.indexOf("{"); i >= 0; i = src.indexOf("{", i + 1)) {
+      let depth = 0;
+      let inStr = false;
+      let esc = false;
+      for (let j = i; j < src.length; j++) {
+        const ch = src[j];
+        if (inStr) {
+          if (esc) esc = false;
+          else if (ch === "\\") esc = true;
+          else if (ch === '"') inStr = false;
+        } else if (ch === '"') inStr = true;
+        else if (ch === "{") depth++;
+        else if (ch === "}" && --depth === 0) {
+          try {
+            return JSON.parse(src.slice(i, j + 1));
+          } catch {
+            break;
+          }
+        }
+      }
+    }
+  }
+  throw new Error(`AI の返事を JSON として読めない (途中で切れたか、形が違う): ${text.slice(0, 200).replace(/\n/g, " ")}`);
 }

@@ -72,4 +72,13 @@ assert.equal(p.raw.length, 3, "ref は、そのまま記録に残る");
 assert.equal(p.abilities.length, 3, "新しい能力も、展開して読める");
 assert.equal(await smokeAbility(drawN), "ok", "ライブラリの能力そのものも、仮のカードにして、動作テストできる");
 assert.equal(await smokeAbility(lib({ id: "noProc" })), "failed", "処理が無い能力は、動作テストに通らない");
+{
+  // AI の返事から JSON を取り出す: 前置き・囲み・文字列の中の括弧があっても読める
+  const { extractJson } = await import("../src/claude");
+  assert.deepEqual(extractJson('{"a":1}'), { a: 1 });
+  assert.deepEqual(extractJson('次の通り。{n} は枚数。\n```json\n{"ability":{"text":"{n} 枚引く"},"params":{"n":1}}\n```\n以上'), { ability: { text: "{n} 枚引く" }, params: { n: 1 } }, "囲みと、文字列の中の { } があっても読める");
+  assert.deepEqual(extractJson('前置き {not json} のあと {"ok":true}'), { ok: true }, "壊れた { } の次の、正しい JSON を拾う");
+  assert.deepEqual(extractJson('{"s":"a \\"quoted\\" } brace"}'), { s: 'a "quoted" } brace' }, "エスケープした引用符と括弧");
+  assert.throws(() => extractJson('{"ability":{"kind":"spell"'), /JSON として読めない/, "途中で切れた返事は、分かるエラーにする");
+}
 console.log("abilities ok");
