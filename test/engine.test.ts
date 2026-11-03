@@ -566,4 +566,29 @@ console.log("engine ok");
   assert.ok(isReady({ ...item, needs: [{ ...p.needs[0], waitFor: ["verb.move"] }] }), "待っている型が実装されたら、更新できる");
   assert.ok(!isReady({ ...item, needs: [{ ...p.needs[0], waitFor: ["todo.unknownFunction"] }] }), "カタログに無い型は、実装されるまで待つ");
 }
+{
+  // 常在型能力 (起動の禁止): Null Rod / Collector Ouphe
+  const rod = def("Null Rod", "Artifact", "{2}", 0, 0, "", [{ kind: "static", restrictions: [{ type: "cantActivate", what: { kind: "cards", types: ["artifact"] } }], effects: [] }]);
+  const moxR = def("MoxR", "Artifact", "{0}", 0, 0, "{T}: Add {R}.");
+  const cub = def("Cub", "Creature — Bear", "{R}", 2, 2);
+  const castable = (hand: CardDef[], mine: CardDef[], theirs: CardDef[] = [], manual = false) => {
+    const g = world(hand, mine, [greedy, greedy], [manual, false]);
+    g.s.phase = "main1";
+    g.s.players[1].field = theirs.map((d, i) => mkPerm(d, 7000 + i, 1));
+    return g;
+  };
+  assert.ok(castable([cub], [moxR]).actions(0).some((a) => a.kind === "cast"), "(対照) Rod が無ければ、アーティファクトのマナで唱えられる");
+  assert.ok(!castable([cub], [moxR, rod]).actions(0).some((a) => a.kind === "cast"), "Rod があると、アーティファクトのマナは使えない");
+  assert.ok(castable([cub], [mountain, rod]).actions(0).some((a) => a.kind === "cast"), "土地のマナは使える");
+  assert.ok(!castable([cub], [moxR], [rod]).actions(0).some((a) => a.kind === "cast"), "相手の Rod も、自分のアーティファクトを止める (両方に効く)");
+  const manual = castable([cub], [mountain, moxR, rod], [], true).actions(0).filter((a) => a.kind === "tapMana");
+  assert.equal(manual.length, 1, "手動でタップできるのは、土地だけ (アーティファクトは出ない)");
+  const g = castable([cub], [moxR, rod]);
+  g.s.players[0].field = g.s.players[0].field.filter((p) => p.def.name !== "Null Rod");
+  assert.ok(g.actions(0).some((a) => a.kind === "cast"), "Rod が場から無くなれば、すぐ使える");
+  const ab = (await import("../src/effects")).normalizeAbility({ kind: "static", restrictions: [{ type: "cantActivate", what: { kind: "cards", types: ["artifact"] } }] })!;
+  assert.equal(ab.restrictions?.length, 1);
+  assert.equal((await import("../src/effects")).normalizeAbility({ kind: "static", restrictions: [{ type: "pt", what: {} }] })!.effects[0].do, "unsupported", "知らない常在型能力は、未対応");
+  assert.equal(await (await import("../src/diagnose")).smokeTest(rod).then((r) => r.status), "ok", "動作テスト (診断) でも確認できる");
+}
 console.log("diagnose ok");

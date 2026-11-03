@@ -1,7 +1,7 @@
 import assert from "node:assert";
 import { TFile, TFolder } from "obsidian";
 import { hasBackup, initRuleStore, migrateToRulebook, readMemos, readRuleText, restoreBackup, ruleKeys, writeRuleText } from "../src/rulestore";
-import { parseRule, ruleText, staleRule } from "../src/cardrules";
+import { VOCAB_VERSION, parseRule, ruleText, staleRule } from "../src/cardrules";
 
 // 模擬の vault: 隠しフォルダ (adapter) と、普通のノート (vault) を持つ
 const hidden = new Map<string, string>();
@@ -51,7 +51,7 @@ const text = ruleText("Bar", "Draw a card.", [{ kind: "spell", effects: [{ do: "
 const rule = parseRule(text)!;
 assert.equal(rule.abilities.length, 1);
 assert.equal(rule.status, "ok");
-assert.equal(rule.vocab, 3);
+assert.equal(rule.vocab, VOCAB_VERSION);
 assert.ok(!staleRule(rule) && staleRule({ ...rule, status: "partial", vocab: 1 }) && !staleRule({ ...rule, status: "manual", vocab: 1 }), "古い partial だけが、作り直す対象");
 
 // 移行: vault の Bot/Rules と Bot/Types から、隠しフォルダへ

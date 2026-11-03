@@ -12,7 +12,7 @@ import { readRuleText, writeRuleText } from "./rulestore";
 // 以後は対戦エンジンが機械的に実行する。じゅまが読んで直してよい (直したものは上書きしない)
 export const COMPILE_MODEL = "claude-sonnet-5-5";
 // 効果の部品を増やしたら上げる。古い版で作った「一部未対応」の記録は、「ルール化」で作り直す
-export const VOCAB_VERSION = 3;
+export const VOCAB_VERSION = 4;
 
 export function sanitizeAbilities(raw: unknown, macros?: Map<string, Macro>): Ability[] {
   return Array.isArray(raw) ? raw.map((a) => normalizeAbility(a, macros)).filter((a): a is Ability => !!a) : [];
@@ -109,6 +109,7 @@ export const SPEC = `あなたは Magic: The Gathering の対戦エンジンの�
 
 # Ability
 - kind: "mana" (マナを出す起動型能力。スタックを使わない) / "activated" (起動型能力) / "triggered" (誘発型能力) / "spell" (インスタント・ソーサリーを唱えて解決したときの効果)
+- kind: "static" (常在型能力。戦場にある間ずっと働く。いまは「起動の禁止」だけ): {"kind":"static","restrictions":[{"type":"cantActivate","what":CardSel}],"effects":[]}。what に合うパーマネントの、起動型能力 (マナ能力を含む) が起動できなくなる。what の owner を省くと、両方のプレイヤーに効く
 - cost (mana / activated): {"tap": true, "mana": "{1}{W}", "life": 1, "sacrificeSelf": true}。使うものだけ書く
 - trigger (triggered): {"event": "upkeep" | "etb" | "dies", "whose": "you" | "opponent" | "each"}。upkeep の whose は、誰のアップキープの開始時か。etb は「このカードが戦場に出たとき」、dies は「このカードが死亡したとき」だけ
 - targets: 「対象の〜」を取るとき、[{"id": "t", "sel": CardSel | {"kind":"any"} | {"kind":"player","who":"you"|"opponent"|"each"}}]。effects からは {"kind":"ref","ref":"t"} で参照する。{"kind":"any"} は「クリーチャーかプレイヤー(かプレインズウォーカー)のいずれか1つ」
@@ -154,7 +155,7 @@ export const SPEC = `あなたは Magic: The Gathering の対戦エンジンの�
 これら以外のキーワード (evoke / kicker / flashback / ward / protection など) は、unsupported に書く。
 
 # 能力にしないもの (unsupported に書く)
-常在型能力 (+1/+1 の修整、コストの増減)、代替コスト・追加コスト、置換効果、トークンを作る、カウンターを置く、ターン終了時までの一時的な効果、
+常在型能力のうち「起動の禁止」以外 (+1/+1 の修整、コストの増減、攻撃・ブロックの制限など)、代替コスト・追加コスト、置換効果、トークンを作る、カウンターを置く、ターン終了時までの一時的な効果、
 「このカードが戦場に出たとき」「アップキープの開始時」「死亡したとき」以外のきっかけ (攻撃したとき、カードを引いたとき、呪文を唱えたとき) の誘発型能力、「呪文を打ち消す」「コントロールを得る」「コピーする」、装備・オーラ・プレインズウォーカー能力。
 
 # マクロ (命令の組み合わせに、名前をつけた部品)
@@ -176,6 +177,7 @@ Black Lotus: {"abilities":[{"kind":"mana","cost":{"tap":true,"sacrificeSelf":tru
 Thoughtseize: {"abilities":[{"kind":"spell","effects":[{"do":"move","what":{"kind":"cards","zone":"hand","owner":"opponent","not":["land"],"count":1,"chooser":"you"},"to":"graveyard","how":"discard"},{"do":"change","what":{"kind":"player","who":"you"},"stat":"life","delta":-2}],"text":"相手の土地以外を1枚捨てさせ、2点失う"}],"unsupported":[]}
 Marsh Flats: {"abilities":[{"kind":"activated","cost":{"tap":true,"life":1,"sacrificeSelf":true},"effects":[{"do":"move","what":{"kind":"cards","zone":"library","owner":"you","subtypes":["Plains","Swamp"],"count":1,"chooser":"you"},"to":"battlefield"},{"do":"shuffle","owner":"you"}],"text":"平地か沼を探して出す"}],"unsupported":[]}
 Swords to Plowshares: {"abilities":[{"kind":"spell","targets":[{"id":"t","sel":{"kind":"cards","types":["creature"]}}],"effects":[{"do":"move","what":{"kind":"ref","ref":"t"},"to":"exile","as":"x"},{"do":"change","what":{"kind":"player","who":"controllerOf","ref":"x"},"stat":"life","delta":{"of":"power","ref":"x"}}],"text":"クリーチャーを追放し、そのパワーぶん相手がライフを得る"}],"unsupported":[]}
+Null Rod / Collector Ouphe: {"abilities":[{"kind":"static","restrictions":[{"type":"cantActivate","what":{"kind":"cards","types":["artifact"]}}],"effects":[],"text":"アーティファクトの起動型能力(マナ能力を含む)は起動できない"}],"unsupported":[]}
 Wasteland: {"abilities":[{"kind":"mana","cost":{"tap":true},"effects":[{"do":"addMana","options":"C"}]},{"kind":"activated","cost":{"tap":true,"sacrificeSelf":true},"targets":[{"id":"t","sel":{"kind":"cards","types":["land"],"not":["basic"]}}],"effects":[{"do":"move","what":{"kind":"ref","ref":"t"},"to":"graveyard","how":"destroy"}],"text":"基本でない土地を破壊"}],"unsupported":[]}`;
 
 export interface Compiled {

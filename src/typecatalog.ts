@@ -13,7 +13,7 @@ export const CATEGORY_EN: Record<Category, string> = {
 };
 
 export const EN_TITLES: Record<string, string> = {
-  "kind.spell": "Spell effect", "kind.activated": "Activated ability", "kind.mana": "Mana ability", "kind.triggered": "Triggered ability",
+  "kind.spell": "Spell effect", "kind.activated": "Activated ability", "kind.mana": "Mana ability", "kind.static": "Static ability", "kind.triggered": "Triggered ability",
   "verb.move": "move", "verb.change": "change", "verb.addMana": "addMana", "verb.use": "use", "verb.shuffle": "shuffle", "verb.flip": "flip", "verb.if": "if", "verb.may": "may", "verb.unsupported": "unsupported",
   "sel.cards": "cards", "sel.player": "player", "sel.any": "any", "sel.ref": "ref", "sel.targets": "targets",
   "amount.number": "number", "amount.of": "of", "amount.count": "count", "amount.x": "X",
@@ -49,6 +49,7 @@ export const TYPE_ENTRIES: TypeEntry[] = [
   { id: "kind.spell", category: "能力の種類", title: "呪文の効果", status: "implemented", since: "0.27.0", summary: "インスタント・ソーサリーを唱えて解決したときの効果。", shape: J({ kind: "spell", targets: [], effects: [] }), impl: "engine.ts の resolveTop()。スタックから取り出し、対象がまだ有効か確かめて、効果 (命令の並び) を runSteps() で実行し、墓地へ送る。記録が無い呪文は、墓地へ行くだけ (ログに「効果は未実装」)。", limits: "対象のうち1つだけ消えたときは、残りだけ実行する (全部消えたら不発)。", example: "Thoughtseize, Swords to Plowshares" },
   { id: "kind.activated", category: "能力の種類", title: "起動型能力", status: "implemented", since: "0.27.0", summary: "コストを払って起動する能力。スタックを使う。", shape: J({ kind: "activated", cost: { tap: true }, targets: [], effects: [] }), impl: "engine.ts の actions() が、優先権のあるときの行動に「起動」を並べ (コストを払えて、対象を選べるときだけ)、perform() が、対象を選び → コストを払い → スタックに載せる。解決は resolveTop()。", limits: "「ソーサリーのタイミングだけ」「ターンに1回」の制限は、まだ無い。", example: "Wasteland, Marsh Flats" },
   { id: "kind.mana", category: "能力の種類", title: "マナ能力", status: "implemented", since: "0.27.0", summary: "マナを出す能力。スタックを使わず、すぐ解決する。", shape: J({ kind: "mana", cost: { tap: true }, effects: [{ do: "addMana", options: "C", n: 2 }] }), impl: "コストがタップだけのものは、自動の支払い (planPayment) で使われる。手動のプレイヤー (人) は、タップしてマナプールに出す (行動 tapMana)。生け贄などの追加コストがあるものは、「起動」の行動になり、解決もすぐ行う。", limits: "痛み (Caves of Koilos の1点) や条件つきのマナは、まだ無い。", example: "Mana Crypt, Black Lotus" },
+  { id: "kind.static", category: "能力の種類", title: "常在型能力", status: "partial", since: "0.35.0", summary: "戦場にある間、ずっと働く能力。いまは「起動の禁止」だけ。", shape: J({ kind: "static", restrictions: [{ type: "cantActivate", what: { kind: "cards", types: ["artifact"] } }], effects: [] }), impl: "engine.ts の activationBlocked()。場のすべてのパーマネントの常在型能力を調べ、起動型能力・マナ能力を持つパーマネントが、what に合うかを判定する。禁止されると、行動の一覧 (actions) に「起動」「マナを出す」が出ず、マナの自動の支払い (payment) の候補からも外れる。出どころが戦場を離れれば、すぐ止まる (判定は、そのたびに場を見て行う)。", limits: "「起動の禁止」だけ。パワー・タフネスの修整、コストの増減、キーワードの付与、攻撃・ブロックの制限は未実装 (todo.static)。誘発型能力・忠誠度能力は禁止されない。", example: "Null Rod, Collector Ouphe" },
   { id: "kind.triggered", category: "能力の種類", title: "誘発型能力", status: "partial", since: "0.27.0", summary: "出来事が起きたときに、自動でスタックに載る能力。", shape: J({ kind: "triggered", trigger: { event: "upkeep", whose: "you" }, optional: false, effects: [] }), impl: "engine.ts の fire(event) が、場のカードの誘発型能力を探して、スタックに積む (ターンプレイヤーの能力を先に積む)。対象は解決時に選ぶ。", limits: "きっかけは3種類だけ (下の「きっかけ」)。対象を、積むときではなく解決時に選ぶ (簡略)。", example: "Mana Crypt, Orcish Bowmasters" },
 
   // ---- 命令 ----
@@ -133,7 +134,7 @@ export const TYPE_ENTRIES: TypeEntry[] = [
   // ---- 未実装 (要望を受けて作る) ----
   { id: "todo.token", category: "未実装", title: "トークンの作成", status: "planned", summary: "トークン (クリーチャーなど) を作る。", limits: "Orcish Bowmasters のアマスなど。" },
   { id: "todo.counter", category: "未実装", title: "カウンター (+1/+1 など)", status: "planned", summary: "カウンターを置く・取り除く。パワー・タフネスを計算し直す。" },
-  { id: "todo.static", category: "未実装", title: "継続効果 (常在型能力)", status: "planned", summary: "「〜は+1/+1」「アーティファクトの起動型能力は起動できない」「コストが1少ない」など。場を見て、特性を計算し直す。", limits: "Null Rod, Collector Ouphe など。" },
+  { id: "todo.static", category: "未実装", title: "継続効果 (常在型能力)", status: "partial", since: "0.35.0", summary: "「〜は+1/+1」「コストが1少ない」「攻撃できない」など。場を見て、特性を計算し直す。", impl: "「起動の禁止」(Null Rod, Collector Ouphe) だけ実装済み。kind.static を見る。", limits: "パワー・タフネスの修整、キーワードの付与、コストの増減、攻撃・ブロックの制限は未実装。" },
   { id: "todo.duration", category: "未実装", title: "期間つきの効果", status: "planned", summary: "「ターン終了時まで+2/+2」など。" },
   { id: "todo.replace", category: "未実装", title: "置換効果", status: "planned", summary: "「〜するなら、代わりに〜する」。出来事に割り込む。", limits: "Leyline of the Void, Containment Priest, Dauthi Voidwalker, Mox Diamond など。" },
   { id: "todo.altcost", category: "未実装", title: "代替コスト・追加コスト", status: "planned", summary: "Evoke、Flashback、Kicker、Convoke、Force of Despair の「手札から色のカードを追放して唱える」など。" },

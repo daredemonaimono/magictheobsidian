@@ -413,11 +413,29 @@ export class Game {
 
   // ---- 優先権 ----
 
+  // 常在型能力 (戦場にある間ずっと働く) で、perm の起動型能力・マナ能力が禁止されているか (Null Rod, Collector Ouphe など)
+  activationBlocked(perm: Perm): boolean {
+    for (const pl of this.s.players) {
+      for (const src of pl.field) {
+        for (const ab of src.def.abilities) {
+          for (const r of ab.kind === "static" ? (ab.restrictions ?? []) : []) {
+            if (r.type !== "cantActivate") continue;
+            const owner = r.what.owner ?? "any";
+            if (owner === "you" && perm.controller !== src.controller) continue;
+            if (owner === "opponent" && perm.controller === src.controller) continue;
+            if (this.matches(perm, r.what)) return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+
   // コストを払えるなら、プールで足りない分のためにタップするマナ源の uid (空 = プールだけで払える)。払えなければ null
   private payment(p: number, manaCost: string): number[] | null {
     const pl = this.s.players[p];
     const rest = spendPool(parseCost(manaCost), [...pl.pool]);
-    return planPayment(rest, pl.field.filter((x) => usable(x) && x.def.mana.length));
+    return planPayment(rest, pl.field.filter((x) => usable(x) && x.def.mana.length && !this.activationBlocked(x))); // 起動を禁止されたマナ源は、使えない
   }
 
   actions(p: number): PriorityAction[] {
@@ -441,6 +459,7 @@ export class Game {
     for (const perm of pl.field) {
       perm.def.abilities.forEach((ab, index) => {
         if (ab.kind !== "mana" && ab.kind !== "activated") return;
+        if (this.activationBlocked(perm)) return; // Null Rod など
         const cost = ab.cost ?? {};
         const simple = ab.kind === "mana" && cost.tap && !cost.mana && !cost.life && !cost.sacrificeSelf;
         if (cost.tap && !usable(perm)) return;

@@ -52,8 +52,25 @@ async function run(def: CardDef, onField: boolean, turns: number) {
   return { log: g.s.log, changed: before !== after, flags };
 }
 
+// 常在型能力 (起動の禁止): 場に置いて、仮のアーティファクトの起動が止まるか、クリーチャーは止まらないかを調べる
+function staticTest(def: CardDef): Smoke {
+  try {
+    const g = new Game([[dummy], [dummy]], 5, [async () => ({ kind: "pass" }), async () => ({ kind: "pass" })], { opening: false, first: 0 });
+    const perm = (d: CardDef, uid: number, owner: number) => ({ uid, def: d, owner, controller: owner, tapped: false, sick: false, damage: 0, attacking: false });
+    const mox = makeDef({ key: "Mox", name: "Test Mox", typeLine: "Artifact", manaCost: "{0}", cmc: 0, oracle: "", abilities: [{ kind: "mana", cost: { tap: true }, effects: [{ do: "addMana", options: "C" }] }] });
+    g.s.players[0].field = [perm(def, 1, 0), perm(mox, 2, 0), perm(dummy, 3, 0)];
+    g.s.players[1].field = [perm(mox, 4, 1)];
+    const blocked = [2, 3, 4].map((u) => g.activationBlocked(g.perm(u)!));
+    const notes = [`自分のアーティファクト: ${blocked[0] ? "止まる" : "動く"} / クリーチャー: ${blocked[1] ? "止まる" : "動く"} / 相手のアーティファクト: ${blocked[2] ? "止まる" : "動く"}`];
+    return blocked.some(Boolean) ? { status: "ok", notes } : { status: "unchecked", notes: [...notes, "仮の盤面では、どの起動も止まらなかった (対象の条件が、仮の盤面に無い可能性)"] };
+  } catch (e) {
+    return { status: "failed", notes: [`例外: ${(e as Error).message}`] };
+  }
+}
+
 export async function smokeTest(def: CardDef): Promise<Smoke> {
   const abilities = def.abilities;
+  if (abilities.some((a) => a.kind === "static")) return staticTest(def);
   const hasEffects = abilities.some((a) => a.kind !== "mana" || a.effects.some((e) => e.do !== "addMana"));
   if (!abilities.length) return { status: "skipped", notes: ["能力の記録が無い (キーワードだけ・バニラ、または記録なし)"] };
   const notes: string[] = [];

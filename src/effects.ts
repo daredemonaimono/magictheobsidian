@@ -58,8 +58,12 @@ export interface TargetDef {
   id: string;
   sel: CardSel | AnySel | PlayerSel;
 }
+// 常在型能力の制限 (戦場にある間、ずっと働く)。いまは「起動の禁止」だけ
+export type Restriction = { type: "cantActivate"; what: CardSel }; // what に合うパーマネントの、起動型能力・マナ能力は、起動できない
+
 export interface Ability {
-  kind: "mana" | "activated" | "triggered" | "spell";
+  kind: "mana" | "activated" | "triggered" | "spell" | "static";
+  restrictions?: Restriction[]; // static のとき
   cost?: AbilityCost;
   trigger?: { event: "upkeep" | "etb" | "dies"; whose?: Who | "each" };
   optional?: boolean; // 「〜してもよい」
@@ -74,7 +78,7 @@ export const STEP_VERBS = ["move", "change", "addMana", "shuffle", "flip", "if",
 
 const TYPES = ["creature", "land", "artifact", "enchantment", "planeswalker", "instant", "sorcery", "permanent", "card"];
 const ZONES: Zone[] = ["library", "hand", "battlefield", "graveyard", "exile"];
-const KINDS = ["mana", "activated", "triggered", "spell"];
+const KINDS = ["mana", "activated", "triggered", "spell", "static"];
 const EVENTS = ["upkeep", "etb", "dies"];
 const NOTS = ["land", "basic", "creature", "legendary", "artifact", "enchantment"];
 const num = (x: unknown, d = 1) => (typeof x === "number" && Number.isFinite(x) ? Math.max(0, Math.floor(x)) : d);
@@ -232,6 +236,11 @@ export function normalizeAbility(raw: unknown, macros?: Map<string, Macro>): Abi
     if (!EVENTS.includes(String(t.event))) return { kind: "triggered", effects: [{ do: "unsupported", text: `未対応の誘発: ${JSON.stringify(a.trigger)}` }] };
     ab.trigger = { event: t.event as "upkeep", whose: t.whose === "opponent" || t.whose === "each" ? t.whose : "you" };
   }
+  if (ab.kind === "static") {
+    const rs = (Array.isArray(a.restrictions) ? a.restrictions : []).filter((r: Record<string, unknown>) => r?.type === "cantActivate").map((r: Record<string, unknown>): Restriction => ({ type: "cantActivate", what: cardSel(r.what) }));
+    if (!rs.length) return { kind: "static", effects: [{ do: "unsupported", text: `未対応の常在型能力: ${JSON.stringify(a.restrictions ?? a)}` }] };
+    ab.restrictions = rs;
+  }
   if (a.optional) ab.optional = true;
   if (typeof a.text === "string") ab.text = a.text;
   const targets: TargetDef[] = [...hoist];
@@ -316,10 +325,11 @@ export function describeCost(c?: AbilityCost): string {
 }
 
 export function describeAbility(a: Ability): string {
-  const head = { spell: "唱えて解決したとき", activated: "起動", mana: "マナ能力", triggered: `誘発 (${a.trigger?.event === "upkeep" ? `${a.trigger.whose === "opponent" ? "相手" : a.trigger.whose === "each" ? "各プレイヤー" : "自分"}のアップキープの開始時` : a.trigger?.event === "etb" ? "戦場に出たとき" : a.trigger?.event === "dies" ? "死亡したとき" : "?"})` }[a.kind];
+  const head = { spell: "唱えて解決したとき", activated: "起動", mana: "マナ能力", static: "常在型(戦場にある間)", triggered: `誘発 (${a.trigger?.event === "upkeep" ? `${a.trigger.whose === "opponent" ? "相手" : a.trigger.whose === "each" ? "各プレイヤー" : "自分"}のアップキープの開始時` : a.trigger?.event === "etb" ? "戦場に出たとき" : a.trigger?.event === "dies" ? "死亡したとき" : "?"})` }[a.kind];
   const cost = describeCost(a.cost);
   const targets = a.targets?.length ? `対象: ${a.targets.map((t) => `「${t.id}」= ${describeSel(t.sel)}`).join("、")}。` : "";
-  return `${head}${cost ? ` [${cost}]` : ""}${a.optional ? " (任意)" : ""}: ${targets}${a.effects.map(describeStep).join("、")}`;
+  const rest = (a.restrictions ?? []).map((r) => `${describeSel({ ...r.what, count: undefined })} の起動型能力 (マナ能力を含む) は起動できない`).join("、");
+  return `${head}${cost ? ` [${cost}]` : ""}${a.optional ? " (任意)" : ""}: ${targets}${rest}${rest && a.effects.length ? "、" : ""}${a.effects.map(describeStep).join("、")}`;
 }
 
 // 入れ子の中も含めて、「未対応」の文を集める
