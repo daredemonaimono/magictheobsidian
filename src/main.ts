@@ -94,7 +94,7 @@ export default class MagicTheObsidian extends Plugin {
     this.registerView(DASHBOARD_VIEW, (leaf) => new DashboardView(leaf, { collection: () => void this.openOrReveal(COLLECTION_VIEW), deck: () => void this.openOrReveal(DECKLIST_VIEW), cards: () => void this.openOrReveal(CARDS_VIEW), bot: () => void this.openBot(BOT_VIEW), battle: () => void this.openBot(BATTLE_VIEW) }));
     this.registerView(BATTLE_VIEW, (leaf) => new BattleView(leaf, this.settings, () => this.app.secretStorage.getSecret(this.settings.botKey)));
     this.registerView(BOT_VIEW, (leaf) => new BotView(leaf, this.settings, () => this.app.secretStorage.getSecret(this.settings.botKey)));
-    this.registerView(BOTLOG_VIEW, (leaf) => new BotLogView(leaf));
+    this.registerView(BOTLOG_VIEW, (leaf) => new BotLogView(leaf, this.settings));
     this.registerView(CARDS_VIEW, (leaf) => new CardsView(leaf, this.settings));
     this.registerView(
       DECKLIST_VIEW,

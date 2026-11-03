@@ -269,7 +269,7 @@ export class BattleView extends ItemView {
       } else if (d.type === "attackers") {
         ask = `攻撃できるクリーチャー:\n${d.eligible.map((u, i) => `${i + 1}. ${stat(u)}`).join("\n")}\n攻撃するものの番号を配列で。攻撃しないなら []。返事: {"attack": [番号...], "reason": "20字以内"}`;
       } else {
-        ask = `攻撃してくる:\n${d.attackers.map((u, i) => `${i + 1}. ${stat(u)}`).join("\n")}\nブロックできる:\n${d.eligible.map((u, i) => `${i + 1}. ${stat(u)}`).join("\n")}\nブロックしないなら []。返事: {"blocks": [[ブロッカーの番号, 攻撃の番号], ...], "reason": "20字以内"}`;
+        ask = `攻撃してくる:\n${d.attackers.map((u, i) => `${i + 1}. ${stat(u)}`).join("\n")}\nブロックできる:\n${d.eligible.map((u, i) => `${i + 1}. ${stat(u)}`).join("\n")}\nブロックしてよい組(ブロッカー→攻撃): ${d.legal.map((l) => `${d.eligible.indexOf(l.blocker) + 1}→${d.attackers.indexOf(l.attacker) + 1}`).join(", ")}\n1体の攻撃を複数でブロックしてよい。威迫(menace)は2体以上でないとブロックできない。ブロックしないなら []。返事: {"blocks": [[ブロッカーの番号, 攻撃の番号], ...], "reason": "20字以内"}`;
       }
       const fallback: Answer = d.type === "priority" ? d.actions[d.actions.length - 1] : d.type === "choice" ? 0 : [];
       for (let tries = 0; tries < 2; tries++) {
@@ -363,11 +363,13 @@ export class BattleView extends ItemView {
         cls.push("is-playable", this.blocker === perm.uid ? "is-selected" : "");
         click = () => ((this.blocker = perm.uid), this.render());
       } else if (!me && p?.d.type === "blockers" && p.d.attackers.includes(perm.uid)) {
-        const paired = this.pairs.find((x) => x.attacker === perm.uid);
+        const d = p.d;
+        const paired = this.pairs.some((x) => x.attacker === perm.uid);
         cls.push("is-playable", paired ? "is-selected" : "");
         click = () => {
           if (this.blocker === undefined) return;
-          this.pairs = this.pairs.filter((x) => x.attacker !== perm.uid && x.blocker !== this.blocker);
+          if (!d.legal.some((l) => l.attacker === perm.uid && l.blocker === this.blocker)) return void new Notice("そのクリーチャーは、この攻撃をブロックできない (飛行・威嚇・影など)");
+          this.pairs = this.pairs.filter((x) => x.blocker !== this.blocker); // 1体は1体だけ。1体の攻撃を複数でブロックするのは可
           this.pairs.push({ attacker: perm.uid, blocker: this.blocker });
           this.blocker = undefined;
           this.render();
@@ -440,7 +442,7 @@ export class BattleView extends ItemView {
       prompt.createEl("button", { text: `攻撃宣言 (${this.sel.size}体)`, cls: "mod-cta" }).onclick = () => this.answer([...this.sel]);
       prompt.createEl("button", { text: "攻撃しない" }).onclick = () => this.answer([]);
     } else {
-      prompt.createSpan({ text: "自分のブロッカーを選び、相手の攻撃クリーチャーを選ぶ" + (this.pairs.length ? ` (${this.pairs.length}組)` : "") });
+      prompt.createSpan({ text: "自分のブロッカーを選び、相手の攻撃クリーチャーを選ぶ (1体を複数でブロックしてよい)" + (this.pairs.length ? ` · ${this.pairs.length}体がブロック` : "") });
       prompt.createEl("button", { text: "ブロック確定", cls: "mod-cta" }).onclick = () => this.answer([...this.pairs]);
       prompt.createEl("button", { text: "ブロックしない" }).onclick = () => this.answer([]);
     }

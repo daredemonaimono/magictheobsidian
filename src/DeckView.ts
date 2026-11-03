@@ -141,7 +141,7 @@ export class DeckView extends ItemView {
         // クリーチャーで、パワー・タフネスが無い古いノートも取り直す (対戦エンジンで使う)
         for (const k of keys) {
           const i = cardInfo(this.app, k);
-          if (i && /\bCreature\b/.test(i.typeLine) && i.power === undefined && !noText.includes(k)) noText.push(k);
+          if (i && /\bCreature\b/.test(i.typeLine) && (i.power === undefined || i.keywords === undefined) && !noText.includes(k)) noText.push(k);
         }
         let fetched = 0;
         let failedCards = 0;

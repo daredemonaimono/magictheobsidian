@@ -75,7 +75,10 @@ const pad = Array(40).fill(mountain);
 
 // ---- ブロックと飛行 ----
 const blockAll: Controller = async (_g, d) => {
-  if (d.type === "blockers") return d.attackers.slice(0, d.eligible.length).map((a, i) => ({ attacker: a, blocker: d.eligible[i] }));
+  if (d.type === "blockers") {
+    const used = new Set<number>();
+    return d.legal.filter((l) => !used.has(l.blocker) && used.add(l.blocker)); // ブロックできるものは全部ブロックする
+  }
   return greedy(_g, d);
 };
 {
@@ -212,6 +215,56 @@ const pass: PriorityAction = { kind: "pass" };
   assert.equal(g.s.players[1].field.length, 0, "対象が1つなら聞かずに破壊する");
   assert.equal(asked.length, 0);
   assert.ok(g.s.players[1].graveyard.some((c) => c.def.name === "Wolf"));
+}
+
+// ---- 戦闘のキーワード ----
+const fight = async (atk: CardDef, blockers: CardDef[], opts: { blocks?: boolean; defenderLands?: CardDef[] } = {}) => {
+  const hasty = def(atk.name, atk.typeLine, "{R}", atk.power, atk.toughness, `${atk.oracle}\nHaste`);
+  const g = setup(pad, pad, [mountain, hasty], [], [...blockers, ...(opts.defenderLands ?? [])]);
+  (g as unknown as { controllers: Controller[] }).controllers[1] = opts.blocks === false ? greedy : blockAll;
+  await g.play(1);
+  return g;
+};
+const gone = (g: Game, player: number, name: string) => !g.s.players[player].field.some((p) => p.def.name === name);
+const rat = (n = "Rat", pw = 2, th = 2, oracle = "", type = "Creature — Rat") => def(n, type, "{R}", pw, th, oracle);
+{
+  let g = await fight(rat("Trampler", 4, 4, "Trample"), [rat("Block", 2, 2)]);
+  assert.ok(gone(g, 1, "Block") && g.s.players[1].life === 18, "トランプル: 致死の分を割り振って、あまりがプレイヤーへ");
+  g = await fight(rat("First", 2, 2, "First strike"), [rat("Block", 2, 2)]);
+  assert.ok(gone(g, 1, "Block") && !gone(g, 0, "First"), "先制攻撃: 先に倒して反撃を受けない");
+  g = await fight(rat("Double", 2, 2, "Double strike"), []);
+  assert.equal(g.s.players[1].life, 16, "二段攻撃: 2回与える");
+  g = await fight(rat("Toucher", 1, 1, "Deathtouch"), [rat("Big", 5, 5)]);
+  assert.ok(gone(g, 1, "Big"), "接死: 1点で倒す");
+  g = await fight(rat("Linker", 3, 3, "Lifelink"), []);
+  assert.deepEqual([g.s.players[0].life, g.s.players[1].life], [23, 17], "絆魂");
+  g = await fight(rat("Menacer", 2, 2, "Menace"), [rat("One")]);
+  assert.equal(g.s.players[1].life, 18, "威迫: 1体ではブロックできない");
+  g = await fight(rat("Menacer", 2, 2, "Menace"), [rat("One"), rat("Two")]);
+  assert.equal(g.s.players[1].life, 20, "威迫: 2体ならブロックできる");
+  g = await fight(rat("Wall", 0, 4, "Defender\nHaste"), []);
+  assert.equal(g.s.players[1].life, 20, "防衛は攻撃できない");
+  g = await fight(rat("Immortal", 1, 1, "Indestructible"), [rat("Big", 5, 5)]);
+  assert.ok(!gone(g, 0, "Immortal"), "破壊不能は致死ダメージで死なない");
+  g = await fight(rat("Feary", 2, 2, "Fear"), [rat("Plain")]);
+  assert.equal(g.s.players[1].life, 18, "畏怖: 黒でも artifact でもないとブロックできない");
+  g = await fight(rat("Skulker", 2, 2, "Skulk"), [rat("Bigger", 3, 3)]);
+  assert.equal(g.s.players[1].life, 18, "忍び足: パワーの大きいクリーチャーはブロックできない");
+  g = await fight(rat("Shady", 2, 2, "Shadow"), [rat("Plain")]);
+  assert.equal(g.s.players[1].life, 18, "影: 影でないクリーチャーはブロックできない");
+  const island = def("Island", "Basic Land — Island", "");
+  g = await fight(rat("Walker", 2, 2, "Islandwalk"), [rat("Plain")], { defenderLands: [island] });
+  assert.equal(g.s.players[1].life, 18, "島渡り: 相手が島を持つとブロックされない");
+}
+{
+  const hex = rat("Hex", 2, 2, "Hexproof");
+  const kill = def("Kill", "Instant", "{R}", 0, 0, "", [{ kind: "spell", effects: [{ op: "destroy", target: { controller: "opponent", types: ["creature"] } }] }]);
+  const g = setup(pad, pad, [mountain, kill], [], [hex]);
+  await g.play(1);
+  assert.ok(!gone(g, 1, "Hex"), "呪禁は相手の対象にならない");
+  const plain = setup(pad, pad, [mountain, kill], [], [rat("Plain")]);
+  await plain.play(1);
+  assert.ok(gone(plain, 1, "Plain"), "(対照) 呪禁が無ければ破壊される");
 }
 console.log("engine ok");
 

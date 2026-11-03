@@ -1,6 +1,8 @@
 import { ItemView, WorkspaceLeaf } from "obsidian";
 import { botBus } from "./botbus";
 import { cardText } from "./cards";
+import { keywordLabel } from "./keywords";
+import { Settings } from "./settings";
 
 export const BOTLOG_VIEW = "mtg-botlog";
 
@@ -19,7 +21,7 @@ export class BotLogView extends ItemView {
     return "scroll-text";
   }
 
-  constructor(leaf: WorkspaceLeaf) {
+  constructor(leaf: WorkspaceLeaf, private settings: Settings) {
     super(leaf);
   }
 
@@ -48,6 +50,7 @@ export class BotLogView extends ItemView {
     if (!c) return void this.cardEl.createDiv({ text: "カードにカーソルを合わせると、効果が出る", cls: "mtg-dim" });
     this.cardEl.createEl("h4", { text: `${c.name} ${c.manaCost}` });
     this.cardEl.createDiv({ text: c.typeLine, cls: "mtg-dim" });
+    if (c.keywords?.length) this.cardEl.createDiv({ text: c.keywords.map((k) => keywordLabel(k, this.settings.textLang)).join("・"), cls: "mtg-botkw" });
     this.cardEl.createDiv({ text: await cardText(this.app, c.key), cls: "mtg-botcardtext" });
   }
 }

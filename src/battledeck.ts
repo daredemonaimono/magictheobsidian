@@ -26,8 +26,8 @@ export async function loadBattleDeck(app: App, file: TFile): Promise<BattleDeck>
     if (!info) continue;
     const oracle = (await oracleEnglish(app, key)).replace(/\s+\n/g, "\n").trim();
     const num = (v?: string) => (v !== undefined && /^-?\d+$/.test(v) ? Number(v) : 0); // "*" などは 0 にする (簡略)
-    if (/\bCreature\b/.test(info.typeLine) && info.power === undefined) noStats++;
-    const def = makeDef({ key, name: info.name, typeLine: info.typeLine, manaCost: info.manaCost, cmc: info.cmc, power: num(info.power), toughness: num(info.toughness), oracle, abilities: await loadAbilities(app, key) });
+    if (/\bCreature\b/.test(info.typeLine) && (info.power === undefined || info.keywords === undefined)) noStats++;
+    const def = makeDef({ key, name: info.name, typeLine: info.typeLine, manaCost: info.manaCost, cmc: info.cmc, power: num(info.power), toughness: num(info.toughness), oracle, abilities: await loadAbilities(app, key), keywords: info.keywords });
     for (let i = 0; i < e.n; i++) defs.push(def);
     lines.push(`${e.n}x ${info.name} ${info.manaCost} [${info.typeLine}${info.power !== undefined ? ` ${info.power}/${info.toughness}` : ""}] ${oracle.replace(/\s+/g, " ").slice(0, 300)}`);
   }

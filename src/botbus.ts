@@ -4,6 +4,7 @@ export interface HoverCard {
   name: string;
   typeLine: string;
   manaCost: string;
+  keywords?: string[]; // 英語 (小文字)
 }
 
 // ボット画面 (メイン) とログ画面 (右サイドバー) をつなぐ。仮の実装

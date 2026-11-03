@@ -12,6 +12,7 @@ export interface ScryfallCard {
   type_line: string;
   power?: string;
   toughness?: string;
+  keywords?: string[];
   colors?: string[];
   color_identity: string[];
   set: string;
@@ -184,6 +185,7 @@ export function toMarkdown(c: ScryfallCard, { lang, local, printings }: CardOpti
     `cmc: ${c.cmc}`,
     `type_line: "${c.type_line}"`,
     ...(c.power ?? c.card_faces?.[0]?.power ? [`power: "${c.power ?? c.card_faces?.[0]?.power}"`, `toughness: "${c.toughness ?? c.card_faces?.[0]?.toughness}"`] : []),
+    `keywords: [${(c.keywords ?? []).join(", ")}]`, // 空でも書く (キーが無い = 未取得、と区別するため)
     `colors: [${(c.colors ?? c.card_faces?.[0]?.colors ?? []).join(", ")}]`,
     `color_identity: [${c.color_identity.join(", ")}]`,
     `rarity: ${c.rarity}`,

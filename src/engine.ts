@@ -65,6 +65,9 @@ export interface Perm extends Card {
   damage: number;
   attacking: boolean;
   blocking?: number; // ブロックしている攻撃クリーチャーの uid
+  blockOrder?: number; // 1体に複数でブロックされたとき、ダメージを割り振る順
+  blocked?: boolean; // 攻撃クリーチャーが、ブロックされた (ブロッカーが後で死んでも、ブロックされたまま)
+  deathtouched?: boolean; // 接死のダメージを受けた
 }
 export interface Player {
   life: number;
@@ -102,7 +105,7 @@ export type PriorityAction =
 export type Decision =
   | { type: "priority"; player: number; actions: PriorityAction[] }
   | { type: "attackers"; player: number; eligible: number[] }
-  | { type: "blockers"; player: number; attackers: number[]; eligible: number[] }
+  | { type: "blockers"; player: number; attackers: number[]; eligible: number[]; legal: Block[] } // legal = ブロックしてよい組 (飛行・威嚇などの制限を満たすもの)
   | { type: "choice"; player: number; prompt: string; options: string[] };
 export type Block = { attacker: number; blocker: number };
 // priority → PriorityAction / attackers → number[] (攻撃する uid) / blockers → Block[] / choice → 選んだ番号 (0 始まり)
@@ -116,7 +119,12 @@ export interface Step {
 
 // ---- カードの定義 ----
 
-const KEYWORDS = ["flying", "haste", "vigilance", "flash", "reach"];
+// 戦闘のキーワード (エンジンの固定ルール。カードごとの記録は要らない)
+export const KEYWORDS = [
+  "flying", "haste", "vigilance", "flash", "reach", "trample", "first strike", "double strike", "deathtouch", "lifelink", "menace", "defender", "indestructible",
+  "hexproof", "shroud", "intimidate", "fear", "skulk", "shadow", "islandwalk", "swampwalk", "mountainwalk", "forestwalk", "plainswalk",
+];
+const LANDWALK: Record<string, string> = { islandwalk: "Island", swampwalk: "Swamp", mountainwalk: "Mountain", forestwalk: "Forest", plainswalk: "Plains" };
 
 export function parseKeywords(oracle: string): string[] {
   const found = new Set<string>();
@@ -164,19 +172,23 @@ export function simpleMana(abilities: Ability[]): string[] {
 }
 
 // abilities が無いときは、効果テキストから読めるマナ能力だけを持つ
-export function makeDef(p: { key: string; name: string; typeLine: string; manaCost: string; cmc: number; power?: number; toughness?: number; oracle: string; abilities?: Ability[] }): CardDef {
+export function makeDef(p: { key: string; name: string; typeLine: string; manaCost: string; cmc: number; power?: number; toughness?: number; oracle: string; abilities?: Ability[]; keywords?: string[] }): CardDef {
   const abilities: Ability[] =
     p.abilities ??
     (parseMana(p.typeLine, p.oracle).length
       ? [{ kind: "mana", cost: { tap: true }, effects: parseMana(p.typeLine, p.oracle).map((options) => ({ op: "addMana" as const, options })) }]
       : []);
-  return { ...p, power: p.power ?? 0, toughness: p.toughness ?? 0, keywords: parseKeywords(p.oracle), abilities, mana: simpleMana(abilities) };
+  // Scryfall のキーワード一覧 (言語に依らず英語) と、効果テキストから読んだものを合わせる
+  const keywords = [...new Set([...parseKeywords(p.oracle), ...(p.keywords ?? []).map((k) => k.toLowerCase()).filter((k) => KEYWORDS.includes(k))])];
+  return { ...p, power: p.power ?? 0, toughness: p.toughness ?? 0, keywords, abilities, mana: simpleMana(abilities) };
 }
 
 export const isLand = (d: CardDef) => /\bLand\b/.test(d.typeLine);
 export const isCreature = (d: CardDef) => /\bCreature\b/.test(d.typeLine);
 const isPermanent = (d: CardDef) => !/\b(Instant|Sorcery)\b/.test(d.typeLine);
 const hasKw = (d: CardDef, k: string) => d.keywords.includes(k);
+const colorsOf = (d: CardDef) => new Set(d.manaCost.match(/[WUBRG]/g) ?? []);
+const isArtifact = (d: CardDef) => /\bArtifact\b/.test(d.typeLine);
 
 // ---- マナ ----
 
@@ -336,7 +348,7 @@ export class Game {
       this.combatDamage();
       if (s.winner !== undefined || !(await step("damage"))) return;
     }
-    for (const pl of s.players) for (const p of pl.field) (p.attacking = false), (p.blocking = undefined);
+    for (const pl of s.players) for (const p of pl.field) (p.attacking = false), (p.blocking = undefined), (p.blocked = false);
     if (!(await step("endCombat")) || !(await step("main2")) || !(await step("end"))) return;
     this.cleanup();
   }
@@ -351,7 +363,7 @@ export class Game {
 
   private cleanup() {
     const s = this.s;
-    for (const pl of s.players) for (const p of pl.field) p.damage = 0;
+    for (const pl of s.players) for (const p of pl.field) (p.damage = 0), (p.deathtouched = false);
     const me = s.players[s.active];
     while (me.hand.length > 7) {
       me.hand.sort((a, b) => a.def.cmc - b.def.cmc);
@@ -561,6 +573,7 @@ export class Game {
     return this.s.players
       .flatMap((pl) => pl.field)
       .filter((p) => {
+        if (hasKw(p.def, "shroud") || (hasKw(p.def, "hexproof") && p.controller !== controller)) return false; // 呪禁・被覆
         const c = spec.controller ?? "any";
         if (c === "you" && p.controller !== controller) return false;
         if (c === "opponent" && p.controller === controller) return false;
@@ -640,6 +653,10 @@ export class Game {
         case "exile": {
           const t = await this.pickPerm(e.target, me, `${ctx.source.name}`);
           if (!t) break;
+          if (e.op === "destroy" && hasKw(t.def, "indestructible")) {
+            this.log(`${t.def.name} は破壊されない`);
+            break;
+          }
           const pl = s.players[t.controller];
           pl.field.splice(pl.field.indexOf(t), 1);
           const card: Card = { uid: t.uid, def: t.def, owner: t.owner };
@@ -663,7 +680,7 @@ export class Game {
   private async declareAttackers(): Promise<boolean> {
     const s = this.s;
     const me = s.players[s.active];
-    const eligible = me.field.filter((p) => isCreature(p.def) && !p.tapped && (!p.sick || hasKw(p.def, "haste"))).map((p) => p.uid);
+    const eligible = me.field.filter((p) => isCreature(p.def) && !p.tapped && !hasKw(p.def, "defender") && (!p.sick || hasKw(p.def, "haste"))).map((p) => p.uid);
     if (!eligible.length) return false;
     const picked = await this.ask<number[]>({ type: "attackers", player: s.active, eligible });
     const chosen = picked.filter((u) => eligible.includes(u));
@@ -677,42 +694,95 @@ export class Game {
     return chosen.length > 0;
   }
 
+  // blk が atk をブロックしてよいか (飛行・威嚇などの制限)
+  private canBlock(atk: Perm, blk: Perm): boolean {
+    const a = atk.def;
+    const b = blk.def;
+    if (hasKw(a, "flying") && !hasKw(b, "flying") && !hasKw(b, "reach")) return false;
+    if (hasKw(a, "fear") && !isArtifact(b) && !colorsOf(b).has("B")) return false;
+    if (hasKw(a, "intimidate") && !isArtifact(b) && ![...colorsOf(a)].some((c) => colorsOf(b).has(c))) return false;
+    if (hasKw(a, "skulk") && b.power > a.power) return false;
+    if (hasKw(a, "shadow") !== hasKw(b, "shadow")) return false; // 影のクリーチャーは、影のクリーチャーとだけ戦う
+    for (const [kw, land] of Object.entries(LANDWALK)) if (hasKw(a, kw) && this.s.players[blk.controller].field.some((l) => isLand(l.def) && l.def.typeLine.includes(land))) return false;
+    return true;
+  }
+
   private async declareBlockers() {
     const s = this.s;
     const def = this.other(s.active);
     const attackers = s.players[s.active].field.filter((p) => p.attacking);
-    const eligible = s.players[def].field.filter((p) => isCreature(p.def) && !p.tapped).map((p) => p.uid);
+    const eligible = s.players[def].field.filter((p) => isCreature(p.def) && !p.tapped);
     if (!eligible.length) return;
-    const blocks = await this.ask<Block[]>({ type: "blockers", player: def, attackers: attackers.map((a) => a.uid), eligible });
-    const usedA = new Set<number>();
-    const usedB = new Set<number>();
+    const legal = attackers.flatMap((a) => eligible.filter((b) => this.canBlock(a, b)).map((b) => ({ attacker: a.uid, blocker: b.uid })));
+    if (!legal.length) return;
+    const blocks = await this.ask<Block[]>({ type: "blockers", player: def, attackers: attackers.map((a) => a.uid), eligible: eligible.map((b) => b.uid), legal });
+    const used = new Set<number>();
+    const per = new Map<number, Perm[]>();
     for (const b of blocks) {
-      const a = attackers.find((x) => x.uid === b.attacker);
-      const blk = s.players[def].field.find((x) => x.uid === b.blocker);
-      if (!a || !blk || !eligible.includes(b.blocker) || usedA.has(b.attacker) || usedB.has(b.blocker)) continue; // shortcut: 1体に複数でブロックは未対応
-      if (hasKw(a.def, "flying") && !hasKw(blk.def, "flying") && !hasKw(blk.def, "reach")) continue;
-      usedA.add(b.attacker);
-      usedB.add(b.blocker);
-      blk.blocking = a.uid;
-      this.log(`ブロック: ${blk.def.name} → ${a.def.name}`);
+      if (used.has(b.blocker) || !legal.some((l) => l.attacker === b.attacker && l.blocker === b.blocker)) continue; // 1体は1体だけブロックできる
+      used.add(b.blocker);
+      per.set(b.attacker, [...(per.get(b.attacker) ?? []), this.perm(b.blocker)!]);
+    }
+    for (const [auid, list] of per) {
+      const a = this.perm(auid)!;
+      if (hasKw(a.def, "menace") && list.length < 2) continue; // 威迫は2体以上でないとブロックできない
+      a.blocked = true;
+      list.forEach((blk, i) => {
+        blk.blocking = auid;
+        blk.blockOrder = i;
+        this.log(`ブロック: ${blk.def.name} → ${a.def.name}`);
+      });
     }
     this.onChange?.();
   }
 
+  // 1つのダメージ。接死 (どんな量でも致死) と絆魂 (与えたダメージだけ回復) を扱う
+  private deal(src: Perm, target: Perm | number, amount: number) {
+    if (amount <= 0) return;
+    const s = this.s;
+    if (typeof target === "number") {
+      s.players[target].life -= amount;
+      this.log(`${src.def.name} が プレイヤー${target + 1} に ${amount} 点 (${s.players[target].life})`);
+    } else {
+      target.damage += amount;
+      if (hasKw(src.def, "deathtouch")) target.deathtouched = true;
+    }
+    if (hasKw(src.def, "lifelink")) {
+      s.players[src.controller].life += amount;
+      this.log(`${src.def.name}: 絆魂で ${amount} 点回復 (プレイヤー${src.controller + 1}: ${s.players[src.controller].life})`);
+    }
+  }
+
+  // 先制攻撃・二段攻撃のダメージ → 通常のダメージ。トランプルは、致死分を割り振ったあまりをプレイヤーに与える。
+  // shortcut: 2回のダメージの間は、優先権のやりとりをしない
   private combatDamage() {
     const s = this.s;
-    const def = s.players[this.other(s.active)];
-    for (const a of s.players[s.active].field.filter((p) => p.attacking)) {
-      const blocker = def.field.find((b) => b.blocking === a.uid);
-      if (blocker) {
-        blocker.damage += a.def.power;
-        a.damage += blocker.def.power;
-      } else {
-        def.life -= a.def.power;
-        this.log(`${a.def.name} が ${a.def.power} 点 (プレイヤー${this.other(s.active) + 1}: ${def.life})`);
+    const defIdx = this.other(s.active);
+    const strikes = (p: Perm, first: boolean) => (first ? hasKw(p.def, "first strike") || hasKw(p.def, "double strike") : !hasKw(p.def, "first strike") || hasKw(p.def, "double strike"));
+    for (const first of [true, false]) {
+      const attackers = s.players[s.active].field.filter((p) => p.attacking);
+      const todo: (() => void)[] = []; // 同時に与えるため、先に決めてから実行する
+      for (const a of attackers) {
+        const blockers = s.players[defIdx].field.filter((b) => b.blocking === a.uid).sort((x, y) => (x.blockOrder ?? 0) - (y.blockOrder ?? 0));
+        if (strikes(a, first)) {
+          if (!a.blocked) todo.push(() => this.deal(a, defIdx, a.def.power));
+          else if (!blockers.length) hasKw(a.def, "trample") && todo.push(() => this.deal(a, defIdx, a.def.power));
+          else {
+            let rest = a.def.power;
+            blockers.forEach((b, i) => {
+              const lethal = hasKw(a.def, "deathtouch") ? 1 : Math.max(0, b.def.toughness - b.damage);
+              const n = i === blockers.length - 1 && !hasKw(a.def, "trample") ? rest : Math.min(rest, lethal);
+              rest -= n;
+              todo.push(() => this.deal(a, b, n));
+            });
+            if (hasKw(a.def, "trample") && rest > 0) todo.push(() => this.deal(a, defIdx, rest));
+          }
+        }
+        for (const b of blockers) if (strikes(b, first)) todo.push(() => this.deal(b, a, b.def.power));
       }
+      todo.forEach((f) => f());
+      this.checkState();
     }
-    this.checkState();
     this.onChange?.();
   }
 
@@ -721,7 +791,7 @@ export class Game {
     const s = this.s;
     for (const [i, pl] of s.players.entries()) {
       for (const p of [...pl.field]) {
-        if (isCreature(p.def) && (p.def.toughness <= 0 || p.damage >= p.def.toughness)) {
+        if (isCreature(p.def) && (p.def.toughness <= 0 || (!hasKw(p.def, "indestructible") && (p.damage >= p.def.toughness || (p.deathtouched && p.damage > 0))))) {
           pl.field.splice(pl.field.indexOf(p), 1);
           s.players[p.owner].graveyard.push({ uid: p.uid, def: p.def, owner: p.owner });
           this.log(`${p.def.name} が死ぬ (プレイヤー${i + 1})`);
