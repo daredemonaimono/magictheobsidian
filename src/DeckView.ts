@@ -1,6 +1,6 @@
 import { App, ItemView, Modal, Notice, Setting, TFile, ViewStateResult, WorkspaceLeaf, moment } from "obsidian";
 import { runDiagnosis } from "./diagnosis";
-import { compileCard, isStale, needsRule, RULE_DIR } from "./cardrules";
+import { ensureRules } from "./cardrules";
 import { CARD_DIR, cardImage, cardInfo, cardText, oracleEnglish, printingImage, printingOf, readPrintings, refetchCard, setLocalText, updateLegality } from "./cards";
 import { CREATABLE, FORMATS, formatOf, judge } from "./rules";
 import { loadCollection } from "./collection";
@@ -201,31 +201,10 @@ export class DeckView extends ItemView {
       const notice = new Notice("処理の記録を作成中…", 0);
       try {
         const keys = [...new Set((["commander", "main", "side", "token"] as Board[]).flatMap((b) => [...this.deck[b].keys()]))];
-        const todo: string[] = [];
-        const redo = new Set<string>();
-        for (const k of keys) {
-          const info = cardInfo(this.app, k);
-          if (!info) continue;
-          if (this.app.vault.getAbstractFileByPath(`${RULE_DIR}/${k}.md`)) {
-            if (isStale(this.app, k)) (todo.push(k), redo.add(k)); // 古い版の部品で作った「一部未対応」は、作り直す
-            continue;
-          }
-          if (needsRule(info.typeLine, await oracleEnglish(this.app, k))) todo.push(k);
-        }
-        let done = 0;
-        let cost = 0;
-        const partial: string[] = [];
-        const failed: string[] = [];
-        for (const k of todo) {
-          notice.setMessage(`処理の記録を作成中… ${++done}/${todo.length} (${k})`);
-          const r = await compileCard(this.app, apiKey, k, redo.has(k));
-          cost += r.cost;
-          if (!r.ok) failed.push(`${k}: ${r.error}`);
-          else if (r.unsupported.length) partial.push(k);
-        }
+        const r = await ensureRules(this.app, apiKey, keys, { includeStale: true, progress: (d, t, k) => notice.setMessage(`処理の記録を作成中… ${d}/${t} (${k})`) });
         notice.hide();
         new Notice(
-          `処理の記録: ${todo.length - failed.length} 枚を作成 ($${cost.toFixed(3)})${partial.length ? ` · 一部未対応 ${partial.length} 枚` : ""}${failed.length ? ` · 失敗 ${failed.length} 枚 (${failed[0]})` : ""}`,
+          `処理の記録: ${r.made} 枚を作成 ($${r.cost.toFixed(3)})${r.partial.length ? ` · 一部未対応 ${r.partial.length} 枚` : ""}${r.failed.length ? ` · 失敗 ${r.failed.length} 枚 (${r.failed[0]})` : ""}${r.made + r.failed.length === 0 ? " · 作り直す記録は無い (トークンは使っていない)" : ""}`,
           8000,
         );
       } catch (e) {

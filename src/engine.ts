@@ -533,8 +533,8 @@ export class Game {
       const ab = perm.def.abilities[a.index];
       const targets = await this.declareTargets(p, ab, perm.def); // 対象は、コストを払う前に選ぶ
       this.payCost(p, a.tap, ab.cost?.mana);
-      if (ab.cost?.life) pl.life -= ab.cost.life;
-      if (ab.cost?.sacrificeSelf) this.sacrifice(perm);
+      if (ab.cost?.life) (pl.life -= ab.cost.life), this.log(`プレイヤー${p + 1}: コストで ${ab.cost.life} 点のライフを払う (${pl.life})`);
+      if (ab.cost?.sacrificeSelf) (this.sacrifice(perm), this.log(`${perm.def.name} を生け贄にする`));
       this.log(`プレイヤー${p + 1}: 起動 ${perm.def.name}${ab.text ? ` (${ab.text})` : ""}`);
       if (ab.kind === "mana") await this.runSteps(ab.effects, { controller: p, source: perm.def, targets, results: {} }); // マナ能力はスタックを使わない
       else s.stack.push({ def: perm.def, controller: p, ability: ab, targets });
@@ -646,6 +646,7 @@ export class Game {
   private matches(obj: Card | Perm, sel: CardSel): boolean {
     const d = obj.def;
     if (sel.types?.length && !sel.types.some((t) => t === "permanent" || t === "card" || (t === "land" ? isLand(d) : t === "creature" ? isCreature(d) : new RegExp(`\\b${t}\\b`, "i").test(d.typeLine)))) return false;
+    if (sel.supertypes?.length && !sel.supertypes.every((t) => new RegExp(`\\b${t}\\b`, "i").test(d.typeLine))) return false;
     if (sel.subtypes?.length && !sel.subtypes.some((t) => new RegExp(`\\b${t}\\b`, "i").test(d.typeLine))) return false;
     for (const n of sel.not ?? []) {
       if (n === "land" ? isLand(d) : n === "creature" ? isCreature(d) : new RegExp(`\\b${n}\\b`, "i").test(d.typeLine)) return false;
@@ -701,7 +702,7 @@ export class Game {
     const rest = [...cands];
     const picked: typeof cands = [];
     for (let i = 0; i < n && rest.length; i++) {
-      const names = rest.map((c) => c.obj.def.name);
+      const names = rest.map((c) => (cands.some((x) => x.player !== cands[0].player) ? `${c.obj.def.name} (${c.player === chooser ? "自分の" : "相手の"})` : c.obj.def.name));
       const own = rest.every((c) => c.zone === "hand" && c.player === chooser);
       const options = sel.upTo ? [...names, "選ばない"] : names;
       const k = await this.choose(chooser, `${ctx.source.name}: ${why}`, options, own && !sel.upTo ? rest.map((c) => c.obj.uid) : undefined);
@@ -729,7 +730,8 @@ export class Game {
     for (const t of ab.targets ?? []) {
       const list = this.targetCandidates(t, { controller: p, source, targets: out, results: {} });
       if (!list.length) continue;
-      const names = list.map((x) => (x.kind === "player" ? `プレイヤー${x.player + 1}` : `${x.snap.def.name} (プレイヤー${x.snap.controller + 1})`));
+      // 選ぶ人から見て、自分のものか相手のものかを付ける (「プレイヤー2」だと、自分のことか分からなくなる)
+      const names = list.map((x) => (x.kind === "player" ? (x.player === p ? "自分(プレイヤー)" : "相手(プレイヤー)") : `${x.snap.def.name} (${x.snap.controller === p ? "自分の" : "相手の"})`));
       out[t.id] = list[await this.choose(p, `${source.name}: 対象を選ぶ`, names)];
     }
     return out;
@@ -816,8 +818,8 @@ export class Game {
       return;
     }
     const found = await this.resolveWhat(e.what, ctx, e.how === "discard" ? "捨てさせるカードを選ぶ" : "カードを選ぶ");
-    if (e.what.kind === "cards" && e.what.chooser && e.what.chooser !== "you" ? false : e.how === "discard" && e.what.kind === "cards" && e.what.owner === "opponent" && e.what.chooser !== "opponent")
-      this.log(`プレイヤー${(e.what as CardSel).owner === "opponent" ? 2 - me : me + 1} の手札を公開`);
+    if (e.how === "discard" && e.what.kind === "cards" && e.what.chooser !== "opponent" && e.what.owner === "opponent")
+      this.log(`プレイヤー${2 - me} の手札を公開: ${this.s.players[1 - me].hand.map((c) => c.def.name).join(", ") || "なし"}`);
     for (const f of found) {
       const owner = s.players[f.obj.owner];
       const from = f.zone === "battlefield" ? s.players[f.player].field : s.players[f.player][f.zone];
@@ -849,7 +851,8 @@ export class Game {
           e.position === "bottom" ? owner.library.push(card) : owner.library.unshift(card);
           break;
       }
-      this.log(`${card.def.name}: ${f.zone === "battlefield" ? "戦場" : f.zone} → ${e.to}${e.how === "destroy" ? " (破壊)" : e.how === "discard" ? " (捨てる)" : ""}`);
+      const Z: Record<string, string> = { battlefield: "戦場", hand: "手札", library: "山札", graveyard: "墓地", exile: "追放領域" };
+      this.log(`${card.def.name} (プレイヤー${f.player + 1}): ${Z[f.zone]} → ${Z[e.to]}${e.how === "destroy" ? " (破壊)" : e.how === "discard" ? " (捨てる)" : ""}`);
     }
   }
 
@@ -997,6 +1000,7 @@ export class Game {
         }
       }
     }
+    if (s.winner !== undefined) return; // 決着後は、もう判定しない (勝ちのログを何度も出さない)
     const lost = s.players.map((pl) => pl.life <= 0 || pl.drewEmpty);
     if (lost[0] && lost[1]) s.winner = -1;
     else if (lost[0]) s.winner = 1;

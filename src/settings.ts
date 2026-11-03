@@ -24,12 +24,14 @@ export interface Settings {
   dashboardTab: boolean; // 新しいタブ (空のタブ) をダッシュボードにする
   currency: string; // 資産価格の通貨 (EUR で取れた価格はこれに換算する)
   botModel: string; // ボットの試しで使うモデル
+  catalogVersion: string; // Bot/Types/ を最後に書き出したプラグインの版
+  autoRules: boolean; // Bot 対戦の開始時に、処理の記録が無いカードだけ AI で作る
   battleStops: string[]; // Bot 対戦で、あなたが優先権で止まるステップ
   botKey: string; // Claude API キーの保存名 (値は Obsidian のキーチェーンに入り、ここには書かない)
   sidebar: boolean; // カード一覧を右サイドバーに出す。オフなら画面内の検索欄 (従来の表示)
 }
 
-export const DEFAULT_SETTINGS: Settings = { textLang: "en", cardLang: "en", sidebar: true, listArt: true, dashboardTab: true, currency: "USD", botModel: "claude-haiku-5-5", botKey: "", battleStops: ["main1", "main2", "end"] };
+export const DEFAULT_SETTINGS: Settings = { textLang: "en", cardLang: "en", sidebar: true, listArt: true, dashboardTab: true, currency: "USD", botModel: "claude-haiku-5-5", botKey: "", battleStops: ["main1", "main2", "end"], autoRules: true, catalogVersion: "" };
 
 export class SettingsTab extends PluginSettingTab {
   constructor(app: App, plugin: Plugin, private settings: Settings, private save: () => Promise<void>, private onSidebar: () => void) {
@@ -98,6 +100,15 @@ export class SettingsTab extends PluginSettingTab {
       .addComponent((el) =>
         new SecretComponent(this.app, el).setValue(this.settings.botKey).onChange(async (v) => {
           this.settings.botKey = v ?? "";
+          await this.save();
+        }),
+      );
+    new Setting(this.containerEl)
+      .setName("Bot: 対戦の開始時に、処理の記録を自動で作る")
+      .setDesc("処理の記録が無いカードだけ、AI(Sonnet 5.5、1枚あたり約 $0.01)で作る。既に記録があるカードは、一部未対応でも古くても、作り直さない(トークンを使わない)。")
+      .addToggle((t) =>
+        t.setValue(this.settings.autoRules).onChange(async (v) => {
+          this.settings.autoRules = v;
           await this.save();
         }),
       );

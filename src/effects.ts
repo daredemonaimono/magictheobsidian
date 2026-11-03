@@ -20,6 +20,7 @@ export interface CardSel {
   owner?: Who | "any"; // 戦場ではコントローラー
   types?: string[]; // どれか (creature / land / artifact / enchantment / planeswalker / instant / sorcery / permanent)
   subtypes?: string[]; // どれか (Plains / Swamp など)
+  supertypes?: string[]; // すべて (legendary / basic / snow)。「伝説の〜」「基本〜」
   not?: string[]; // 除く (land / basic / creature / legendary など)
   name?: string;
   cmc?: Cmp;
@@ -67,6 +68,8 @@ export interface Ability {
   text?: string; // 表示用
 }
 
+export const STEP_VERBS = ["move", "change", "addMana", "shuffle", "flip", "if", "may", "unsupported"] as const; // 命令の種類 (型のカタログと、AI への指示書が、これと合っているか、テストで確かめる)
+
 // ---- 検証 (知らない形は「未対応」にして、能力の残りは動かす) ----
 
 const TYPES = ["creature", "land", "artifact", "enchantment", "planeswalker", "instant", "sorcery", "permanent", "card"];
@@ -89,6 +92,8 @@ export function cardSel(x: unknown): CardSel {
   if (s.owner === "you" || s.owner === "opponent" || s.owner === "any") out.owner = s.owner;
   const types = strs(s.types, TYPES);
   if (types?.length) out.types = types;
+  const sup = strs(s.supertypes, ["legendary", "basic", "snow"]);
+  if (sup?.length) out.supertypes = sup;
   const sub = strs(s.subtypes);
   if (sub?.length) out.subtypes = sub;
   const not = strs(s.not, NOTS);
@@ -262,6 +267,7 @@ export function describeSel(s: Selector): string {
   const parts = [
     `${s.zone ? Z_JA[s.zone] : "戦場"}の${OWNER_JA(s.owner)}`,
     ...(s.not ?? []).map((n) => `${T_JA[n] ?? n}でない`),
+    ...(s.supertypes ?? []).map((t) => T_JA[t] ?? t),
     ...(s.subtypes?.length ? [`${s.subtypes.join("か")}`] : []),
     ...(s.types?.length ? [s.types.map((t) => T_JA[t] ?? t).join("か")] : ["カード"]),
     ...(s.name ? [`「${s.name}」`] : []),

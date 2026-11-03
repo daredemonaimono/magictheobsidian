@@ -2,6 +2,8 @@ import { ItemView, Notice, WorkspaceLeaf, moment, normalizePath } from "obsidian
 import { BattleDeck, deckFiles, fetchStats, loadBattleDeck, statsMissing } from "./battledeck";
 import { botBus } from "./botbus";
 import { cardEl } from "./cardEl";
+import { ensureRules } from "./cardrules";
+import { parseDeck } from "./deck";
 import { MODELS, askClaude } from "./claude";
 import { Answer, Block, Card, Controller, Decision, Game, Perm, Phase, PriorityAction, isCreature, isLand } from "./engine";
 import { fileSafe } from "./scryfall";
@@ -144,6 +146,20 @@ export class BattleView extends ItemView {
       n.hide();
       if (failed.length) new Notice(`パワー・タフネスを取れなかった: ${failed.join(", ")}\nCards/ のノートの power: / toughness: を手で書いても使える`, 12000);
     }
+    // 処理の記録が無いカードだけ、AI (Sonnet 5.5) で作る。既にある記録は、作り直さない (トークンを使わない)
+    if (this.settings.autoRules) {
+      const keys: string[] = [];
+      for (const f of [mine, theirs]) keys.push(...parseDeck(await this.app.vault.cachedRead(f)).main.keys());
+      const n = new Notice("処理の記録を確認中…", 0);
+      try {
+        const r = await ensureRules(this.app, key, keys, { progress: (d, t, k) => n.setMessage(`処理の記録を作成中… ${d}/${t} (${k})`) });
+        n.hide();
+        if (r.made || r.failed.length) new Notice(`処理の記録: ${r.made} 枚を作成 ($${r.cost.toFixed(3)})${r.partial.length ? ` · 一部未対応 ${r.partial.length} 枚` : ""}${r.failed.length ? ` · 失敗 ${r.failed.length} 枚 (${r.failed[0]})` : ""}`, 8000);
+      } catch (e) {
+        n.hide();
+        new Notice(`処理の記録の作成に失敗 (記録の無いカードは、効果が動かない): ${(e as Error).message}`, 8000);
+      }
+    }
     const [a, b] = [await loadBattleDeck(this.app, mine), await loadBattleDeck(this.app, theirs)];
     if (a.defs.length < 7 || b.defs.length < 7) return void new Notice("メインのカードが7枚未満のデッキがある");
     if (a.noStats + b.noStats) new Notice(`パワー・タフネスが無いクリーチャーが ${a.noStats + b.noStats} 種ある (0/0 として扱う)`, 8000);
@@ -197,7 +213,7 @@ export class BattleView extends ItemView {
       "",
       "## ログ",
       "",
-      ...g.s.log.map((l) => `- ${l}`),
+      ...botBus.log.map((l) => `- ${l}`), // エンジンのログに、ボットの選択と理由・費用も入っている
       "",
       "## リプレイ用データ",
       "",

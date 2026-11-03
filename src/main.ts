@@ -9,6 +9,7 @@ import { CARDS_VIEW, CardsView } from "./CardsView";
 import { DASHBOARD_VIEW, DashboardView } from "./DashboardView";
 import { DECKLIST_VIEW, DeckListView } from "./DeckListView";
 import { DECK_VIEW, DeckView } from "./DeckView";
+import { writeCatalog } from "./catalog";
 import { BOT_VIEW, BotView } from "./BotView";
 import { BATTLE_VIEW, BattleView } from "./BattleView";
 import { BOTLOG_VIEW, BotLogView } from "./BotLogView";
@@ -76,6 +77,8 @@ export default class MagicTheObsidian extends Plugin {
       currency: d.currency ?? DEFAULT_SETTINGS.currency,
       botModel: d.botModel ?? DEFAULT_SETTINGS.botModel,
       botKey: d.botKey ?? DEFAULT_SETTINGS.botKey,
+      autoRules: d.autoRules ?? DEFAULT_SETTINGS.autoRules,
+      catalogVersion: d.catalogVersion ?? "",
       battleStops: Array.isArray(d.battleStops) ? d.battleStops : DEFAULT_SETTINGS.battleStops,
     };
     priceStore.prices = d.prices ?? {};
@@ -119,7 +122,22 @@ export default class MagicTheObsidian extends Plugin {
     this.registerEvent(ws.on("layout-change", () => void this.syncSidebar()));
     // デッキ画面のメイン/サイドのタブを押したとき、サイドバーが畳まれていたら開く
     this.registerEvent((ws as unknown as { on(n: string, cb: () => void): EventRef }).on("mtg-show-list", () => void this.showList(ws.getActiveViewOfType(DeckView)?.leaf)));
+    // 効果の型のカタログ (Bot/Types/) を、プラグインが更新されたときに書き直す
+    const updateCatalog = async (force = false) => {
+      if (!force && this.settings.catalogVersion === this.manifest.version) return;
+      try {
+        const r = await writeCatalog(this.app, this.manifest.version);
+        this.settings.catalogVersion = this.manifest.version;
+        await saveAll();
+        if (force) new Notice(`Bot/Types/ に書き出した: 型 ${r.types} 件、未実装の効果 ${r.unsupported} 件`);
+      } catch (e) {
+        console.error(e);
+        if (force) new Notice(`書き出せない: ${(e as Error).message}`);
+      }
+    };
+    this.addCommand({ id: "write-type-catalog", name: "Write effect type catalog (Bot/Types)", callback: () => void updateCatalog(true) });
     ws.onLayoutReady(() => {
+      void updateCatalog();
       this.dashboardIfEmpty(ws.getMostRecentLeaf());
       void this.syncSidebar();
     });

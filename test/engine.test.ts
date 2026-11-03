@@ -40,6 +40,7 @@ const greedy: Controller = async (g, d) => {
   const g = new Game([deck, deck], 1, [greedy, greedy], { opening: false });
   await g.play(80);
   assert.notEqual(g.s.winner, undefined, "決着がつく");
+  assert.equal(g.s.log.filter((l) => l.endsWith("の勝ち") || l === "引き分け").length, 1, "勝敗のログは1回だけ");
   const lands = g.s.log.filter((l) => l.includes("土地を出す")).length;
   assert.ok(lands <= g.s.turn, "土地は1ターンに1枚まで");
   // 同じ seed なら同じ展開
@@ -472,5 +473,38 @@ console.log("engine ok");
   const partial = def("Partial", "Sorcery", "{R}", 0, 0, "", [{ kind: "spell", effects: [{ do: "unsupported", text: "Create a token." }] }]);
   assert.equal(await ok(partial), "unsupported", "未対応を含むカードは検出される");
   assert.equal(await ok(rat("Vanilla")), "skipped", "能力の無いカードは対象外");
+}
+{
+  const { isKeywordNoise, realUnsupported } = await import("../src/cardrules");
+  assert.ok(isKeywordNoise("Flash") && isKeywordNoise("Menace") && isKeywordNoise("Shadow (This creature can block or be blocked by only creatures with shadow.)") && isKeywordNoise("Flying, haste"), "エンジンが動かすキーワードは、未対応にしない");
+  assert.ok(!isKeywordNoise("Evoke—Exile a black card from your hand.") && !isKeywordNoise("Ward {2}"), "動かせないキーワードは、未対応のまま");
+  assert.deepEqual(realUnsupported(["Flash", "Then amass Orcs 1.", "Then amass Orcs 1.", "Haste"]), ["Then amass Orcs 1."], "重複とキーワードを除く");
+  // 伝説のクリーチャーだけを対象にする (Karakas)
+  const karakas = def("Karakas", "Land", "", 0, 0, "", [{ kind: "activated", cost: { tap: true }, targets: [{ id: "t", sel: { kind: "cards", types: ["creature"], supertypes: ["legendary"] } }], effects: [{ do: "move", what: { kind: "ref", ref: "t" }, to: "hand" }] }]);
+  const legend = rat("Legend", 2, 2, "", "Legendary Creature — Human");
+  const g = world([], [karakas], [async (_g, d) => (d.type === "priority" ? (d.actions.find((a) => a.kind === "activate") ?? pass) : d.type === "choice" ? 0 : d.type === "attackers" ? [] : ([] as Block[])), greedy], [false, false]);
+  g.s.players[1].field = [mkPerm(rat("Plain"), 6300, 1), mkPerm(legend, 6301, 1)];
+  await g.play(1);
+  assert.deepEqual(g.s.players[1].field.map((p) => p.def.name), ["Plain"], "伝説のクリーチャーだけが対象になり、手札に戻る");
+  assert.ok(g.s.players[1].hand.some((c) => c.def.name === "Legend"));
+}
+{
+  // 型のカタログ (md の元データ) が、コードの実体と合っている
+  const { TYPE_ENTRIES, collectUsage } = await import("../src/typecatalog");
+  const { STEP_VERBS } = await import("../src/effects");
+  const { KEYWORDS } = await import("../src/engine");
+  const { SPEC } = await import("../src/cardrules");
+  const ids = new Set(TYPE_ENTRIES.map((e) => e.id));
+  assert.equal(ids.size, TYPE_ENTRIES.length, "id が重複しない");
+  assert.equal(new Set(TYPE_ENTRIES.map((e) => e.title)).size, TYPE_ENTRIES.length, "タイトルが重複しない (ファイル名になる)");
+  for (const v of STEP_VERBS) {
+    assert.ok(ids.has(`verb.${v}`), `命令 ${v} がカタログにある`);
+    if (v !== "unsupported") assert.ok(SPEC.includes(`"do":"${v}"`), `命令 ${v} が AI への指示書にある`);
+  }
+  for (const k of KEYWORDS) assert.ok(ids.has(`kw.${k}`) || (k.endsWith("walk") && ids.has("kw.landwalk")), `キーワード ${k} がカタログにある`);
+  const used = collectUsage([
+    { kind: "triggered", trigger: { event: "upkeep" }, targets: [{ id: "t", sel: { kind: "any" } }], effects: [{ do: "flip", lose: [{ do: "change", what: { kind: "ref", ref: "t" }, stat: "damage", delta: { of: "power", ref: "t" } }] }] },
+  ]);
+  for (const id of ["kind.triggered", "event.upkeep", "sel.targets", "sel.any", "verb.flip", "verb.change", "sel.ref", "amount.of"]) assert.ok(used.has(id), `使用の集計: ${id}`);
 }
 console.log("diagnose ok");
