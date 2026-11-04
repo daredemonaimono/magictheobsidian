@@ -461,7 +461,7 @@ function advanceStep(g: Game, rules: RuleBook): void {
   } else g.step = STEPS[STEPS.indexOf(g.step) + 1];
   endCombat(g); // 戦闘ステップを出るとき、戦闘の状態を片づける (ふつうは、advanceCombat がすでに片づけている)
   if (g.step === "combat") {
-    g.combatPhase = "attackers"; // 攻撃クリーチャーを指定する段階 (指定が無ければ、そのまま次のステップへ進む)
+    g.combatPhase = g.strictTurns ? "beginning" : "attackers"; // 厳密なターン: 戦闘開始ステップ (優先権の回) から。そうでなければ、攻撃クリーチャーを指定する段階から (指定が無ければ、そのまま次のステップへ進む)
     g.attackersDeclared = false;
     g.blockersDeclared = [];
   }
@@ -626,10 +626,17 @@ function combatDamage(g: Game, rules: RuleBook, pass: "first" | "regular"): void
 function advanceCombat(g: Game, rules: RuleBook): boolean {
   const inCombat = g.battlefield.filter((p) => p.attacking || p.blocking);
   switch (g.combatPhase) {
+    case "beginning":
+      g.combatPhase = "attackers"; // 戦闘開始ステップの優先権の回が終わった。攻撃クリーチャーの指定 (指定しないでパスすれば、攻撃しない)
+      break;
     case "attackers":
       if (!g.battlefield.some((p) => p.attacking)) {
-        endCombat(g);
-        return false;
+        if (!g.strictTurns) {
+          endCombat(g);
+          return false;
+        }
+        g.combatPhase = "end"; // 攻撃が無ければ、ブロックとダメージは飛ばして、戦闘終了ステップへ
+        break;
       }
       g.combatPhase = "blockers";
       break;
@@ -646,6 +653,13 @@ function advanceCombat(g: Game, rules: RuleBook): boolean {
       g.combatPhase = "damage";
       combatDamage(g, rules, "regular");
       break;
+    case "damage":
+      if (g.strictTurns) {
+        g.combatPhase = "end"; // 戦闘終了ステップ (優先権の回。攻撃状態は、ここまで残る)
+        break;
+      }
+      endCombat(g);
+      return false;
     default:
       endCombat(g);
       return false;

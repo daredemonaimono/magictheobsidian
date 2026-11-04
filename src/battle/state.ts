@@ -99,7 +99,7 @@ export interface Game {
   life: Record<PlayerId, number>;
   strictTurns?: boolean; // 真なら、ターンを厳密に進める: ドロー・ステップに引く (最初のターンを除く)・ステップの終わりにマナが消える・終了ステップの終わりに手札を 7 枚まで捨てる。shortcut: 対戦の画面ができるまでは偽 (startGame が真にする)
   turn: number; // ターン数 (1 から。アクティブ・プレイヤーが替わるたびに +1)
-  combatPhase?: "attackers" | "blockers" | "firstStrike" | "damage"; // 戦闘ステップの中の段階 (戦闘ステップのあいだだけ)
+  combatPhase?: "beginning" | "attackers" | "blockers" | "firstStrike" | "damage" | "end"; // 戦闘フェイズの中のステップ (戦闘のあいだだけ)。beginning (戦闘開始) と end (戦闘終了) は、strictTurns のときだけ
   attackersDeclared?: boolean;
   blockersDeclared?: PlayerId[]; // ブロックを宣言した防御側
   drewEmpty: PlayerId[]; // 空のライブラリーから引こうとした人 (次の状況起因処理で負ける)

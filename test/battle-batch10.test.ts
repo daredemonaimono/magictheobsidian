@@ -111,6 +111,7 @@ const at = (g: Game, step: Game["step"], active = "A") => {
   g.battlefield.push({ id: "atk", card: { ...card("atk"), typeLine: "Creature — Bear", power: 1, toughness: 1 }, controller: "A" });
   at(g, "main1");
   next(g);
+  next(g); // 戦闘開始 → 攻撃クリーチャー指定
   declareAttackers(g, "A", [{ id: "atk" }], noRules);
   g.mana["A"] = 2;
   next(g); // 攻撃の段階 → ブロックの段階
@@ -176,6 +177,48 @@ const at = (g: Game, step: Game["step"], active = "A") => {
   lib(g, "B", 20);
   startGame(g, noRules);
   assert.deepEqual(g.over, { winner: "B" });
+}
+// ---- 厳密: 戦闘開始ステップと戦闘終了ステップが、攻撃指定・戦闘ダメージとは別に、優先権の回を持つ
+{
+  const g = createGame(["A", "B"]);
+  g.strictTurns = true;
+  g.turn = 2;
+  g.battlefield.push({ id: "atk", card: { ...card("atk"), typeLine: "Creature — Bear", power: 1, toughness: 1 }, controller: "A" });
+  at(g, "main1");
+  next(g);
+  assert.equal(g.step, "combat");
+  assert.equal(g.combatPhase, "beginning", "戦闘開始ステップ");
+  assert.throws(() => declareAttackers(g, "A", [{ id: "atk" }], noRules), /指定できない/, "戦闘開始ステップでは、まだ攻撃を指定できない");
+  next(g);
+  assert.equal(g.combatPhase, "attackers", "攻撃クリーチャー指定ステップ");
+  declareAttackers(g, "A", [{ id: "atk" }], noRules);
+  next(g);
+  assert.equal(g.combatPhase, "blockers");
+  next(g);
+  assert.equal(g.combatPhase, "damage");
+  assert.equal(g.life["B"], 19);
+  next(g);
+  assert.equal(g.step, "combat", "戦闘ダメージのあと、戦闘終了ステップの優先権の回がある");
+  assert.equal(g.combatPhase, "end", "戦闘終了ステップ");
+  assert.equal(g.battlefield[0].attacking, true, "戦闘終了ステップまで、攻撃状態は残る");
+  next(g);
+  assert.equal(g.step, "main2");
+  assert.equal(g.battlefield[0].attacking, undefined);
+}
+{
+  // 攻撃しない: 戦闘開始 → (攻撃指定を飛ばす) → 戦闘終了 → 戦闘後メイン
+  const g = createGame(["A", "B"]);
+  g.strictTurns = true;
+  g.turn = 2;
+  at(g, "main1");
+  next(g);
+  assert.equal(g.combatPhase, "beginning");
+  next(g);
+  assert.equal(g.combatPhase, "attackers");
+  next(g); // 攻撃しない
+  assert.equal(g.combatPhase, "end", "ブロックとダメージは飛ばして、戦闘終了ステップへ");
+  next(g);
+  assert.equal(g.step, "main2");
 }
 console.log("batch10 ok");
 
