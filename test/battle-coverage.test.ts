@@ -67,3 +67,12 @@ assert.ok(wrongCard.reasons[0].includes("Essence Scatter"));
 const noted = cardStatus("Negate", SAMPLE_RULES["Negate"] + "\n## 未対応\n\n- 例の条件\n");
 assert.equal(noted.status, "partial");
 assert.equal(noted.reasons[0], "未対応: 例の条件");
+
+// ノードが1つも無い md (## 未対応 だけ、または能力が空) は、未設定扱い = unbuilt。理由の先頭は NO_NODES、未対応の中身も添える
+import { NO_NODES } from "../src/battle/coverage";
+const onlyNote = cardStatus("Ancestral Recall", `---\ncard: "[[Ancestral Recall]]"\n---\n\n## 未対応\n\n- Target player draws three cards.\n`);
+assert.equal(onlyNote.status, "unbuilt");
+assert.equal(onlyNote.reasons[0], NO_NODES);
+assert.ok(onlyNote.reasons.includes("未対応: Target player draws three cards."));
+assert.equal(cardStatus("X", `---\ncard: "[[X]]"\n---\n`).reasons[0], NO_NODES, "能力も未対応も無い md も未設定");
+assert.equal(cardStatus("Negate", SAMPLE_RULES["Negate"] + "\n## 未対応\n\n- 例\n").status, "partial", "ノードがあれば、これまでどおり partial");

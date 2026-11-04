@@ -12,6 +12,7 @@ export interface CardStatus {
 }
 
 export const NO_RULE = "ルールのノートが無い";
+export const NO_NODES = "ノードが未設定"; // md はあるが、ノードが1つも無い (## 未対応 だけ、など)。ノートが無いのと同じ未設定扱い
 
 const unbuilt = (card: string, reasons: string[]): CardStatus => ({ card, status: "unbuilt", reasons });
 
@@ -27,6 +28,7 @@ export function cardStatus(card: string, md: string | undefined): CardStatus {
   }
   if (rule.card !== card) return unbuilt(card, [`card: が "${rule.card}" で、ファイル名 (${card}) と合わない`]);
   const calls = rule.abilities.flatMap((a) => a.body);
+  if (!calls.length) return unbuilt(card, [NO_NODES, ...(rule.unsupported ?? []).map((u) => `未対応: ${u}`)]);
   const bad = calls.map((c) => ({ c, why: checkCall(c) })).filter((x) => x.why);
   if (bad.length) return unbuilt(card, bad.map((x) => `${x.c.line ?? "?"} 行目: ${x.why}`));
 

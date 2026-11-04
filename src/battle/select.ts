@@ -1,9 +1,9 @@
-import { CardStatus, NO_RULE, Status } from "./coverage";
+import { CardStatus, NO_NODES, NO_RULE, Status } from "./coverage";
 
 // 「Battle: build rules with AI」の画面に出す行と、初期のチェック
 export interface Row {
   card: string;
-  hasRule: boolean; // Rules/<カード名>.md がある (壊れていても true。チェックして実行すると上書きになる)
+  hasRule: boolean; // ノードを設定したルールがある (壊れていても true。ノートが無い・ノードが未設定は false)。チェックして実行すると、あれば上書きになる
   status: Status | "none"; // none = ルールのノートが無い
 }
 
@@ -12,7 +12,7 @@ export function toRows(cards: string[], statuses: Map<string, CardStatus>): Row[
     .sort((a, b) => a.localeCompare(b))
     .map((card) => {
       const s = statuses.get(card);
-      const none = !s || (s.reasons.length === 1 && s.reasons[0] === NO_RULE);
+      const none = !s || s.reasons[0] === NO_RULE || s.reasons[0] === NO_NODES; // ノートが無い・ノードが未設定は、どちらも「ルールなし」
       return { card, hasRule: !none, status: none ? "none" : s!.status };
     });
 }

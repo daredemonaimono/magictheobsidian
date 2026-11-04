@@ -42,3 +42,10 @@ assert.deepEqual([...start].sort(), ["Essence Scatter", "Island"], "元の集合
 // 上書きになる枚数 (ルールがあるカードがチェックされている数)
 assert.equal(overwriteCount(rows, new Set(["Negate", "Island"])), 1);
 assert.equal(overwriteCount(rows, initialChecked(rows)), 0);
+
+// 未設定の md (## 未対応 だけ) は、ルールのノートが無いカードと同じ扱い: 初期にチェックが入り、上書きとは数えない
+const unset = new Map<string, CardStatus>([["Ancestral Recall", cardStatus("Ancestral Recall", `---\ncard: "[[Ancestral Recall]]"\n---\n\n## 未対応\n\n- Target player draws three cards.\n`)]]);
+const unsetRows = toRows(["Ancestral Recall"], unset);
+assert.deepEqual([unsetRows[0].hasRule, unsetRows[0].status], [false, "none"]);
+assert.deepEqual([...initialChecked(unsetRows)], ["Ancestral Recall"]);
+assert.equal(overwriteCount(unsetRows, initialChecked(unsetRows)), 0);
