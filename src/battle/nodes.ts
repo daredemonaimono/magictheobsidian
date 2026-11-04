@@ -1,6 +1,7 @@
 import { characteristics } from "./continuous";
 import { RunCtx, Value } from "./node";
 import { defineCondition, defineNode, getNode } from "./registry";
+import { dealDamage } from "./damage";
 import { parseManaCost, spendGeneric } from "./mana";
 import { Game, GameCard, Perm, playersOf, typeIn, untapPerm } from "./state";
 
@@ -171,19 +172,8 @@ export function registerBuiltinNodes(): void {
     outputs: {},
     run: (ctx, a): Record<string, Value> => {
       const g = ctx.game;
-      const n = Number(a.amount);
-      if (n <= 0) return {};
-      for (const id of idList(a.target)) {
-        if (g.players.includes(id)) {
-          g.life[id] -= n;
-          continue;
-        }
-        const p = g.battlefield.find((x) => x.id === id);
-        if (!p) continue;
-        const type = characteristics(g, p, ctx.rules).typeLine;
-        if (/\bCreature\b/.test(type)) p.damage = (p.damage ?? 0) + n;
-        if (/\bPlaneswalker\b/.test(type)) p.counters = { ...p.counters, loyalty: Math.max(0, (p.counters?.loyalty ?? 0) - n) };
-      }
+      const source = ctx.item.ability ? g.battlefield.find((x) => x.id === ctx.item.source) : undefined; // 能力の発生源 (接死・絆魂が効く)。呪文なら、キーワードは無し
+      for (const id of idList(a.target)) dealDamage(g, ctx.rules, source, id, Number(a.amount));
       return {};
     },
   });
@@ -368,9 +358,9 @@ export function registerBuiltinNodes(): void {
     id: "when",
     title: "どうなったら",
     summary:
-      "誘発型能力の最初に書く、誘発のきっかけ。event=cast(呪文を唱えた) / enters(戦場に出た) / leaves(戦場を離れた) / step(ステップの開始時。step=upkeep・draw・main1・combat・main2・end を添える)。絞り込み: who=you・opponents(唱えた/コントロールするプレイヤー。step ではそのターンのプレイヤー) / type・notType(その呪文・パーマネントの型) / turn=yours・opponents(だれのターン中か) / self=true(このパーマネント自身のとき。enters / leaves)",
+      "誘発型能力の最初に書く、誘発のきっかけ。event=cast(呪文を唱えた) / enters(戦場に出た) / leaves(戦場を離れた) / attacks(攻撃した。「攻撃するたび」) / blocks(ブロックした) / step(ステップの開始時。step=upkeep・draw・main1・combat・main2・end を添える)。絞り込み: who=you・opponents(唱えた/コントロールするプレイヤー。attacks / blocks では、そのクリーチャーのコントローラー。step ではそのターンのプレイヤー) / type・notType(その呪文・パーマネントの型) / turn=yours・opponents(だれのターン中か) / self=true(このパーマネント自身のとき。enters / leaves / attacks / blocks)",
     params: {
-      event: { type: "string", required: true, choices: ["cast", "enters", "leaves", "step"] },
+      event: { type: "string", required: true, choices: ["cast", "enters", "leaves", "step", "attacks", "blocks"] },
       step: { type: "string", choices: ["upkeep", "draw", "main1", "combat", "main2", "end"] },
       who: { type: "string", choices: ["you", "opponents"] },
       type: { type: "string" },
@@ -502,7 +492,7 @@ export function registerBuiltinNodes(): void {
           ...(typeof a.toughness === "number" ? { toughness: a.toughness } : {}),
           ...(typeof a.colors === "string" ? { colors: a.colors.split(/[\s,]+/).filter(Boolean) } : {}),
         };
-        const perm: Perm = { id: card.id, card, controller: p };
+        const perm: Perm = { id: card.id, card, controller: p, enteredTurn: g.turn };
         g.battlefield.push(perm);
         g.events.push({ type: "enters", perm });
       }

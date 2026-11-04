@@ -1,4 +1,5 @@
 import { characteristics, costReduction, extraTriggers, untapsDuring } from "./continuous";
+import { dealDamage } from "./damage";
 import { CastRecord, NodeCall, RunCtx, Value } from "./node";
 import { checkCall, evalCondition, getNode } from "./registry";
 import { addCosts, describeCost, emptyCost, ManaCost, parseManaCost, trySpend } from "./mana";
@@ -19,7 +20,7 @@ const staticKeywords = (rules: RuleBook, card: GameCard): string[] => (rules.get
 
 // パーマネントを戦場に出す。「戦場に出た」イベントを積む (宣言されたキーワードは、characteristics が導く)
 function enterBattlefield(g: Game, card: GameCard, controller: PlayerId): void {
-  const perm: Perm = { id: card.id, card, controller };
+  const perm: Perm = { id: card.id, card, controller, enteredTurn: g.turn };
   if (card.loyalty !== undefined) perm.counters = { loyalty: card.loyalty }; // プレインズウォーカーは、初期忠誠度で戦場に出る
   g.battlefield.push(perm);
   g.events.push({ type: "enters", perm });
@@ -52,7 +53,7 @@ function stateBased(g: Game, rules: RuleBook): void {
       const now = characteristics(g, p, rules);
       const dead =
         (/\bPlaneswalker\b/.test(now.typeLine) && (p.counters?.loyalty ?? 1) <= 0) ||
-        (/\bCreature\b/.test(now.typeLine) && now.toughness !== null && (now.toughness <= 0 || ((p.damage ?? 0) >= now.toughness && !now.keywords.includes("indestructible")))) ||
+        (/\bCreature\b/.test(now.typeLine) && now.toughness !== null && (now.toughness <= 0 || (((p.damage ?? 0) >= now.toughness || p.deathtouched) && !now.keywords.includes("indestructible")))) ||
         (/\bAura\b/.test(now.typeLine) && !g.battlefield.some((o) => o.id === p.attachedTo));
       if (dead) {
         removeFromBattlefield(g, p);
@@ -60,6 +61,7 @@ function stateBased(g: Game, rules: RuleBook): void {
       }
     }
   }
+  for (const p of g.battlefield) delete p.deathtouched; // 接死のダメージによる破壊は、状況起因処理で1回だけ見る (破壊不能で生き残ったら、あとの状況で死なない)
 }
 
 // 誘発型能力の最初のノード (when) が、このイベントに合うか。s = 能力の発生源のパーマネント (紋章を含む)
@@ -185,6 +187,13 @@ function checkModes(body: NodeCall[], cast: CastRecord, name: string): void {
   }
 }
 
+// 召喚酔い: クリーチャーは、このターンに戦場に出たなら、攻撃も {T} のコストの能力もできない (速攻があれば別)
+const isSick = (g: Game, p: Perm, rules: RuleBook): boolean => {
+  if (p.enteredTurn === undefined || p.enteredTurn !== g.turn) return false;
+  const now = characteristics(g, p, rules);
+  return /\bCreature\b/.test(now.typeLine) && !now.keywords.includes("haste");
+};
+
 // コスト (cost / additionalCost のノードから集める)。mana = 汎用の数、manaCost = 色つきのマナコスト ("{1}{U}")
 interface CostSpec {
   sym: ManaCost; // 払うマナ (mana の汎用も、ここに入る)
@@ -223,6 +232,7 @@ function costProblem(g: Game, p: PlayerId, cost: CostSpec, source: Perm | undefi
     if (cost.loyaltyX && (!Number.isInteger(x) || x < 0 || x > now + cost.loyalty)) return `X は 0〜忠誠度 (${now + cost.loyalty}) の整数`;
   }
   if (cost.tap && (!source || source.tapped)) return "すでにタップされていて、タップできない";
+  if (cost.tap && source && isSick(g, source, rules)) return "召喚酔いで、{T} のコストを払えない";
   if (cost.tapCreatures > 0) {
     if (new Set(tapIds).size !== tapIds.length) return "同じクリーチャーを2回選んでいる";
     let power = 0;
@@ -378,13 +388,23 @@ export function resolveTop(g: Game, rules: RuleBook): void {
 function advanceStep(g: Game, rules: RuleBook): void {
   if (g.step === "end") {
     for (const p of g.battlefield) if (p.mods) p.mods = p.mods.filter((m) => m.until !== "endOfTurn"); // ターン終了時までの効果が消える
-    for (const p of g.battlefield) delete p.damage; // ダメージも消える
+    for (const p of g.battlefield) {
+      delete p.damage; // ダメージも消える
+      delete p.deathtouched;
+    }
     g.active = nextPlayer(g, g.active);
+    g.turn++;
     g.landsPlayed = 0;
     for (const p of g.battlefield) delete p.loyaltyUsed; // 忠誠度能力は、1ターンに1回
     for (const p of g.battlefield) if (untapsDuring(g, p, g.active, rules)) untapPerm(g, p); // アンタップ・ステップ (優先権が無いので、ここで済ませてアップキープへ)。麻痺カウンターは、アンタップのかわりに取り除く
     g.step = "upkeep";
   } else g.step = STEPS[STEPS.indexOf(g.step) + 1];
+  endCombat(g); // 戦闘ステップを出るとき、戦闘の状態を片づける (ふつうは、advanceCombat がすでに片づけている)
+  if (g.step === "combat") {
+    g.combatPhase = "attackers"; // 攻撃クリーチャーを指定する段階 (指定が無ければ、そのまま次のステップへ進む)
+    g.attackersDeclared = false;
+    g.blockersDeclared = [];
+  }
   g.priority = g.active;
   g.events.push({ type: "step", step: g.step, player: g.active }); // 「ステップの開始時に」の誘発型能力
   flushEvents(g, rules);
@@ -401,6 +421,7 @@ export function passPriority(g: Game, p: PlayerId, rules: RuleBook): "passed" | 
   }
   g.passes = [];
   if (!g.stack.length) {
+    if (g.step === "combat" && g.combatPhase && advanceCombat(g, rules)) return "stepEnded"; // 戦闘ステップの中の、次の段階へ
     advanceStep(g, rules);
     return "stepEnded";
   }
@@ -414,4 +435,162 @@ export function canCastNow(g: Game, p: PlayerId, card: GameCard, rules?: RuleBoo
   if (g.priority !== p) return false;
   if (/\bInstant\b/.test(card.typeLine) || card.flash || (rules && staticKeywords(rules, card).includes("flash"))) return true;
   return p === g.active && (g.step === "main1" || g.step === "main2") && g.stack.length === 0;
+}
+
+// ---- 戦闘。戦闘ステップは、攻撃クリーチャーの指定 → ブロックの指定 → (先制攻撃ダメージ) → 戦闘ダメージ → 終了 の段階 (Game.combatPhase) で進む。
+// 段階は、全員がパスして、スタックが空のときに進む (攻撃が無ければ、そのまま次のステップ)。指定は、declareAttackers / declareBlockers を呼ぶ (castSpell と同じ、人や AI の入口)。
+// shortcut: ダメージの割り振りは、宣言の順に致死ダメージを振る (割り振りの選択は、判断の入力を作るときに)。ブロッカー1体につき、ブロック先は1体だけ
+
+const kwOf = (g: Game, p: Perm, rules: RuleBook): string[] => characteristics(g, p, rules).keywords;
+const isCreature = (g: Game, p: Perm, rules: RuleBook): boolean => /\bCreature\b/.test(characteristics(g, p, rules).typeLine);
+// 攻撃先のコントローラー (プレイヤーならその人、プレインズウォーカーならそのコントローラー)
+const defenderOf = (g: Game, a: Perm): PlayerId | undefined => (a.attackTarget && g.players.includes(a.attackTarget) ? a.attackTarget : g.battlefield.find((x) => x.id === a.attackTarget)?.controller);
+
+function endCombat(g: Game): void {
+  for (const p of g.battlefield) {
+    delete p.attacking;
+    delete p.attackTarget;
+    delete p.blocked;
+    delete p.blockedBy;
+    delete p.blocking;
+  }
+  g.combatPhase = undefined;
+  g.attackersDeclared = false;
+  g.blockersDeclared = [];
+}
+
+// 攻撃クリーチャーを指定する (アクティブ・プレイヤーだけ。戦闘ステップの最初の段階で、1回だけ)。attackers = [{ id, target? }] (target = 攻撃先のプレイヤー / プレインズウォーカーの id。相手が1人なら省ける)。
+// 1つでも不正なら RuleError で、何も変えない。攻撃するとタップする (警戒を除く)。「攻撃したとき」の誘発がスタックに積まれる
+export function declareAttackers(g: Game, p: PlayerId, attackers: { id: string; target?: string }[], rules: RuleBook): void {
+  live(g);
+  if (g.step !== "combat" || g.combatPhase !== "attackers" || g.attackersDeclared) throw new RuleError("いまは攻撃クリーチャーを指定できない (戦闘ステップの最初に、1回だけ)");
+  if (p !== g.active) throw new RuleError("攻撃クリーチャーを指定できるのは、アクティブ・プレイヤーだけ");
+  const picks = attackers.map((x) => {
+    const perm = g.battlefield.find((q) => q.id === x.id);
+    if (!perm || perm.controller !== p || !isCreature(g, perm, rules)) throw new RuleError(`攻撃できるクリーチャーではない: ${x.id}`);
+    const kw = kwOf(g, perm, rules);
+    if (perm.tapped) throw new RuleError(`タップしていて攻撃できない: ${perm.card.name}`);
+    if (kw.includes("defender")) throw new RuleError(`防衛を持っていて攻撃できない: ${perm.card.name}`);
+    if (isSick(g, perm, rules)) throw new RuleError(`召喚酔いで攻撃できない: ${perm.card.name}`);
+    const others = g.players.filter((o) => o !== p);
+    const target = x.target ?? (others.length === 1 ? others[0] : undefined);
+    const wall = g.battlefield.find((q) => q.id === target);
+    if (!target || !(others.includes(target) || (wall && wall.controller !== p && /\bPlaneswalker\b/.test(characteristics(g, wall, rules).typeLine)))) throw new RuleError(`攻撃先が不正: ${perm.card.name} → ${target ?? "(未指定)"}`);
+    return { perm, target, vigilance: kw.includes("vigilance") };
+  });
+  if (new Set(picks.map((x) => x.perm.id)).size !== picks.length) throw new RuleError("同じクリーチャーを2回指定している");
+  for (const x of picks) {
+    if (!x.vigilance) x.perm.tapped = true;
+    x.perm.attacking = true;
+    x.perm.attackTarget = x.target;
+    g.events.push({ type: "attacks", perm: x.perm });
+  }
+  g.attackersDeclared = true;
+  g.passes = [];
+  g.priority = p;
+  flushEvents(g, rules);
+}
+
+// ブロックを指定する (防御側。ブロックの段階で、1回だけ。ブロックしなくても、空で呼んでよい)。blocks = [{ blocker, attacker }]。
+// 飛行は飛行か到達でしかブロックできず、威嚇は2体以上でないとブロックできない。不正なら RuleError で、何も変えない
+export function declareBlockers(g: Game, p: PlayerId, blocks: { blocker: string; attacker: string }[], rules: RuleBook): void {
+  live(g);
+  if (g.step !== "combat" || g.combatPhase !== "blockers" || g.blockersDeclared?.includes(p)) throw new RuleError("いまはブロックを指定できない (ブロックの段階で、1回だけ)");
+  if (!g.battlefield.some((a) => a.attacking && defenderOf(g, a) === p)) throw new RuleError("ブロックを指定できるのは、攻撃されている防御側だけ");
+  const used = new Set<string>();
+  const per = new Map<string, string[]>();
+  for (const b of blocks) {
+    const blocker = g.battlefield.find((q) => q.id === b.blocker);
+    const attacker = g.battlefield.find((q) => q.id === b.attacker);
+    if (!blocker || blocker.controller !== p || !isCreature(g, blocker, rules) || blocker.tapped) throw new RuleError(`ブロックできるクリーチャーではない: ${b.blocker}`);
+    if (!attacker || !attacker.attacking || defenderOf(g, attacker) !== p) throw new RuleError(`ブロックできる攻撃クリーチャーではない: ${b.attacker}`);
+    if (used.has(blocker.id)) throw new RuleError(`1体で複数をブロックできない: ${blocker.card.name}`);
+    used.add(blocker.id);
+    const ak = kwOf(g, attacker, rules);
+    const bk = kwOf(g, blocker, rules);
+    if (ak.includes("flying") && !bk.includes("flying") && !bk.includes("reach")) throw new RuleError(`飛行はブロックできない: ${blocker.card.name} → ${attacker.card.name}`);
+    per.set(attacker.id, [...(per.get(attacker.id) ?? []), blocker.id]);
+  }
+  for (const [aid, bs] of per) if (bs.length === 1 && kwOf(g, g.battlefield.find((q) => q.id === aid)!, rules).includes("menace")) throw new RuleError("威嚇は、2体以上でないとブロックできない");
+  for (const b of blocks) {
+    const blocker = g.battlefield.find((q) => q.id === b.blocker)!;
+    const attacker = g.battlefield.find((q) => q.id === b.attacker)!;
+    blocker.blocking = attacker.id;
+    attacker.blocked = true;
+    attacker.blockedBy = [...(attacker.blockedBy ?? []), blocker.id];
+    g.events.push({ type: "blocks", perm: blocker });
+  }
+  g.blockersDeclared = [...(g.blockersDeclared ?? []), p];
+  g.passes = [];
+  g.priority = g.active;
+  flushEvents(g, rules);
+}
+
+// 戦闘ダメージ。pass = first (先制攻撃・二段攻撃だけ) / regular (先制攻撃だけのものは除く。二段攻撃は、もう一度)。与えるものを先にすべて決めてから、同時に与える
+function combatDamage(g: Game, rules: RuleBook, pass: "first" | "regular"): void {
+  const deals: { src: Perm; target: string; n: number }[] = [];
+  const now = (p: Perm) => {
+    const k = kwOf(g, p, rules);
+    return pass === "first" ? k.includes("firststrike") || k.includes("doublestrike") : k.includes("doublestrike") || !k.includes("firststrike");
+  };
+  const powerOf = (p: Perm) => characteristics(g, p, rules).power ?? 0;
+  for (const a of g.battlefield.filter((x) => x.attacking)) {
+    const target = a.attackTarget && (g.players.includes(a.attackTarget) || g.battlefield.some((x) => x.id === a.attackTarget)) ? a.attackTarget : undefined;
+    if (now(a) && powerOf(a) > 0) {
+      const k = kwOf(g, a, rules);
+      const blockers = (a.blockedBy ?? []).map((id) => g.battlefield.find((x) => x.id === id && x.blocking === a.id)).filter((x): x is Perm => !!x);
+      let rest = powerOf(a);
+      if (blockers.length) {
+        blockers.forEach((b, i) => {
+          const t = characteristics(g, b, rules).toughness ?? 0;
+          const lethal = k.includes("deathtouch") ? 1 : Math.max(0, t - (b.damage ?? 0));
+          const give = i === blockers.length - 1 && !k.includes("trample") ? rest : Math.min(rest, lethal); // 最後のブロッカーが、残りを全部受ける (トランプルを除く)
+          deals.push({ src: a, target: b.id, n: give });
+          rest -= give;
+        });
+        if (k.includes("trample") && rest > 0 && target) deals.push({ src: a, target, n: rest });
+      } else if (!a.blocked || k.includes("trample")) {
+        if (target) deals.push({ src: a, target, n: rest }); // ブロックされていない / ブロッカーがいなくなったトランプル
+      }
+    }
+  }
+  for (const b of g.battlefield.filter((x) => x.blocking)) {
+    const a = g.battlefield.find((x) => x.id === b.blocking && x.attacking);
+    if (a && now(b) && powerOf(b) > 0) deals.push({ src: b, target: a.id, n: powerOf(b) });
+  }
+  for (const d of deals) dealDamage(g, rules, d.src, d.target, d.n);
+}
+
+// 戦闘ステップの中の、次の段階へ。まだ戦闘の中なら true。戦闘が終わったら (攻撃が無かった場合も) 状態を片づけて false (呼び出し側が、次のステップへ進める)
+function advanceCombat(g: Game, rules: RuleBook): boolean {
+  const inCombat = g.battlefield.filter((p) => p.attacking || p.blocking);
+  switch (g.combatPhase) {
+    case "attackers":
+      if (!g.battlefield.some((p) => p.attacking)) {
+        endCombat(g);
+        return false;
+      }
+      g.combatPhase = "blockers";
+      break;
+    case "blockers":
+      if (inCombat.some((p) => kwOf(g, p, rules).some((k) => k === "firststrike" || k === "doublestrike"))) {
+        g.combatPhase = "firstStrike";
+        combatDamage(g, rules, "first");
+      } else {
+        g.combatPhase = "damage";
+        combatDamage(g, rules, "regular");
+      }
+      break;
+    case "firstStrike":
+      g.combatPhase = "damage";
+      combatDamage(g, rules, "regular");
+      break;
+    default:
+      endCombat(g);
+      return false;
+  }
+  g.passes = [];
+  g.priority = g.active;
+  flushEvents(g, rules);
+  return true;
 }

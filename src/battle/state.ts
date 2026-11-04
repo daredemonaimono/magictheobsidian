@@ -53,11 +53,17 @@ export interface Perm {
   loyaltyUsed?: boolean; // このターンに忠誠度能力を起動した (1ターンに1回)
   emblem?: string; // 紋章のとき、その名前 (createEmblem の name)。紋章は戦場の外 (Game.emblems) にある
   damage?: number; // クリーチャーに載っているダメージ (ターン終了時に消える)
+  deathtouched?: boolean; // 接死のダメージを受けた (ターン終了時に消える)
+  enteredTurn?: number; // 戦場に出たターン (Game.turn)。召喚酔いの判定
+  attackTarget?: string; // 攻撃しているとき、攻撃先 (プレイヤー、またはプレインズウォーカーの id)
+  blocked?: boolean; // 攻撃しているとき、ブロックされた (ブロッカーがいなくなっても、ブロックされたまま)
+  blockedBy?: string[]; // 攻撃しているとき、ブロッカーの id (宣言の順 = ダメージを割り振る順)
+  blocking?: string; // ブロックしているとき、ブロック先の攻撃クリーチャーの id
   counters?: Record<string, number>; // "+1/+1" (パワー・タフネスに足される) / "stun" (麻痺: アンタップのかわりに1つ取り除く)
 }
 
 // エンジンが誘発型能力を探すためのイベント。ノードや処理が積み、エンジンが flush して、条件に合う誘発型能力をスタックに積む
-export type GameEvent = { type: "cast"; player: PlayerId; card: GameCard } | { type: "enters"; perm: Perm } | { type: "leaves"; perm: Perm } | { type: "step"; step: Step; player: PlayerId };
+export type GameEvent = { type: "cast"; player: PlayerId; card: GameCard } | { type: "enters"; perm: Perm } | { type: "leaves"; perm: Perm } | { type: "step"; step: Step; player: PlayerId } | { type: "attacks"; perm: Perm } | { type: "blocks"; perm: Perm };
 // 人の判断の差し替え口。無ければ決まった動きになる (shortcut: 判断の入力はまだ無い。入力の仕組みを作るときに置き換える)
 export interface Decider {
   discard?(g: Game, p: PlayerId, n: number): GameCard[]; // 捨てるカード
@@ -87,6 +93,10 @@ export interface Game {
   restrictedMana: Record<PlayerId, { amount: number; color?: PoolKey; type?: string; notType?: string }[]>; // 使い道に制限のあるマナ (「クリーチャーでない呪文を唱えるためにしか使えない」)
   landsPlayed: number; // このターンに出した土地の数 (1ターンに1枚)
   life: Record<PlayerId, number>;
+  turn: number; // ターン数 (1 から。アクティブ・プレイヤーが替わるたびに +1)
+  combatPhase?: "attackers" | "blockers" | "firstStrike" | "damage"; // 戦闘ステップの中の段階 (戦闘ステップのあいだだけ)
+  attackersDeclared?: boolean;
+  blockersDeclared?: PlayerId[]; // ブロックを宣言した防御側
   drewEmpty: PlayerId[]; // 空のライブラリーから引こうとした人 (次の状況起因処理で負ける)
   lost: PlayerId[]; // 負けた人
   over?: { winner?: PlayerId }; // ゲームが終わった。winner が無ければ引き分け
@@ -97,7 +107,7 @@ export interface RuleBook {
 
 export function createGame(players: PlayerId[]): Game {
   const each = <T>(f: () => T) => Object.fromEntries(players.map((p) => [p, f()])) as Record<PlayerId, T>;
-  return { players, active: players[0], step: "main1", priority: players[0], passes: [], hands: each<GameCard[]>(() => []), libraries: each<GameCard[]>(() => []), graveyards: each<GameCard[]>(() => []), battlefield: [], mana: each(() => 0), pool: each<Pool>(() => ({})), stack: [], log: [], serial: 0, events: [], emblems: [], restrictedMana: each(() => []), landsPlayed: 0, life: each(() => 20), drewEmpty: [], lost: [] };
+  return { players, active: players[0], step: "main1", priority: players[0], passes: [], hands: each<GameCard[]>(() => []), libraries: each<GameCard[]>(() => []), graveyards: each<GameCard[]>(() => []), battlefield: [], mana: each(() => 0), pool: each<Pool>(() => ({})), stack: [], log: [], serial: 0, events: [], emblems: [], restrictedMana: each(() => []), landsPlayed: 0, life: each(() => 20), turn: 1, drewEmpty: [], lost: [] };
 }
 
 export const opponentsOf = (g: Game, p: PlayerId): PlayerId[] => g.players.filter((x) => x !== p);

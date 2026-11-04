@@ -50,6 +50,7 @@ ${conditionList() || "(まだ無い)"}
 - 装備: 「装備 {N}」は \`## 起動型能力\` に \`timing sorcery=true\`、\`cost mana=N\`、\`target ...\`(例: type=creature controller=you)、\`attach target=$t\` と書く。「戦場に出たとき、〜に付ける」は誘発型能力の \`target\` と \`attach\`。
 - オーラ(Aura): \`## 呪文能力\` に \`target ...\`(Enchant の対象)と \`attach target=$t\`、効果は \`## 常在型能力\` の \`affect who=attached\` と効果のノード。
 - 「他のプレイヤーのアンタップ・ステップに、これをアンタップする」は、\`## 常在型能力\` に \`untapDuring who=opponents\`(affect は要らない)。
+- 「攻撃するたび」「ブロックしたとき」は、\`## 誘発型能力\` の \`when event=attacks self=true\` / \`when event=blocks self=true\`(who=you・opponents、type・notType で絞れる)。戦闘そのもの (攻撃・ブロック・戦闘ダメージ・先制攻撃・二段攻撃・接死・絆魂・トランプル・飛行・到達・威嚇・警戒・防衛・速攻) は、エンジンが処理するので、ノードは書かない (キーワードは \`keyword name=…\`)。
 - ライフ: \`gainLife player=you amount=N\` / \`loseLife player=opponents amount=N\`。ダメージ: \`target zone=any kind=any as=t\`(プレイヤー・クリーチャー・プレインズウォーカー) のあとに \`damage target=$t amount=N\`。クリーチャーだけ・プレイヤーだけなら、\`zone=battlefield kind=permanent type=creature\` や \`zone=player kind=player\` の target に \`damage\` を使う。
 - コスト軽減(「〜の呪文のコストは {N} 少なくなる」)は、\`## 常在型能力\` に \`reduceCost amount=N who=you notType=creature\`(affect は要らない)。
 - プレインズウォーカーの忠誠度能力(「+N:」「−N:」「−X:」)は、\`## 起動型能力\` に \`cost loyalty=N\`(+1 は loyalty=1、−2 は loyalty=-2。−X は \`cost loyaltyX=true\`)と書く(ソーサリーのタイミングで1ターンに1回は、エンジンが守る)。X は効果の中で \`count=$X\` のように参照する。数の引数には、\`countCards\`(枚数を数える。as= で受ける)の出力も \`count=$名前\` で渡せる。
