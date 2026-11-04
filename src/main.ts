@@ -1,5 +1,6 @@
 import { App, EventRef, Modal, Notice, Plugin, Setting, TFile, WorkspaceLeaf, normalizePath } from "obsidian";
 import { buildRule } from "./battle/build";
+import { DEFAULT_GLOSSARY, GLOSSARY_NOTE } from "./battle/glossary";
 import { Kind, freeName, parseVersion, sortNewestFirst } from "./battle/history";
 import { askClaude, obsidianHttp } from "./battle/claude";
 import { CardStatus, cardStatus, report } from "./battle/coverage";
@@ -184,6 +185,7 @@ export default class MagicTheObsidian extends Plugin {
       },
     });
     this.addCommand({ id: "battle-sample-rules", name: "Battle: create sample rules", callback: () => void this.createSampleRules() });
+    this.addCommand({ id: "battle-create-glossary", name: "Battle: create glossary note", callback: () => void this.createGlossaryNote() });
     this.addCommand({ id: "battle-build-rules", name: "Battle: build rules with AI", callback: () => void this.openBuildRules() });
     this.addCommand({ id: "battle-edit-rule", name: "Battle: edit rule nodes", callback: () => void this.openEditor() });
     this.addCommand({ id: "battle-restore-rule", name: "Battle: restore rule version", callback: () => void this.openRestore() });
@@ -358,11 +360,27 @@ export default class MagicTheObsidian extends Plugin {
     new BuildRulesModal(this.app, toRows([...statuses.keys()], statuses), (names, ruling) => void this.buildRulesFor(names, ruling)).open();
   }
 
+  // AI への用語集: Rules/_用語.md があれば、その内容 (先頭のフロントマターは除く)。無ければ undefined (既定の用語集)
+  private async readGlossary(): Promise<string | undefined> {
+    const f = this.app.vault.getAbstractFileByPath(normalizePath(`${RULES_DIR}/${GLOSSARY_NOTE}`));
+    return f instanceof TFile ? (await this.app.vault.read(f)).replace(/^---\n[\s\S]*?\n---\n/, "").trim() || undefined : undefined;
+  }
+
+  // 既定の用語集から Rules/_用語.md を作る (あれば作らない)。作ったあとは、この内容が既定のかわりに AI へ渡る
+  private async createGlossaryNote() {
+    await this.ensureRulesDir();
+    const path = normalizePath(`${RULES_DIR}/${GLOSSARY_NOTE}`);
+    if (this.app.vault.getAbstractFileByPath(path)) return void new Notice(`${path} はすでにある`);
+    await this.app.vault.create(path, `---\nmtg: glossary\n---\n\n${DEFAULT_GLOSSARY}\n`);
+    new Notice(`${path} を作った。直した内容が、AI への既定の用語集のかわりに使われる`);
+  }
+
   // 選ばれたカードを順に AI へ(裁定後のテキストがあれば、それも送る)。成功したら Rules/<名前>.md に書く。履歴は saveRule が残す。失敗したカードは元のまま
   private async buildRulesFor(names: string[], ruling?: string) {
     const key = claudeKey(this.app, this.settings);
     if (!key) return void new Notice("設定で Claude の API キーを選んでください (Magic the Obsidian → AI)");
     await this.ensureRulesDir();
+    const glossary = await this.readGlossary();
     let made = 0;
     let over = 0;
     let failed = 0;
@@ -370,7 +388,7 @@ export default class MagicTheObsidian extends Plugin {
       new Notice(`AI に頼んでいる (${i + 1}/${names.length}): ${name}`);
       try {
         const oracle = await oracleEnglish(this.app, name);
-        const { md } = await buildRule({ card: name, oracle, ruling, ask: (system, messages) => askClaude({ apiKey: key, model: this.settings.claudeModel, system, messages, http: obsidianHttp }) });
+        const { md } = await buildRule({ card: name, oracle, ruling, glossary, ask: (system, messages) => askClaude({ apiKey: key, model: this.settings.claudeModel, system, messages, http: obsidianHttp }) });
         if ((await this.saveRule(name, md, "ai")) === "created") made++;
         else over++;
       } catch (e) {

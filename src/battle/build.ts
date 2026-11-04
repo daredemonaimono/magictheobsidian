@@ -37,8 +37,8 @@ function problemsOf(md: string, card: string): string[] {
 }
 
 // AI にカードの md を作らせる。検証を通ったものだけを返す。通らなければ、問題を渡して1回だけやり直させる。通信のエラーはそのまま投げる
-export async function buildRule(o: { card: string; oracle: string; ruling?: string; ask: (system: string, messages: Msg[]) => Promise<string> }): Promise<{ md: string; attempts: number }> {
-  const { system, user } = buildPrompt(o.card, o.oracle, o.ruling);
+export async function buildRule(o: { card: string; oracle: string; ruling?: string; glossary?: string; ask: (system: string, messages: Msg[]) => Promise<string> }): Promise<{ md: string; attempts: number }> {
+  const { system, user } = buildPrompt(o.card, o.oracle, o.ruling, o.glossary);
   const messages: Msg[] = [{ role: "user", content: user }];
   let problems: string[] = [];
   for (let attempts = 1; attempts <= 2; attempts++) {

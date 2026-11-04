@@ -1,4 +1,5 @@
 import { ParamDef } from "./node";
+import { DEFAULT_GLOSSARY } from "./glossary";
 import { allConditions, allNodes } from "./registry";
 import { SAMPLE_RULES } from "./samples";
 
@@ -12,13 +13,16 @@ const nodeList = () =>
 
 const conditionList = () => allConditions().map((c) => `- ${c.id} (${c.title}): ${c.summary}`).join("\n");
 
-export function buildPrompt(card: string, oracle: string, ruling?: string): { system: string; user: string } {
+export function buildPrompt(card: string, oracle: string, ruling?: string, glossary?: string): { system: string; user: string } {
   const system = `あなたは Magic: The Gathering のカードのテキストを、汎用のノードの組み合わせ (Obsidian のノート) に直す役です。
 
 ## 書式
 - フロントマターに card: "[[カード名]]" を書く。
 - 見出しは能力の4分類: ## 呪文能力 / ## 起動型能力 / ## 誘発型能力 / ## 常在型能力。1つの見出し = 1つの能力。同じ見出しを何度書いてもよい。
 - 箇条書き1行 = ノード1つ: \`- <ノードid> [as=<名前>] <引数>=<値> ...\`。値は $名前 (前のノードの as を参照)、整数、true / false、それ以外は文字列 (空白を含むときは "..." で囲む)。
+
+## 用語集 (基本の定義。迷ったらこれに従う)
+${glossary?.trim() || DEFAULT_GLOSSARY}
 
 ## 使えるノード (これだけ。ここに無いノードは使わない)
 ${nodeList() || "(まだ無い)"}

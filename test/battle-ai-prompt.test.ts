@@ -78,3 +78,15 @@ assert.ok(buildPrompt("Negate", "x").system.includes("foresee"));
   for (const w of ["affect who=attached", "staticModify", "staticGrant", "loseAbilities", "setBaseStats", "attach", "timing sorcery=true", "reduceCost", "extraTriggers", "Aura"]) assert.ok(sys.includes(w), `system に ${w}`);
   assert.ok(!sys.includes("誘発型能力は、誘発したときに対象を選べない"), "誘発時の対象は、いまは自動で選ばれる");
 }
+
+// 用語集: 既定の定義 (パーマネントの範囲・能力の見分け方) が載る。自分の用語集を渡すと、既定のかわりにそれが載る
+{
+  resetRegistry();
+  registerBuiltinNodes();
+  const sys = buildPrompt("Geist of Saint Thalia", "x").system;
+  for (const w of ["用語", "パーマネント", "カウンター", "紋章", "Whenever", "Equip"]) assert.ok(sys.includes(w), `system に ${w}`);
+  const mine = buildPrompt("X", "x", undefined, "独自の定義XYZ").system;
+  assert.ok(mine.includes("独自の定義XYZ"));
+  assert.ok(!mine.includes("戦場にあるカード"), "自分の用語集があれば、既定は載せない");
+  assert.ok(buildPrompt("X", "x", undefined, "   ").system.includes("戦場にあるカード"), "空白だけなら既定");
+}
