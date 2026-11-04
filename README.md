@@ -59,6 +59,7 @@ Obsidian を Magic: The Gathering のデッキ構築ツールにするプラグ�
 
 - コマンド「Battle: create sample rules」で、打ち消し3種(Negate / Essence Scatter / Spell Snare)のサンプルを `Rules/` に作る。
 - コマンド「Battle: rules coverage」で、`Cards/` の全カードの状況(ok / partial / unbuilt)を `Rules/_coverage.md` に書き出す。ok は、最小シナリオを実際に動かして通ったものだけ。
+- いま使えるノード: `target`(対象。スタックの呪文か、戦場のパーマネント)、`counter`(打ち消す。`unlessPay` で「支払わないかぎり」)、`draw`(引く)、`discard`(捨てる)、`bounce`(手札に戻す)。ここにない効果は、AI が `## 未対応` に書く。
 - 設定の「AI」で、Claude の API キーを選ぶ(Obsidian のキーチェーンに保存され、`data.json` には保存先の名前だけが残る)。モデルも設定で変えられる(既定は `claude-opus-5-5`)。
 - コマンド「Battle: build rules with AI」で、カードを選ぶ画面が開く。チェックしたカードだけを、AI がノードの組み合わせに直して `Rules/<カード名>.md` に作る。初期のチェックは、ルールがまだ無いカード。ルールがあるカードを選ぶと上書きになり、元の内容は `Rules/_backup/` に1世代だけ残る。AI の返事は、読み込みと検証を通ったものだけを保存する。ノードで表せない部分は、md の `## 未対応` に書かれ、状況は partial になる。API の料金がかかる。
 

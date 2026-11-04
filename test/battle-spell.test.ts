@@ -103,13 +103,13 @@ const ids = (cs: GameCard[]) => cs.map((c) => c.id);
 
 // 実装されていないノードは、飛ばして記録を残す。例外は出ない
 {
-  defineNode({ id: "draw", title: "引く", summary: "未実装のテスト用", params: { count: { type: "number" } }, outputs: {} });
-  rules.set("Divination", { card: "Divination", abilities: [{ kind: "spell", body: [{ node: "draw", args: { count: 3 } }] }] });
+  defineNode({ id: "foresee", title: "見通す", summary: "未実装のテスト用", params: { count: { type: "number" } }, outputs: {} });
+  rules.set("Divination", { card: "Divination", abilities: [{ kind: "spell", body: [{ node: "foresee", args: { count: 3 } }] }] });
   const g = scene(card("Divination", "Sorcery", 3, "A"));
   castSpell(g, "A", "divination", {}, book);
   passPriority(g, "A", book);
   passPriority(g, "B", book);
-  assert.ok(g.log.some((l) => l.includes("未実装: draw")));
+  assert.ok(g.log.some((l) => l.includes("未実装: foresee")));
   assert.deepEqual(ids(g.graveyards["A"]), ["divination"]);
 }
 

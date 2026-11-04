@@ -22,5 +22,5 @@ assert.ok(p.system.includes(SAMPLE_RULES["Negate"]), "例としてサンプル�
 assert.ok(p.user.includes("Negate") && p.user.includes("Counter target noncreature spell."));
 
 // 一覧は、レジストリから作る: 新しく定義したノードが出る
-defineNode({ id: "draw", title: "引く", summary: "カードを引く", params: { count: { type: "number", required: true } }, outputs: {} });
-assert.ok(buildPrompt("Negate", "x").system.includes("draw"));
+defineNode({ id: "foresee", title: "見通す", summary: "ライブラリーの上を見る (テスト用の未実装ノード)", params: { count: { type: "number", required: true } }, outputs: {} });
+assert.ok(buildPrompt("Negate", "x").system.includes("foresee"));

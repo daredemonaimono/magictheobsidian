@@ -31,10 +31,10 @@ assert.ok(broken.reasons[0].includes("4 行目"));
 assert.equal(cardStatus("Negate", SAMPLE_RULES["Negate"]).status, "ok");
 
 // 定義はあるが run が無いノード = partial (未実装)
-defineNode({ id: "draw", title: "引く", summary: "未実装", params: { count: { type: "number" } }, outputs: {} });
-const p = cardStatus("Divination", `---\ncard: "[[Divination]]"\n---\n\n## 呪文能力\n\n- draw count=3\n`);
+defineNode({ id: "foresee", title: "見通す", summary: "未実装", params: { count: { type: "number" } }, outputs: {} });
+const p = cardStatus("Divination", `---\ncard: "[[Divination]]"\n---\n\n## 呪文能力\n\n- foresee count=3\n`);
 assert.equal(p.status, "partial");
-assert.ok(p.reasons.includes("未実装: draw"), p.reasons.join());
+assert.ok(p.reasons.includes("未実装: foresee"), p.reasons.join());
 
 // ノードは全部実装済みでも、シナリオが無ければ ok にしない (動いた記録だけを根拠にする)
 const noScenario = cardStatus("Foo", SAMPLE_RULES["Negate"].replace("Negate", "Foo"));
@@ -45,13 +45,13 @@ assert.ok(noScenario.reasons.some((r) => r.includes("シナリオが無い")));
 const rules = Object.values(SAMPLE_RULES).map(parseRule);
 assert.deepEqual(nodeUsers(rules, "counter").sort(), ["Essence Scatter", "Negate", "Spell Snare"]);
 assert.deepEqual(nodeUsers(rules, "target").length, 3);
-assert.deepEqual(nodeUsers(rules, "draw"), []);
+assert.deepEqual(nodeUsers(rules, "foresee"), []);
 
 // レポート
 const text = report([cardStatus("Negate", SAMPLE_RULES["Negate"]), p, u]);
 assert.ok(text.includes("| カード | 状況 | 理由 |"));
 assert.ok(text.includes("| Negate | ok |"));
-assert.ok(text.includes("| Divination | partial | 未実装: draw"));
+assert.ok(text.includes("| Divination | partial | 未実装: foresee"));
 
 // 手で直した md の意味が壊れたら ok にしない (最終レビューの指摘): シナリオは vault の md を実行する
 const edited = cardStatus("Negate", SAMPLE_RULES["Negate"].replace("notType=creature", "type=creature"));

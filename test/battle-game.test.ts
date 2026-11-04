@@ -63,3 +63,10 @@ assert.ok(!canCastNow(busy, "A", sorcery), "スタックが空でなければソ
 const combat = createGame(["A", "B"]);
 combat.step = "combat";
 assert.ok(!canCastNow(combat, "A", sorcery), "メインフェイズ以外では唱えられない");
+
+// ライブラリー・戦場・マナ (ノードの追加に必要な最小の領域)
+const z = createGame(["A", "B"]);
+assert.deepEqual(z.libraries, { A: [], B: [] });
+assert.deepEqual(z.mana, { A: 0, B: 0 });
+assert.deepEqual(z.battlefield, []);
+assert.equal(z.decide, undefined);
