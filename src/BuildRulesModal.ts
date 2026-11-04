@@ -19,7 +19,7 @@ export class BuildRulesModal extends Modal {
   onOpen() {
     this.setTitle("AI にノードを組み立ててもらうカード");
     const { contentEl } = this;
-    contentEl.createEl("p", { text: "チェックしたカードだけを AI に頼む(API の料金がかかる)。ルールがあるカードは「上書き」になり、元の内容は Rules/_backup/ に残る。", cls: "setting-item-description" });
+    contentEl.createEl("p", { text: "チェックしたカードだけを AI に頼む(API の料金がかかる)。ルールがあるカードは「上書き」になり、元の内容は履歴(Rules/_backup/<カード名>/)に残る。", cls: "setting-item-description" });
     const search = contentEl.createEl("input", { type: "text", placeholder: "名前で絞り込み" });
     search.style.width = "100%";
     search.addEventListener("input", () => {

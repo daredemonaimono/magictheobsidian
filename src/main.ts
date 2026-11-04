@@ -1,11 +1,13 @@
-import { App, EventRef, Modal, Notice, Plugin, Setting, TFile, WorkspaceLeaf, normalizePath } from "obsidian";
+import { App, EventRef, Modal, Notice, Plugin, Setting, TAbstractFile, TFile, WorkspaceLeaf, normalizePath } from "obsidian";
 import { buildRule } from "./battle/build";
+import { EditSessions, Kind, freeName, parseVersion, sortNewestFirst } from "./battle/history";
 import { askClaude, obsidianHttp } from "./battle/claude";
 import { CardStatus, cardStatus, report } from "./battle/coverage";
 import { registerBuiltinNodes } from "./battle/nodes";
 import { SAMPLE_RULES } from "./battle/samples";
 import { toRows } from "./battle/select";
 import { BuildRulesModal } from "./BuildRulesModal";
+import { RestoreRuleModal } from "./RestoreRuleModal";
 import { ensureCardFile, localCards, oracleEnglish, updateLegality } from "./cards";
 import { DECK_DIR, foldCommander, writeDeck } from "./deck";
 import { CREATABLE, FORMATS } from "./rules";
@@ -69,6 +71,8 @@ export default class MagicTheObsidian extends Plugin {
   private prevCount = 0;
   private closedByTab = false;
   private opening = false;
+  private ruleCache = new Map<string, string>(); // Rules/<名前>.md の最後に見た内容 (手で直す前の内容を履歴に残すため)
+  private editSessions = new EditSessions(5 * 60 * 1000); // 連続した手の編集は、1つの版にまとめる
 
   async onload() {
     registerBuiltinNodes();
@@ -122,7 +126,12 @@ export default class MagicTheObsidian extends Plugin {
     this.registerEvent(ws.on("layout-change", () => void this.syncSidebar()));
     // デッキ画面のメイン/サイドのタブを押したとき、サイドバーが畳まれていたら開く
     this.registerEvent((ws as unknown as { on(n: string, cb: () => void): EventRef }).on("mtg-show-list", () => void this.showList(ws.getActiveViewOfType(DeckView)?.leaf)));
+    // Rules/<名前>.md が手で書き換わったら、書き換わる前の内容を履歴に残す (AI・版を戻すときは、自分で履歴に残してから書く)
+    this.registerEvent(this.app.vault.on("modify", (f) => void this.onRuleChanged(f)));
+    this.registerEvent(this.app.vault.on("create", (f) => void this.onRuleChanged(f)));
+    this.registerEvent(this.app.vault.on("delete", (f) => this.ruleName(f.path) && this.ruleCache.delete(this.ruleName(f.path)!)));
     ws.onLayoutReady(() => {
+      void this.loadRuleCache();
       this.dashboardIfEmpty(ws.getMostRecentLeaf());
       void this.syncSidebar();
     });
@@ -159,6 +168,7 @@ export default class MagicTheObsidian extends Plugin {
     });
     this.addCommand({ id: "battle-sample-rules", name: "Battle: create sample rules", callback: () => void this.createSampleRules() });
     this.addCommand({ id: "battle-build-rules", name: "Battle: build rules with AI", callback: () => void this.openBuildRules() });
+    this.addCommand({ id: "battle-restore-rule", name: "Battle: restore rule version", callback: () => void this.openRestore() });
     this.addCommand({ id: "battle-rules-coverage", name: "Battle: rules coverage", callback: () => void this.rulesCoverage() });
     this.addCommand({ id: "open-dashboard", name: "Open dashboard", callback: () => void this.openOrReveal(DASHBOARD_VIEW) });
     this.addRibbonIcon("layout-dashboard", "Magic the Obsidian", () => void this.openOrReveal(DASHBOARD_VIEW));
@@ -345,11 +355,16 @@ export default class MagicTheObsidian extends Plugin {
         const { md } = await buildRule({ card: name, oracle, ask: (system, messages) => askClaude({ apiKey: key, model: this.settings.claudeModel, system, messages, http: obsidianHttp }) });
         const path = normalizePath(`${RULES_DIR}/${fileSafe(name)}.md`);
         const old = this.app.vault.getAbstractFileByPath(path);
+        // 履歴に残してから、書く直前にキャッシュを合わせる (手の編集と見間違えず、履歴の保存に失敗したときはキャッシュを変えない)
         if (old instanceof TFile) {
-          await this.backupRule(name, await this.app.vault.read(old));
+          await this.snapshot(name, await this.app.vault.read(old), "ai");
+          this.ruleCache.set(name, md);
+          this.editSessions.reset(name);
           await this.app.vault.modify(old, md);
           over++;
         } else {
+          this.ruleCache.set(name, md);
+          this.editSessions.reset(name);
           await this.app.vault.create(path, md);
           made++;
         }
@@ -361,13 +376,72 @@ export default class MagicTheObsidian extends Plugin {
     new Notice(`AI のルール作成: 作った ${made} 枚 / 上書きした ${over} 枚 / 失敗 ${failed} 枚`);
   }
 
-  private async backupRule(name: string, content: string) {
-    const dir = `${RULES_DIR}/_backup`;
-    if (!this.app.vault.getAbstractFileByPath(dir)) await this.app.vault.createFolder(dir);
-    const path = normalizePath(`${dir}/${fileSafe(name)}.md`);
-    const old = this.app.vault.getAbstractFileByPath(path);
-    if (old instanceof TFile) await this.app.vault.modify(old, content);
-    else await this.app.vault.create(path, content);
+  // ---- ルールの履歴: Rules/_backup/<カード名>/<日時>-<種類>.md ----
+  private ruleName(path: string): string | null {
+    const m = path.match(new RegExp(`^${RULES_DIR}/([^/]+)\\.md$`));
+    return m && !m[1].startsWith("_") ? m[1] : null;
+  }
+
+  private async loadRuleCache() {
+    for (const f of this.app.vault.getMarkdownFiles()) {
+      const name = this.ruleName(f.path);
+      if (name && !this.ruleCache.has(name)) this.ruleCache.set(name, await this.app.vault.read(f));
+    }
+  }
+
+  private async onRuleChanged(f: TAbstractFile) {
+    const name = f instanceof TFile ? this.ruleName(f.path) : null;
+    if (!name || !(f instanceof TFile)) return;
+    const now = await this.app.vault.read(f);
+    const old = this.ruleCache.get(name);
+    this.ruleCache.set(name, now);
+    if (old !== undefined && old !== now && this.editSessions.note(name, Date.now())) await this.snapshot(name, old, "edit");
+  }
+
+  private versionFiles(name: string): TFile[] {
+    const dir = `${RULES_DIR}/_backup/${name}/`;
+    return this.app.vault.getFiles().filter((f) => f.path.startsWith(dir) && !f.path.slice(dir.length).includes("/"));
+  }
+
+  // 書き換わる前の内容を、履歴に1ファイル足す。直前の版と同じ内容なら足さない
+  private async snapshot(name: string, content: string, kind: Kind) {
+    for (const d of [normalizePath(`${RULES_DIR}/_backup`), normalizePath(`${RULES_DIR}/_backup/${name}`)]) if (!this.app.vault.getAbstractFileByPath(d)) await this.app.vault.createFolder(d);
+    const files = this.versionFiles(name);
+    const latest = sortNewestFirst(files.map((f) => f.name))[0];
+    const lf = files.find((f) => f.name === latest);
+    if (lf && (await this.app.vault.read(lf)) === content) return;
+    await this.app.vault.create(normalizePath(`${RULES_DIR}/_backup/${name}/${freeName(new Date(), kind, new Set(files.map((f) => f.name)))}`), content);
+  }
+
+  // 開いているルール (または履歴のノート) の、版の一覧から戻す
+  private openRestore() {
+    const path = this.app.workspace.getActiveFile()?.path ?? "";
+    const name = this.ruleName(path) ?? path.match(new RegExp(`^${RULES_DIR}/_backup/([^/]+)/[^/]+\\.md$`))?.[1];
+    if (!name) return void new Notice("Rules/<カード名>.md か、その履歴のノートを開いてから実行してください");
+    const files = this.versionFiles(name);
+    const versions = sortNewestFirst(files.map((f) => f.name)).map((n) => ({ file: files.find((f) => f.name === n)!, ...parseVersion(n)! }));
+    if (!versions.length) return void new Notice(`${name}: 履歴はまだない`);
+    new RestoreRuleModal(this.app, name, versions, (f) => void this.restoreVersion(name, f), (f) => void this.app.workspace.getLeaf(true).openFile(f)).open();
+  }
+
+  // 選んだ版に戻す。いまの内容は、先に履歴に残す (戻したことも取り消せる)
+  private async restoreVersion(name: string, file: TFile) {
+    const target = await this.app.vault.read(file);
+    const path = normalizePath(`${RULES_DIR}/${name}.md`);
+    const cur = this.app.vault.getAbstractFileByPath(path);
+    if (cur instanceof TFile) {
+      const current = await this.app.vault.read(cur);
+      if (current === target) return void new Notice(`${name}: すでにこの版です`);
+      await this.snapshot(name, current, "restore");
+      this.ruleCache.set(name, target);
+      this.editSessions.reset(name);
+      await this.app.vault.modify(cur, target);
+    } else {
+      this.ruleCache.set(name, target);
+      this.editSessions.reset(name);
+      await this.app.vault.create(path, target);
+    }
+    new Notice(`${name}: ${parseVersion(file.name)?.stamp ?? file.name} の版に戻した`);
   }
 
   private async fetchCardNote(query: string) {
