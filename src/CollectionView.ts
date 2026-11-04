@@ -1,5 +1,6 @@
 import { Notice, ViewStateResult } from "obsidian";
-import { CardInfo, cardImage, cardInfo, printingOf, readPrintings } from "./cards";
+import { addFlip, isMultiFace } from "./flip";
+import { CardInfo, cardBackText, cardImage, cardInfo, printingOf, readPrintings } from "./cards";
 import { CONDS, Row, loadCollection, rowKey, saveCollection } from "./collection";
 import { DeckView, PrintModal } from "./DeckView";
 import { Result } from "./search";
@@ -161,11 +162,13 @@ export class CollectionView extends DeckView {
   private gridCell(parent: HTMLElement, i: Item) {
     const cell = parent.createDiv("mtg-ccell");
     const card = cell.createDiv("mtg-citem");
-    if (i.image) card.createEl("img", { attr: { src: i.image, alt: i.row.card } });
-    else card.createSpan({ text: i.row.card, cls: "mtg-name" });
+    const img = i.image ? card.createEl("img", { attr: { src: i.image, alt: i.row.card } }) : undefined;
+    if (!img) card.createSpan({ text: i.row.card, cls: "mtg-name" });
     card.toggleClass("is-foil", i.row.foil);
     card.createSpan({ text: `${i.row.n}×`, cls: "mtg-badge" });
-    this.controls(card.createDiv("mtg-ctl"), i);
+    const ctl = card.createDiv("mtg-ctl");
+    this.controls(ctl, i);
+    if (isMultiFace(i.info?.name)) addFlip(ctl, card, img, () => cardBackText(this.app, i.row.card));
     const meta = cell.createDiv("mtg-cmeta");
     meta.createSpan({ text: this.fmt(this.price(i)), cls: "mtg-cprice" });
     meta.createSpan({ text: `${this.tags(i)} · ${i.row.cond}${i.row.foil ? " ✨" : ""}`, cls: "mtg-dim" });

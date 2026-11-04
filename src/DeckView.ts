@@ -1,5 +1,6 @@
 import { App, ItemView, Modal, Notice, Setting, TFile, ViewStateResult, WorkspaceLeaf, moment } from "obsidian";
-import { CARD_DIR, cardImage, cardInfo, cardText, oracleEnglish, printingImage, printingOf, readPrintings, refetchCard, setLocalText, updateLegality } from "./cards";
+import { addFlip, isMultiFace } from "./flip";
+import { CARD_DIR, cardBackText, cardImage, cardInfo, cardText, oracleEnglish, printingImage, printingOf, readPrintings, refetchCard, setLocalText, updateLegality } from "./cards";
 import { CREATABLE, FORMATS, formatOf, judge } from "./rules";
 import { loadCollection } from "./collection";
 import { formatPrice, priceOf, refreshPrices } from "./prices";
@@ -516,8 +517,8 @@ export class DeckView extends ItemView {
         col.createEl("h4", { text: `${g} (${items.reduce((a, c) => a + c.count, 0)})` });
         for (const c of items) {
           const item = col.createDiv("mtg-item");
-          if (c.image) item.createEl("img", { attr: { src: c.image, alt: c.key } });
-          else item.createSpan({ text: c.key, cls: "mtg-name" });
+          const img = c.image ? item.createEl("img", { attr: { src: c.image, alt: c.key } }) : undefined;
+          if (!img) item.createSpan({ text: c.key, cls: "mtg-name" });
           item.createSpan({ text: String(c.count), cls: "mtg-badge" });
           const ctl = item.createDiv("mtg-ctl");
           ctl.createEl("button", { text: "🖼", attr: { "aria-label": "イラスト変更" } }).onclick = () => void this.pickPrint(c.key, c.board);
@@ -527,8 +528,11 @@ export class DeckView extends ItemView {
             crown.toggleClass("is-on", c.board === "commander");
             crown.onclick = () => void (c.board === "commander" ? this.undesignate(c.key) : this.designate(c.key));
           }
-          ctl.createEl("button", { text: "−" }).onclick = () => void this.change(c.key, -1, c.board);
-          if (c.board !== "commander") ctl.createEl("button", { text: "+" }).onclick = () => void this.change(c.key, 1, c.board);
+          // 両面・冒険などのカード: ↩︎ で裏面に。左のプレビューも合わせる (増減は、サイドバーの一覧で行う)
+          if (isMultiFace(c.meta?.name))
+            addFlip(ctl, item, img, () => cardBackText(this.app, c.key), (back, text, src) =>
+              void this.preview(c.key, Promise.resolve(src ?? (back ? undefined : c.image)), back ? Promise.resolve(text) : cardText(this.app, c.key), cardInfo(this.app, c.key)?.nameLocal),
+            );
           item.onmouseenter = () => void this.preview(c.key, Promise.resolve(c.image), cardText(this.app, c.key), cardInfo(this.app, c.key)?.nameLocal);
         }
       }

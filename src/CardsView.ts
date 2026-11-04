@@ -1,5 +1,6 @@
+import { addFlip, isMultiFace } from "./flip";
 import { EventRef, ItemView, Notice, TFile, WorkspaceLeaf, debounce } from "obsidian";
-import { CARD_DIR, refetchCard } from "./cards";
+import { CARD_DIR, cardBackText, refetchCard } from "./cards";
 import { Result, buildFilterBar, emptyFilters, searchLocal } from "./search";
 import { Settings } from "./settings";
 import { manaCost } from "./symbols";
@@ -70,6 +71,7 @@ export class CardsView extends ItemView {
       manaCost(meta, r.manaCost);
 
       const ctl = cell.createDiv("mtg-ctl");
+      if (r.localKey && isMultiFace(r.name)) addFlip(ctl, cell, img, () => cardBackText(this.app, r.localKey!));
       const again = ctl.createEl("button", { text: "↻", attr: { "aria-label": "Scryfall から情報を取り直す" } });
       again.onclick = async (e) => {
         e.stopPropagation();

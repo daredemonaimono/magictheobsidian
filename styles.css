@@ -217,3 +217,4 @@ button.mtg-color .mtg-sym { width: 20px; height: 20px; display: block; }
 .mtg-ed-addrow { display: flex; gap: 8px; margin-bottom: 12px; }
 .mtg-ed-note { margin-bottom: 12px; }
 .mtg-ed-md { white-space: pre-wrap; background: var(--background-secondary); padding: 8px; border-radius: 6px; }
+.mtg-backtext { padding: 8px; font-size: 0.8em; white-space: pre-wrap; background: var(--background-primary); }

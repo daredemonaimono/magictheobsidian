@@ -1,4 +1,5 @@
 import { App, TFile, normalizePath, parseYaml } from "obsidian";
+import { backFaceText } from "./flip";
 import { LEGAL_FORMATS, judge } from "./rules";
 import { Settings } from "./settings";
 import { Printing, ScryfallCard, legalList, restrictedList, printingImageUrl, fetchById, fetchCard, fetchCollection, fetchLocalized, fetchPrintings, fileSafe, toMarkdown } from "./scryfall";
@@ -99,6 +100,12 @@ export async function cardText(app: App, key: string): Promise<string> {
   const local = c.match(/\n## Text \([^)]+\)\n\n([\s\S]*?)(?=\n\[Scryfall\])/);
   if (local) return local[1].trim();
   return c.replace(/^---[\s\S]*?\n---\n/, "").replace(/!\[\]\(.*?\)\n*/, "").split("\n[Scryfall]")[0].trim();
+}
+
+// 裏面のテキスト (名前が "A // B" のカード)。無ければ空
+export async function cardBackText(app: App, key: string): Promise<string> {
+  const f = app.vault.getAbstractFileByPath(`${CARD_DIR}/${key}.md`);
+  return f instanceof TFile ? backFaceText(await app.vault.cachedRead(f)) ?? "" : "";
 }
 
 // 設定言語のテキスト (`## Text (ja)`) だけを書き換える。英語の本文は触らない。空にすると節ごと消す。
