@@ -16,6 +16,11 @@ export const DEFAULT_GLOSSARY = `### Permanents
 - Spell ability: the text of an instant or sorcery. An Aura's "Enchant …" is a targeted spell ability (target + attach); its effect goes in a static ability.
 - "Enchanted …" / "Equipped …" means the permanent it is attached to (\`affect who=attached\`).
 
+### Planeswalkers, tokens, emblems
+- A planeswalker's loyalty ability ("+1: …", "−2: …", "−X: …") is an activated ability whose cost is loyalty counters: \`cost loyalty=1\`, \`cost loyalty=-2\`, \`cost loyaltyX=true\`. Loyalty is a kind of counter (it is not a permanent).
+- Surveil N: look at the top N cards, put any number of them into the graveyard, and leave the rest on top (look → choose atMost=true → move to graveyard).
+- A token is a permanent that ceases to exist when it leaves the battlefield. An emblem is not a permanent; it stays outside the battlefield for the rest of the game.
+
 ### Other
 - "you" is the controller of the spell or ability (who=you / controller=you); "opponent" is opponents.
 - "until end of turn" is duration=endOfTurn.`;

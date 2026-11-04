@@ -15,6 +15,8 @@ export interface GameCard {
   toughness?: number;
   keywords?: string[];
   colors?: string[]; // 色 (W U B R G)
+  loyalty?: number; // プレインズウォーカーの初期忠誠度 (戦場に出るとき loyalty カウンターとして置かれる)
+  token?: boolean; // トークン (戦場を離れると消える)
 }
 export interface StackItem {
   id: string;
@@ -25,6 +27,7 @@ export interface StackItem {
   body?: NodeCall[]; // 起動型能力のとき、その効果 (呪文のときは、カードの呪文能力)
   ability?: boolean; // 起動型・誘発型能力 (解決しても、カードは墓地に行かない)
   source?: string; // 能力の発生源のパーマネントの id (self ノードが返す)
+  x?: number; // 起動時に選んだ X (忠誠度の −X など。効果の中で $X として参照する)
 }
 // 修整とキーワードの変更。持続「ターン終了時まで」はターンの終わりに消え、forever は残る
 export interface Mod {
@@ -42,11 +45,13 @@ export interface Perm {
   attacking?: boolean;
   mods?: Mod[];
   attachedTo?: string; // 装備品・オーラが付いているパーマネントの id
+  loyaltyUsed?: boolean; // このターンに忠誠度能力を起動した (1ターンに1回)
+  emblem?: string; // 紋章のとき、その名前 (createEmblem の name)。紋章は戦場の外 (Game.emblems) にある
   counters?: Record<string, number>; // "+1/+1" (パワー・タフネスに足される) / "stun" (麻痺: アンタップのかわりに1つ取り除く)
 }
 
 // エンジンが誘発型能力を探すためのイベント。ノードや処理が積み、エンジンが flush して、条件に合う誘発型能力をスタックに積む
-export type GameEvent = { type: "cast"; player: PlayerId; card: GameCard } | { type: "enters"; perm: Perm } | { type: "leaves"; perm: Perm };
+export type GameEvent = { type: "cast"; player: PlayerId; card: GameCard } | { type: "enters"; perm: Perm } | { type: "leaves"; perm: Perm } | { type: "step"; step: Step; player: PlayerId };
 // 人の判断の差し替え口。無ければ決まった動きになる (shortcut: 判断の入力はまだ無い。入力の仕組みを作るときに置き換える)
 export interface Decider {
   discard?(g: Game, p: PlayerId, n: number): GameCard[]; // 捨てるカード
@@ -71,6 +76,8 @@ export interface Game {
   log: string[];
   serial: number; // 起動型・誘発型能力の id を作るための通し番号
   events: GameEvent[]; // まだ誘発型能力を探していないイベント
+  emblems: Perm[]; // 紋章 (戦場の外に残り続ける。元のカードのルールにある、emblem で始まる誘発型能力が働く)
+  restrictedMana: Record<PlayerId, { amount: number; type?: string; notType?: string }[]>; // 使い道に制限のあるマナ (「クリーチャーでない呪文を唱えるためにしか使えない」)
   landsPlayed: number; // このターンに出した土地の数 (1ターンに1枚)
 }
 export interface RuleBook {
@@ -79,7 +86,7 @@ export interface RuleBook {
 
 export function createGame(players: PlayerId[]): Game {
   const each = <T>(f: () => T) => Object.fromEntries(players.map((p) => [p, f()])) as Record<PlayerId, T>;
-  return { players, active: players[0], step: "main1", priority: players[0], passes: [], hands: each<GameCard[]>(() => []), libraries: each<GameCard[]>(() => []), graveyards: each<GameCard[]>(() => []), battlefield: [], mana: each(() => 0), stack: [], log: [], serial: 0, events: [], landsPlayed: 0 };
+  return { players, active: players[0], step: "main1", priority: players[0], passes: [], hands: each<GameCard[]>(() => []), libraries: each<GameCard[]>(() => []), graveyards: each<GameCard[]>(() => []), battlefield: [], mana: each(() => 0), stack: [], log: [], serial: 0, events: [], emblems: [], restrictedMana: each(() => []), landsPlayed: 0 };
 }
 
 export const opponentsOf = (g: Game, p: PlayerId): PlayerId[] => g.players.filter((x) => x !== p);
@@ -108,3 +115,6 @@ export function untapPerm(g: Game, p: Perm): void {
     g.log.push(`${p.card.name}: 麻痺カウンターを1つ取り除いた (アンタップしない)`);
   } else p.tapped = false;
 }
+
+// 型行に、spec (| は「または」) のどれかが含まれるか。type=artifact|creature、notType=creature|land (どちらでもない) の判定に使う
+export const typeIn = (typeLine: string, spec: string): boolean => spec.split("|").some((t) => typeLine.toLowerCase().includes(t.trim().toLowerCase()));

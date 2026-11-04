@@ -1,6 +1,6 @@
 import { Msg } from "./claude";
 import { buildPrompt } from "./prompt";
-import { checkCall, placementProblem, structureProblem } from "./registry";
+import { checkCall, placementProblem, refProblems, structureProblem } from "./registry";
 import { RuleParseError, parseRule } from "./ruleMd";
 
 export class BuildError extends Error {
@@ -24,6 +24,7 @@ function problemsOf(md: string, card: string): string[] {
       const sp = structureProblem(a);
       return [
         ...(sp ? [`${a.body[0].line ?? "?"} 行目: ${sp}`] : []),
+        ...refProblems(a).map((r) => `${a.body[r.node].line ?? "?"} 行目: ${r.message}`),
         ...a.body.flatMap((c) => {
           const why = checkCall(c) ?? placementProblem(a.kind, c);
           return why ? [`${c.line ?? "?"} 行目: ${why}`] : [];

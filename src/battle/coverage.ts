@@ -1,5 +1,5 @@
 import { CardRule } from "./node";
-import { checkCall, getNode, placementProblem, structureProblem } from "./registry";
+import { checkCall, getNode, placementProblem, refProblems, structureProblem } from "./registry";
 import { parseRule } from "./ruleMd";
 import { SCENARIOS } from "./samples";
 
@@ -29,7 +29,7 @@ export function cardStatus(card: string, md: string | undefined): CardStatus {
   if (rule.card !== card) return unbuilt(card, [`card: が "${rule.card}" で、ファイル名 (${card}) と合わない`]);
   const calls = rule.abilities.flatMap((a) => a.body);
   if (!calls.length) return unbuilt(card, [NO_NODES, ...(rule.unsupported ?? []).map((u) => `未対応: ${u}`)]);
-  const bad = rule.abilities.flatMap((ab) => [...ab.body.map((c) => ({ c, why: checkCall(c) ?? placementProblem(ab.kind, c) })), { c: ab.body[0], why: structureProblem(ab) }]).filter((x) => x.why);
+  const bad = rule.abilities.flatMap((ab) => [...ab.body.map((c) => ({ c, why: checkCall(c) ?? placementProblem(ab.kind, c) })), { c: ab.body[0], why: structureProblem(ab) }, ...refProblems(ab).map((r) => ({ c: ab.body[r.node], why: r.message }))]).filter((x) => x.why);
   if (bad.length) return unbuilt(card, bad.map((x) => `${x.c.line ?? "?"} 行目: ${x.why}`));
 
   if (rule.unsupported?.length) return { card, status: "partial", reasons: rule.unsupported.map((u) => `未対応: ${u}`) };

@@ -1,7 +1,7 @@
 import { characteristics, costReduction, extraTriggers } from "./continuous";
 import { CastRecord, NodeCall, RunCtx, Value } from "./node";
 import { checkCall, evalCondition, getNode } from "./registry";
-import { Game, GameCard, GameEvent, Perm, PlayerId, RuleBook, StackItem, Step, untapPerm } from "./state";
+import { Game, GameCard, GameEvent, Perm, PlayerId, RuleBook, StackItem, Step, typeIn, untapPerm } from "./state";
 
 // ステップ進行・優先権・スタック。画面なしで、テストから動かせる
 
@@ -19,21 +19,49 @@ const staticKeywords = (rules: RuleBook, card: GameCard): string[] => (rules.get
 // パーマネントを戦場に出す。「戦場に出た」イベントを積む (宣言されたキーワードは、characteristics が導く)
 function enterBattlefield(g: Game, card: GameCard, controller: PlayerId): void {
   const perm: Perm = { id: card.id, card, controller };
+  if (card.loyalty !== undefined) perm.counters = { loyalty: card.loyalty }; // プレインズウォーカーは、初期忠誠度で戦場に出る
   g.battlefield.push(perm);
   g.events.push({ type: "enters", perm });
 }
 
-// 誘発型能力の最初のノード (when) が、このイベントに合うか。s = 能力の発生源のパーマネント
+// 戦場を離れる (墓地へ。トークンは消える)。「戦場を離れた」イベントを積む
+function removeFromBattlefield(g: Game, perm: Perm): void {
+  g.battlefield = g.battlefield.filter((x) => x !== perm);
+  if (!perm.card.token) g.graveyards[perm.card.owner].push(perm.card);
+  g.events.push({ type: "leaves", perm });
+}
+
+// 状態起因処理: 忠誠度 0 以下のプレインズウォーカー、タフネス 0 以下のクリーチャー、付いている先を失ったオーラは、墓地へ。落ち着くまで繰り返す
+function stateBased(g: Game, rules: RuleBook): void {
+  for (let changed = true; changed; ) {
+    changed = false;
+    for (const p of [...g.battlefield]) {
+      const now = characteristics(g, p, rules);
+      const dead =
+        (/\bPlaneswalker\b/.test(now.typeLine) && (p.counters?.loyalty ?? 1) <= 0) ||
+        (/\bCreature\b/.test(now.typeLine) && now.toughness !== null && now.toughness <= 0) ||
+        (/\bAura\b/.test(now.typeLine) && !g.battlefield.some((o) => o.id === p.attachedTo));
+      if (dead) {
+        removeFromBattlefield(g, p);
+        changed = true;
+      }
+    }
+  }
+}
+
+// 誘発型能力の最初のノード (when) が、このイベントに合うか。s = 能力の発生源のパーマネント (紋章を含む)
 function matchesEvent(g: Game, s: Perm, when: NodeCall, ev: GameEvent): boolean {
   const a = when.args;
   if (a.event !== ev.type) return false;
-  const subject = ev.type === "cast" ? { controller: ev.player, card: ev.card } : ev.perm;
-  if (a.self === true && (ev.type === "cast" || ev.perm !== s)) return false;
+  if (ev.type === "step" && a.step !== ev.step) return false;
+  if (a.self === true && (ev.type === "cast" || ev.type === "step" || ev.perm !== s)) return false;
+  const subject: { controller: PlayerId; card?: GameCard } = ev.type === "cast" ? { controller: ev.player, card: ev.card } : ev.type === "step" ? { controller: ev.player } : ev.perm;
   if (a.who === "you" && subject.controller !== s.controller) return false;
   if (a.who === "opponents" && subject.controller === s.controller) return false;
-  const line = subject.card.typeLine.toLowerCase();
-  if (typeof a.type === "string" && !line.includes(a.type.toLowerCase())) return false;
-  if (typeof a.notType === "string" && line.includes(a.notType.toLowerCase())) return false;
+  if (subject.card) {
+    if (typeof a.type === "string" && !typeIn(subject.card.typeLine, a.type)) return false;
+    if (typeof a.notType === "string" && typeIn(subject.card.typeLine, a.notType)) return false;
+  }
   if (a.turn === "yours" && g.active !== s.controller) return false;
   if (a.turn === "opponents" && g.active === s.controller) return false;
   return true;
@@ -78,20 +106,26 @@ function flushEvents(g: Game, rules: RuleBook): void {
       added = true;
     }
   };
+  stateBased(g, rules); // 状態起因処理 (落ちたものの「戦場を離れた」も、このあとで誘発を探す)
   while (g.events.length) {
     const ev = g.events.shift()!;
     if (ev.type === "leaves") for (const o of g.battlefield) if (o.attachedTo === ev.perm.id) delete o.attachedTo; // 付いていた先が離れたら、装備品・オーラは外れる (戻ってきても付き直さない)
-    const sources = ev.type === "leaves" && !g.battlefield.includes(ev.perm) ? [...g.battlefield, ev.perm] : [...g.battlefield];
+    const sources = [...g.battlefield, ...(ev.type === "leaves" && !g.battlefield.includes(ev.perm) ? [ev.perm] : []), ...g.emblems];
     for (const s of sources) {
       const now = characteristics(g, s, rules);
       if (!now.lostAbilities) {
         for (const ab of rules.get(s.card.name)?.abilities ?? []) {
-          const when = ab.body[0];
-          if (ab.kind === "triggered" && when?.node === "when" && matchesEvent(g, s, when, ev)) push(s, ab.body.slice(1));
+          // 紋章の能力は emblem name=… で始まり、同じ名前の紋章だけが持つ。ふつうのパーマネントは、紋章の能力を持たない
+          const marker = ab.body[0]?.node === "emblem" ? ab.body[0] : undefined;
+          if (marker ? s.emblem !== marker.args.name : s.emblem !== undefined) continue;
+          const at = marker ? 1 : 0;
+          const when = ab.body[at];
+          if (ab.kind === "triggered" && when?.node === "when" && matchesEvent(g, s, when, ev)) push(s, ab.body.slice(at + 1));
         }
       }
-      if (ev.type === "cast" && ev.player === s.controller && now.keywords.includes("prowess") && !/\bcreature\b/i.test(ev.card.typeLine)) push(s, PROWESS);
+      if (ev.type === "cast" && !s.emblem && ev.player === s.controller && now.keywords.includes("prowess") && !/\bcreature\b/i.test(ev.card.typeLine)) push(s, PROWESS);
     }
+    stateBased(g, rules); // 誘発の効果が積まれる前に起きた変化も、落ち着かせる
   }
   if (added) g.passes = []; // 優先権は動かさない (唱えた・起動した本人が、積まれた誘発にも応答できる。解決のあとは、アクティブ・プレイヤーに戻る)
 }
@@ -144,17 +178,33 @@ interface CostSpec {
   tap: boolean;
   sacrifice: boolean;
   tapCreatures: number;
+  loyalty: number; // 忠誠度を足す量 (+1 は 1、−2 は −2)
+  loyaltyX: boolean; // −X
+  isLoyalty: boolean; // 忠誠度能力 (ソーサリーのタイミングで、1ターンに1回)
 }
 const costOf = (calls: NodeCall[]): CostSpec => ({
   mana: calls.reduce((a, c) => a + Number(c.args.mana ?? 0), 0),
   tap: calls.some((c) => c.args.tap === true),
   sacrifice: calls.some((c) => c.args.sacrifice === true),
   tapCreatures: calls.reduce((a, c) => a + Number(c.args.tapCreatures ?? 0), 0),
+  loyalty: calls.reduce((a, c) => a + Number(c.args.loyalty ?? 0), 0),
+  loyaltyX: calls.some((c) => c.args.loyaltyX === true),
+  isLoyalty: calls.some((c) => c.args.loyalty !== undefined || c.args.loyaltyX === true),
 });
 
+// 呪文のコストに使える、制限つきマナ (その呪文の型に合うもの)
+const restrictedFor = (g: Game, p: PlayerId, spell?: GameCard) =>
+  spell ? (g.restrictedMana[p] ?? []).filter((e) => (!e.type || typeIn(spell.typeLine, e.type)) && (!e.notType || !typeIn(spell.typeLine, e.notType))) : [];
+
 // 払えるか。払えなければ理由 (状態は変えない)。tapIds = パワーの合計のためにタップするクリーチャー
-function costProblem(g: Game, p: PlayerId, cost: CostSpec, source: Perm | undefined, tapIds: string[], rules: RuleBook): string | null {
-  if ((g.mana[p] ?? 0) < cost.mana) return `マナが足りない (${cost.mana} 要る)`;
+function costProblem(g: Game, p: PlayerId, cost: CostSpec, source: Perm | undefined, tapIds: string[], rules: RuleBook, spell?: GameCard, x = 0): string | null {
+  if ((g.mana[p] ?? 0) + restrictedFor(g, p, spell).reduce((a, e) => a + e.amount, 0) < cost.mana) return `マナが足りない (${cost.mana} 要る)`;
+  if (cost.isLoyalty) {
+    const now = source?.counters?.loyalty ?? 0;
+    if (!source || source.loyaltyUsed) return "このターンは、もう忠誠度能力を起動した (1ターンに1回)";
+    if (cost.loyalty < 0 && now + cost.loyalty < 0) return `忠誠度が足りない (${now} / ${-cost.loyalty})`;
+    if (cost.loyaltyX && (!Number.isInteger(x) || x < 0 || x > now + cost.loyalty)) return `X は 0〜忠誠度 (${now + cost.loyalty}) の整数`;
+  }
   if (cost.tap && (!source || source.tapped)) return "すでにタップされていて、タップできない";
   if (cost.tapCreatures > 0) {
     if (new Set(tapIds).size !== tapIds.length) return "同じクリーチャーを2回選んでいる";
@@ -170,8 +220,19 @@ function costProblem(g: Game, p: PlayerId, cost: CostSpec, source: Perm | undefi
   return null;
 }
 
-function payCost(g: Game, p: PlayerId, cost: CostSpec, source: Perm | undefined, tapIds: string[]): void {
-  g.mana[p] = (g.mana[p] ?? 0) - cost.mana;
+function payCost(g: Game, p: PlayerId, cost: CostSpec, source: Perm | undefined, tapIds: string[], spell?: GameCard, x = 0): void {
+  let rest = cost.mana;
+  for (const e of restrictedFor(g, p, spell)) {
+    const use = Math.min(e.amount, rest); // 制限つきマナを先に使う
+    e.amount -= use;
+    rest -= use;
+  }
+  if (g.restrictedMana[p]) g.restrictedMana[p] = g.restrictedMana[p].filter((e) => e.amount > 0);
+  g.mana[p] = (g.mana[p] ?? 0) - rest;
+  if (cost.isLoyalty && source) {
+    source.counters = { ...source.counters, loyalty: (source.counters?.loyalty ?? 0) + cost.loyalty - (cost.loyaltyX ? x : 0) };
+    source.loyaltyUsed = true;
+  }
   if (cost.tap && source) source.tapped = true;
   if (cost.tapCreatures > 0) for (const id of tapIds) g.battlefield.find((x) => x.id === id)!.tapped = true;
   if (cost.sacrifice && source) {
@@ -201,9 +262,9 @@ export function castSpell(g: Game, p: PlayerId, cardId: string, targets: Record<
   });
   const cost = costOf(decls);
   if (g.payManaCosts) cost.mana += Math.max(0, card.mv - costReduction(g, p, card, rules)); // カード自体のマナコスト (マナ総量 − コスト軽減)。shortcut: 色は区別しない
-  const why = costProblem(g, p, cost, undefined, cast.tap ?? [], rules);
+  const why = costProblem(g, p, cost, undefined, cast.tap ?? [], rules, card);
   if (why) throw new RuleError(`${card.name}: ${why}`);
-  payCost(g, p, cost, undefined, cast.tap ?? []);
+  payCost(g, p, cost, undefined, cast.tap ?? [], card);
   g.hands[p] = g.hands[p].filter((c) => c !== card);
   g.stack.push(item);
   g.priority = p;
@@ -227,7 +288,7 @@ export function playLand(g: Game, p: PlayerId, cardId: string, rules: RuleBook):
 
 // 戦場のパーマネントの起動型能力を起動する (index = そのカードの起動型能力の何番目か)。コストを払い、マナだけの能力 (addMana のみ) は即座に実行、
 // それ以外はスタックに積む。優先権が必要。払えない・対象が不正なら RuleError で、状態は変えない
-export function activateAbility(g: Game, p: PlayerId, permId: string, index: number, targets: Record<string, string>, rules: RuleBook, tapIds: string[] = []): void {
+export function activateAbility(g: Game, p: PlayerId, permId: string, index: number, targets: Record<string, string>, rules: RuleBook, tapIds: string[] = [], x = 0): void {
   const perm = g.battlefield.find((x) => x.id === permId);
   if (!perm) throw new RuleError(`戦場に無い: ${permId}`);
   if (perm.controller !== p) throw new RuleError(`${p} のコントロールするパーマネントではない: ${permId}`);
@@ -235,16 +296,16 @@ export function activateAbility(g: Game, p: PlayerId, permId: string, index: num
   const ab = rules.get(perm.card.name)?.abilities.filter((a) => a.kind === "activated")[index];
   if (!ab) throw new RuleError(`起動型能力が無い: ${perm.card.name} (${index} 番目)`);
   const timing = ab.body.find((c) => c.node === "timing");
-  if (timing?.args.sorcery === true && !(p === g.active && (g.step === "main1" || g.step === "main2") && g.stack.length === 0)) throw new RuleError(`${perm.card.name}: ソーサリーのタイミングだけ起動できる (自分のメインフェイズで、スタックが空のとき)`);
-  const effects = ab.body.filter((c) => c.node !== "cost" && c.node !== "timing");
-  const item: StackItem = { id: `${perm.id}#${g.serial + 1}`, card: perm.card, controller: p, targets, cast: {}, body: effects, ability: true, source: perm.id };
-  validate(g, item, ab.body, perm.card.name, rules);
   const cost = costOf(ab.body.filter((c) => c.node === "cost"));
-  const why = costProblem(g, p, cost, perm, tapIds, rules);
+  if ((timing?.args.sorcery === true || cost.isLoyalty) && !(p === g.active && (g.step === "main1" || g.step === "main2") && g.stack.length === 0)) throw new RuleError(`${perm.card.name}: ソーサリーのタイミングだけ起動できる (自分のメインフェイズで、スタックが空のとき)`);
+  const effects = ab.body.filter((c) => c.node !== "cost" && c.node !== "timing");
+  const item: StackItem = { id: `${perm.id}#${g.serial + 1}`, card: perm.card, controller: p, targets, cast: {}, body: effects, ability: true, source: perm.id, ...(cost.loyaltyX ? { x } : {}) };
+  validate(g, item, ab.body, perm.card.name, rules);
+  const why = costProblem(g, p, cost, perm, tapIds, rules, undefined, x);
   if (why) throw new RuleError(`${perm.card.name}: ${why}`);
-  payCost(g, p, cost, perm, tapIds);
+  payCost(g, p, cost, perm, tapIds, undefined, x);
   g.serial++;
-  if (effects.length && effects.every((c) => c.node === "addMana")) {
+  if (effects.length && !cost.isLoyalty && effects.every((c) => c.node === "addMana")) {
     for (const call of effects) getNode(call.node)!.run!({ game: g, rules, item, vars: {}, call }, resolveArgs(call, {})!); // マナ能力はスタックを使わない
     flushEvents(g, rules);
     return;
@@ -272,7 +333,7 @@ export function resolveTop(g: Game, rules: RuleBook): void {
     item.source = item.card.id;
   }
   if (!fizzled) {
-    const vars: Record<string, Value> = {};
+    const vars: Record<string, Value> = item.x !== undefined ? { X: item.x } : {}; // 起動時に選んだ X は、$X として参照できる
     for (const call of body) {
       if (call.if !== undefined && !evalCondition(call.if, ctx(call, vars))) continue; // 条件を満たさないノードは飛ばす
       const def = getNode(call.node);
@@ -291,15 +352,18 @@ export function resolveTop(g: Game, rules: RuleBook): void {
   flushEvents(g, rules);
 }
 
-function advanceStep(g: Game): void {
+function advanceStep(g: Game, rules: RuleBook): void {
   if (g.step === "end") {
     for (const p of g.battlefield) if (p.mods) p.mods = p.mods.filter((m) => m.until !== "endOfTurn"); // ターン終了時までの効果が消える
     g.active = nextPlayer(g, g.active);
     g.landsPlayed = 0;
+    for (const p of g.battlefield) delete p.loyaltyUsed; // 忠誠度能力は、1ターンに1回
     for (const p of g.battlefield) if (p.controller === g.active) untapPerm(g, p); // アンタップ・ステップ (優先権が無いので、ここで済ませてアップキープへ)。麻痺カウンターは、アンタップのかわりに取り除く
     g.step = "upkeep";
   } else g.step = STEPS[STEPS.indexOf(g.step) + 1];
   g.priority = g.active;
+  g.events.push({ type: "step", step: g.step, player: g.active }); // 「ステップの開始時に」の誘発型能力
+  flushEvents(g, rules);
 }
 
 // 優先権を持つ人がパスする。全員が連続でパスしたら、スタックが空なら次のステップへ、空でなければ一番上だけを解決する
@@ -312,7 +376,7 @@ export function passPriority(g: Game, p: PlayerId, rules: RuleBook): "passed" | 
   }
   g.passes = [];
   if (!g.stack.length) {
-    advanceStep(g);
+    advanceStep(g, rules);
     return "stepEnded";
   }
   resolveTop(g, rules);

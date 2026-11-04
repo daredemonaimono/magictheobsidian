@@ -31,7 +31,7 @@ export class RuleEditorView extends ItemView {
   private revertBtn: HTMLButtonElement | null = null;
   private probEl: HTMLElement | null = null;
   private nodeEls = new Map<string, HTMLElement>();
-  private refSels: { el: HTMLSelectElement; a: number; n: number; k: string }[] = []; // つなぐ先の選択欄 (as が変わったら、選択肢だけ直す)
+  private refSels: { el: HTMLSelectElement; a: number; n: number; k: string; numeric?: boolean }[] = []; // つなぐ先の選択欄 (as が変わったら、選択肢だけ直す)
   private busy = false; // 保存中
   private mainEl: HTMLElement | null = null;
   private svgEl: SVGElement | null = null;
@@ -301,7 +301,16 @@ export class RuleEditorView extends ItemView {
             cb.onchange = () => this.quiet(setArg(this.rule!, a, n, k, cb.checked));
           } else if (p.type === "number") {
             const num = pr.createEl("input", { type: "number", value: typeof v === "number" ? String(v) : "", attr: { step: "1", ...(p.min !== undefined ? { min: String(p.min) } : {}) } });
+            num.style.display = typeof v === "object" ? "none" : "";
             num.onchange = () => this.quiet(setArg(this.rule!, a, n, k, num.value === "" ? undefined : Number(num.value)));
+            // 数のかわりに、参照 ($X や、前のノードの出力。countCards など) も渡せる
+            const src = pr.createEl("select");
+            this.refSels.push({ el: src, a, n, k, numeric: true });
+            this.fillRefSel(src, a, n, k, true);
+            src.onchange = () => {
+              num.style.display = src.value ? "none" : "";
+              this.quiet(setArg(this.rule!, a, n, k, src.value ? { ref: src.value } : num.value === "" ? 1 : Number(num.value)));
+            };
           } else {
             const txt = pr.createEl("input", { type: "text", value: typeof v === "string" ? v : "" });
             txt.onchange = () => this.quiet(setArg(this.rule!, a, n, k, txt.value.trim() === "" ? undefined : txt.value));
@@ -356,20 +365,22 @@ export class RuleEditorView extends ItemView {
   }
 
   // つなぐ先の選択肢: 前のノードの as。いまの値が一覧に無ければ (赤く出るように) 足す
-  private fillRefSel(sel: HTMLSelectElement, a: number, n: number, k: string) {
+  private fillRefSel(sel: HTMLSelectElement, a: number, n: number, k: string, numeric = false) {
     const body = this.rule!.abilities[a].body;
     const v = body[n].args[k];
     sel.empty();
-    sel.createEl("option", { text: "(未接続)", value: "" });
-    const names = body.slice(0, n).map((c) => c.as).filter((x): x is string => !!x);
-    if (typeof v === "object" && !names.includes(v.ref)) names.push(v.ref);
+    sel.createEl("option", { text: numeric ? "(数)" : "(未接続)", value: "" });
+    if (numeric) sel.createEl("option", { text: "$X", value: "X" });
+    const kind = numeric ? "number" : "id"; // 数の引数には数の出力、つなぐ引数には id の出力だけ
+    const names = body.slice(0, n).filter((c) => Object.values(getNode(c.node)?.outputs ?? {}).includes(kind)).map((c) => c.as).filter((x): x is string => !!x);
+    if (typeof v === "object" && !names.includes(v.ref) && !(numeric && v.ref === "X")) names.push(v.ref);
     for (const nm of names) sel.createEl("option", { text: `$${nm}`, value: nm });
     sel.value = typeof v === "object" ? v.ref : "";
   }
 
   // as の付け替えのあと: 描き直さずに、選択肢と線だけ直す
   private refreshRefs() {
-    for (const r of this.refSels) this.fillRefSel(r.el, r.a, r.n, r.k);
+    for (const r of this.refSels) this.fillRefSel(r.el, r.a, r.n, r.k, r.numeric);
     if (this.rule && this.mainEl && this.svgEl) this.drawLines(this.mainEl, this.svgEl, this.rule);
   }
 

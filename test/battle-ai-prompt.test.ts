@@ -90,3 +90,11 @@ assert.ok(buildPrompt("Negate", "x").system.includes("foresee"));
   assert.ok(!mine.includes("A permanent is a card"), "自分の用語集があれば、既定は載せない");
   assert.ok(buildPrompt("X", "x", undefined, "   ").system.includes("A permanent is a card"), "空白だけなら既定");
 }
+
+// 第5弾: 忠誠度能力・X・数の参照・諜報・トークン・紋章・ステップの開始時・制限つきマナ・型の | の書き方を載せる
+{
+  resetRegistry();
+  registerBuiltinNodes();
+  const sys = buildPrompt("Chandra, Chill of Compliance", "x").system;
+  for (const w of ["cost loyalty=", "loyaltyX=true", "$X", "createToken", "createEmblem", "emblem name=", "event=step", "countCards", "filter", "spellNotType", "type=artifact|creature", "atMost=true", "Surveil", "Planeswalker", "emblem"]) assert.ok(sys.includes(w), `system に ${w}`);
+}

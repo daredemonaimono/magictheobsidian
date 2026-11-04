@@ -20,7 +20,8 @@ assert.ok(checkCall({ node: "t", args: { n: 1, zzz: 1 } })?.includes("未知の�
 
 // ref は type:"ref" の引数でだけ通る
 assert.equal(checkCall({ node: "t", args: { n: 1, r: { ref: "x" } } }), null);
-assert.ok(checkCall({ node: "t", args: { n: { ref: "x" } } })?.includes("型が違う"));
+assert.equal(checkCall({ node: "t", args: { n: { ref: "x" } } }), null, "数の引数には、参照も書ける ($X や countCards の出力)");
+assert.ok(checkCall({ node: "t", args: { n: 1, k: { ref: "x" } } })?.includes("型が違う"), "文字列の引数には、参照を書けない");
 assert.ok(checkCall({ node: "t", args: { n: 1, r: "x" } })?.includes("型が違う"));
 
 resetRegistry();

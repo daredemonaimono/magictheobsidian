@@ -1,5 +1,5 @@
 import { NodeCall } from "./node";
-import { Game, GameCard, Perm, PlayerId, RuleBook, normKeyword } from "./state";
+import { Game, GameCard, Perm, PlayerId, RuleBook, normKeyword, typeIn } from "./state";
 
 // 継続効果 (常在型能力・装備・オーラ): パーマネントの「いまの姿」を、保存せずに、そのつど計算する。
 // 装備が外れる・オーラが離れる、で自然に元に戻る。レイヤーの順に適用する:
@@ -23,9 +23,8 @@ interface Eff {
 }
 
 const typeOk = (a: Record<string, unknown>, typeLine: string): boolean => {
-  const line = typeLine.toLowerCase();
-  if (typeof a.type === "string" && !line.includes(a.type.toLowerCase())) return false;
-  if (typeof a.notType === "string" && line.includes(a.notType.toLowerCase())) return false;
+  if (typeof a.type === "string" && !typeIn(typeLine, a.type)) return false;
+  if (typeof a.notType === "string" && typeIn(typeLine, a.notType)) return false;
   return true;
 };
 
@@ -33,6 +32,7 @@ const typeOk = (a: Record<string, unknown>, typeLine: string): boolean => {
 const continuous = (s: Perm, rules: RuleBook) => (rules.get(s.card.name)?.abilities ?? []).filter((a) => a.kind === "static" && a.body[0]?.node === "affect");
 
 function affects(s: Perm, aff: NodeCall, p: Perm): boolean {
+  if (p.emblem) return false; // 紋章は、継続効果の影響を受けない
   switch (aff.args.who) {
     case "attached":
       return s !== p && s.attachedTo === p.id;

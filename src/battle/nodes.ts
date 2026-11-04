@@ -1,7 +1,7 @@
 import { characteristics } from "./continuous";
 import { RunCtx, Value } from "./node";
 import { defineCondition, defineNode, getNode } from "./registry";
-import { Game, GameCard, Perm, playersOf, untapPerm } from "./state";
+import { Game, GameCard, Perm, playersOf, typeIn, untapPerm } from "./state";
 
 // 実装済みの基本ノード。打ち消しは「対象」+「打ち消す」の組み合わせで、カードごとの違いは対象の条件 (引数) だけ
 
@@ -33,9 +33,8 @@ const filterParams = {
   tapped: { type: "boolean" as const },
 };
 function matches(ctx: RunCtx, a: Record<string, Value>, hit: { card: GameCard; controller: string }, typeLine = hit.card.typeLine): boolean {
-  const line = typeLine.toLowerCase();
-  if (typeof a.type === "string" && !line.includes(a.type.toLowerCase())) return false;
-  if (typeof a.notType === "string" && line.includes(a.notType.toLowerCase())) return false;
+  if (typeof a.type === "string" && !typeIn(typeLine, a.type)) return false; // type=artifact|creature は「または」
+  if (typeof a.notType === "string" && typeIn(typeLine, a.notType)) return false; // notType=creature|land は「どちらでもない」
   if (typeof a.mv === "number" && hit.card.mv !== a.mv) return false;
   if (typeof a.controller === "string" && (a.controller === "you") !== (hit.controller === ctx.item.controller)) return false;
   const perm = hit as Perm;
@@ -177,14 +176,15 @@ export function registerBuiltinNodes(): void {
   defineNode({
     id: "choose",
     title: "選ぶ",
-    summary: "from(look などの出力)の中から count 枚を選ぶ。選んだカードの id を出力する",
-    params: { from: { type: "ref", required: true }, count: { type: "number", required: true, min: 0 } },
+    summary: "from(look などの出力)の中から count 枚を選ぶ。atMost=true なら 0〜count 枚(「好きな数」「最大N」。諜報など)。選んだカードの id を出力する",
+    params: { from: { type: "ref", required: true }, count: { type: "number", required: true, min: 0 }, atMost: { type: "boolean" } },
     outputs: { id: "id" },
     run: (ctx, a): Record<string, Value> => {
       const g = ctx.game;
       const options = idList(a.from).flatMap((id) => findCard(g, id) ?? []);
       const n = Math.min(Number(a.count), options.length);
-      const picked = (g.decide?.choose?.(g, ctx.item.controller, options, n) ?? options.slice(0, n)).filter((c) => options.includes(c)).slice(0, n);
+      // shortcut: 既定は、ちょうど指定の枚数なら先頭から、atMost なら1枚も選ばない。判断の入力を作るときに置き換える
+      const picked = (g.decide?.choose?.(g, ctx.item.controller, options, n) ?? (a.atMost === true ? [] : options.slice(0, n))).filter((c) => options.includes(c)).slice(0, n);
       return { id: picked.map((c) => c.id).join(",") };
     },
   });
@@ -225,7 +225,7 @@ export function registerBuiltinNodes(): void {
         const i = ctx.game.battlefield.findIndex((p) => p.id === id);
         if (i < 0) continue;
         const [gone] = ctx.game.battlefield.splice(i, 1);
-        ctx.game.hands[gone.card.owner].push(gone.card);
+        if (!gone.card.token) ctx.game.hands[gone.card.owner].push(gone.card); // トークンは、戦場を離れると消える
         ctx.game.log.push(`${gone.card.name} を手札に戻した`);
         ctx.game.events.push({ type: "leaves", perm: gone });
       }
@@ -288,8 +288,8 @@ export function registerBuiltinNodes(): void {
   defineNode({
     id: "cost",
     title: "コスト",
-    summary: "起動型能力のコスト(能力の最初に書く)。mana=払うマナの数 / tap=このパーマネントをタップ / sacrifice=このパーマネントを生け贄に捧げる / tapCreatures=パワーの合計がこの値以上になるよう、自分のクリーチャーをタップ",
-    params: { mana: { type: "number", min: 0 }, tap: { type: "boolean" }, sacrifice: { type: "boolean" }, tapCreatures: { type: "number", min: 0 } },
+    summary: "起動型能力のコスト(能力の最初に書く)。mana=払うマナの数 / tap=このパーマネントをタップ / sacrifice=このパーマネントを生け贄に捧げる / tapCreatures=パワーの合計がこの値以上になるよう、自分のクリーチャーをタップ / loyalty=忠誠度を足す(+1 は loyalty=1、−2 は loyalty=-2。プレインズウォーカーの能力。ソーサリーのタイミングで1ターンに1回) / loyaltyX=true で −X(X は起動時に選び、効果の中で $X として参照する)",
+    params: { mana: { type: "number", min: 0 }, tap: { type: "boolean" }, sacrifice: { type: "boolean" }, tapCreatures: { type: "number", min: 0 }, loyalty: { type: "number" }, loyaltyX: { type: "boolean" } },
     outputs: {},
     declaration: true,
     only: ["activated"],
@@ -321,9 +321,10 @@ export function registerBuiltinNodes(): void {
     id: "when",
     title: "どうなったら",
     summary:
-      "誘発型能力の最初に書く、誘発のきっかけ。event=cast(呪文を唱えた) / enters(戦場に出た) / leaves(戦場を離れた)。絞り込み: who=you・opponents(唱えた/コントロールするプレイヤー) / type・notType(その呪文・パーマネントの型) / turn=yours・opponents(だれのターン中か) / self=true(このパーマネント自身のとき。enters / leaves)",
+      "誘発型能力の最初に書く、誘発のきっかけ。event=cast(呪文を唱えた) / enters(戦場に出た) / leaves(戦場を離れた) / step(ステップの開始時。step=upkeep・draw・main1・combat・main2・end を添える)。絞り込み: who=you・opponents(唱えた/コントロールするプレイヤー。step ではそのターンのプレイヤー) / type・notType(その呪文・パーマネントの型) / turn=yours・opponents(だれのターン中か) / self=true(このパーマネント自身のとき。enters / leaves)",
     params: {
-      event: { type: "string", required: true, choices: ["cast", "enters", "leaves"] },
+      event: { type: "string", required: true, choices: ["cast", "enters", "leaves", "step"] },
+      step: { type: "string", choices: ["upkeep", "draw", "main1", "combat", "main2", "end"] },
       who: { type: "string", choices: ["you", "opponents"] },
       type: { type: "string" },
       notType: { type: "string" },
@@ -399,6 +400,91 @@ export function registerBuiltinNodes(): void {
     },
   });
 
+  // 紋章: createEmblem で得る。紋章の能力は、同じカードのルールの中の、emblem name=… で始まる誘発型能力として書く
+  defineNode({
+    id: "emblem",
+    title: "紋章の能力",
+    summary: "紋章の誘発型能力の最初に書く(そのあとに when)。name は、createEmblem の name と同じ。プレインズウォーカーなどのカードのルールの中に、紋章の能力を書く",
+    params: { name: { type: "string", required: true } },
+    outputs: {},
+    declaration: true,
+    only: ["triggered"],
+    run: (): Record<string, Value> => ({}),
+  });
+  defineNode({
+    id: "createEmblem",
+    title: "紋章を得る",
+    summary: "コントローラーが紋章を得る。紋章は戦場の外に残り続け、元のカードのルールの、emblem name=<同じ name> で始まる誘発型能力が働く",
+    params: { name: { type: "string", required: true } },
+    outputs: {},
+    run: (ctx, a): Record<string, Value> => {
+      const g = ctx.game;
+      g.serial++;
+      g.emblems.push({ id: `emblem#${g.serial}`, card: ctx.item.card, controller: ctx.item.controller, emblem: String(a.name) });
+      g.log.push(`${ctx.item.controller} は紋章 ${a.name} を得た`);
+      return {};
+    },
+  });
+  // トークンを作る。戦場に出る(enters のイベントも出る)。戦場を離れると消える
+  defineNode({
+    id: "createToken",
+    title: "トークンを作る",
+    summary: "コントローラーが、トークンのクリーチャーなどを count 個(既定は1)作る。name=名前 / types=型行(例: \"Creature — Illusion\") / power・toughness / colors=色(空白区切り。例: \"U\")",
+    params: { name: { type: "string", required: true }, types: { type: "string", required: true }, power: { type: "number" }, toughness: { type: "number" }, colors: { type: "string" }, count: { type: "number", min: 1 } },
+    outputs: {},
+    run: (ctx, a): Record<string, Value> => {
+      const g = ctx.game;
+      const p = ctx.item.controller;
+      for (let i = 0; i < (typeof a.count === "number" ? a.count : 1); i++) {
+        g.serial++;
+        const card: GameCard = {
+          id: `token#${g.serial}`,
+          name: String(a.name),
+          typeLine: String(a.types),
+          mv: 0,
+          owner: p,
+          token: true,
+          ...(typeof a.power === "number" ? { power: a.power } : {}),
+          ...(typeof a.toughness === "number" ? { toughness: a.toughness } : {}),
+          ...(typeof a.colors === "string" ? { colors: a.colors.split(/[\s,]+/).filter(Boolean) } : {}),
+        };
+        const perm: Perm = { id: card.id, card, controller: p };
+        g.battlefield.push(perm);
+        g.events.push({ type: "enters", perm });
+      }
+      return {};
+    },
+  });
+  // 数える・絞り込む (値を作るノード)
+  defineNode({
+    id: "countCards",
+    title: "枚数を数える",
+    summary: "zone(hand / graveyard / library / battlefield)のカードの枚数を、n として出力する(who=you・opponents。type・notType で絞る)。「手札の枚数に等しい X」は、これを as= で受けて、count=$名前 に渡す",
+    params: { zone: { type: "string", required: true, choices: ["hand", "graveyard", "library", "battlefield"] }, who: { type: "string", choices: ["you", "opponents"] }, type: { type: "string" }, notType: { type: "string" } },
+    outputs: { n: "number" },
+    run: (ctx, a): Record<string, Value> => {
+      const g = ctx.game;
+      const who = playersOf(g, ctx.item.controller, a.who === "opponents" ? "opponents" : "you");
+      const cards = who.flatMap((p) => (a.zone === "battlefield" ? g.battlefield.filter((x) => x.controller === p).map((x) => x.card) : (a.zone === "hand" ? g.hands : a.zone === "graveyard" ? g.graveyards : g.libraries)[p] ?? []));
+      return { n: cards.filter((c) => (typeof a.type !== "string" || typeIn(c.typeLine, a.type)) && (typeof a.notType !== "string" || !typeIn(c.typeLine, a.notType))).length };
+    },
+  });
+  defineNode({
+    id: "filter",
+    title: "絞り込む",
+    summary: "from(look / choose などの出力)のカードのうち、type(| は または)に合い、notType(| は どれでもない)に合うものだけを、出力する",
+    params: { from: { type: "ref", required: true }, type: { type: "string" }, notType: { type: "string" } },
+    outputs: { id: "id" },
+    run: (ctx, a): Record<string, Value> => ({
+      id: idList(a.from)
+        .filter((id) => {
+          const c = findCard(ctx.game, id);
+          return !!c && (typeof a.type !== "string" || typeIn(c.typeLine, a.type)) && (typeof a.notType !== "string" || !typeIn(c.typeLine, a.notType));
+        })
+        .join(","),
+    }),
+  });
+
   // このパーマネント自身 (誘発型・起動型能力の発生源)
   defineNode({
     id: "self",
@@ -431,12 +517,16 @@ export function registerBuiltinNodes(): void {
   defineNode({
     id: "addMana",
     title: "マナを加える",
-    summary: "コントローラーがマナを amount 点加える(色はまだ区別しない)",
-    params: { amount: { type: "number", required: true, min: 0 } },
+    summary: "コントローラーがマナを amount 点加える(色はまだ区別しない)。spellType / spellNotType を添えると、そのマナは、その型の呪文(spellNotType ならその型でない呪文)を唱えるためにしか使えない(「クリーチャーでない呪文を唱えるためにしか使えない」は spellNotType=creature)",
+    params: { amount: { type: "number", required: true, min: 0 }, spellType: { type: "string" }, spellNotType: { type: "string" } },
     outputs: {},
     run: (ctx, a): Record<string, Value> => {
+      const g = ctx.game;
       const p = ctx.item.controller;
-      ctx.game.mana[p] = (ctx.game.mana[p] ?? 0) + Number(a.amount);
+      if (typeof a.spellType === "string" || typeof a.spellNotType === "string") {
+        g.restrictedMana[p] ??= [];
+        g.restrictedMana[p].push({ amount: Number(a.amount), ...(typeof a.spellType === "string" ? { type: a.spellType } : {}), ...(typeof a.spellNotType === "string" ? { notType: a.spellNotType } : {}) });
+      } else g.mana[p] = (g.mana[p] ?? 0) + Number(a.amount);
       return {};
     },
   });

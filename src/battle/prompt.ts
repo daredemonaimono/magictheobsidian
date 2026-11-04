@@ -50,6 +50,12 @@ ${conditionList() || "(まだ無い)"}
 - 装備: 「装備 {N}」は \`## 起動型能力\` に \`timing sorcery=true\`、\`cost mana=N\`、\`target ...\`(例: type=creature controller=you)、\`attach target=$t\` と書く。「戦場に出たとき、〜に付ける」は誘発型能力の \`target\` と \`attach\`。
 - オーラ(Aura): \`## 呪文能力\` に \`target ...\`(Enchant の対象)と \`attach target=$t\`、効果は \`## 常在型能力\` の \`affect who=attached\` と効果のノード。
 - コスト軽減(「〜の呪文のコストは {N} 少なくなる」)は、\`## 常在型能力\` に \`reduceCost amount=N who=you notType=creature\`(affect は要らない)。
+- プレインズウォーカーの忠誠度能力(「+N:」「−N:」「−X:」)は、\`## 起動型能力\` に \`cost loyalty=N\`(+1 は loyalty=1、−2 は loyalty=-2。−X は \`cost loyaltyX=true\`)と書く(ソーサリーのタイミングで1ターンに1回は、エンジンが守る)。X は効果の中で \`count=$X\` のように参照する。数の引数には、\`countCards\`(枚数を数える。as= で受ける)の出力も \`count=$名前\` で渡せる。
+- 諜報(Surveil N)は、\`look player=you count=N as=l\` → \`choose from=$l count=N atMost=true as=c\`(0〜N 枚を選ぶ)→ \`move cards=$c to=graveyard\`。「墓地に置いたら〜」は、\`filter from=$c notType=creature|land as=f\` のように絞って、続ける。型の指定の | は「または」(type=artifact|creature)で、notType=creature|land は「どちらでもない」。
+- トークンを作る: \`createToken name=Illusion types="Creature — Illusion" power=1 toughness=1 colors=U\`。
+- 紋章(emblem)を得る: \`createEmblem name=<名前>\`。紋章の能力は、同じカードのルールの中に、\`## 誘発型能力\` として \`emblem name=<同じ名前>\` と \`when …\` の順に書く。紋章の常在型能力 (static) は未対応なので、\`## 未対応\` に書く。
+- 「ステップの開始時に」は \`when event=step step=draw who=opponents\`(who は、そのターンのプレイヤー)。
+- 「このマナは、〜を唱えるためにしか使えない」は \`addMana amount=1 spellNotType=creature\`(spellType はその型だけ)。
 - 瞬速などのキーワード能力は、\`## 常在型能力\` に \`- keyword name=flash\` と書く(瞬速は、インスタントのタイミングで唱えられる)。ほかのキーワードは、戦場に出たときに得る。
 - キッカー・チームワークなど、呪文を唱えるときに払ってもよい追加コストは、\`## 呪文能力\` の最初に \`additionalCost flag=kicked mana=2\` / \`additionalCost flag=teamwork tapCreatures=2\` と書く。払ったときだけ実行するノードには \`if=kicked\` / \`if=teamwork\` を付ける。
 - 「裁定後のテキスト」が付いているときは、それを正しいテキストとして組む(カードのテキストが古いか、裁定で変わったため)。

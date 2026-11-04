@@ -1,5 +1,5 @@
 import { AbilityKind, Arg, CardRule, NodeCall } from "./node";
-import { checkCall, getNode, placementProblem, structureProblem } from "./registry";
+import { checkCall, getNode, placementProblem, refProblems, structureProblem } from "./registry";
 
 // ノード設定画面の、ルールを組み替える操作。どれも元のルールは変えず、新しいルールを返す (画面は、返ってきたものを描き直すだけ)
 const copy = (r: CardRule): CardRule => JSON.parse(JSON.stringify(r));
@@ -112,23 +112,18 @@ export interface Problem {
 export function problems(rule: CardRule): Problem[] {
   const out: Problem[] = [];
   rule.abilities.forEach((ab, a) => {
-    const defined = new Set<string>();
     const sp = structureProblem(ab);
     if (sp) out.push({ ability: a, node: 0, message: sp });
+    for (const r of refProblems(ab)) out.push({ ability: a, node: r.node, message: r.message }); // 参照の検査は、AI の返事の検証・状況レポートと共通
     ab.body.forEach((c, n) => {
       const add = (message: string) => out.push({ ability: a, node: n, message });
       const bad = checkCall(c) ?? placementProblem(ab.kind, c);
       if (bad) add(bad);
       for (const v of Object.values(c.args)) {
-        if (typeof v === "object" && !defined.has(v.ref)) add(`$${v.ref} が見つからない (前のノードの as に無い)`);
         if (typeof v === "string" && v.includes('"')) add("引用符 (\") は md に書けないので使えない");
         if (typeof v === "number" && !Number.isInteger(v)) add("整数だけ使える (md に小数は書けない)");
       }
       if (c.as !== undefined && !/^[A-Za-z_][\w-]*$/.test(c.as)) add("as は英数字・_・- だけ (先頭は英字か _)");
-      if (c.as) {
-        if (defined.has(c.as)) add(`as=${c.as} が重複している`);
-        defined.add(c.as);
-      }
     });
   });
   return out;

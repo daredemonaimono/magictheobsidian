@@ -70,9 +70,49 @@ export function structureProblem(ab: Ability): string | null {
     return null;
   }
   if (ab.kind !== "triggered") return null;
-  if (ab.body[0].node !== "when") return "誘発型能力の最初のノードは when にする (誘発のきっかけ)";
-  if (ab.body.slice(1).some((c) => c.node === "when")) return "when は誘発型能力の最初のノードだけに書ける";
+  // 紋章の能力は、emblem で始まり、そのあとに when が続く
+  const at = ab.body[0].node === "emblem" ? 1 : 0;
+  if (ab.body[at]?.node !== "when") return "誘発型能力の最初のノードは when にする (誘発のきっかけ。紋章の能力は emblem のあとに when)";
+  if (ab.body.slice(at + 1).some((c) => c.node === "when")) return "when は誘発型能力の最初のノードだけに書ける";
+  if (ab.body.slice(1).some((c) => c.node === "emblem")) return "emblem は誘発型能力の最初のノードだけに書ける";
   return null;
+}
+
+export interface RefProblem {
+  node: number; // 能力の中の何番目のノードか
+  message: string;
+}
+
+// 参照 ($名前) の検査: 前のノードの as にあること / $X は −X の忠誠度能力の中だけ / 数の引数には数の出力、ref の引数には id の出力 / as の重複。
+// ノード設定画面・AI の返事の検証・状況レポートで共通 (未定義の参照は、黙って何もしないため)
+export function refProblems(ab: Ability): RefProblem[] {
+  const out: RefProblem[] = [];
+  const made = new Map<string, NodeCall>(); // as → それを作ったノード
+  const hasX = ab.kind === "activated" && ab.body.some((c) => c.node === "cost" && c.args.loyaltyX === true);
+  ab.body.forEach((c, n) => {
+    const def = nodes.get(c.node);
+    for (const [k, v] of Object.entries(c.args)) {
+      if (typeof v !== "object") continue;
+      if (v.ref === "X") {
+        if (!hasX) out.push({ node: n, message: "$X は、−X の忠誠度能力 (cost loyaltyX=true) の中でだけ使える" });
+        continue;
+      }
+      const from = made.get(v.ref);
+      if (!from) {
+        out.push({ node: n, message: `$${v.ref} が見つからない (前のノードの as に無い)` });
+        continue;
+      }
+      const kinds = Object.values(nodes.get(from.node)?.outputs ?? {});
+      const want = def?.params[k]?.type;
+      if (want === "number" && !kinds.includes("number")) out.push({ node: n, message: `数の引数 ${k} に、数ではない出力 ($${v.ref}) を渡している` });
+      if (want === "ref" && !kinds.includes("id")) out.push({ node: n, message: `${k} に、id ではない出力 ($${v.ref}) を渡している` });
+    }
+    if (c.as) {
+      if (made.has(c.as)) out.push({ node: n, message: `as=${c.as} が重複している` });
+      made.set(c.as, c);
+    }
+  });
+  return out;
 }
 
 // 問題なければ null、あれば日本語の理由
@@ -91,7 +131,10 @@ export function checkCall(call: NodeCall): string | null {
       continue;
     }
     const isRef = typeof v === "object";
-    if (p.type === "ref" ? !isRef : isRef || typeof v !== p.type) return `型が違う: ${name}`;
+    // 対象・宣言のノードは、エンジンが前のノードの出力を解決せずに読む。参照は書けない (TypeError や NaN になるため)
+    if (isRef && p.type !== "ref" && (def.isTarget || def.declaration)) return `このノードの引数には、参照を書けない: ${name}`;
+    // 数の引数には、参照 ($X や countCards の出力) も書ける。ほかの型は、参照を書けない (ref の引数だけが参照)
+    if (p.type === "ref" ? !isRef : p.type === "number" ? !isRef && typeof v !== "number" : isRef || typeof v !== p.type) return `型が違う: ${name}`;
     if (p.choices && !p.choices.includes(String(v))) return `選べない値: ${name}=${v}`;
     if (p.min !== undefined && typeof v === "number" && v < p.min) return `値が小さすぎる: ${name} (${p.min} 以上)`;
     if (p.max !== undefined && typeof v === "number" && v > p.max) return `値が大きすぎる: ${name} (${p.max} 以下)`;
