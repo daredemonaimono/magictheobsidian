@@ -1,0 +1,44 @@
+<h2>戦闘ダメージの演出(案)</h2>
+<p class="subtitle">戦闘ダメージを与えるとき、関わるカードが盤面の前に大きく出て、ダメージの数字が出る。終わると盤面に戻る。3コマで見せます。</p>
+
+<style>
+  .fr { display:flex; gap:10px; }
+  .f { flex:1; height:330px; position:relative; border-radius:8px; overflow:hidden; background:radial-gradient(ellipse at 50% 30%, #3a4a5c, #15191f 75%); font-family:system-ui,sans-serif; color:#eee; }
+  .f .dim { position:absolute; inset:0; background:#0009; }
+  .mini { position:absolute; left:8%; right:8%; top:12%; height:36%; background:linear-gradient(#59626d,#2a3038); border-radius:5px; transform:perspective(500px) rotateX(35deg); opacity:.9; }
+  .mini i { position:absolute; width:26px; height:36px; border-radius:3px; background:#4a7fb5; border:1px solid #111; }
+  .cap { position:absolute; left:0; right:0; bottom:0; padding:8px 12px; background:#000b; font-size:12px; letter-spacing:.1em; }
+  .zc { position:absolute; width:108px; height:150px; border-radius:7px; border:3px solid #111; padding:6px; box-sizing:border-box; font-size:11px; display:flex; flex-direction:column; justify-content:space-between; box-shadow:0 10px 24px #000a; }
+  .zc.a { background:linear-gradient(#f0ead0,#b9ae85); color:#222; } .zc.b { background:linear-gradient(#d96a4a,#7a2a1a); }
+  .pt { align-self:flex-end; background:#000a; border-radius:4px; padding:1px 6px; font-weight:700; }
+  .dmg { position:absolute; font-size:44px; font-weight:800; color:#fff; text-shadow:0 0 12px #e22, 0 0 4px #000; }
+  .tag { position:absolute; top:10px; left:50%; transform:translateX(-50%); background:#b04bff; border-radius:12px; padding:3px 14px; font-size:12px; }
+</style>
+
+<div class="fr">
+  <!-- コマ1: 攻撃・ブロックの宣言のあと、戦闘ダメージに入る -->
+  <div class="f">
+    <div class="mini"><i style="left:30%;top:60%"></i><i style="left:46%;top:60%"></i><i style="left:36%;top:12%;background:#a8523a"></i></div>
+    <div class="cap">① 戦闘ダメージのステップに入る(盤面が少し暗くなる)</div>
+    <div class="dim" style="opacity:.35"></div>
+  </div>
+  <!-- コマ2: 先制攻撃ダメージ -->
+  <div class="f">
+    <div class="mini"></div><div class="dim"></div>
+    <div class="tag">先制攻撃</div>
+    <div class="zc a" style="left:14%;top:60px;transform:rotate(-4deg);"><b>先制攻撃の騎士</b><span class="pt">2 / 2</span></div>
+    <div class="zc b" style="right:14%;top:60px;transform:rotate(4deg);"><b>血に飢えた戦士</b><span class="pt">3 / 1</span></div>
+    <div class="dmg" style="left:47%;top:70px;">2</div>
+    <div class="cap">② 関わるカードが前に出て、ダメージの数字が出る</div>
+  </div>
+  <!-- コマ3: 結果 -->
+  <div class="f">
+    <div class="mini"></div><div class="dim"></div>
+    <div class="zc a" style="left:14%;top:60px;"><b>先制攻撃の騎士</b><span class="pt">2 / 2</span></div>
+    <div class="zc b" style="right:14%;top:60px;opacity:.35;filter:grayscale(1);"><b>血に飢えた戦士</b><span class="pt">3 / 1</span></div>
+    <div class="dmg" style="right:24%;top:90px;font-size:30px;color:#faa;">破壊</div>
+    <div class="cap">③ 結果(破壊されるカードは暗くなって消える)→ 盤面に戻る</div>
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top:12px;">先制攻撃・二段攻撃のときは、②が2回(先制攻撃ダメージ → 通常のダメージ)出ます。プレイヤーへのダメージは、ライフの数字が減る演出になります。</p>

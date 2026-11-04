@@ -226,7 +226,7 @@ function checkModes(body: NodeCall[], cast: CastRecord, name: string): void {
 }
 
 // 召喚酔い: クリーチャーは、このターンに戦場に出たなら、攻撃も {T} のコストの能力もできない (速攻があれば別)
-const isSick = (g: Game, p: Perm, rules: RuleBook): boolean => {
+export const isSick = (g: Game, p: Perm, rules: RuleBook): boolean => {
   if (p.enteredTurn === undefined || p.enteredTurn !== g.turn) return false;
   const now = characteristics(g, p, rules);
   return /\bCreature\b/.test(now.typeLine) && !now.keywords.includes("haste");

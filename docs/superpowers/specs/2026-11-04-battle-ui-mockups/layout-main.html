@@ -1,0 +1,89 @@
+<h2>対戦の画面: 全体の配置(案)</h2>
+<p class="subtitle">マジック2015 の見た目を、Obsidian のタブの中で再現する案。左が盤面(斜め見下ろし)、右がサイドバー(上: カードの画像と効果、下: ログ)。カードの絵は仮の色ブロックです。</p>
+
+<style>
+  .bt { display:flex; gap:8px; height:560px; font-family:system-ui,sans-serif; color:#eee; }
+  .stage { flex:1; position:relative; background:radial-gradient(ellipse at 50% 30%, #3a4a5c, #15191f 75%); border-radius:8px; overflow:hidden; }
+  .board { position:absolute; left:6%; right:6%; top:70px; bottom:150px; transform-style:preserve-3d; transform:perspective(900px) rotateX(38deg); transform-origin:50% 100%;
+           background:linear-gradient(#59626d,#2a3038); border:1px solid #6b7480; border-radius:6px; }
+  .row { position:absolute; left:4%; right:4%; display:flex; gap:10px; justify-content:center; }
+  .c { width:62px; height:86px; border-radius:5px; border:2px solid #111; font-size:10px; padding:3px; box-sizing:border-box; display:flex; flex-direction:column; justify-content:space-between; }
+  .c.u { background:linear-gradient(#5aa0d8,#1d4f86); } .c.w { background:linear-gradient(#f0ead0,#b9ae85); color:#222; }
+  .c.r { background:linear-gradient(#d96a4a,#7a2a1a); } .c.l { background:linear-gradient(#7d8b97,#3a434b); }
+  .c.t { transform:rotate(90deg); opacity:.85; } .c.atk { box-shadow:0 0 0 3px #b04bff, 0 0 14px #b04bff; }
+  .belt { position:absolute; left:0; right:0; top:46%; height:34px; background:linear-gradient(90deg,#7a1018,#c4202c,#7a1018); transform:translateZ(1px); display:flex; align-items:center; justify-content:center; font-size:12px; letter-spacing:.3em; }
+  .hand { position:absolute; left:18%; right:18%; bottom:-30px; display:flex; justify-content:center; }
+  .hand .c { width:96px; height:134px; margin:0 -14px; transform-origin:50% 120%; box-shadow:0 6px 14px rgba(0,0,0,.5); }
+  .ohand { position:absolute; left:30%; right:30%; top:6px; display:flex; justify-content:center; }
+  .ohand .c { width:40px; height:56px; margin:0 -8px; background:linear-gradient(#6b5b95,#2a2146); }
+  .avatar { position:absolute; width:78px; height:78px; border-radius:6px; transform:rotate(45deg) scale(.8); border:3px solid #ddd; background:#556; }
+  .life { position:absolute; width:46px; height:46px; background:#a01822; border:2px solid #eee; transform:rotate(45deg); display:flex; align-items:center; justify-content:center; font-weight:700; }
+  .life span { transform:rotate(-45deg); font-size:18px; }
+  .pile { position:absolute; width:54px; height:76px; border-radius:4px; background:linear-gradient(#a8742f,#5a3a12); border:2px solid #222; font-size:10px; display:flex; align-items:flex-end; justify-content:center; padding-bottom:2px; }
+  .phase { position:absolute; right:10px; top:44%; display:flex; flex-direction:column; gap:6px; font-size:11px; }
+  .phase div { background:#222c; border:1px solid #666; border-radius:12px; padding:3px 10px; text-align:center; } .phase .on { background:#b04bff; border-color:#e0c0ff; }
+  .btn { position:absolute; left:10px; bottom:10px; background:#6a4fd8; border-radius:6px; padding:6px 14px; font-size:12px; }
+  .side { width:230px; display:flex; flex-direction:column; gap:8px; }
+  .sb { background:#1d2229; border-radius:8px; padding:8px; font-size:11px; line-height:1.5; }
+  .sb h4 { margin:0 0 6px; font-size:11px; color:#9ab; font-weight:600; }
+  .big { height:150px; border-radius:6px; background:linear-gradient(#5aa0d8,#1d4f86); display:flex; align-items:flex-end; padding:6px; color:#fff; font-weight:600; }
+  .log p { margin:2px 0; color:#cdd; } .log .t { color:#8fb; }
+  .zoom { position:absolute; left:50%; top:48%; transform:translate(-50%,-50%) rotate(-3deg); display:none; }
+</style>
+
+<div class="bt">
+  <div class="stage">
+    <!-- 相手の手札 (裏向き) -->
+    <div class="ohand"><div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div></div>
+    <!-- 相手のアバターとライフ (右上) -->
+    <div class="avatar" style="right:44px; top:6px;"></div>
+    <div class="life" style="right:20px; top:62px;"><span>15</span></div>
+    <!-- 山札・墓地 -->
+    <div class="pile" style="left:12px; top:20px;">山札 47</div>
+    <div class="pile" style="right:14px; top:230px; background:linear-gradient(#555,#222);">墓地 2</div>
+
+    <div class="board">
+      <!-- 相手の戦場 -->
+      <div class="row" style="top:4%;"><div class="c l">ゴブリン<br>2/1</div><div class="c r">戦士<br>3/2</div><div class="c r">竜の子<br>2/2</div></div>
+      <div class="row" style="top:22%;"><div class="c l t"></div><div class="c l t"></div><div class="c l"></div></div>
+      <div class="belt">戦 闘</div>
+      <!-- 自分の戦場: 攻撃クリーチャー (紫の光) -->
+      <div class="row" style="top:56%;"><div class="c u atk">学者<br>2/1</div><div class="c w atk">聖サリアの霊<br>1/1</div><div class="c u atk">ジェイス<br>3/4</div><div class="c u">タコ<br>1/1</div></div>
+      <!-- 自分の土地 -->
+      <div class="row" style="top:80%;"><div class="c l">島</div><div class="c l">島</div><div class="c l">島</div><div class="c l">島</div><div class="c l t">島</div></div>
+    </div>
+
+    <!-- 自分の手札 (こちら向き・大きく) -->
+    <div class="hand">
+      <div class="c w" style="transform:rotate(-8deg);">霊気化</div>
+      <div class="c u" style="transform:rotate(-3deg);">積み重ねられた叡智</div>
+      <div class="c u" style="transform:rotate(2deg);">我らは断じて許さぬ</div>
+      <div class="c u" style="transform:rotate(7deg);">乱動への突入</div>
+    </div>
+
+    <!-- 自分のアバターとライフ (左下) -->
+    <div class="avatar" style="left:20px; bottom:20px;"></div>
+    <div class="life" style="left:92px; bottom:30px;"><span>20</span></div>
+    <div class="pile" style="right:14px; bottom:110px;">山札 46</div>
+
+    <!-- フェイズの表示と「終了」ボタン -->
+    <div class="phase"><div>メイン1</div><div class="on">戦闘</div><div>メイン2</div><div>終了</div></div>
+    <div class="btn">▶ 次へ (優先権をパス)</div>
+  </div>
+
+  <div class="side">
+    <div class="sb"><h4>カードの画像と効果(ホバーで切り替え)</h4>
+      <div class="big">ジェイス・ベレレン 3/4</div>
+      <p style="margin:6px 0 0;">ドロー・ステップの開始時に…<br>+1: 青の 1/1 のイリュージョン・トークンを生成する。</p>
+    </div>
+    <div class="sb log" style="flex:1; overflow:hidden;"><h4>対戦のログ</h4>
+      <p><span class="t">T3</span> あなたが島をタップして {U} を出した</p>
+      <p><span class="t">T3</span> あなたが 聖サリアの霊 で攻撃した</p>
+      <p><span class="t">T3</span> 相手が 戦士 でブロックした</p>
+      <p><span class="t">T3</span> 戦闘ダメージ: 聖サリアの霊 → 戦士 に 1</p>
+      <p><span class="t">T3</span> 相手のライフ 15 → 13</p>
+    </div>
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top:12px;">見てほしい点: ①斜めの盤面と、手前の大きな手札 ②相手のアバター・ライフが右上、自分が左下 ③赤い帯が「戦闘」のライン ④フェイズ表示と「次へ」ボタン ⑤右のサイドバー(上: カード、下: ログ)</p>

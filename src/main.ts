@@ -17,6 +17,7 @@ import { DECK_DIR, foldCommander, writeDeck } from "./deck";
 import { CREATABLE, FORMATS } from "./rules";
 import { ImportModal, resolveDeck } from "./import";
 import { CARDLIST_VIEW, CardListView } from "./CardListView";
+import { BATTLE_VIEW, BattleView } from "./BattleView";
 import { COLLECTION_VIEW, CollectionView } from "./CollectionView";
 import { CARDS_VIEW, CardsView } from "./CardsView";
 import { DASHBOARD_VIEW, DashboardView } from "./DashboardView";
@@ -104,6 +105,7 @@ export default class MagicTheObsidian extends Plugin {
       }),
     );
     this.registerView(DECK_VIEW, (leaf) => new DeckView(leaf, this.settings));
+    this.registerView(BATTLE_VIEW, (leaf) => new BattleView(leaf));
     this.registerView(DASHBOARD_VIEW, (leaf) => new DashboardView(leaf, { collection: () => void this.openOrReveal(COLLECTION_VIEW), deck: () => void this.openOrReveal(DECKLIST_VIEW), cards: () => void this.openOrReveal(CARDS_VIEW) }));
     this.registerView(CARDS_VIEW, (leaf) => new CardsView(leaf, this.settings));
     this.registerView(
@@ -184,6 +186,7 @@ export default class MagicTheObsidian extends Plugin {
         }
       },
     });
+    this.addCommand({ id: "battle-open", name: "Battle: open battle screen (sample)", callback: () => void this.app.workspace.getLeaf(true).setViewState({ type: BATTLE_VIEW, active: true }) });
     this.addCommand({ id: "battle-sample-rules", name: "Battle: create sample rules", callback: () => void this.createSampleRules() });
     this.addCommand({ id: "battle-create-glossary", name: "Battle: create glossary note", callback: () => void this.createGlossaryNote() });
     this.addCommand({ id: "battle-build-rules", name: "Battle: build rules with AI", callback: () => void this.openBuildRules() });

@@ -217,3 +217,77 @@ button.mtg-color .mtg-sym { width: 20px; height: 20px; display: block; }
 .mtg-ed-addrow { display: flex; gap: 8px; margin-bottom: 12px; }
 .mtg-ed-note { margin-bottom: 12px; }
 .mtg-ed-md { white-space: pre-wrap; background: var(--background-secondary); padding: 8px; border-radius: 6px; }
+
+/* ---- 対戦の画面 (Battle)。斜め見下ろしの盤面。ホバーの前面表示と動きは transform / opacity だけ */
+.mtg-bt { display: flex; gap: 8px; height: 100%; padding: 0; }
+.mtg-bt-stage { min-height: 520px; position: relative; flex: 1; min-width: 0; overflow: hidden; border-radius: 8px; background: radial-gradient(ellipse at 50% 30%, #3a4a5c, #15191f 75%); color: #eee; user-select: none; }
+.mtg-bt-board { position: absolute; left: 5%; right: 5%; top: 64px; bottom: 150px; transform: perspective(900px) rotateX(38deg); transform-origin: 50% 100%; transform-style: preserve-3d; background: linear-gradient(#59626d, #2a3038); border: 1px solid #6b7480; border-radius: 6px; --cw: 62px; --ch: 86px; }
+.mtg-bt-row { position: absolute; left: 3%; right: 3%; height: var(--ch); display: flex; justify-content: center; --ov: 0px; }
+.mtg-bt-row > * { margin-left: calc(10px - var(--ov)); }
+.mtg-bt-row > *:first-child { margin-left: 0; }
+.mtg-bt-opp-lands { top: 1%; } .mtg-bt-opp-others { top: 12%; } .mtg-bt-opp-creatures { top: 25%; }
+.mtg-bt-self-creatures { top: 56%; } .mtg-bt-self-others { top: 69%; } .mtg-bt-self-lands { top: 82%; }
+.mtg-bt-belt { position: absolute; left: 0; right: 0; top: 46%; height: 8%; display: flex; align-items: center; justify-content: center; letter-spacing: .3em; font-size: 12px; background: linear-gradient(90deg, #5a0c14, #8a1620, #5a0c14); opacity: .45; transition: opacity .15s; }
+.mtg-bt-belt.is-on { opacity: 1; background: linear-gradient(90deg, #7a1018, #c4202c, #7a1018); }
+
+.mtg-bt-card { position: relative; flex: none; width: var(--cw, 62px); height: var(--ch, 86px); border-radius: 5px; border: 2px solid #111; background: linear-gradient(#7d8b97, #3a434b); overflow: hidden; transition: transform .12s, opacity .12s; box-sizing: border-box; }
+.mtg-bt-card img { display: block; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+.mtg-bt-face { padding: 4px; font-size: 10px; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; word-break: break-word; }
+.mtg-bt-board .mtg-bt-card:hover { transform: translateY(-6px) scale(1.12); z-index: 5; }
+.mtg-bt-card.is-tapped { transform: rotate(90deg); margin-left: calc(22px - var(--ov)); margin-right: 12px; opacity: .9; }
+.mtg-bt-row > .is-tapped:first-child { margin-left: 12px; }
+.mtg-bt-board .mtg-bt-card.is-tapped:hover { transform: rotate(90deg) scale(1.08); }
+.mtg-bt-card.is-attacking { box-shadow: 0 0 0 3px #b04bff, 0 0 14px #b04bff; }
+.mtg-bt-card.is-blocking { box-shadow: 0 0 0 3px #4bb0ff; }
+.mtg-bt-card.is-sick { opacity: .75; }
+.mtg-bt-card.is-prepared { box-shadow: 0 0 0 2px #ffd34b; }
+.mtg-bt-pt { position: absolute; right: 2px; bottom: 2px; background: #000b; color: #fff; font-size: 10px; font-weight: 700; padding: 0 4px; border-radius: 3px; }
+.mtg-bt-pt.is-loyalty { background: #1b3a5a; }
+.mtg-bt-dmg { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); font-size: 26px; font-weight: 800; color: #fff; text-shadow: 0 0 8px #e22, 0 0 3px #000; pointer-events: none; }
+.mtg-bt-counters { position: absolute; left: 2px; bottom: 2px; background: #000b; color: #9f9; font-size: 9px; padding: 0 3px; border-radius: 3px; max-width: 70%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+
+.mtg-bt-hand { position: absolute; left: 14%; right: 14%; bottom: -34px; height: 170px; display: flex; justify-content: center; align-items: flex-end; --ov: 0px; --cw: 96px; --ch: 134px; }
+.mtg-bt-hand .mtg-bt-card { margin-left: calc(-14px - var(--ov)); box-shadow: 0 6px 14px rgba(0, 0, 0, .5); transform-origin: 50% 140%; transform: rotate(calc(var(--i, 0) * 3deg)) translateY(calc(var(--i, 0) * var(--i, 0) * 2px)); }
+.mtg-bt-hand .mtg-bt-card:first-child { margin-left: 0; }
+.mtg-bt-hand .mtg-bt-card:hover { transform: translateY(-50px) scale(1.3); z-index: 20; }
+.mtg-bt-ohand { position: absolute; left: 30%; right: 30%; top: 6px; display: flex; justify-content: center; align-items: center; }
+.mtg-bt-back { width: 34px; height: 48px; margin-left: -8px; border-radius: 4px; border: 1px solid #111; background: linear-gradient(#6b5b95, #2a2146); }
+.mtg-bt-more { margin-left: 6px; font-size: 12px; color: #cbd; }
+
+.mtg-bt-avatar { position: absolute; width: 64px; height: 64px; border: 3px solid #ddd; background: #556; transform: rotate(45deg) scale(.8); }
+.mtg-bt-avatar.is-self { left: 22px; bottom: 26px; } .mtg-bt-avatar.is-opp { right: 46px; top: 8px; }
+.mtg-bt-life { position: absolute; display: flex; align-items: center; justify-content: center; min-width: 46px; height: 46px; padding: 0 6px; background: #a01822; border: 2px solid #eee; font-weight: 700; font-size: 18px; }
+.mtg-bt-life.is-long { font-size: 12px; }
+.mtg-bt-life.is-self { left: 84px; bottom: 34px; } .mtg-bt-life.is-opp { right: 22px; top: 60px; }
+.mtg-bt-pile { position: absolute; font-size: 11px; background: #000a; padding: 2px 8px; border-radius: 10px; }
+.mtg-bt-pile.is-self { right: 12px; bottom: 112px; } .mtg-bt-pile.is-opp { left: 12px; top: 14px; }
+.mtg-bt-mana { position: absolute; left: 16px; bottom: 98px; display: flex; gap: 4px; }
+.mtg-bt-mc { padding: 1px 7px; border-radius: 10px; font-size: 12px; font-weight: 700; background: #667; color: #fff; }
+.mtg-bt-mc.is-W { background: #d8d0a0; color: #222; } .mtg-bt-mc.is-U { background: #2a6fb5; } .mtg-bt-mc.is-B { background: #3a2f3f; } .mtg-bt-mc.is-R { background: #b8402a; } .mtg-bt-mc.is-G { background: #2f7a3f; } .mtg-bt-mc.is-A { background: #8a6bd0; }
+.mtg-bt-phase { position: absolute; right: 10px; top: 42%; display: flex; flex-direction: column; gap: 5px; font-size: 11px; }
+.mtg-bt-phase div { background: #222c; border: 1px solid #666; border-radius: 12px; padding: 3px 10px; text-align: center; }
+.mtg-bt-phase .on { background: #b04bff; border-color: #e0c0ff; }
+.mtg-bt-step { position: absolute; right: 10px; top: calc(42% + 160px); font-size: 11px; color: #cbd; background: #000a; padding: 2px 8px; border-radius: 10px; }
+.mtg-bt-banner { position: absolute; left: 50%; top: 40%; transform: translate(-50%, -50%); font-size: 42px; font-weight: 800; letter-spacing: .2em; text-shadow: 0 0 16px #000; opacity: 0; pointer-events: none; transition: opacity .2s; }
+.mtg-bt-banner.is-on { opacity: 1; }
+.mtg-bt-stack { position: absolute; left: 12px; top: 46%; display: none; flex-direction: column; gap: 4px; font-size: 11px; }
+.mtg-bt-stack.is-on { display: flex; }
+.mtg-bt-stackitem { background: #000b; border-left: 4px solid #4bb0ff; padding: 3px 8px; border-radius: 4px; } .mtg-bt-stackitem.is-opp { border-color: #e55; }
+
+.mtg-bt-side { width: 240px; flex: none; display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+.mtg-bt-preview { background: var(--background-secondary); border-radius: 8px; padding: 8px; font-size: var(--font-ui-small); max-height: 55%; overflow-y: auto; }
+.mtg-bt-preview img { width: 100%; border-radius: 6px; display: block; }
+.mtg-bt-pname { font-weight: 600; margin: 6px 0 2px; }
+.mtg-bt-ptext { white-space: pre-wrap; color: var(--text-muted); }
+.mtg-bt-hint { color: var(--text-faint); }
+.mtg-bt-log { flex: 1; min-height: 80px; overflow-y: auto; background: var(--background-secondary); border-radius: 8px; padding: 8px; font-size: var(--font-ui-smaller); }
+.mtg-bt-logline { padding: 1px 0; color: var(--text-muted); }
+
+/* 土地の山: 立っている土地は重ね、タップした土地は横向きに倒して脇に並べる */
+.mtg-bt-landstack { position: relative; flex: none; display: flex; align-items: flex-end; gap: 8px; height: var(--ch); }
+.mtg-bt-pile3d { position: relative; height: var(--ch); flex: none; }
+.mtg-bt-pile3d .mtg-bt-card { position: absolute; }
+.mtg-bt-tapgroup { position: relative; height: 62px; flex: none; }
+.mtg-bt-tapgroup .mtg-bt-card { position: absolute; top: -12px; transform: rotate(90deg); opacity: .9; }
+.mtg-bt-board .mtg-bt-card.is-lying:hover { transform: rotate(90deg) scale(1.08); }
+.mtg-bt-count { position: absolute; right: -6px; top: -8px; background: #000c; border-radius: 8px; padding: 0 6px; font-size: 11px; font-weight: 700; z-index: 3; }
