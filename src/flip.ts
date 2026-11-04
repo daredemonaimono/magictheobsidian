@@ -1,4 +1,4 @@
-// 両面・複数の面があるカード (名前が "A // B") を、裏返して見る。画像は Scryfall の裏面の画像、裏面の画像が無いカード (冒険・準備など) は、裏面のテキストを出す
+// 両面カード (変身・表裏) を、裏返して見る。裏面の画像は、表の画像と同じく、取得したときにノートに書く。冒険・準備などは、1枚の画像に裏面も載っているので、書かず、ボタンも出さない
 
 export const isMultiFace = (name?: string): boolean => !!name?.includes(" // ");
 
@@ -18,35 +18,21 @@ export function backFaceText(note: string): string | undefined {
   return (local ? faces(local)[1] : undefined) ?? faces(english)[1];
 }
 
-// ↩︎ ボタン: 押すたびに、表と裏を切り替える。img を裏面の画像にし、読み込めなければ (裏面の画像が無いカード) 裏面のテキストを img の代わりに出す。onFlip は、プレビューなどを合わせる用
-export function addFlip(ctl: HTMLElement, host: HTMLElement, img: HTMLImageElement | undefined, backText: () => Promise<string>, onFlip?: (back: boolean, text: string, imageSrc: string | undefined) => void): void {
+// ノートに書いてある裏面の画像 (![back](URL))。裏面の画像が無いカードは undefined
+export const backImageOf = (note: string): string | undefined => note.match(/!\[back\]\((.+?)\)/)?.[1];
+
+// ↩︎ ボタン: 裏面の画像があるカードにだけ付く。押すたびに、img を表と裏で切り替える。onFlip は、プレビューなどを合わせる用 (back = 裏にしたとき、src = いまの画像)
+// front = 表の画像、back = 裏面の画像 (どちらも、ノートから読んだもの。版を選んでいれば、その版の表を渡して backUrl で合わせる)
+export function addFlip(ctl: HTMLElement, img: HTMLImageElement | undefined, front: string | undefined, back: string | undefined, onFlip?: (back: boolean, src: string) => void): void {
+  if (!img || !front || !back) return;
   const btn = ctl.createEl("button", { text: "↩︎", attr: { "aria-label": "裏面を見る / 表に戻す" } });
-  let back = false;
-  let front: string | null = null;
-  let panel: HTMLElement | undefined;
-  const show = async (imageSrc?: string) => onFlip?.(back, back ? await backText() : "", imageSrc);
-  btn.onclick = async (e) => {
+  let flipped = false;
+  btn.onclick = (e) => {
     e.stopPropagation();
-    back = !back;
-    btn.toggleClass("is-on", back);
-    panel?.remove();
-    panel = undefined;
-    if (!img) return void (await show());
-    front ??= img.getAttribute("src");
-    img.style.display = "";
-    if (!back) {
-      if (front) img.setAttribute("src", front);
-      return void (await show(front ?? undefined));
-    }
-    if (!front) return;
-    img.onerror = async () => {
-      img.onerror = null;
-      if (!back) return;
-      img.style.display = "none";
-      panel = host.createDiv({ cls: "mtg-backtext", text: await backText() });
-      void show();
-    };
-    img.onload = () => void show(img.getAttribute("src") ?? undefined);
-    img.setAttribute("src", backUrl(front));
+    flipped = !flipped;
+    btn.toggleClass("is-on", flipped);
+    const src = flipped ? back : front;
+    img.setAttribute("src", src);
+    onFlip?.(flipped, src);
   };
 }

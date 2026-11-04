@@ -1,6 +1,8 @@
 import { requestUrl } from "obsidian";
+import { backUrl } from "./flip";
 
 export interface ScryfallCard {
+  layout?: string;
   id: string;
   oracle_id: string;
   name: string;
@@ -177,6 +179,8 @@ export function toMarkdown(c: ScryfallCard, { lang, local, printings }: CardOpti
   const localName = local?.printed_name;
   // 英語以外の画像言語を選んでいて、その版があれば最新版の画像を使う
   const img = lang !== "en" && printings[0]?.lang === lang ? printingImageUrl(printings[0].id) : cardImageUrl(c);
+  // 裏面の画像があるカード (変身・表裏)。冒険・準備などは1枚の画像に全部載っていて、裏面の画像が無い
+  const back = img && c.card_faces?.[1]?.image_uris ? backUrl(img) : undefined;
   const fm = [
     "---",
     `name: "${c.name}"`,
@@ -192,6 +196,7 @@ export function toMarkdown(c: ScryfallCard, { lang, local, printings }: CardOpti
     `set: ${c.set}`,
     `scryfall_id: ${c.id}`,
     `oracle_id: ${c.oracle_id}`,
+    ...(c.layout ? [`layout: ${c.layout}`] : []), // 無い = 古いノート (取り直すと付く)
     `legal: [${legalList(c.legalities).join(", ")}]`,
     `restricted: [${restrictedList(c.legalities).join(", ")}]`, // 空でも書く (キーが無い = 未取得、と区別するため)
     `tags: [mtg/card]`,
@@ -203,5 +208,5 @@ export function toMarkdown(c: ScryfallCard, { lang, local, printings }: CardOpti
         .map((p) => `| ${p.set} | ${p.collector_number} | ${p.rarity} | ${p.released_at} | ${p.id} | ${p.lang} |`)
         .join("\n")}\n`
     : "";
-  return `${fm}\n\n${img ? `![](${img})\n\n` : ""}${text}\n\n${localText.trim() ? `## Text (${lang})\n\n${localText}\n\n` : ""}[Scryfall](${c.scryfall_uri})\n${prints}`;
+  return `${fm}\n\n${img ? `![](${img})\n\n` : ""}${back ? `![back](${back})\n\n` : ""}${text}\n\n${localText.trim() ? `## Text (${lang})\n\n${localText}\n\n` : ""}[Scryfall](${c.scryfall_uri})\n${prints}`;
 }

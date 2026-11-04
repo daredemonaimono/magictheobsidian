@@ -1,6 +1,6 @@
 import { Notice, ViewStateResult } from "obsidian";
-import { addFlip, isMultiFace } from "./flip";
-import { CardInfo, cardBackText, cardImage, cardInfo, printingOf, readPrintings } from "./cards";
+import { addFlip } from "./flip";
+import { CardInfo, cardBackImage, cardImage, cardInfo, printingOf, readPrintings } from "./cards";
 import { CONDS, Row, loadCollection, rowKey, saveCollection } from "./collection";
 import { DeckView, PrintModal } from "./DeckView";
 import { Result } from "./search";
@@ -168,7 +168,7 @@ export class CollectionView extends DeckView {
     card.createSpan({ text: `${i.row.n}×`, cls: "mtg-badge" });
     const ctl = card.createDiv("mtg-ctl");
     this.controls(ctl, i);
-    if (isMultiFace(i.info?.name)) addFlip(ctl, card, img, () => cardBackText(this.app, i.row.card));
+    if (i.info && img) void cardBackImage(this.app, i.info.file, i.image).then((back) => addFlip(ctl, img, i.image, back));
     const meta = cell.createDiv("mtg-cmeta");
     meta.createSpan({ text: this.fmt(this.price(i)), cls: "mtg-cprice" });
     meta.createSpan({ text: `${this.tags(i)} · ${i.row.cond}${i.row.foil ? " ✨" : ""}`, cls: "mtg-dim" });

@@ -1,6 +1,6 @@
 import { App, ItemView, Modal, Notice, Setting, TFile, ViewStateResult, WorkspaceLeaf, moment } from "obsidian";
-import { addFlip, isMultiFace } from "./flip";
-import { CARD_DIR, cardBackText, cardImage, cardInfo, cardText, oracleEnglish, printingImage, printingOf, readPrintings, refetchCard, setLocalText, updateLegality } from "./cards";
+import { addFlip } from "./flip";
+import { CARD_DIR, cardBackImage, cardBackText, cardImage, cardInfo, cardText, oracleEnglish, printingImage, printingOf, readPrintings, refetchCard, setLocalText, updateLegality } from "./cards";
 import { CREATABLE, FORMATS, formatOf, judge } from "./rules";
 import { loadCollection } from "./collection";
 import { formatPrice, priceOf, refreshPrices } from "./prices";
@@ -142,6 +142,11 @@ export class DeckView extends ItemView {
         for (const k of keys) {
           const i = cardInfo(this.app, k);
           if (i && /\bCreature\b/.test(i.typeLine) && (i.power === undefined || i.keywords === undefined) && !noText.includes(k)) noText.push(k);
+        }
+        // 名前が A // B で、layout が無い古いノートも取り直す (裏面の画像を取る)
+        for (const k of keys) {
+          const i = cardInfo(this.app, k);
+          if (i && i.name.includes(" // ") && !i.layout && !noText.includes(k)) noText.push(k);
         }
         let fetched = 0;
         let failedCards = 0;
@@ -528,10 +533,11 @@ export class DeckView extends ItemView {
             crown.toggleClass("is-on", c.board === "commander");
             crown.onclick = () => void (c.board === "commander" ? this.undesignate(c.key) : this.designate(c.key));
           }
-          // 両面・冒険などのカード: ↩︎ で裏面に。左のプレビューも合わせる (増減は、サイドバーの一覧で行う)
-          if (isMultiFace(c.meta?.name))
-            addFlip(ctl, item, img, () => cardBackText(this.app, c.key), (back, text, src) =>
-              void this.preview(c.key, Promise.resolve(src ?? (back ? undefined : c.image)), back ? Promise.resolve(text) : cardText(this.app, c.key), cardInfo(this.app, c.key)?.nameLocal),
+          // 両面カード (裏面の画像があるものだけ): ↩︎ で裏面に。左のプレビューも合わせる (増減は、サイドバーの一覧で行う)
+          const file = cardInfo(this.app, c.key)?.file;
+          if (file && img)
+            void cardBackImage(this.app, file, c.image).then((back) =>
+              addFlip(ctl, img, c.image, back, (flipped, src) => void this.preview(c.key, Promise.resolve(src), flipped ? cardBackText(this.app, c.key) : cardText(this.app, c.key), cardInfo(this.app, c.key)?.nameLocal)),
             );
           item.onmouseenter = () => void this.preview(c.key, Promise.resolve(c.image), cardText(this.app, c.key), cardInfo(this.app, c.key)?.nameLocal);
         }

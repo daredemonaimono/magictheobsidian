@@ -1,5 +1,5 @@
 import { App, TFile, normalizePath, parseYaml } from "obsidian";
-import { backFaceText } from "./flip";
+import { backFaceText, backImageOf, backUrl } from "./flip";
 import { LEGAL_FORMATS, judge } from "./rules";
 import { Settings } from "./settings";
 import { Printing, ScryfallCard, legalList, restrictedList, printingImageUrl, fetchById, fetchCard, fetchCollection, fetchLocalized, fetchPrintings, fileSafe, toMarkdown } from "./scryfall";
@@ -21,6 +21,7 @@ export interface CardInfo {
   id: string; // scryfall_id
   legal?: string[]; // 使えるフォーマット。未取得なら undefined
   restricted?: string[]; // 制限カードのフォーマット (Vintage)
+  layout?: string; // Scryfall のレイアウト (transform / prepare など)。古いノートには無い
 }
 
 function toInfo(app: App, file: TFile): CardInfo | null {
@@ -41,6 +42,7 @@ function toInfo(app: App, file: TFile): CardInfo | null {
     id: fm.scryfall_id ?? "",
     legal: Array.isArray(fm.legal) ? fm.legal : undefined,
     restricted: Array.isArray(fm.restricted) ? fm.restricted : undefined,
+    layout: fm.layout,
   };
 }
 
@@ -100,6 +102,12 @@ export async function cardText(app: App, key: string): Promise<string> {
   const local = c.match(/\n## Text \([^)]+\)\n\n([\s\S]*?)(?=\n\[Scryfall\])/);
   if (local) return local[1].trim();
   return c.replace(/^---[\s\S]*?\n---\n/, "").replace(/!\[\]\(.*?\)\n*/, "").split("\n[Scryfall]")[0].trim();
+}
+
+// 裏面の画像 (両面カードだけ。ノートに書いてある)。front = いま表示している表の画像 (版を選んでいれば、その版。無ければノートのもの)
+export async function cardBackImage(app: App, file: TFile, front?: string): Promise<string | undefined> {
+  const noted = backImageOf(await app.vault.cachedRead(file));
+  return noted && (front ? backUrl(front) : noted);
 }
 
 // 裏面のテキスト (名前が "A // B" のカード)。無ければ空
