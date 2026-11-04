@@ -392,6 +392,13 @@ export function registerBuiltinNodes(): void {
     ...cont,
   });
   defineNode({
+    id: "ward",
+    title: "護法",
+    summary: "護法 {N}(「このパーマネントが、対戦相手がコントロールする呪文や能力の対象になるたび、それを打ち消す。そのプレイヤーが {N} を支払わないかぎり」)。常在型能力に amount=N で書く(affect は要らない。汎用のマナ N 点だけ)",
+    params: { amount: { type: "number", required: true, min: 1 } },
+    ...cont,
+  });
+  defineNode({
     id: "untapDuring",
     title: "他のプレイヤーのアンタップ",
     summary: "このパーマネントを、他のプレイヤーのアンタップ・ステップにもアンタップする(Bender's Waterskin など)。who=opponents(対戦相手のターン) / all。自分のアンタップ・ステップでは、ふつうにアンタップする。affect は要らない",
@@ -649,7 +656,7 @@ export function registerBuiltinNodes(): void {
           }
         }
         const [gone] = g.stack.splice(i, 1);
-        if (!gone.copy) g.graveyards[gone.card.owner].push(gone.card); // 呪文のコピーは、墓地に行かず消える
+        if (!gone.copy && !gone.ability) g.graveyards[gone.card.owner].push(gone.card); // 呪文のコピーと能力は、墓地に行かず消える
         g.log.push(`${gone.card.name} を打ち消した`);
       }
       return {};

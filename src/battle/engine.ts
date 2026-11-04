@@ -109,6 +109,24 @@ const PROWESS: NodeCall[] = [
   { node: "modify", args: { target: { ref: "s" }, power: 1, toughness: 1, duration: "endOfTurn" } },
 ];
 
+// 呪文・能力が、対戦相手のパーマネントを対象にしたことを知らせる (護法)。スタックに積んだ直後に呼ぶ
+// 実際に対象になるのは、条件 (if=) を満たす対象のノード (選ばれなかったモード・キッカーされなかったときの対象は、数えない)。同じパーマネントを何度対象にしても、1回
+function announceTargets(g: Game, item: StackItem, rules: RuleBook): void {
+  const body = item.body ?? spellBody(rules, item.card) ?? [];
+  const seen = new Set<string>();
+  for (const call of body) {
+    if (!getNode(call.node)?.isTarget) continue;
+    if (call.if !== undefined && !evalCondition(call.if, { game: g, rules, item, vars: {}, call })) continue;
+    for (const id of (item.targets[call.as ?? ""] ?? "").split(",")) {
+      const perm = g.battlefield.find((x) => x.id === id);
+      if (perm && perm.controller !== item.controller && !seen.has(perm.id)) {
+        seen.add(perm.id);
+        g.events.push({ type: "targeted", perm, by: item });
+      }
+    }
+  }
+}
+
 // 積まれたイベントを見て、戦場のパーマネントの誘発型能力のうち条件に合うものを、スタックに積む。戦場を離れたパーマネント自身も見る。
 // すべての能力を失っているパーマネントの能力は働かない。誘発の追加 (extraTriggers) があれば、その回数ぶん積む。
 // shortcut: 誘発の順番 (APNAP) は決めず、戦場の順
@@ -120,12 +138,29 @@ function flushEvents(g: Game, rules: RuleBook): void {
       if (!chooseTargets(g, item, rules)) continue; // 合法な対象が足りない誘発型能力は、スタックに積まれない
       g.serial++;
       g.stack.push(item);
+      announceTargets(g, item, rules);
       added = true;
     }
   };
   stateBased(g, rules); // 状態起因処理 (落ちたものの「戦場を離れた」も、このあとで誘発を探す)
   while (g.events.length) {
     const ev = g.events.shift()!;
+    if (ev.type === "targeted") {
+      // 護法: 対象になったパーマネントが、すべての能力を失っていなければ、{N} を払わないかぎり打ち消す誘発が積まれる
+      if (!characteristics(g, ev.perm, rules).lostAbilities) {
+        for (const ab of rules.get(ev.perm.card.name)?.abilities ?? []) {
+          if (ab.kind !== "static") continue;
+          for (const c of ab.body) {
+            if (c.node !== "ward") continue;
+            const item: StackItem = { id: `${ev.perm.id}#${g.serial + 1}`, card: ev.perm.card, controller: ev.perm.controller, targets: {}, cast: {}, body: [{ node: "counter", args: { target: ev.by.id, unlessPay: Number(c.args.amount) } }], ability: true, source: ev.perm.id };
+            g.serial++;
+            g.stack.push(item);
+            added = true;
+          }
+        }
+      }
+      continue;
+    }
     if (ev.type === "leaves") for (const o of g.battlefield) if (o.attachedTo === ev.perm.id) delete o.attachedTo; // 付いていた先が離れたら、装備品・オーラは外れる (戻ってきても付き直さない)
     const sources = [...g.battlefield, ...(ev.type === "leaves" && !g.battlefield.includes(ev.perm) ? [ev.perm] : []), ...g.emblems];
     for (const s of sources) {
@@ -307,6 +342,7 @@ function castCore(g: Game, p: PlayerId, card: GameCard, body: NodeCall[], target
   payCost(g, p, cost, undefined, cast.tap ?? [], card);
   afterPay();
   g.stack.push(item);
+  announceTargets(g, item, rules);
   g.priority = p;
   g.passes = [];
   g.events.push({ type: "cast", player: p, card });
@@ -353,6 +389,7 @@ export function activateAbility(g: Game, p: PlayerId, permId: string, index: num
     return;
   }
   g.stack.push(item);
+  announceTargets(g, item, rules);
   g.priority = p;
   g.passes = [];
   flushEvents(g, rules); // 生け贄などで「戦場を離れた」誘発は、この能力の上に積まれる
