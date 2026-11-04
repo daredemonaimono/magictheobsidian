@@ -12,7 +12,7 @@ export interface EditorActions {
   save(card: string, md: string): Promise<"created" | "updated" | "same">; // 履歴を残してから書く (saveRule)
 }
 
-const KIND_LABEL: Record<AbilityKind, string> = { spell: "呪文能力", activated: "起動型能力", triggered: "誘発型能力", static: "常在型能力" };
+const KIND_LABEL: Record<AbilityKind, string> = { spell: "呪文能力", activated: "起動型能力", triggered: "誘発型能力", static: "常在型能力", prepare: "準備呪文" };
 const SVG = "http://www.w3.org/2000/svg";
 
 // ノード設定画面。能力ごとの列に、ノードのカードが実行順に並ぶ。パレットから追加 (ドラッグかクリック)、カードの見出しのドラッグで並べ替え、

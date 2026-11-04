@@ -21,6 +21,9 @@ export const DEFAULT_GLOSSARY = `### Permanents
 - Surveil N: look at the top N cards, put any number of them into the graveyard, and leave the rest on top (look → choose atMost=true → move to graveyard).
 - A token is a permanent that ceases to exist when it leaves the battlefield. An emblem is not a permanent; it stays outside the battlefield for the rest of the game.
 
+### Prepared creatures (cards named "A // B" with a creature front and an Instant/Sorcery back)
+- The back face is the creature's prepare spell. While the creature is prepared, its controller may cast a copy of the prepare spell (from exile); casting it makes the creature unprepared. A creature enters prepared / becomes prepared by effects; it cannot become prepared again while prepared. Write the prepare spell under \`## 準備呪文\` (first node \`prepareSpell\`).
+
 ### Other
 - "you" is the controller of the spell or ability (who=you / controller=you); "opponent" is opponents.
 - "until end of turn" is duration=endOfTurn.`;

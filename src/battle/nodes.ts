@@ -3,7 +3,7 @@ import { RunCtx, Value } from "./node";
 import { defineCondition, defineNode, getNode } from "./registry";
 import { dealDamage } from "./damage";
 import { parseManaCost, spendGeneric } from "./mana";
-import { discardCards, drawCards, Game, GameCard, Perm, playersOf, typeIn, untapPerm } from "./state";
+import { discardCards, drawCards, prepareAbilityOf, Game, GameCard, Perm, playersOf, typeIn, untapPerm } from "./state";
 
 // 実装済みの基本ノード。打ち消しは「対象」+「打ち消す」の組み合わせで、カードごとの違いは対象の条件 (引数) だけ
 
@@ -398,6 +398,66 @@ export function registerBuiltinNodes(): void {
     params: { who: { type: "string", required: true, choices: ["opponents", "all"] } },
     ...cont,
   });
+  // 準備 (prepared)。準備呪文 (kind=prepare の能力) を持つクリーチャーだけが、準備済になれる。準備済のあいだ、コントローラーは、その準備呪文のコピーを (追放領域から) 唱えられる (castPrepared)。
+  const manaCostCheck = (a: Record<string, Value>): string | null => {
+    try {
+      if (typeof a.manaCost === "string") parseManaCost(a.manaCost);
+      return null;
+    } catch (e) {
+      return (e as Error).message;
+    }
+  };
+  defineNode({
+    id: "prepareSpell",
+    title: "準備呪文",
+    summary: "準備呪文 (準備済のクリーチャーの、裏面の呪文) の最初に書く宣言。name=呪文の名前 / type=Instant か Sorcery / manaCost=マナコスト(\"{U}\")。そのあとに、呪文の効果のノードを書く",
+    params: { name: { type: "string", required: true }, type: { type: "string", required: true, choices: ["Instant", "Sorcery"] }, manaCost: { type: "string" } },
+    check: manaCostCheck,
+    declaration: true,
+    only: ["prepare"],
+    outputs: {},
+    run: (): Record<string, Value> => ({}),
+  });
+  defineNode({
+    id: "entersPrepared",
+    title: "準備済で戦場に出る",
+    summary: "「このクリーチャーは準備済状態で戦場に出る」。常在型能力に書く(affect は要らない)。準備呪文を持たないクリーチャーは、準備済にならない",
+    params: {},
+    ...cont,
+  });
+  defineNode({
+    id: "prepare",
+    title: "準備済になる",
+    summary: "このパーマネント自身が、準備済になる(「このクリーチャーは準備済状態になる」)。すでに準備済なら何も起きない(2つ目のコピーはできない)。準備呪文を持たないものは、なれない",
+    params: {},
+    only: ["spell", "activated", "triggered"], // 常在型能力に書いても働かない
+    outputs: {},
+    run: (ctx): Record<string, Value> => {
+      const p = ctx.item.source ? ctx.game.battlefield.find((x) => x.id === ctx.item.source) : undefined;
+      if (p && !p.prepared && prepareAbilityOf(ctx.rules, p.card.name)) {
+        p.prepared = true;
+        ctx.game.log.push(`${p.card.name} は準備済になった`);
+      }
+      return {};
+    },
+  });
+  // 墓地のカードを追放する。「してもよい」は optional=true (断れる)。追放できたら枚数を n に出す (「そうしたなら」は、次のノードに if=$名前)
+  defineNode({
+    id: "exile",
+    title: "追放する",
+    summary: "自分の墓地のカードを count 枚、追放する (足りなければ何もしない)。optional=true なら「してもよい」(断れる)。追放できた枚数を n として出力する(0 なら追放していない)。「そうしたなら〜」は、これを as=名前 で受けて、次のノードに if=$名前 を付ける。shortcut: 追放するカードは墓地の古いものから (選べるのは、判断の入力を作るとき)",
+    params: { zone: { type: "string", required: true, choices: ["graveyard"] }, count: { type: "number", required: true, min: 1 }, optional: { type: "boolean" } },
+    outputs: { n: "number" },
+    run: (ctx, a): Record<string, Value> => {
+      const g = ctx.game;
+      const p = ctx.item.controller;
+      const n = Number(a.count);
+      if (g.graveyards[p].length < n) return { n: 0 };
+      if (a.optional === true && !(g.decide?.may?.(g, p, "exile") ?? true)) return { n: 0 };
+      g.exile[p].push(...g.graveyards[p].splice(0, n));
+      return { n };
+    },
+  });
   // 起動のタイミング (装備など): sorcery=true なら、自分のメインフェイズで、スタックが空のときだけ起動できる
   defineNode({
     id: "timing",
@@ -589,7 +649,7 @@ export function registerBuiltinNodes(): void {
           }
         }
         const [gone] = g.stack.splice(i, 1);
-        g.graveyards[gone.card.owner].push(gone.card);
+        if (!gone.copy) g.graveyards[gone.card.owner].push(gone.card); // 呪文のコピーは、墓地に行かず消える
         g.log.push(`${gone.card.name} を打ち消した`);
       }
       return {};

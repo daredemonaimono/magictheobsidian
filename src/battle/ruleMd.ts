@@ -2,7 +2,7 @@ import { Ability, AbilityKind, Arg, CardRule, NodeCall } from "./node";
 
 // vault の Rules/<カード名>.md の読み書き。見出し = 能力の4分類、箇条書き1行 = ノード呼び出し1つ:
 //   - <ノードid> [as=<名前>] <引数>=<値> ...      値: $名前 (ref) / 整数 / true・false / 文字列 ("..." で空白も可)
-const HEADINGS: Record<string, AbilityKind> = { 呪文能力: "spell", 起動型能力: "activated", 誘発型能力: "triggered", 常在型能力: "static" };
+const HEADINGS: Record<string, AbilityKind> = { 呪文能力: "spell", 起動型能力: "activated", 誘発型能力: "triggered", 常在型能力: "static", 準備呪文: "prepare" };
 const NOTE = "未対応";
 const HEADING_OF = Object.fromEntries(Object.entries(HEADINGS).map(([h, k]) => [k, h])) as Record<AbilityKind, string>;
 

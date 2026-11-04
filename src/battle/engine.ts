@@ -3,7 +3,7 @@ import { dealDamage } from "./damage";
 import { CastRecord, NodeCall, RunCtx, Value } from "./node";
 import { checkCall, evalCondition, getNode } from "./registry";
 import { addCosts, describeCost, emptyCost, ManaCost, parseManaCost, trySpend } from "./mana";
-import { discardCards, drawCards, Game, GameCard, GameEvent, Perm, PlayerId, RuleBook, StackItem, Step, typeIn, untapPerm } from "./state";
+import { discardCards, drawCards, prepareAbilityOf, Game, GameCard, GameEvent, Perm, PlayerId, RuleBook, StackItem, Step, typeIn, untapPerm } from "./state";
 
 // ステップ進行・優先権・スタック。画面なしで、テストから動かせる
 
@@ -19,8 +19,10 @@ const isPermanentCard = (c: GameCard): boolean => !/\b(Instant|Sorcery)\b/.test(
 const staticKeywords = (rules: RuleBook, card: GameCard): string[] => (rules.get(card.name)?.abilities ?? []).filter((a) => a.kind === "static").flatMap((a) => a.body.filter((c) => c.node === "keyword").map((c) => String(c.args.name)));
 
 // パーマネントを戦場に出す。「戦場に出た」イベントを積む (宣言されたキーワードは、characteristics が導く)
-function enterBattlefield(g: Game, card: GameCard, controller: PlayerId): void {
+function enterBattlefield(g: Game, card: GameCard, controller: PlayerId, rules: RuleBook): void {
   const perm: Perm = { id: card.id, card, controller, enteredTurn: g.turn };
+  // 「準備済状態で戦場に出る」: 準備呪文を持つクリーチャーだけ
+  if (prepareAbilityOf(rules, card.name) && (rules.get(card.name)?.abilities ?? []).some((a) => a.kind === "static" && a.body.some((c) => c.node === "entersPrepared"))) perm.prepared = true;
   if (card.loyalty !== undefined) perm.counters = { loyalty: card.loyalty }; // プレインズウォーカーは、初期忠誠度で戦場に出る
   g.battlefield.push(perm);
   g.events.push({ type: "enters", perm });
@@ -158,6 +160,7 @@ function resolveArgs(call: NodeCall, vars: Record<string, Value>): Record<string
   return out;
 }
 
+// shortcut: 条件 if=$名前 (前のノードの出力) の付いた対象のノードは、唱えるとき・解決の対象確認のときは、条件を満たさない扱い (出力がまだ無いため)。「そうしたなら、対象の〜」の対象は、唱えるときに選べない
 // 全ノードの検証 (checkCall) と、対象がすべて合法か。だめなら RuleError。
 // 条件 (if=) を満たさないノードの対象は求めない (選ばれなかったモード、キッカーされなかったときの対象など)。条件は唱えるときの選択 (item.cast) で決まる
 function validate(g: Game, item: StackItem, body: NodeCall[], name: string, rules: RuleBook): void {
@@ -272,7 +275,14 @@ export function castSpell(g: Game, p: PlayerId, cardId: string, targets: Record<
   if (!canCastNow(g, p, card, rules)) throw new RuleError(`いまは唱えられない: ${card.name}`);
   const body = spellBody(rules, card) ?? (rules.get(card.name) && isPermanentCard(card) ? [] : undefined); // 呪文能力の無いパーマネントも、ルールがあれば唱えられる
   if (!body) throw new RuleError(`呪文能力のルールが無い: ${card.name}`);
-  const item: StackItem = { id: card.id, card, controller: p, targets, cast };
+  castCore(g, p, card, body, targets, rules, cast, () => {
+    g.hands[p] = g.hands[p].filter((c) => c !== card);
+  });
+}
+
+// 呪文を唱える本体 (手札から・準備呪文のコピーで共通)。条件を確かめ、コストを払い、スタックに積む。afterPay = 払ったあとの、元の場所からの移動。copy = 呪文のコピー
+function castCore(g: Game, p: PlayerId, card: GameCard, body: NodeCall[], targets: Record<string, string>, rules: RuleBook, cast: CastRecord, afterPay: () => void, copy = false): void {
+  const item: StackItem = { id: card.id, card, controller: p, targets, cast, ...(copy ? { body, copy: true } : {}) };
   checkModes(body, cast, card.name);
   validate(g, item, body, card.name, rules);
   const chosen = (["kicked", "teamwork"] as const).filter((f) => cast[f]);
@@ -295,7 +305,7 @@ export function castSpell(g: Game, p: PlayerId, cardId: string, targets: Record<
   const why = costProblem(g, p, cost, undefined, cast.tap ?? [], rules, card);
   if (why) throw new RuleError(`${card.name}: ${why}`);
   payCost(g, p, cost, undefined, cast.tap ?? [], card);
-  g.hands[p] = g.hands[p].filter((c) => c !== card);
+  afterPay();
   g.stack.push(item);
   g.priority = p;
   g.passes = [];
@@ -313,7 +323,7 @@ export function playLand(g: Game, p: PlayerId, cardId: string, rules: RuleBook):
   if (g.landsPlayed >= 1) throw new RuleError("このターンは、もう土地を出した");
   g.hands[p] = g.hands[p].filter((c) => c !== card);
   g.landsPlayed++;
-  enterBattlefield(g, card, p);
+  enterBattlefield(g, card, p, rules);
   flushEvents(g, rules);
 }
 
@@ -362,7 +372,7 @@ export function resolveTop(g: Game, rules: RuleBook): void {
   if (fizzled) g.log.push(`${item.card.name}: 対象が無くなったので解決しない`);
   const permanent = !item.ability && isPermanentCard(item.card);
   if (permanent && !fizzled) {
-    enterBattlefield(g, item.card, item.controller);
+    enterBattlefield(g, item.card, item.controller, rules);
     item.source = item.card.id;
   }
   if (!fizzled) {
@@ -381,7 +391,7 @@ export function resolveTop(g: Game, rules: RuleBook): void {
     }
   }
   // 起動型・誘発型能力は、解決してもカードは動かない。パーマネント呪文は戦場へ(解決しなかったときは墓地へ)、インスタント・ソーサリーは墓地へ
-  if (!item.ability && !(permanent && !fizzled)) g.graveyards[item.card.owner].push(item.card);
+  if (!item.ability && !item.copy && !(permanent && !fizzled)) g.graveyards[item.card.owner].push(item.card); // 呪文のコピーは、墓地に行かず消える
   flushEvents(g, rules);
 }
 
@@ -624,4 +634,28 @@ export function startGame(g: Game, rules: RuleBook, first: PlayerId = g.players[
   for (const p of g.players) drawCards(g, p, 7);
   g.events.push({ type: "step", step: "upkeep", player: first });
   flushEvents(g, rules);
+}
+
+// 準備呪文を唱える: 準備済のクリーチャーのコントローラーが、その準備呪文のコピー (追放領域にある) を唱える。唱えると、そのクリーチャーは準備済でなくなる。
+// コピーは呪文なので、打ち消しの対象になる。解決しても、打ち消されても、墓地には行かず消える。唱えるタイミングは、準備呪文の型 (Instant なら優先権があるとき、Sorcery ならソーサリーのタイミング)
+export function castPrepared(g: Game, p: PlayerId, permId: string, targets: Record<string, string>, rules: RuleBook, cast: CastRecord = {}): void {
+  live(g);
+  const perm = g.battlefield.find((x) => x.id === permId);
+  if (!perm || perm.controller !== p) throw new RuleError(`自分のパーマネントではない: ${permId}`);
+  if (!perm.prepared) throw new RuleError(`準備済ではない: ${perm.card.name}`);
+  const ab = prepareAbilityOf(rules, perm.card.name);
+  const decl = ab?.body[0];
+  if (!ab || decl?.node !== "prepareSpell") throw new RuleError(`準備呪文のルールが無い: ${perm.card.name}`);
+  let own: ManaCost;
+  try {
+    own = typeof decl.args.manaCost === "string" ? parseManaCost(decl.args.manaCost) : emptyCost();
+  } catch (e) {
+    throw new RuleError(`${perm.card.name}: ${(e as Error).message}`);
+  }
+  const mv = own.generic + Object.values(own.colors).reduce((a, n) => a + (n ?? 0), 0) + own.hybrid.length;
+  const card: GameCard = { id: `${perm.id}#prepared${++g.serial}`, name: String(decl.args.name), typeLine: String(decl.args.type), mv, ...(typeof decl.args.manaCost === "string" ? { manaCost: decl.args.manaCost } : {}), owner: perm.card.owner };
+  if (!canCastNow(g, p, card, rules)) throw new RuleError(`いまは唱えられない: ${card.name}`);
+  castCore(g, p, card, ab.body.slice(1), targets, rules, cast, () => {
+    perm.prepared = false;
+  }, true);
 }

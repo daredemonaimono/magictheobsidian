@@ -21,11 +21,18 @@ const COUNT = /^(graveyard|hand|library|battlefield):([^:\s]+):(\d+)([+-]?)$/;
 const bare = (expr: string) => (expr.startsWith("!") ? expr.slice(1) : expr);
 
 // 問題なければ null
-export const checkCondition = (expr: string): string | null => (conditions.has(bare(expr)) || COUNT.test(bare(expr)) ? null : `未知の条件: ${expr}`);
+// 条件の形: 名前 / 数の条件 / $名前 (前のノードの出力が 0・偽・空でないとき。「そうしたなら」)
+const VARREF = /^\$([A-Za-z_][\w-]*)$/;
+export const checkCondition = (expr: string): string | null => (conditions.has(bare(expr)) || COUNT.test(bare(expr)) || VARREF.test(bare(expr)) ? null : `未知の条件: ${expr}`);
 export function evalCondition(expr: string, ctx: RunCtx): boolean {
   const neg = expr.startsWith("!");
   const id = bare(expr);
   let r = conditions.get(id)?.test(ctx) ?? false;
+  const v = id.match(VARREF);
+  if (v) {
+    const x = ctx.vars[v[1]];
+    r = x !== undefined && x !== 0 && x !== false && x !== "";
+  }
   const m = id.match(COUNT);
   if (m) {
     const g = ctx.game;
@@ -48,17 +55,24 @@ export const resetRegistry = (): void => {
   conditions.clear();
 }; // テスト用
 
-const KIND_LABEL: Record<AbilityKind, string> = { spell: "呪文能力", activated: "起動型能力", triggered: "誘発型能力", static: "常在型能力" };
+const KIND_LABEL: Record<AbilityKind, string> = { spell: "呪文能力", activated: "起動型能力", triggered: "誘発型能力", static: "常在型能力", prepare: "準備呪文" };
 
 // そのノードを、その種類の能力に書いてよいか。だめなら理由 (cost を呪文能力に書くと、黙って無視されるため)
 export function placementProblem(kind: AbilityKind, call: NodeCall): string | null {
   const only = nodes.get(call.node)?.only;
-  return only && !only.includes(kind) ? `${call.node} は${only.map((k) => KIND_LABEL[k]).join("・")}だけに書ける` : null;
+  const ok = only && (only.includes(kind) || (kind === "prepare" && only.includes("spell"))); // 準備呪文は呪文なので、呪文能力のノードも書ける
+  return only && !ok ? `${call.node} は${only.map((k) => KIND_LABEL[k]).join("・")}だけに書ける` : null;
 }
 
 // 能力の構造: 誘発型能力の最初のノードは when (エンジンは先頭だけを見る。ほかの位置の when や、無い場合は、黙って誘発しない)。問題なければ null
 export function structureProblem(ab: Ability): string | null {
   if (!ab.body.length) return null;
+  if (ab.kind === "prepare") {
+    // 準備呪文の最初のノードは prepareSpell (名前・型・マナコスト)。そのあとが、呪文の効果
+    if (ab.body[0].node !== "prepareSpell") return "準備呪文の最初のノードは prepareSpell (呪文の名前・型・マナコスト)";
+    if (ab.body.slice(1).some((c) => c.node === "prepareSpell")) return "prepareSpell は準備呪文の最初のノードだけに書ける";
+    return null;
+  }
   if (ab.kind === "static") {
     // 継続効果のノードは affect で始まる常在型能力だけ (affect が先頭になければ、エンジンは読まない)
     const effects = ["staticModify", "staticGrant", "loseAbilities", "setBaseStats", "setTypes", "setColors", "setName", "extraTriggers"];
@@ -91,6 +105,8 @@ export function refProblems(ab: Ability): RefProblem[] {
   const hasX = ab.kind === "activated" && ab.body.some((c) => c.node === "cost" && c.args.loyaltyX === true);
   ab.body.forEach((c, n) => {
     const def = nodes.get(c.node);
+    const cond = c.if?.match(/^!?\$([A-Za-z_][\w-]*)$/);
+    if (cond && cond[1] !== "X" && !made.has(cond[1])) out.push({ node: n, message: `$${cond[1]} が見つからない (前のノードの as に無い)` });
     for (const [k, v] of Object.entries(c.args)) {
       if (typeof v !== "object") continue;
       if (v.ref === "X") {

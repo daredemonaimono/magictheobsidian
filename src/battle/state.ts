@@ -31,6 +31,7 @@ export interface StackItem {
   cast: CastRecord;
   body?: NodeCall[]; // 起動型能力のとき、その効果 (呪文のときは、カードの呪文能力)
   ability?: boolean; // 起動型・誘発型能力 (解決しても、カードは墓地に行かない)
+  copy?: boolean; // 呪文のコピー (準備呪文など)。解決しても、打ち消されても、墓地に行かない (消える)。呪文としては、打ち消しの対象になる
   source?: string; // 能力の発生源のパーマネントの id (self ノードが返す)
   x?: number; // 起動時に選んだ X (忠誠度の −X など。効果の中で $X として参照する)
 }
@@ -53,6 +54,7 @@ export interface Perm {
   loyaltyUsed?: boolean; // このターンに忠誠度能力を起動した (1ターンに1回)
   emblem?: string; // 紋章のとき、その名前 (createEmblem の name)。紋章は戦場の外 (Game.emblems) にある
   damage?: number; // クリーチャーに載っているダメージ (ターン終了時に消える)
+  prepared?: boolean; // 準備済 (準備呪文を、追放領域のコピーとして唱えられる。戦場を離れると消える)
   deathtouched?: boolean; // 接死のダメージを受けた (ターン終了時に消える)
   enteredTurn?: number; // 戦場に出たターン (Game.turn)。召喚酔いの判定
   attackTarget?: string; // 攻撃しているとき、攻撃先 (プレイヤー、またはプレインズウォーカーの id)
@@ -67,6 +69,7 @@ export type GameEvent = { type: "cast"; player: PlayerId; card: GameCard } | { t
 // 人の判断の差し替え口。無ければ決まった動きになる (shortcut: 判断の入力はまだ無い。入力の仕組みを作るときに置き換える)
 export interface Decider {
   discard?(g: Game, p: PlayerId, n: number): GameCard[]; // 捨てるカード
+  may?(g: Game, p: PlayerId, what: string): boolean; // 「してもよい」をするか (既定はする)
   pay?(g: Game, p: PlayerId, n: number): boolean; // 「支払わないかぎり」を払うか
   choose?(g: Game, p: PlayerId, from: GameCard[], n: number): GameCard[]; // 選ぶカード (look / choose)
   target?(g: Game, item: StackItem, call: NodeCall, legal: string[]): string[]; // 誘発型能力の対象 (誘発時に選ぶ。既定は合法な対象の先頭から)
@@ -80,6 +83,7 @@ export interface Game {
   hands: Record<PlayerId, GameCard[]>;
   libraries: Record<PlayerId, GameCard[]>; // 先頭が一番上
   graveyards: Record<PlayerId, GameCard[]>;
+  exile: Record<PlayerId, GameCard[]>; // 追放領域 (持ち主ごと)
   battlefield: Perm[];
   mana: Record<PlayerId, number>; // 使えるマナの合計
   pool: Record<PlayerId, Pool>; // そのうち、色のついたもの。合計から引いた残りは、無色のマナ
@@ -108,7 +112,7 @@ export interface RuleBook {
 
 export function createGame(players: PlayerId[]): Game {
   const each = <T>(f: () => T) => Object.fromEntries(players.map((p) => [p, f()])) as Record<PlayerId, T>;
-  return { players, active: players[0], step: "main1", priority: players[0], passes: [], hands: each<GameCard[]>(() => []), libraries: each<GameCard[]>(() => []), graveyards: each<GameCard[]>(() => []), battlefield: [], mana: each(() => 0), pool: each<Pool>(() => ({})), stack: [], log: [], serial: 0, events: [], emblems: [], restrictedMana: each(() => []), landsPlayed: 0, life: each(() => 20), turn: 1, drewEmpty: [], lost: [] };
+  return { players, active: players[0], step: "main1", priority: players[0], passes: [], hands: each<GameCard[]>(() => []), libraries: each<GameCard[]>(() => []), graveyards: each<GameCard[]>(() => []), exile: each<GameCard[]>(() => []), battlefield: [], mana: each(() => 0), pool: each<Pool>(() => ({})), stack: [], log: [], serial: 0, events: [], emblems: [], restrictedMana: each(() => []), landsPlayed: 0, life: each(() => 20), turn: 1, drewEmpty: [], lost: [] };
 }
 
 export const opponentsOf = (g: Game, p: PlayerId): PlayerId[] => g.players.filter((x) => x !== p);
@@ -161,3 +165,6 @@ export function discardCards(g: Game, p: PlayerId, n: number): void {
   g.hands[p] = g.hands[p].filter((c) => !picked.includes(c));
   g.graveyards[p].push(...picked);
 }
+
+// 準備呪文 (kind=prepare の能力) を持つカードか。持たないクリーチャーは、準備済になれない
+export const prepareAbilityOf = (rules: RuleBook, cardName: string) => rules.get(cardName)?.abilities.find((a) => a.kind === "prepare");

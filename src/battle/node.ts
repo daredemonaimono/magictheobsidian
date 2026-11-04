@@ -14,7 +14,7 @@ export interface NodeCall {
 }
 
 // 能力は4分類のどれかに必ず収める
-export type AbilityKind = "spell" | "activated" | "triggered" | "static";
+export type AbilityKind = "spell" | "activated" | "triggered" | "static" | "prepare"; // prepare = 準備呪文 (準備済のクリーチャーの、裏面の呪文)
 export interface Ability {
   kind: AbilityKind;
   body: NodeCall[];

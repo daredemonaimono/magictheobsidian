@@ -18,7 +18,7 @@ export function buildPrompt(card: string, oracle: string, ruling?: string, gloss
 
 ## 書式
 - フロントマターに card: "[[カード名]]" を書く。
-- 見出しは能力の4分類: ## 呪文能力 / ## 起動型能力 / ## 誘発型能力 / ## 常在型能力。1つの見出し = 1つの能力。同じ見出しを何度書いてもよい。
+- 見出しは能力の5分類: ## 呪文能力 / ## 起動型能力 / ## 誘発型能力 / ## 常在型能力 / ## 準備呪文(準備呪文を持つクリーチャーだけ)。1つの見出し = 1つの能力。同じ見出しを何度書いてもよい。
 - 箇条書き1行 = ノード1つ: \`- <ノードid> [as=<名前>] <引数>=<値> ...\`。値は $名前 (前のノードの as を参照)、整数、true / false、それ以外は文字列 (空白を含むときは "..." で囲む)。
 
 ## Glossary (basic definitions; follow these when unsure)
@@ -51,6 +51,7 @@ ${conditionList() || "(まだ無い)"}
 - オーラ(Aura): \`## 呪文能力\` に \`target ...\`(Enchant の対象)と \`attach target=$t\`、効果は \`## 常在型能力\` の \`affect who=attached\` と効果のノード。
 - 「他のプレイヤーのアンタップ・ステップに、これをアンタップする」は、\`## 常在型能力\` に \`untapDuring who=opponents\`(affect は要らない)。
 - 「攻撃するたび」「ブロックしたとき」は、\`## 誘発型能力\` の \`when event=attacks self=true\` / \`when event=blocks self=true\`(who=you・opponents、type・notType で絞れる)。戦闘そのもの (攻撃・ブロック・戦闘ダメージ・先制攻撃・二段攻撃・接死・絆魂・トランプル・飛行・到達・威嚇・警戒・防衛・速攻) は、エンジンが処理するので、ノードは書かない (キーワードは \`keyword name=…\`)。
+- 準備呪文(prepare)を持つクリーチャー(カード名が "A // B" で、表がクリーチャー、裏が Instant か Sorcery): 裏面の呪文は \`## 準備呪文\` に、最初のノード \`prepareSpell name=<裏面の名前> type=Instant|Sorcery manaCost="{U}"\` のあとに、呪文の効果のノードを書く。「準備済状態で戦場に出る」は \`## 常在型能力\` に \`entersPrepared\`。「準備済状態になる」は効果のノード \`prepare\`。「墓地のカードを N 枚追放してもよい。そうしたなら〜」は \`exile zone=graveyard count=N optional=true as=e\` のあと、次のノードに \`if=$e\`(「そうしたなら」)を付ける。
 - ライフ: \`gainLife player=you amount=N\` / \`loseLife player=opponents amount=N\`。ダメージ: \`target zone=any kind=any as=t\`(プレイヤー・クリーチャー・プレインズウォーカー) のあとに \`damage target=$t amount=N\`。クリーチャーだけ・プレイヤーだけなら、\`zone=battlefield kind=permanent type=creature\` や \`zone=player kind=player\` の target に \`damage\` を使う。
 - コスト軽減(「〜の呪文のコストは {N} 少なくなる」)は、\`## 常在型能力\` に \`reduceCost amount=N who=you notType=creature\`(affect は要らない)。
 - プレインズウォーカーの忠誠度能力(「+N:」「−N:」「−X:」)は、\`## 起動型能力\` に \`cost loyalty=N\`(+1 は loyalty=1、−2 は loyalty=-2。−X は \`cost loyaltyX=true\`)と書く(ソーサリーのタイミングで1ターンに1回は、エンジンが守る)。X は効果の中で \`count=$X\` のように参照する。数の引数には、\`countCards\`(枚数を数える。as= で受ける)の出力も \`count=$名前\` で渡せる。
