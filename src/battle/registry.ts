@@ -58,7 +58,18 @@ export function placementProblem(kind: AbilityKind, call: NodeCall): string | nu
 
 // 能力の構造: 誘発型能力の最初のノードは when (エンジンは先頭だけを見る。ほかの位置の when や、無い場合は、黙って誘発しない)。問題なければ null
 export function structureProblem(ab: Ability): string | null {
-  if (ab.kind !== "triggered" || !ab.body.length) return null;
+  if (!ab.body.length) return null;
+  if (ab.kind === "static") {
+    // 継続効果のノードは affect で始まる常在型能力だけ (affect が先頭になければ、エンジンは読まない)
+    const effects = ["staticModify", "staticGrant", "loseAbilities", "setBaseStats", "setTypes", "setColors", "setName", "extraTriggers"];
+    if (ab.body[0].node !== "affect" && ab.body.some((c) => effects.includes(c.node))) return "継続効果のノードは、常在型能力の最初に affect (及ぶ先) を書く";
+    if (ab.body.slice(1).some((c) => c.node === "affect")) return "affect は常在型能力の最初のノードだけに書ける";
+    // keyword と reduceCost は、affect の無い常在型能力として読まれる (affect の後ろに書くと、黙って無視される)
+    const stray = ab.body[0].node === "affect" ? ab.body.find((c) => c.node === "keyword" || c.node === "reduceCost") : undefined;
+    if (stray) return `${stray.node} は、affect の後ろには書けない (affect の無い常在型能力に書く)`;
+    return null;
+  }
+  if (ab.kind !== "triggered") return null;
   if (ab.body[0].node !== "when") return "誘発型能力の最初のノードは when にする (誘発のきっかけ)";
   if (ab.body.slice(1).some((c) => c.node === "when")) return "when は誘発型能力の最初のノードだけに書ける";
   return null;

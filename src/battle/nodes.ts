@@ -1,6 +1,7 @@
+import { characteristics } from "./continuous";
 import { RunCtx, Value } from "./node";
 import { defineCondition, defineNode, getNode } from "./registry";
-import { Game, GameCard, Perm, keywordsOf, playersOf, untapPerm } from "./state";
+import { Game, GameCard, Perm, playersOf, untapPerm } from "./state";
 
 // 実装済みの基本ノード。打ち消しは「対象」+「打ち消す」の組み合わせで、カードごとの違いは対象の条件 (引数) だけ
 
@@ -31,8 +32,8 @@ const filterParams = {
   attacking: { type: "boolean" as const },
   tapped: { type: "boolean" as const },
 };
-function matches(ctx: RunCtx, a: Record<string, Value>, hit: { card: GameCard; controller: string }): boolean {
-  const line = hit.card.typeLine.toLowerCase();
+function matches(ctx: RunCtx, a: Record<string, Value>, hit: { card: GameCard; controller: string }, typeLine = hit.card.typeLine): boolean {
+  const line = typeLine.toLowerCase();
   if (typeof a.type === "string" && !line.includes(a.type.toLowerCase())) return false;
   if (typeof a.notType === "string" && line.includes(a.notType.toLowerCase())) return false;
   if (typeof a.mv === "number" && hit.card.mv !== a.mv) return false;
@@ -79,9 +80,11 @@ export function registerBuiltinNodes(): void {
         if (a.zone === "player" && a.kind === "player") return g.players.includes(id); // プレイヤーは型・マナ総量で絞らない
         // zone と kind の組み合わせは stack+spell / battlefield+permanent だけ。それ以外は対象無し (スタックの起動型能力は呪文ではない)
         const hit = a.zone === "stack" && a.kind === "spell" ? g.stack.find((s) => s.id === id && !s.ability) : a.zone === "battlefield" && a.kind === "permanent" ? g.battlefield.find((p) => p.id === id) : undefined;
-        if (!hit || !matches(ctx, a, hit)) return false;
+        if (!hit) return false;
+        const now = a.zone === "battlefield" ? characteristics(g, hit as Perm, ctx.rules) : undefined; // 継続効果をふまえた、いまの型・キーワード
+        if (!matches(ctx, a, hit, now?.typeLine)) return false;
         // 呪禁: 相手のコントロールする呪文や能力の対象にならない
-        return !(a.zone === "battlefield" && keywordsOf(hit as Perm).includes("hexproof") && hit.controller !== ctx.item.controller);
+        return !(now && now.keywords.includes("hexproof") && hit.controller !== ctx.item.controller);
       };
       const ok = list.filter(legal);
       if (strict ? ok.length !== list.length : list.length > 0 && !ok.length) return {}; // 解決時は、残った合法な対象にだけ効く。全部が不正なら、解決しない
@@ -103,7 +106,7 @@ export function registerBuiltinNodes(): void {
     run: (ctx, a): Record<string, Value> => {
       const g = ctx.game;
       const all = a.zone === "stack" && a.kind === "spell" ? g.stack.filter((s) => !s.ability) : a.zone === "battlefield" && a.kind === "permanent" ? g.battlefield : [];
-      return { id: all.filter((x) => matches(ctx, a, x)).map((x) => x.id).join(",") };
+      return { id: all.filter((x) => matches(ctx, a, x, a.zone === "battlefield" ? characteristics(g, x as Perm, ctx.rules).typeLine : undefined)).map((x) => x.id).join(",") };
     },
   });
 
@@ -342,6 +345,60 @@ export function registerBuiltinNodes(): void {
     only: ["static"],
     run: (): Record<string, Value> => ({}),
   });
+  // 継続効果 (常在型能力・装備・オーラ): 常在型能力の最初に affect を書き、その後ろに効果のノードを並べる。エンジン (continuous.ts) が、レイヤーの順に計算する。
+  // 宣言のノードなので、if= は付けられない。reduceCost は affect が要らない
+  const cont = { declaration: true as const, only: ["static" as const], outputs: {}, run: (): Record<string, Value> => ({}) };
+  defineNode({
+    id: "affect",
+    title: "及ぶ先",
+    summary: "継続効果の常在型能力の最初に書く、効果が及ぶ先。who=attached(このパーマネントが付いているもの。装備・オーラ) / self(このパーマネント自身) / yours(自分のパーマネント) / all(すべて)。type・notType で型を絞る",
+    params: { who: { type: "string", required: true, choices: ["attached", "self", "yours", "all"] }, type: { type: "string" }, notType: { type: "string" } },
+    ...cont,
+  });
+  defineNode({ id: "staticModify", title: "修整(継続)", summary: "及ぶ先が、+power/+toughness の修整を受ける(レイヤー7)", params: { power: { type: "number", required: true }, toughness: { type: "number", required: true } }, ...cont });
+  defineNode({ id: "staticGrant", title: "キーワードを与える(継続)", summary: "及ぶ先が、キーワード能力を持つ(レイヤー6)。prowess を与えると、果敢として働く", params: { keyword: { type: "string", required: true, choices: KEYWORDS } }, ...cont });
+  defineNode({ id: "loseAbilities", title: "すべての能力を失う", summary: "及ぶ先が、すべての能力を失う(誘発型・起動型・常在型・キーワード。レイヤー6)", params: {}, ...cont });
+  defineNode({ id: "setBaseStats", title: "基本のパワー・タフネス", summary: "及ぶ先の基本のパワー・タフネスを power/toughness にする(レイヤー7b。カウンターや修整は、そのあとで足される)", params: { power: { type: "number", required: true }, toughness: { type: "number", required: true } }, ...cont });
+  defineNode({ id: "setTypes", title: "型行を変える", summary: "及ぶ先の型行を types にする(例: \"Creature — Citizen\"。レイヤー4)", params: { types: { type: "string", required: true } }, ...cont });
+  defineNode({ id: "setColors", title: "色を変える", summary: "及ぶ先の色を colors にする(空白区切り。例: \"G W\"。レイヤー5)", params: { colors: { type: "string", required: true } }, ...cont });
+  defineNode({ id: "setName", title: "名前を変える", summary: "及ぶ先の名前を name にする(レイヤー4。表示用)", params: { name: { type: "string", required: true } }, ...cont });
+  defineNode({ id: "extraTriggers", title: "誘発の追加", summary: "及ぶ先の誘発型能力が、追加で amount 回誘発する", params: { amount: { type: "number", required: true, min: 1 } }, ...cont });
+  defineNode({
+    id: "reduceCost",
+    title: "コスト軽減",
+    summary: "呪文のコストを amount 減らす(マナ総量から引く)。who=you(このパーマネントのコントローラーの呪文。既定) / opponents / all。type・notType で呪文の型を絞る。affect は要らない",
+    params: { amount: { type: "number", required: true, min: 1 }, who: { type: "string", choices: ["you", "opponents", "all"] }, type: { type: "string" }, notType: { type: "string" } },
+    ...cont,
+  });
+  // 起動のタイミング (装備など): sorcery=true なら、自分のメインフェイズで、スタックが空のときだけ起動できる
+  defineNode({
+    id: "timing",
+    title: "起動のタイミング",
+    summary: "起動型能力の起動のタイミングの制限(能力の最初に書く)。sorcery=true なら、ソーサリーのタイミングだけ(装備など)",
+    params: { sorcery: { type: "boolean", required: true } },
+    declaration: true,
+    only: ["activated"],
+    outputs: {},
+    run: (): Record<string, Value> => ({}),
+  });
+  // 付ける。この能力の発生源 (装備品・オーラ) を、対象のパーマネントに付ける
+  defineNode({
+    id: "attach",
+    title: "付ける",
+    summary: "この能力の発生源(装備品・オーラ)を、対象のパーマネントに付ける。オーラは、戦場に出てから付く",
+    params: { target: { type: "ref", required: true } },
+    outputs: {},
+    run: (ctx, a): Record<string, Value> => {
+      const src = ctx.game.battlefield.find((p) => p.id === ctx.item.source);
+      const to = ctx.game.battlefield.find((p) => p.id === idList(a.target)[0]);
+      if (src && to) {
+        src.attachedTo = to.id;
+        ctx.game.log.push(`${src.card.name} を ${to.card.name} に付けた`);
+      }
+      return {};
+    },
+  });
+
   // このパーマネント自身 (誘発型・起動型能力の発生源)
   defineNode({
     id: "self",

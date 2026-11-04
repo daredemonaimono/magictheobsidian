@@ -14,6 +14,7 @@ export interface GameCard {
   power?: number; // クリーチャーのパワー・タフネス・キーワード (もとの値)
   toughness?: number;
   keywords?: string[];
+  colors?: string[]; // 色 (W U B R G)
 }
 export interface StackItem {
   id: string;
@@ -40,6 +41,7 @@ export interface Perm {
   tapped?: boolean;
   attacking?: boolean;
   mods?: Mod[];
+  attachedTo?: string; // 装備品・オーラが付いているパーマネントの id
   counters?: Record<string, number>; // "+1/+1" (パワー・タフネスに足される) / "stun" (麻痺: アンタップのかわりに1つ取り除く)
 }
 
@@ -50,6 +52,7 @@ export interface Decider {
   discard?(g: Game, p: PlayerId, n: number): GameCard[]; // 捨てるカード
   pay?(g: Game, p: PlayerId, n: number): boolean; // 「支払わないかぎり」を払うか
   choose?(g: Game, p: PlayerId, from: GameCard[], n: number): GameCard[]; // 選ぶカード (look / choose)
+  target?(g: Game, item: StackItem, call: NodeCall, legal: string[]): string[]; // 誘発型能力の対象 (誘発時に選ぶ。既定は合法な対象の先頭から)
 }
 export interface Game {
   players: PlayerId[];
@@ -63,6 +66,7 @@ export interface Game {
   battlefield: Perm[];
   mana: Record<PlayerId, number>; // 使えるマナの数 (色はまだ区別しない)
   decide?: Decider;
+  payManaCosts?: boolean; // 真なら、呪文を唱えるとき、カード自体のマナコスト (マナ総量 − 軽減) を払う。shortcut: 対戦の画面ができるまでは偽 (色は区別しない)
   stack: StackItem[]; // 末尾が一番上
   log: string[];
   serial: number; // 起動型・誘発型能力の id を作るための通し番号
@@ -92,7 +96,8 @@ export function statsOf(p: Perm): { power: number; toughness: number } | null {
 }
 
 // いまのキーワード (もとのもの + 得たもの)。表記ゆれ (Scryfall の "First strike" と、こちらの "firstStrike") をそろえて、小文字・空白なしで返す
-const norm = (k: string) => k.toLowerCase().replace(/\s+/g, "");
+export const normKeyword = (k: string): string => k.toLowerCase().replace(/\s+/g, "");
+const norm = normKeyword;
 export const keywordsOf = (p: Perm): string[] => [...new Set([...(p.card.keywords ?? []), ...(p.mods ?? []).flatMap((m) => (m.keyword ? [m.keyword] : []))].map(norm))];
 
 // アンタップする。麻痺カウンターがあれば、アンタップのかわりに1つ取り除く (置換効果)

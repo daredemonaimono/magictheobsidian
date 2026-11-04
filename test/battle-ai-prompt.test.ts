@@ -69,3 +69,12 @@ assert.ok(buildPrompt("Negate", "x").system.includes("foresee"));
   const sys = buildPrompt("Brineborn Cutthroat", "x").system;
   for (const w of ["## 誘発型能力", "when event=", "self", "addCounter", "keyword name=", "enters", "leaves", "## 常在型能力"]) assert.ok(sys.includes(w), `system に ${w}`);
 }
+
+// 第4弾: 継続効果 (affect と効果のノード)・装備とオーラ (attach / timing)・コスト軽減の書き方を載せる
+{
+  resetRegistry();
+  registerBuiltinNodes();
+  const sys = buildPrompt("Illvoi Light Jammer", "x").system;
+  for (const w of ["affect who=attached", "staticModify", "staticGrant", "loseAbilities", "setBaseStats", "attach", "timing sorcery=true", "reduceCost", "extraTriggers", "Aura"]) assert.ok(sys.includes(w), `system に ${w}`);
+  assert.ok(!sys.includes("誘発型能力は、誘発したときに対象を選べない"), "誘発時の対象は、いまは自動で選ばれる");
+}

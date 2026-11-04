@@ -1,4 +1,4 @@
-import type { Game, StackItem } from "./state";
+import type { Game, RuleBook, StackItem } from "./state";
 
 // 対戦の核: ノード (能力の部品) の型。NodeDef 1つが唯一の元データで、検証・実行・一覧はここから作る。
 // カード専用のノードは作らない。ノードはそれ以上分けられないパーツだけ
@@ -30,6 +30,7 @@ export type ParamDef = { type: "string" | "number" | "boolean" | "ref"; required
 // ノードを実行するときに渡すもの。vars は、前のノードの as の名前 → 出力
 export interface RunCtx {
   game: Game;
+  rules: RuleBook; // 継続効果 (装備・オーラ・常在型能力) を見るために要る
   item: StackItem; // いま解決している (唱えている) 呪文
   vars: Record<string, Value>;
   call: NodeCall; // 実行中の呼び出し (対象のノードが、自分の as を知るのに使う)

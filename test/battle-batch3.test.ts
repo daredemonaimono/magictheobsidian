@@ -3,7 +3,8 @@ import { RuleError, activateAbility, canCastNow, castSpell, passPriority, playLa
 import { Ability, NodeCall } from "../src/battle/node";
 import { registerBuiltinNodes } from "../src/battle/nodes";
 import { checkCall, resetRegistry } from "../src/battle/registry";
-import { Game, GameCard, Perm, RuleBook, createGame, keywordsOf, statsOf } from "../src/battle/state";
+import { characteristics } from "../src/battle/continuous";
+import { Game, GameCard, Perm, RuleBook, createGame, statsOf } from "../src/battle/state";
 
 resetRegistry();
 registerBuiltinNodes();
@@ -203,7 +204,7 @@ const adept: Ability[] = [trig(call("when", { event: "cast", who: "you", notType
   assert.ok(canCastNow(yes.g, "B", yes.g.hands["B"][0], yes.book), "瞬速を宣言していれば、相手のターンにも唱えられる");
   castSpell(yes.g, "B", "Merfolk", {}, yes.book);
   drain(yes.g, yes.book);
-  assert.deepEqual(keywordsOf(yes.g.battlefield[0]).sort(), ["flash", "hexproof"], "戦場に出ると、宣言したキーワードを得る");
+  assert.deepEqual(characteristics(yes.g, yes.g.battlefield[0], yes.book).keywords.sort(), ["flash", "hexproof"], "戦場に出ると、宣言したキーワードを持つ");
   const no = merfolk(false);
   no.g.priority = "B";
   assert.ok(!canCastNow(no.g, "B", no.g.hands["B"][0], no.book));
@@ -236,16 +237,16 @@ const adept: Ability[] = [trig(call("when", { event: "cast", who: "you", notType
   assert.ok(bad.reasons[0].includes("最初のノード"), bad.reasons[0]);
 }
 
-// 対象を取る誘発型能力 (誘発時に対象を選べない) は、対象が無いので解決しない。残りの効果だけが実行されない
+// 対象を取る誘発型能力は、合法な対象が無ければ積まれない (残りの効果も実行されない)
 {
-  const rule = rulesOf({ Gob: [trig(call("when", { event: "enters", self: true }), call("target", { zone: "battlefield", kind: "permanent", type: "creature" }, { as: "t" }), call("tap", { target: { ref: "t" } }), call("draw", { player: "you", count: 1 }))] });
+  const rule = rulesOf({ Gob: [trig(call("when", { event: "enters", self: true }), call("target", { zone: "battlefield", kind: "permanent", type: "creature", controller: "opponents" }, { as: "t" }), call("tap", { target: { ref: "t" } }), call("draw", { player: "you", count: 1 }))] });
   const g = createGame(["A", "B"]);
   g.hands["A"].push(card("Gob", "Creature — Goblin", "A", { power: 1, toughness: 1 }));
   g.libraries["A"] = [card("l1")];
   castSpell(g, "A", "Gob", {}, rule);
   drain(g, rule);
   assert.deepEqual(ids(g.hands["A"]), [], "対象が無いので、引く効果も実行されない");
-  assert.ok(g.log.some((l) => l.includes("対象が無くなった")));
+  assert.equal(g.stack.length, 0);
 }
 
 // 誘発型能力が積まれても、呪文を唱えた本人が優先権を持つ (積まれた誘発に、先に応答できる)
