@@ -76,3 +76,10 @@ assert.equal(onlyNote.reasons[0], NO_NODES);
 assert.ok(onlyNote.reasons.includes("未対応: Target player draws three cards."));
 assert.equal(cardStatus("X", `---\ncard: "[[X]]"\n---\n`).reasons[0], NO_NODES, "能力も未対応も無い md も未設定");
 assert.equal(cardStatus("Negate", SAMPLE_RULES["Negate"] + "\n## 未対応\n\n- 例\n").status, "partial", "ノードがあれば、これまでどおり partial");
+
+// 置き場所の誤り (cost を呪文能力に) は、組めていない (unbuilt) として行番号つきで出す
+{
+  const misplaced = cardStatus("X", `---\ncard: "[[X]]"\n---\n\n## 呪文能力\n\n- cost mana=1\n`);
+  assert.equal(misplaced.status, "unbuilt");
+  assert.ok(misplaced.reasons[0].includes("7 行目") && misplaced.reasons[0].includes("起動型能力だけ"), misplaced.reasons[0]);
+}

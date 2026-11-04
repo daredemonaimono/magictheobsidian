@@ -45,3 +45,11 @@ assert.ok(buildPrompt("Negate", "x").system.includes("foresee"));
   const sys = buildPrompt("Into the Roil", "x").system;
   for (const w of ["if=", "kicked", "teamwork", "if=!", "代わりに"]) assert.ok(sys.includes(w), `system に ${w}`);
 }
+
+// コスト: 起動型能力の cost と、呪文の追加コスト (additionalCost) の書き方を載せる
+{
+  resetRegistry();
+  registerBuiltinNodes();
+  const sys = buildPrompt("Island", "x").system;
+  for (const w of ["additionalCost", "addMana", "## 起動型能力", "cost mana=", "tapCreatures"]) assert.ok(sys.includes(w), `system に ${w}`);
+}

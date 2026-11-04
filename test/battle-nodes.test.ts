@@ -2,7 +2,7 @@ import assert from "node:assert";
 import { castSpell, passPriority } from "../src/battle/engine";
 import { NodeCall } from "../src/battle/node";
 import { registerBuiltinNodes } from "../src/battle/nodes";
-import { resetRegistry } from "../src/battle/registry";
+import { checkCall, resetRegistry } from "../src/battle/registry";
 import { Game, GameCard, RuleBook, createGame, keywordsOf, statsOf } from "../src/battle/state";
 
 resetRegistry();
@@ -246,4 +246,18 @@ const recall = [call("target", { zone: "player", kind: "player" }, "t"), call("d
   g.battlefield.push(printed);
   g.priority = "B";
   assert.throws(() => castSpell(g, "B", "poke", { t: "p" }, bookOf({ poke: [call("target", { zone: "battlefield", kind: "permanent" }, "t")] })), "印刷された呪禁も、相手の対象を止める");
+}
+
+// 負の値は書けない: マナが増えたり、負の枚数を引いたりしないように (ノード設定画面の数値欄は、負の数も入力できる)
+{
+  const neg = (node: string, args: NodeCall["args"]) => checkCall(call(node, args));
+  assert.ok(neg("cost", { mana: -2 })?.includes("小さすぎる"));
+  assert.ok(neg("cost", { tapCreatures: -1 })?.includes("小さすぎる"));
+  assert.ok(neg("additionalCost", { flag: "kicked", mana: -1 })?.includes("小さすぎる"));
+  assert.ok(neg("addMana", { amount: -5 })?.includes("小さすぎる"));
+  assert.ok(neg("draw", { player: "you", count: -1 })?.includes("小さすぎる"));
+  assert.ok(neg("discard", { player: "you", count: -1 })?.includes("小さすぎる"));
+  assert.ok(neg("counter", { target: { ref: "t" }, unlessPay: -3 })?.includes("小さすぎる"));
+  assert.equal(neg("cost", { mana: 0 }), null, "0 は書ける");
+  assert.equal(neg("modify", { target: { ref: "t" }, power: -1, toughness: -1, duration: "endOfTurn" }), null, "修整の負は書ける");
 }

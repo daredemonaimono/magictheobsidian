@@ -1,4 +1,4 @@
-import { CardRule, CastRecord } from "./node";
+import { CardRule, CastRecord, NodeCall } from "./node";
 
 // ゲームの状態。プレイヤーは2人固定にせず、リストと「相手」という関係で持つ (実装は1対1だけ)
 export type PlayerId = string;
@@ -21,6 +21,8 @@ export interface StackItem {
   controller: PlayerId;
   targets: Record<string, string>; // ノードの as → 対象の StackItem.id
   cast: CastRecord;
+  body?: NodeCall[]; // 起動型能力のとき、その効果 (呪文のときは、カードの呪文能力)
+  ability?: boolean; // 起動型能力 (解決しても、カードは墓地に行かない)
 }
 // 修整とキーワードの変更。持続「ターン終了時まで」はターンの終わりに消え、forever は残る
 export interface Mod {
@@ -57,6 +59,7 @@ export interface Game {
   decide?: Decider;
   stack: StackItem[]; // 末尾が一番上
   log: string[];
+  serial: number; // 起動型能力の id を作るための通し番号
 }
 export interface RuleBook {
   get(card: string): CardRule | undefined;
@@ -64,7 +67,7 @@ export interface RuleBook {
 
 export function createGame(players: PlayerId[]): Game {
   const each = <T>(f: () => T) => Object.fromEntries(players.map((p) => [p, f()])) as Record<PlayerId, T>;
-  return { players, active: players[0], step: "main1", priority: players[0], passes: [], hands: each<GameCard[]>(() => []), libraries: each<GameCard[]>(() => []), graveyards: each<GameCard[]>(() => []), battlefield: [], mana: each(() => 0), stack: [], log: [] };
+  return { players, active: players[0], step: "main1", priority: players[0], passes: [], hands: each<GameCard[]>(() => []), libraries: each<GameCard[]>(() => []), graveyards: each<GameCard[]>(() => []), battlefield: [], mana: each(() => 0), stack: [], log: [], serial: 0 };
 }
 
 export const opponentsOf = (g: Game, p: PlayerId): PlayerId[] => g.players.filter((x) => x !== p);

@@ -33,7 +33,8 @@ export function registerBuiltinNodes(): void {
       const id = ctx.item.targets[ctx.call.as ?? ""];
       if (a.zone === "player" && a.kind === "player") return ctx.game.players.includes(id) ? { id } : {}; // プレイヤーは型・マナ総量で絞らない
       // zone と kind の組み合わせは stack+spell / battlefield+permanent だけ。それ以外は対象無し
-      const hit = a.zone === "stack" && a.kind === "spell" ? ctx.game.stack.find((s) => s.id === id) : a.zone === "battlefield" && a.kind === "permanent" ? ctx.game.battlefield.find((p) => p.id === id) : undefined;
+      // (スタックの起動型能力は呪文ではないので、kind=spell には含めない)
+      const hit = a.zone === "stack" && a.kind === "spell" ? ctx.game.stack.find((s) => s.id === id && !s.ability) : a.zone === "battlefield" && a.kind === "permanent" ? ctx.game.battlefield.find((p) => p.id === id) : undefined;
       if (!hit) return {};
       const line = hit.card.typeLine.toLowerCase();
       if (typeof a.type === "string" && !line.includes(a.type.toLowerCase())) return {};
@@ -62,7 +63,7 @@ export function registerBuiltinNodes(): void {
     id: "draw",
     title: "引く",
     summary: "プレイヤーがカードを count 枚引く。player=you(呪文のコントローラー) / opponents(全相手) / target(target ノードで選んだプレイヤー。target=$名前 を渡す)",
-    params: { player: who, target: targetPlayer, count: { type: "number", required: true } },
+    params: { player: who, target: targetPlayer, count: { type: "number", required: true, min: 0 } },
     outputs: {},
     run: (ctx, a): Record<string, Value> => {
       const g = ctx.game;
@@ -85,7 +86,7 @@ export function registerBuiltinNodes(): void {
     id: "discard",
     title: "捨てる",
     summary: "プレイヤーが手札を count 枚捨てる。player=you / opponents / target(draw と同じ)",
-    params: { player: who, target: targetPlayer, count: { type: "number", required: true } },
+    params: { player: who, target: targetPlayer, count: { type: "number", required: true, min: 0 } },
     outputs: {},
     run: (ctx, a): Record<string, Value> => {
       const g = ctx.game;
@@ -159,12 +160,48 @@ export function registerBuiltinNodes(): void {
     },
   });
 
+  // コスト。起動型能力の最初に書く (cost) と、呪文を唱えるときに払ってもよい追加コスト (additionalCost: キッカー・チームワーク)。
+  // 払う処理は、能力を起動する・呪文を唱えるエンジン側が行う (ここは宣言)。マナの色はまだ区別しない
+  defineNode({
+    id: "cost",
+    title: "コスト",
+    summary: "起動型能力のコスト(能力の最初に書く)。mana=払うマナの数 / tap=このパーマネントをタップ / sacrifice=このパーマネントを生け贄に捧げる / tapCreatures=パワーの合計がこの値以上になるよう、自分のクリーチャーをタップ",
+    params: { mana: { type: "number", min: 0 }, tap: { type: "boolean" }, sacrifice: { type: "boolean" }, tapCreatures: { type: "number", min: 0 } },
+    outputs: {},
+    declaration: true,
+    only: ["activated"],
+    run: (): Record<string, Value> => ({}),
+  });
+  defineNode({
+    id: "additionalCost",
+    title: "追加コスト(任意)",
+    summary: "呪文を唱えるときに払ってもよい追加コスト(キッカー・チームワーク)。flag=kicked / teamwork。払って唱えると、if=<flag> のノードが実行される。mana=マナ / tapCreatures=パワーの合計がこの値以上になるよう、自分のクリーチャーをタップ",
+    params: { flag: { type: "string", required: true, choices: ["kicked", "teamwork"] }, mana: { type: "number", min: 0 }, tapCreatures: { type: "number", min: 0 } },
+    outputs: {},
+    declaration: true,
+    only: ["spell"],
+    run: (): Record<string, Value> => ({}),
+  });
+  // マナを加える。マナだけの起動型能力は、スタックを使わずに即座に解決する
+  defineNode({
+    id: "addMana",
+    title: "マナを加える",
+    summary: "コントローラーがマナを amount 点加える(色はまだ区別しない)",
+    params: { amount: { type: "number", required: true, min: 0 } },
+    outputs: {},
+    run: (ctx, a): Record<string, Value> => {
+      const p = ctx.item.controller;
+      ctx.game.mana[p] = (ctx.game.mana[p] ?? 0) + Number(a.amount);
+      return {};
+    },
+  });
+
   // 打ち消す。対象の呪文をスタックから取り除き、持ち主の墓地へ置く
   defineNode({
     id: "counter",
     title: "打ち消す",
     summary: "対象の呪文を打ち消す (スタックから取り除いて、持ち主の墓地へ)。unlessPay=N を付けると「そのコントローラーが N を支払わないかぎり」",
-    params: { target: { type: "ref", required: true }, unlessPay: { type: "number" } },
+    params: { target: { type: "ref", required: true }, unlessPay: { type: "number", min: 0 } },
     outputs: {},
     run: (ctx, a): Record<string, Value> => {
       const i =ctx.game.stack.findIndex((s) => s.id === a.target);

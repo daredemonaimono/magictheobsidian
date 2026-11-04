@@ -25,7 +25,7 @@ export interface CardRule {
   unsupported?: string[]; // ノードで表せない部分 (md の「## 未対応」。文章のまま)
 }
 
-export type ParamDef = { type: "string" | "number" | "boolean" | "ref"; required?: boolean; choices?: string[] };
+export type ParamDef = { type: "string" | "number" | "boolean" | "ref"; required?: boolean; choices?: string[]; min?: number };
 
 // ノードを実行するときに渡すもの。vars は、前のノードの as の名前 → 出力
 export interface RunCtx {
@@ -42,6 +42,8 @@ export interface NodeDef {
   params: Record<string, ParamDef>;
   outputs: Record<string, "id" | "number" | "boolean">; // 結果の受け渡し
   isTarget?: boolean; // 唱えるときに対象を選ぶノード
+  declaration?: boolean; // コストなどの宣言のノード (エンジンが読む。条件 if= は付けられない)
+  only?: AbilityKind[]; // 書ける能力の種類 (無ければどの能力にも書ける)
   run?: (ctx: RunCtx, args: Record<string, Value>) => Record<string, Value>; // 無ければ「未実装」
 }
 
@@ -50,6 +52,7 @@ export type Duration = { until: "endOfTurn" | "whileAttached" | "forever" };
 export interface CastRecord {
   kicked?: boolean;
   teamwork?: boolean;
+  tap?: string[]; // 追加コストでタップするクリーチャー (チームワーク)
   modes?: number[];
   extraCosts?: string[];
 }

@@ -294,7 +294,7 @@ export class RuleEditorView extends ItemView {
             cb.checked = v === true;
             cb.onchange = () => this.quiet(setArg(this.rule!, a, n, k, cb.checked));
           } else if (p.type === "number") {
-            const num = pr.createEl("input", { type: "number", value: typeof v === "number" ? String(v) : "", attr: { step: "1" } });
+            const num = pr.createEl("input", { type: "number", value: typeof v === "number" ? String(v) : "", attr: { step: "1", ...(p.min !== undefined ? { min: String(p.min) } : {}) } });
             num.onchange = () => this.quiet(setArg(this.rule!, a, n, k, num.value === "" ? undefined : Number(num.value)));
           } else {
             const txt = pr.createEl("input", { type: "text", value: typeof v === "string" ? v : "" });

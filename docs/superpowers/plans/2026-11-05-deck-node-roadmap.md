@@ -1,6 +1,6 @@
 # デッキ「Gentry Mono U」から見た、ノード追加のロードマップ
 
-設計書 5 節の「未実装のノードを順に実装する」の、順番表。デッキのカードを、いまのノード(`target` / `counter`(`unlessPay`)/ `draw` / `discard` / `bounce`)で組めるかを見て、足りないものを、足す順に並べた。
+設計書 5 節の「未実装のノードを順に実装する」の、順番表。デッキのカードを、その時点のノードで組めるかを見て、足りないものを、足す順に並べた。
 
 ## 現状(カード別)
 
@@ -8,14 +8,15 @@
 |---|---|---|
 | Negate / Essence Scatter / Spell Snare | ○ | — |
 | Ancestral Recall(単独のカード) | ○ | — |
-| Into the Roil | △ | キッカー(`if=kicked`) |
-| We Say Thee Nay! | △ | チームワーク(`if=teamwork`)と「代わりに」 |
-| Octopus Form | × | 自分のクリーチャーを対象(`controller`)、修整、呪禁を得る(持続:ターン終了時まで)、アンタップ |
+| Into the Roil | ○ | —(キッカーは `additionalCost`、実装済み) |
+| We Say Thee Nay! | ○ | —(チームワークは `additionalCost`、実装済み) |
+| Octopus Form | ○ | —(`controller`・`modify`・`grant`・`untap`、第1弾で実装済み) |
 | Amazing Acrobatics | × | 「以下から選ぶ(両方可)」、1〜2体を対象、タップ |
 | Confusticate and Bebother | × | 「以下から1つを選ぶ」 |
 | Accumulate Wisdom | × | 上から見る・選ぶ・底に置く、墓地の枚数の条件 |
 | Aetherize | × | 「すべての攻撃クリーチャー」(集合の選択) |
-| Island / Bender's Waterskin | × | マナ能力(起動型)、アンタップ・ステップの変更(常在型) |
+| Island | ○ | —(`cost tap` + `addMana`、実装済み。戦場に出す処理は第3弾) |
+| Bender's Waterskin | △ | アンタップ・ステップの変更(常在型) |
 | Brineborn Cutthroat / Elementalist Adept | × | 誘発型(呪文を唱えた時)、カウンター、果敢、瞬速 |
 | Cryogen Relic | × | 誘発型(出た時/離れた時)、起動型(生け贄)、麻痺カウンター |
 | Geist of Saint Thalia | × | 飛行、コスト軽減(常在型) |
@@ -32,8 +33,9 @@
    - `modify`(修整)と `grant`(キーワードを得る)に、持続「ターン終了時まで」。呪禁は、相手の対象を実際に止める。
    - → Into the Roil、We Say Thee Nay!、Octopus Form が組める。
 2. **第2弾**: モード選択(`choose`)、1〜2体の対象、集合の選択(`select`)、上から見る・選ぶ・底に置く。→ Confusticate、Amazing Acrobatics、Accumulate Wisdom、Aetherize。
-3. **第3弾**: 戦場に出る処理(クリーチャー・アーティファクトが戦場に置かれる)、誘発型の枠(イベント)、起動型(コスト・マナ)。→ Island、Waterskin、Cutthroat、Adept、Cryogen Relic。
-4. **第4弾**: 常在型(キーワード・コスト軽減・継続効果)、装備・オーラ、レイヤー。→ Geist、Light Jammer、Wizard's Staff、Witness Protection。
-5. **第5弾**: 忠誠度能力・トークン・紋章。→ Chandra、Jace。
+3. **コストの仕組み(実装済み)**: `cost` / `additionalCost` / `addMana`(置き場所の検査つき:`cost` は起動型能力だけ、`additionalCost` は呪文能力だけ。値は 0 以上)、起動型能力の起動(マナ能力は即座に、それ以外はスタック)。マナの色の区別と、カード自体のマナコストの支払いは、まだ。
+4. **第3弾**: 戦場に出る処理(クリーチャー・アーティファクト・土地が戦場に置かれる)、誘発型の枠(イベント)、麻痺カウンター・カウンターを置く。→ Island(戦場に出す)、Cutthroat、Adept、Cryogen Relic。
+5. **第4弾**: 常在型(キーワード・コスト軽減・継続効果)、装備・オーラ、レイヤー。→ Geist、Light Jammer、Wizard's Staff、Witness Protection。
+6. **第5弾**: 忠誠度能力・トークン・紋章。→ Chandra、Jace。
 
 準備済(Emeritus)は、ルールの正本を確認するまで扱わない。

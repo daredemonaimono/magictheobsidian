@@ -1,6 +1,6 @@
 import { CastRecord, NodeCall, RunCtx, Value } from "./node";
 import { checkCall, evalCondition, getNode } from "./registry";
-import { Game, GameCard, PlayerId, RuleBook, StackItem, Step } from "./state";
+import { Game, GameCard, Perm, PlayerId, RuleBook, StackItem, Step, statsOf } from "./state";
 
 // ステップ進行・優先権・スタック。画面なしで、テストから動かせる
 
@@ -23,7 +23,60 @@ function resolveArgs(call: NodeCall, vars: Record<string, Value>): Record<string
   return out;
 }
 
-// 唱える。手札にある・いま唱えられる・ルールがある・対象がすべて合法、のどれかが欠けると RuleError で、状態は変えない
+// 全ノードの検証 (checkCall) と、対象がすべて合法か。だめなら RuleError
+function validate(g: Game, item: StackItem, body: NodeCall[], name: string): void {
+  for (const call of body) {
+    const bad = checkCall(call);
+    if (bad) throw new RuleError(`${name}: ${bad}`);
+    const def = getNode(call.node)!;
+    if (!def.isTarget) continue;
+    if (!def.run!({ game: g, item, vars: {}, call }, resolveArgs(call, {})!).id) throw new RuleError(`合法な対象が無い: ${name} (${call.as ?? "?"})`);
+  }
+}
+
+// コスト (cost / additionalCost のノードから集める)。マナの色は区別しない。shortcut: 色・種類ごとのマナは、マナの仕組みを作るときに
+interface CostSpec {
+  mana: number;
+  tap: boolean;
+  sacrifice: boolean;
+  tapCreatures: number;
+}
+const costOf = (calls: NodeCall[]): CostSpec => ({
+  mana: calls.reduce((a, c) => a + Number(c.args.mana ?? 0), 0),
+  tap: calls.some((c) => c.args.tap === true),
+  sacrifice: calls.some((c) => c.args.sacrifice === true),
+  tapCreatures: calls.reduce((a, c) => a + Number(c.args.tapCreatures ?? 0), 0),
+});
+
+// 払えるか。払えなければ理由 (状態は変えない)。tapIds = パワーの合計のためにタップするクリーチャー
+function costProblem(g: Game, p: PlayerId, cost: CostSpec, source: Perm | undefined, tapIds: string[]): string | null {
+  if ((g.mana[p] ?? 0) < cost.mana) return `マナが足りない (${cost.mana} 要る)`;
+  if (cost.tap && (!source || source.tapped)) return "すでにタップされていて、タップできない";
+  if (cost.tapCreatures > 0) {
+    if (new Set(tapIds).size !== tapIds.length) return "同じクリーチャーを2回選んでいる";
+    let power = 0;
+    for (const id of tapIds) {
+      const c = g.battlefield.find((x) => x.id === id);
+      if (!c || c.controller !== p || c.tapped || !/\bCreature\b/.test(c.card.typeLine) || (source && c.id === source.id && cost.tap)) return `タップできるクリーチャーではない: ${id}`;
+      power += statsOf(c)?.power ?? 0;
+    }
+    if (power < cost.tapCreatures) return `タップしたクリーチャーのパワーの合計が足りない (${power} / ${cost.tapCreatures})`;
+  }
+  return null;
+}
+
+function payCost(g: Game, p: PlayerId, cost: CostSpec, source: Perm | undefined, tapIds: string[]): void {
+  g.mana[p] = (g.mana[p] ?? 0) - cost.mana;
+  if (cost.tap && source) source.tapped = true;
+  if (cost.tapCreatures > 0) for (const id of tapIds) g.battlefield.find((x) => x.id === id)!.tapped = true;
+  if (cost.sacrifice && source) {
+    g.battlefield = g.battlefield.filter((x) => x !== source);
+    g.graveyards[source.card.owner].push(source.card);
+  }
+}
+
+// 唱える。手札にある・いま唱えられる・ルールがある・追加コストを払える・対象がすべて合法、のどれかが欠けると RuleError で、状態は変えない。
+// cast = 唱えるときの選択 (kicked / teamwork = 追加コストを払う、tap = チームワークでタップするクリーチャー)。宣言 (additionalCost) の無いフラグは選べない
 export function castSpell(g: Game, p: PlayerId, cardId: string, targets: Record<string, string>, rules: RuleBook, cast: CastRecord = {}): void {
   const card = g.hands[p]?.find((c) => c.id === cardId);
   if (!card) throw new RuleError(`手札に無い: ${cardId}`);
@@ -31,15 +84,44 @@ export function castSpell(g: Game, p: PlayerId, cardId: string, targets: Record<
   const body = spellBody(rules, card);
   if (!body) throw new RuleError(`呪文能力のルールが無い: ${card.name}`);
   const item: StackItem = { id: card.id, card, controller: p, targets, cast };
-  for (const call of body) {
-    const bad = checkCall(call);
-    if (bad) throw new RuleError(`${card.name}: ${bad}`);
-    const def = getNode(call.node)!;
-    if (!def.isTarget) continue;
-    const args = resolveArgs(call, {})!;
-    if (!def.run!({ game: g, item, vars: {}, call }, args).id) throw new RuleError(`合法な対象が無い: ${card.name} (${call.as ?? "?"})`);
-  }
+  validate(g, item, body, card.name);
+  const chosen = (["kicked", "teamwork"] as const).filter((f) => cast[f]);
+  const decls = chosen.flatMap((f) => {
+    const d = body.filter((c) => c.node === "additionalCost" && c.args.flag === f);
+    if (!d.length) throw new RuleError(`${card.name}: ${f} の追加コストが書かれていない`);
+    return d;
+  });
+  const cost = costOf(decls);
+  const why = costProblem(g, p, cost, undefined, cast.tap ?? []);
+  if (why) throw new RuleError(`${card.name}: ${why}`);
+  payCost(g, p, cost, undefined, cast.tap ?? []);
   g.hands[p] = g.hands[p].filter((c) => c !== card);
+  g.stack.push(item);
+  g.priority = p;
+  g.passes = [];
+}
+
+// 戦場のパーマネントの起動型能力を起動する (index = そのカードの起動型能力の何番目か)。コストを払い、マナだけの能力 (addMana のみ) は即座に実行、
+// それ以外はスタックに積む。優先権が必要。払えない・対象が不正なら RuleError で、状態は変えない
+export function activateAbility(g: Game, p: PlayerId, permId: string, index: number, targets: Record<string, string>, rules: RuleBook, tapIds: string[] = []): void {
+  const perm = g.battlefield.find((x) => x.id === permId);
+  if (!perm) throw new RuleError(`戦場に無い: ${permId}`);
+  if (perm.controller !== p) throw new RuleError(`${p} のコントロールするパーマネントではない: ${permId}`);
+  if (g.priority !== p) throw new RuleError(`${p} は優先権を持っていない`);
+  const ab = rules.get(perm.card.name)?.abilities.filter((a) => a.kind === "activated")[index];
+  if (!ab) throw new RuleError(`起動型能力が無い: ${perm.card.name} (${index} 番目)`);
+  const effects = ab.body.filter((c) => c.node !== "cost");
+  const item: StackItem = { id: `${perm.id}#${g.serial + 1}`, card: perm.card, controller: p, targets, cast: {}, body: effects, ability: true };
+  validate(g, item, ab.body, perm.card.name);
+  const cost = costOf(ab.body.filter((c) => c.node === "cost"));
+  const why = costProblem(g, p, cost, perm, tapIds);
+  if (why) throw new RuleError(`${perm.card.name}: ${why}`);
+  payCost(g, p, cost, perm, tapIds);
+  g.serial++;
+  if (effects.length && effects.every((c) => c.node === "addMana")) {
+    for (const call of effects) getNode(call.node)!.run!({ game: g, item, vars: {}, call }, resolveArgs(call, {})!); // マナ能力はスタックを使わない
+    return;
+  }
   g.stack.push(item);
   g.priority = p;
   g.passes = [];
@@ -49,7 +131,7 @@ export function castSpell(g: Game, p: PlayerId, cardId: string, targets: Record<
 export function resolveTop(g: Game, rules: RuleBook): void {
   const item = g.stack.pop();
   if (!item) return;
-  const body = spellBody(rules, item.card) ?? [];
+  const body = item.body ?? spellBody(rules, item.card) ?? [];
   const ctx = (call: NodeCall, vars: Record<string, Value>): RunCtx => ({ game: g, item, vars, call });
   const targets = body.filter((c) => getNode(c.node)?.isTarget);
   const alive = targets.some((c) => getNode(c.node)!.run!(ctx(c, {}), resolveArgs(c, {})!).id !== undefined);
@@ -69,7 +151,7 @@ export function resolveTop(g: Game, rules: RuleBook): void {
       if (call.as && Object.keys(out).length) vars[call.as] = Object.values(out)[0];
     }
   }
-  g.graveyards[item.card.owner].push(item.card);
+  if (!item.ability) g.graveyards[item.card.owner].push(item.card); // 起動型能力は、解決してもカードは墓地に行かない
 }
 
 function advanceStep(g: Game): void {

@@ -52,11 +52,12 @@ card: "[[X]]"
 }
 
 // 実行: キッカー (Into the Roil): 戦場の非土地パーマネントを手札に戻し、キッカーされていたら 1 枚引く
-const roil = [call("target", { zone: "battlefield", kind: "permanent", notType: "land" }, { as: "t" }), call("bounce", { target: { ref: "t" } }), call("draw", { player: "you", count: 1 }, { if: "kicked" })];
+const roil = [call("additionalCost", { flag: "kicked", mana: 2 }), call("target", { zone: "battlefield", kind: "permanent", notType: "land" }, { as: "t" }), call("bounce", { target: { ref: "t" } }), call("draw", { player: "you", count: 1 }, { if: "kicked" })];
 const castRoil = (cast: CastRecord) => {
   const g: Game = createGame(["A", "B"]);
   g.hands["A"].push(card("roil"));
   g.libraries["A"] = [card("top")];
+  g.mana["A"] = 2;
   g.battlefield.push({ id: "bear", card: card("bear", "Creature — Bear", "B"), controller: "B" });
   const book = bookOf({ roil });
   castSpell(g, "A", "roil", { t: "bear" }, book, cast);
@@ -75,6 +76,7 @@ const castRoil = (cast: CastRecord) => {
 
 // 実行: チームワーク (We Say Thee Nay!): 払わないかぎり打ち消す。チームワークなら 4、そうでなければ 2 (「代わりに」は、条件と否定のノードを並べて表す)
 const nay = [
+  call("additionalCost", { flag: "teamwork", tapCreatures: 2 }),
   call("target", { zone: "stack", kind: "spell" }, { as: "t" }),
   call("counter", { target: { ref: "t" }, unlessPay: 4 }, { if: "teamwork" }),
   call("counter", { target: { ref: "t" }, unlessPay: 2 }, { if: "!teamwork" }),
@@ -84,10 +86,11 @@ const duel = (mana: number, cast: CastRecord) => {
   g.hands["A"].push(card("bolt"));
   g.hands["B"].push(card("nay", "Instant", "B"));
   g.mana["A"] = mana;
+  g.battlefield.push({ id: "c1", card: { ...card("c1", "Creature — Bear", "B"), power: 1, toughness: 1 }, controller: "B" }, { id: "c2", card: { ...card("c2", "Creature — Bear", "B"), power: 1, toughness: 1 }, controller: "B" });
   const book = bookOf({ bolt: [], nay });
   castSpell(g, "A", "bolt", {}, book);
   passPriority(g, "A", book);
-  castSpell(g, "B", "nay", { t: "bolt" }, book, cast);
+  castSpell(g, "B", "nay", { t: "bolt" }, book, cast.teamwork ? { ...cast, tap: ["c1", "c2"] } : cast);
   passPriority(g, "B", book);
   passPriority(g, "A", book);
   return g;

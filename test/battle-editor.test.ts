@@ -1,5 +1,5 @@
 import assert from "node:assert";
-import { addAbility, addNode, blankRule, connect, moveNode, problems, removeAbility, removeNode, setArg, setAs, setUnsupported } from "../src/battle/editor";
+import { addAbility, addNode, blankRule, connect, moveNode, problems, removeAbility, removeNode, setArg, setAs, setIf, setUnsupported } from "../src/battle/editor";
 import { CardRule } from "../src/battle/node";
 import { registerBuiltinNodes } from "../src/battle/nodes";
 import { resetRegistry } from "../src/battle/registry";
@@ -115,4 +115,18 @@ const msgs = (r: CardRule) => problems(r).map((p) => p.message);
   r = setArg(r, 0, 0, "count", 1.5);
   assert.ok(msgs(r).some((m) => m.includes("整数")));
   assert.deepEqual(problems(setArg(r, 0, 0, "count", 2)), []);
+}
+
+// ノードの置き場所: cost は起動型能力だけ、additionalCost は呪文能力だけ。宣言のノード (cost / additionalCost) には条件を付けられない
+{
+  let r = addNode(blankRule("X"), 0, "cost");
+  assert.ok(msgs(r).some((m) => m.includes("起動型能力だけ")), "呪文能力の中の cost");
+  r = addAbility(blankRule("X"), "activated");
+  r = removeAbility(r, 0);
+  r = addNode(r, 0, "additionalCost");
+  assert.ok(msgs(r).some((m) => m.includes("呪文能力だけ")), "起動型能力の中の additionalCost");
+  const ok = addNode(addAbility(removeAbility(blankRule("X"), 0), "activated"), 0, "cost");
+  assert.deepEqual(problems(ok), [], "起動型能力の cost は問題なし");
+  const withIf = setIf(ok, 0, 0, "kicked");
+  assert.ok(msgs(withIf).some((m) => m.includes("条件を付けられない")));
 }
