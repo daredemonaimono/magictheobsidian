@@ -62,3 +62,10 @@ const bad = SAMPLE_RULES["Negate"].replace("counter target=$t", "teleport who=me
   );
   assert.equal(n, 1);
 }
+
+// 裁定後のテキストは、最初の依頼に載る
+{
+  const s2 = seq(fence(SAMPLE_RULES["Negate"]));
+  await buildRule({ card: "Negate", oracle: "old text", ruling: "new ruling text", ask: s2.ask });
+  assert.ok(s2.calls[0][0].content.includes("new ruling text") && s2.calls[0][0].content.includes("old text"));
+}

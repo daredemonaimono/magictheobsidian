@@ -1,6 +1,6 @@
 // ルールの履歴: Rules/_backup/<カード名>/<日時>-<種類>.md に、書き換わる前の内容を、版ごとに1ファイルで残す
-export type Kind = "ai" | "edit" | "restore"; // AI が作り替える前 / 手で直す前 / 版を戻す前
-export const KIND_LABEL: Record<Kind, string> = { ai: "AI が作り替える前", edit: "手で直す前", restore: "版を戻す前" };
+export type Kind = "ai" | "edit" | "restore"; // AI が作り替える前 / ノード設定画面で直す前 / 版を戻す前
+export const KIND_LABEL: Record<Kind, string> = { ai: "AI が作り替える前", edit: "ノード設定画面で直す前", restore: "版を戻す前" };
 
 const pad = (n: number, w = 2) => String(n).padStart(w, "0");
 const stampOf = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
@@ -27,19 +27,4 @@ export function sortNewestFirst(files: string[]): string[] {
     return m[1] + "-" + pad(Number(m[3] ?? 1), 6);
   };
   return files.filter((f) => VERSION.test(f)).sort((a, b) => (key(a) < key(b) ? 1 : key(a) > key(b) ? -1 : 0));
-}
-
-// 手で直したときの版のまとめ方: 連続した編集 (最後の編集から gap ミリ秒以上あかない間) は1つの編集として扱い、最初の1回だけ true
-export class EditSessions {
-  private last = new Map<string, number>();
-  constructor(private gap: number) {}
-  note(card: string, now: number): boolean {
-    const prev = this.last.get(card);
-    this.last.set(card, now);
-    return prev === undefined || now - prev >= this.gap;
-  }
-  // AI の作り替えや版を戻したあとは、まとめを切る
-  reset(card: string): void {
-    this.last.delete(card);
-  }
 }

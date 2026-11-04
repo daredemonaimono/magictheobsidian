@@ -10,7 +10,7 @@ const nodeList = () =>
     .map((n) => `- ${n.id} (${n.title}): ${n.summary}\n  引数: ${Object.entries(n.params).map(([k, p]) => param(k, p)).join(", ") || "なし"}${Object.keys(n.outputs).length ? `\n  as= を付けると、出力 ${Object.keys(n.outputs).join(", ")} を $名前 で後のノードの ref 引数に渡せる` : ""}`)
     .join("\n");
 
-export function buildPrompt(card: string, oracle: string): { system: string; user: string } {
+export function buildPrompt(card: string, oracle: string, ruling?: string): { system: string; user: string } {
   const system = `あなたは Magic: The Gathering のカードのテキストを、汎用のノードの組み合わせ (Obsidian のノート) に直す役です。
 
 ## 書式
@@ -24,10 +24,13 @@ ${nodeList() || "(まだ無い)"}
 ## 規則
 - カード専用のノードは作らない。違いは、汎用ノードの引数で表す。
 - ノードで表せない部分は、ノードを作らずに、末尾の \`## 未対応\` の下に、箇条書き1行ずつ、元のテキストのまま書く。
+- 「裁定後のテキスト」が付いているときは、それを正しいテキストとして組む(カードのテキストが古いか、裁定で変わったため)。
 - 返事は md 1つだけを \`\`\`md の囲みで返す。説明は書かない。
 
 ## 例
 \`\`\`md
 ${SAMPLE_RULES["Negate"]}\`\`\``;
-  return { system, user: `カード名: ${card}\n\nオラクルテキスト:\n${oracle}` };
+  const r = ruling?.trim();
+  const user = r ? `カード名: ${card}\n\n現在のカードのテキスト:\n${oracle}\n\n裁定後のテキスト(こちらが正しい。これに合わせてノードを組む):\n${r}` : `カード名: ${card}\n\nオラクルテキスト:\n${oracle}`;
+  return { system, user };
 }

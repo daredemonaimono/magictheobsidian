@@ -1,5 +1,5 @@
 import { App, Modal } from "obsidian";
-import { Row, filterRows, initialChecked, overwriteCount, setShown } from "./battle/select";
+import { Row, filterRows, initialChecked, overwriteCount, runCheck, setShown } from "./battle/select";
 
 const LABEL: Record<Row["status"], string> = { none: "ルールなし", ok: "ok", partial: "partial", unbuilt: "unbuilt" };
 
@@ -10,8 +10,10 @@ export class BuildRulesModal extends Modal {
   private query = "";
   private listEl!: HTMLElement;
   private runBtn!: HTMLButtonElement;
+  private ruling = "";
+  private noteEl!: HTMLElement;
 
-  constructor(app: App, private rows: Row[], private onRun: (names: string[]) => void) {
+  constructor(app: App, private rows: Row[], private onRun: (names: string[], ruling?: string) => void) {
     super(app);
     this.checked = initialChecked(rows);
   }
@@ -33,11 +35,20 @@ export class BuildRulesModal extends Modal {
     button("ルールが無いカードだけ", () => this.set(initialChecked(this.rows)));
     this.listEl = contentEl.createDiv();
     this.listEl.style.cssText = "max-height:50vh;overflow-y:auto;margin:8px 0";
+    // 裁定後のテキスト: 公式のテキストや裁定が変わったとき、新しいテキストを AI に送る。1枚だけ選んだときに送れる
+    contentEl.createEl("div", { text: "裁定後のテキスト(任意。1枚だけ選んだときに送れる)", cls: "setting-item-description" });
+    const ruling = contentEl.createEl("textarea", { attr: { rows: "4", placeholder: "例: Counter target spell unless its controller pays {1}." } });
+    ruling.style.width = "100%";
+    ruling.addEventListener("input", () => {
+      this.ruling = ruling.value;
+      this.refresh();
+    });
+    this.noteEl = contentEl.createDiv({ cls: "setting-item-description" });
     this.runBtn = contentEl.createEl("button", { cls: "mod-cta" });
     this.runBtn.addEventListener("click", () => {
       const names = this.rows.filter((r) => this.checked.has(r.card)).map((r) => r.card);
       this.close();
-      this.onRun(names);
+      this.onRun(names, this.ruling.trim() || undefined);
     });
     this.draw();
   }
@@ -69,7 +80,9 @@ export class BuildRulesModal extends Modal {
   private refresh() {
     const over = overwriteCount(this.rows, this.checked);
     this.runBtn.setText(`選んだ ${this.checked.size} 枚で実行${over ? `(うち上書き ${over} 枚)` : ""}`);
-    this.runBtn.disabled = this.checked.size === 0;
+    const why = runCheck(this.checked.size, this.ruling);
+    this.noteEl.setText(why ?? "");
+    this.runBtn.disabled = why !== null;
   }
 
   onClose() {

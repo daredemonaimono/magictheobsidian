@@ -49,3 +49,12 @@ const unsetRows = toRows(["Ancestral Recall"], unset);
 assert.deepEqual([unsetRows[0].hasRule, unsetRows[0].status], [false, "none"]);
 assert.deepEqual([...initialChecked(unsetRows)], ["Ancestral Recall"]);
 assert.equal(overwriteCount(unsetRows, initialChecked(unsetRows)), 0);
+
+// 実行できるかの判定: 裁定後のテキストは、1枚だけ選んだときに送れる (複数枚に同じ裁定を送ると、別のカードに誤って効くため)
+import { runCheck } from "../src/battle/select";
+assert.equal(runCheck(0, ""), "カードを選んでください");
+assert.equal(runCheck(3, ""), null, "裁定が空なら何枚でも");
+assert.equal(runCheck(3, "   "), null, "空白だけなら無いのと同じ");
+assert.equal(runCheck(1, "Counter target spell."), null);
+assert.ok(runCheck(2, "Counter target spell.")?.includes("1枚だけ"), "裁定があって2枚は不可");
+assert.ok(runCheck(0, "x")?.includes("カードを選んで"), "0枚が先");

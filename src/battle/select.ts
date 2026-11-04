@@ -34,3 +34,10 @@ export function setShown(checked: Set<string>, rows: Row[], q: string, on: boole
 
 // 実行すると上書きになる枚数 (ルールがあるカードがチェックされている数)
 export const overwriteCount = (rows: Row[], checked: Set<string>): number => rows.filter((r) => r.hasRule && checked.has(r.card)).length;
+
+// 実行できなければ理由、できれば null。裁定後のテキストは1枚だけ選んだときに送れる (複数枚に同じ裁定を送ると、別のカードに誤って効くため)
+export function runCheck(count: number, ruling: string): string | null {
+  if (count === 0) return "カードを選んでください";
+  if (ruling.trim() && count !== 1) return `裁定後のテキストは、1枚だけ選んだときに送れる(いま ${count} 枚)`;
+  return null;
+}

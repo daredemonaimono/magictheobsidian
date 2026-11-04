@@ -1,6 +1,6 @@
-import { App, EventRef, Modal, Notice, Plugin, Setting, TAbstractFile, TFile, WorkspaceLeaf, normalizePath } from "obsidian";
+import { App, EventRef, Modal, Notice, Plugin, Setting, TFile, WorkspaceLeaf, normalizePath } from "obsidian";
 import { buildRule } from "./battle/build";
-import { EditSessions, Kind, freeName, parseVersion, sortNewestFirst } from "./battle/history";
+import { Kind, freeName, parseVersion, sortNewestFirst } from "./battle/history";
 import { askClaude, obsidianHttp } from "./battle/claude";
 import { CardStatus, cardStatus, report } from "./battle/coverage";
 import { registerBuiltinNodes } from "./battle/nodes";
@@ -71,8 +71,6 @@ export default class MagicTheObsidian extends Plugin {
   private prevCount = 0;
   private closedByTab = false;
   private opening = false;
-  private ruleCache = new Map<string, string>(); // Rules/<名前>.md の最後に見た内容 (手で直す前の内容を履歴に残すため)
-  private editSessions = new EditSessions(5 * 60 * 1000); // 連続した手の編集は、1つの版にまとめる
 
   async onload() {
     registerBuiltinNodes();
@@ -126,12 +124,7 @@ export default class MagicTheObsidian extends Plugin {
     this.registerEvent(ws.on("layout-change", () => void this.syncSidebar()));
     // デッキ画面のメイン/サイドのタブを押したとき、サイドバーが畳まれていたら開く
     this.registerEvent((ws as unknown as { on(n: string, cb: () => void): EventRef }).on("mtg-show-list", () => void this.showList(ws.getActiveViewOfType(DeckView)?.leaf)));
-    // Rules/<名前>.md が手で書き換わったら、書き換わる前の内容を履歴に残す (AI・版を戻すときは、自分で履歴に残してから書く)
-    this.registerEvent(this.app.vault.on("modify", (f) => void this.onRuleChanged(f)));
-    this.registerEvent(this.app.vault.on("create", (f) => void this.onRuleChanged(f)));
-    this.registerEvent(this.app.vault.on("delete", (f) => this.ruleName(f.path) && this.ruleCache.delete(this.ruleName(f.path)!)));
     ws.onLayoutReady(() => {
-      void this.loadRuleCache();
       this.dashboardIfEmpty(ws.getMostRecentLeaf());
       void this.syncSidebar();
     });
@@ -337,11 +330,11 @@ export default class MagicTheObsidian extends Plugin {
   private async openBuildRules() {
     if (!claudeKey(this.app, this.settings)) return void new Notice("設定で Claude の API キーを選んでください (Magic the Obsidian → AI)");
     const statuses = await this.ruleStatuses();
-    new BuildRulesModal(this.app, toRows([...statuses.keys()], statuses), (names) => void this.buildRulesFor(names)).open();
+    new BuildRulesModal(this.app, toRows([...statuses.keys()], statuses), (names, ruling) => void this.buildRulesFor(names, ruling)).open();
   }
 
-  // 選ばれたカードを順に AI へ。成功したら Rules/<名前>.md に書く (すでにあれば、直前の内容を Rules/_backup/ に退避してから上書き)。失敗したカードは元のまま
-  private async buildRulesFor(names: string[]) {
+  // 選ばれたカードを順に AI へ(裁定後のテキストがあれば、それも送る)。成功したら Rules/<名前>.md に書く。履歴は saveRule が残す。失敗したカードは元のまま
+  private async buildRulesFor(names: string[], ruling?: string) {
     const key = claudeKey(this.app, this.settings);
     if (!key) return void new Notice("設定で Claude の API キーを選んでください (Magic the Obsidian → AI)");
     await this.ensureRulesDir();
@@ -352,22 +345,9 @@ export default class MagicTheObsidian extends Plugin {
       new Notice(`AI に頼んでいる (${i + 1}/${names.length}): ${name}`);
       try {
         const oracle = await oracleEnglish(this.app, name);
-        const { md } = await buildRule({ card: name, oracle, ask: (system, messages) => askClaude({ apiKey: key, model: this.settings.claudeModel, system, messages, http: obsidianHttp }) });
-        const path = normalizePath(`${RULES_DIR}/${fileSafe(name)}.md`);
-        const old = this.app.vault.getAbstractFileByPath(path);
-        // 履歴に残してから、書く直前にキャッシュを合わせる (手の編集と見間違えず、履歴の保存に失敗したときはキャッシュを変えない)
-        if (old instanceof TFile) {
-          await this.snapshot(name, await this.app.vault.read(old), "ai");
-          this.ruleCache.set(name, md);
-          this.editSessions.reset(name);
-          await this.app.vault.modify(old, md);
-          over++;
-        } else {
-          this.ruleCache.set(name, md);
-          this.editSessions.reset(name);
-          await this.app.vault.create(path, md);
-          made++;
-        }
+        const { md } = await buildRule({ card: name, oracle, ruling, ask: (system, messages) => askClaude({ apiKey: key, model: this.settings.claudeModel, system, messages, http: obsidianHttp }) });
+        if ((await this.saveRule(name, md, "ai")) === "created") made++;
+        else over++;
       } catch (e) {
         failed++;
         new Notice(`${name}: ${(e as Error).message}`);
@@ -382,20 +362,21 @@ export default class MagicTheObsidian extends Plugin {
     return m && !m[1].startsWith("_") ? m[1] : null;
   }
 
-  private async loadRuleCache() {
-    for (const f of this.app.vault.getMarkdownFiles()) {
-      const name = this.ruleName(f.path);
-      if (name && !this.ruleCache.has(name)) this.ruleCache.set(name, await this.app.vault.read(f));
+  // ルールの保存の入口。すでにあれば、書き換える前の内容を先に履歴に残してから書く (履歴の保存に失敗したら書かない)。
+  // AI の作り替え (kind="ai") と、版を戻す (kind="restore") が使う。あとで作るノード設定画面の「保存」も、kind="edit" でこれを呼ぶ。
+  // md を直接書き換えた分は、保存のタイミングが分からないので、履歴には残さない
+  private async saveRule(name: string, md: string, kind: Kind): Promise<"created" | "updated" | "same"> {
+    const path = normalizePath(`${RULES_DIR}/${fileSafe(name)}.md`);
+    const old = this.app.vault.getAbstractFileByPath(path);
+    if (!(old instanceof TFile)) {
+      await this.app.vault.create(path, md);
+      return "created";
     }
-  }
-
-  private async onRuleChanged(f: TAbstractFile) {
-    const name = f instanceof TFile ? this.ruleName(f.path) : null;
-    if (!name || !(f instanceof TFile)) return;
-    const now = await this.app.vault.read(f);
-    const old = this.ruleCache.get(name);
-    this.ruleCache.set(name, now);
-    if (old !== undefined && old !== now && this.editSessions.note(name, Date.now())) await this.snapshot(name, old, "edit");
+    const before = await this.app.vault.read(old);
+    if (before === md) return "same";
+    await this.snapshot(name, before, kind);
+    await this.app.vault.modify(old, md);
+    return "updated";
   }
 
   private versionFiles(name: string): TFile[] {
@@ -424,24 +405,10 @@ export default class MagicTheObsidian extends Plugin {
     new RestoreRuleModal(this.app, name, versions, (f) => void this.restoreVersion(name, f), (f) => void this.app.workspace.getLeaf(true).openFile(f)).open();
   }
 
-  // 選んだ版に戻す。いまの内容は、先に履歴に残す (戻したことも取り消せる)
+  // 選んだ版に戻す。いまの内容は、saveRule が先に履歴に残す (戻したことも取り消せる)
   private async restoreVersion(name: string, file: TFile) {
-    const target = await this.app.vault.read(file);
-    const path = normalizePath(`${RULES_DIR}/${name}.md`);
-    const cur = this.app.vault.getAbstractFileByPath(path);
-    if (cur instanceof TFile) {
-      const current = await this.app.vault.read(cur);
-      if (current === target) return void new Notice(`${name}: すでにこの版です`);
-      await this.snapshot(name, current, "restore");
-      this.ruleCache.set(name, target);
-      this.editSessions.reset(name);
-      await this.app.vault.modify(cur, target);
-    } else {
-      this.ruleCache.set(name, target);
-      this.editSessions.reset(name);
-      await this.app.vault.create(path, target);
-    }
-    new Notice(`${name}: ${parseVersion(file.name)?.stamp ?? file.name} の版に戻した`);
+    const r = await this.saveRule(name, await this.app.vault.read(file), "restore");
+    new Notice(r === "same" ? `${name}: すでにこの版です` : `${name}: ${parseVersion(file.name)?.stamp ?? file.name} の版に戻した`);
   }
 
   private async fetchCardNote(query: string) {
