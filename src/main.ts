@@ -1,8 +1,12 @@
 import { App, EventRef, Modal, Notice, Plugin, Setting, TFile, WorkspaceLeaf, normalizePath } from "obsidian";
-import { cardStatus, report } from "./battle/coverage";
+import { buildRule } from "./battle/build";
+import { askClaude, obsidianHttp } from "./battle/claude";
+import { CardStatus, cardStatus, report } from "./battle/coverage";
 import { registerBuiltinNodes } from "./battle/nodes";
 import { SAMPLE_RULES } from "./battle/samples";
-import { ensureCardFile, localCards, updateLegality } from "./cards";
+import { toRows } from "./battle/select";
+import { BuildRulesModal } from "./BuildRulesModal";
+import { ensureCardFile, localCards, oracleEnglish, updateLegality } from "./cards";
 import { DECK_DIR, foldCommander, writeDeck } from "./deck";
 import { CREATABLE, FORMATS } from "./rules";
 import { ImportModal, resolveDeck } from "./import";
@@ -14,7 +18,7 @@ import { DECKLIST_VIEW, DeckListView } from "./DeckListView";
 import { DECK_VIEW, DeckView } from "./DeckView";
 import { fetchCard, fileSafe } from "./scryfall";
 import { priceStore, updateCollectionPrices } from "./prices";
-import { DEFAULT_SETTINGS, Settings, SettingsTab } from "./settings";
+import { DEFAULT_SETTINGS, Settings, SettingsTab, claudeKey } from "./settings";
 
 // 「動き方」はカード行の外なので、デッキ画面で枚数を変えても書き換わらない。統率戦だけコマンダー欄があり、サイドは無い
 const RULES_DIR = "Rules"; // カードの能力をノードで組んだ md (Cards/ と同じ並び。Obsidian の画面で手で直せる)
@@ -77,6 +81,8 @@ export default class MagicTheObsidian extends Plugin {
       listArt: d.listArt ?? DEFAULT_SETTINGS.listArt,
       dashboardTab: d.dashboardTab ?? DEFAULT_SETTINGS.dashboardTab,
       currency: d.currency ?? DEFAULT_SETTINGS.currency,
+      claudeKeySecret: d.claudeKeySecret ?? DEFAULT_SETTINGS.claudeKeySecret,
+      claudeModel: d.claudeModel ?? DEFAULT_SETTINGS.claudeModel,
     };
     priceStore.prices = d.prices ?? {};
     priceStore.updated = d.pricesUpdated ?? "";
@@ -152,6 +158,7 @@ export default class MagicTheObsidian extends Plugin {
       },
     });
     this.addCommand({ id: "battle-sample-rules", name: "Battle: create sample rules", callback: () => void this.createSampleRules() });
+    this.addCommand({ id: "battle-build-rules", name: "Battle: build rules with AI", callback: () => void this.openBuildRules() });
     this.addCommand({ id: "battle-rules-coverage", name: "Battle: rules coverage", callback: () => void this.rulesCoverage() });
     this.addCommand({ id: "open-dashboard", name: "Open dashboard", callback: () => void this.openOrReveal(DASHBOARD_VIEW) });
     this.addRibbonIcon("layout-dashboard", "Magic the Obsidian", () => void this.openOrReveal(DASHBOARD_VIEW));
@@ -293,20 +300,74 @@ export default class MagicTheObsidian extends Plugin {
     new Notice(`サンプルのルールを ${made} 枚作った (すでにあるものは飛ばした)`);
   }
 
-  // Cards/ の全カードについて、Rules/<名前>.md の状況 (ok / partial / unbuilt) を Rules/_coverage.md に書き出す
+  // Cards/ の全カードについて、Rules/<名前>.md の状況 (ok / partial / unbuilt。ノートが無ければ「ルールのノートが無い」)
+  private async ruleStatuses(): Promise<Map<string, CardStatus>> {
+    const out = new Map<string, CardStatus>();
+    for (const c of localCards(this.app)) {
+      const name = c.file.basename;
+      const f = this.app.vault.getAbstractFileByPath(normalizePath(`${RULES_DIR}/${name}.md`));
+      out.set(name, cardStatus(name, f instanceof TFile ? await this.app.vault.read(f) : undefined));
+    }
+    return out;
+  }
+
+  // 状況を Rules/_coverage.md に書き出す
   private async rulesCoverage() {
     await this.ensureRulesDir();
-    const statuses = [];
-    for (const c of localCards(this.app)) {
-      const f = this.app.vault.getAbstractFileByPath(normalizePath(`${RULES_DIR}/${c.file.basename}.md`));
-      statuses.push(cardStatus(c.file.basename, f instanceof TFile ? await this.app.vault.read(f) : undefined));
-    }
+    const statuses = [...(await this.ruleStatuses()).values()];
     const path = normalizePath(`${RULES_DIR}/_coverage.md`);
     const body = report(statuses.sort((a, b) => a.card.localeCompare(b.card)));
     const old = this.app.vault.getAbstractFileByPath(path);
     if (old instanceof TFile) await this.app.vault.modify(old, body);
     else await this.app.vault.create(path, body);
     new Notice(`ルールの状況を書き出した: ok ${statuses.filter((s) => s.status === "ok").length} / ${statuses.length} 枚`);
+  }
+
+  // AI にノードを組み立ててもらうカードを、画面で選ぶ (初期のチェックは、ルールのノートが無いカード)
+  private async openBuildRules() {
+    if (!claudeKey(this.app, this.settings)) return void new Notice("設定で Claude の API キーを選んでください (Magic the Obsidian → AI)");
+    const statuses = await this.ruleStatuses();
+    new BuildRulesModal(this.app, toRows([...statuses.keys()], statuses), (names) => void this.buildRulesFor(names)).open();
+  }
+
+  // 選ばれたカードを順に AI へ。成功したら Rules/<名前>.md に書く (すでにあれば、直前の内容を Rules/_backup/ に退避してから上書き)。失敗したカードは元のまま
+  private async buildRulesFor(names: string[]) {
+    const key = claudeKey(this.app, this.settings);
+    if (!key) return void new Notice("設定で Claude の API キーを選んでください (Magic the Obsidian → AI)");
+    await this.ensureRulesDir();
+    let made = 0;
+    let over = 0;
+    let failed = 0;
+    for (const [i, name] of names.entries()) {
+      new Notice(`AI に頼んでいる (${i + 1}/${names.length}): ${name}`);
+      try {
+        const oracle = await oracleEnglish(this.app, name);
+        const { md } = await buildRule({ card: name, oracle, ask: (system, messages) => askClaude({ apiKey: key, model: this.settings.claudeModel, system, messages, http: obsidianHttp }) });
+        const path = normalizePath(`${RULES_DIR}/${fileSafe(name)}.md`);
+        const old = this.app.vault.getAbstractFileByPath(path);
+        if (old instanceof TFile) {
+          await this.backupRule(name, await this.app.vault.read(old));
+          await this.app.vault.modify(old, md);
+          over++;
+        } else {
+          await this.app.vault.create(path, md);
+          made++;
+        }
+      } catch (e) {
+        failed++;
+        new Notice(`${name}: ${(e as Error).message}`);
+      }
+    }
+    new Notice(`AI のルール作成: 作った ${made} 枚 / 上書きした ${over} 枚 / 失敗 ${failed} 枚`);
+  }
+
+  private async backupRule(name: string, content: string) {
+    const dir = `${RULES_DIR}/_backup`;
+    if (!this.app.vault.getAbstractFileByPath(dir)) await this.app.vault.createFolder(dir);
+    const path = normalizePath(`${dir}/${fileSafe(name)}.md`);
+    const old = this.app.vault.getAbstractFileByPath(path);
+    if (old instanceof TFile) await this.app.vault.modify(old, content);
+    else await this.app.vault.create(path, content);
   }
 
   private async fetchCardNote(query: string) {

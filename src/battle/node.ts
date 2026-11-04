@@ -21,6 +21,7 @@ export interface Ability {
 export interface CardRule {
   card: string;
   abilities: Ability[];
+  unsupported?: string[]; // ノードで表せない部分 (md の「## 未対応」。文章のまま)
 }
 
 export type ParamDef = { type: "string" | "number" | "boolean" | "ref"; required?: boolean; choices?: string[] };

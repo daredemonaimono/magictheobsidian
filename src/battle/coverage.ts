@@ -11,12 +11,14 @@ export interface CardStatus {
   reasons: string[];
 }
 
+export const NO_RULE = "ルールのノートが無い";
+
 const unbuilt = (card: string, reasons: string[]): CardStatus => ({ card, status: "unbuilt", reasons });
 
 // md が無い・読めない・未知のノードや引数の誤り = unbuilt (組めていない)。
 // 組めているが、実装の無いノードがある・シナリオが無い・シナリオが失敗する = partial。すべて動いたら ok
 export function cardStatus(card: string, md: string | undefined): CardStatus {
-  if (md === undefined) return unbuilt(card, ["ルールのノートが無い"]);
+  if (md === undefined) return unbuilt(card, [NO_RULE]);
   let rule: CardRule;
   try {
     rule = parseRule(md);
@@ -28,6 +30,7 @@ export function cardStatus(card: string, md: string | undefined): CardStatus {
   const bad = calls.map((c) => ({ c, why: checkCall(c) })).filter((x) => x.why);
   if (bad.length) return unbuilt(card, bad.map((x) => `${x.c.line ?? "?"} 行目: ${x.why}`));
 
+  if (rule.unsupported?.length) return { card, status: "partial", reasons: rule.unsupported.map((u) => `未対応: ${u}`) };
   const missing = [...new Set(calls.filter((c) => !getNode(c.node)!.run).map((c) => `未実装: ${c.node}`))];
   if (missing.length) return { card, status: "partial", reasons: missing };
   const scenario = SCENARIOS[card];

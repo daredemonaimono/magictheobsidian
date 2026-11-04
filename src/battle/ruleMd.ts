@@ -3,6 +3,7 @@ import { Ability, AbilityKind, Arg, CardRule, NodeCall } from "./node";
 // vault の Rules/<カード名>.md の読み書き。見出し = 能力の4分類、箇条書き1行 = ノード呼び出し1つ:
 //   - <ノードid> [as=<名前>] <引数>=<値> ...      値: $名前 (ref) / 整数 / true・false / 文字列 ("..." で空白も可)
 const HEADINGS: Record<string, AbilityKind> = { 呪文能力: "spell", 起動型能力: "activated", 誘発型能力: "triggered", 常在型能力: "static" };
+const NOTE = "未対応";
 const HEADING_OF = Object.fromEntries(Object.entries(HEADINGS).map(([h, k]) => [k, h])) as Record<AbilityKind, string>;
 
 export class RuleParseError extends Error {
@@ -77,10 +78,14 @@ export function parseRule(md: string): CardRule {
   if (!card) throw new RuleParseError("フロントマターに card: \"[[カード名]]\" がない", 1);
 
   const abilities: Ability[] = [];
+  const unsupported: string[] = [];
+  let inNote = false; // 「## 未対応」の中。箇条書きはノードではなく、文章のまま集める
   for (; i < lines.length; i++) {
     const line = i + 1;
     const h = lines[i].match(/^##\s+(.+?)\s*$/);
     if (h) {
+      inNote = h[1] === NOTE;
+      if (inNote) continue;
       const kind = HEADINGS[h[1]];
       if (!kind) throw new RuleParseError(`未知の見出し: ${h[1]}`, line);
       abilities.push({ kind, body: [] });
@@ -88,10 +93,14 @@ export function parseRule(md: string): CardRule {
     }
     const item = lines[i].match(/^[\s　]*[-*][\s　]+(.*)$/);
     if (!item) continue; // 空行・メモは読み飛ばす
+    if (inNote) {
+      unsupported.push(item[1].trim());
+      continue;
+    }
     if (!abilities.length) throw new RuleParseError("見出し (呪文能力 など) の前に箇条書きがある", line);
     abilities[abilities.length - 1].body.push(parseCall(item[1], line));
   }
-  return { card, abilities };
+  return unsupported.length ? { card, abilities, unsupported } : { card, abilities };
 }
 
 const show = (a: Arg): string => {
@@ -107,5 +116,6 @@ export function writeRule(rule: CardRule): string {
     const body = a.body.map((c) => `- ${[c.node, ...(c.as ? [`as=${c.as}`] : []), ...Object.entries(c.args).map(([k, v]) => `${k}=${show(v)}`)].join(" ")}`);
     out += `\n## ${HEADING_OF[a.kind]}\n\n${body.join("\n")}\n`;
   }
+  if (rule.unsupported?.length) out += `\n## ${NOTE}\n\n${rule.unsupported.map((u) => `- ${u}`).join("\n")}\n`;
   return out;
 }

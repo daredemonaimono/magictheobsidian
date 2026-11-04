@@ -62,3 +62,8 @@ assert.equal(cardStatus("Negate", swapped).status, "partial");
 const wrongCard = cardStatus("Negate", SAMPLE_RULES["Essence Scatter"]); // card: がファイル名と合わない
 assert.equal(wrongCard.status, "unbuilt");
 assert.ok(wrongCard.reasons[0].includes("Essence Scatter"));
+
+// 未対応の部分が書かれていたら、ノードが全部実装済みでシナリオが通っても partial (理由の先頭が「未対応: 」)
+const noted = cardStatus("Negate", SAMPLE_RULES["Negate"] + "\n## 未対応\n\n- 例の条件\n");
+assert.equal(noted.status, "partial");
+assert.equal(noted.reasons[0], "未対応: 例の条件");

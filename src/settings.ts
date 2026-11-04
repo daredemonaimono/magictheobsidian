@@ -1,4 +1,4 @@
-import { App, Notice, Plugin, PluginSettingTab, Setting } from "obsidian";
+import { App, Notice, Plugin, PluginSettingTab, SecretComponent, Setting } from "obsidian";
 import { CURRENCIES, updateRates } from "./prices";
 
 // Scryfall の言語コード
@@ -23,9 +23,14 @@ export interface Settings {
   dashboardTab: boolean; // 新しいタブ (空のタブ) をダッシュボードにする
   currency: string; // 資産価格の通貨 (EUR で取れた価格はこれに換算する)
   sidebar: boolean; // カード一覧を右サイドバーに出す。オフなら画面内の検索欄 (従来の表示)
+  claudeKeySecret: string; // API キーの、Obsidian のキーチェーン (app.secretStorage) 上の名前。キーそのものは data.json に書かない
+  claudeModel: string; // ノードの組み立てに使うモデル
 }
 
-export const DEFAULT_SETTINGS: Settings = { textLang: "en", cardLang: "en", sidebar: true, listArt: true, dashboardTab: true, currency: "USD" };
+export const DEFAULT_SETTINGS: Settings = { textLang: "en", cardLang: "en", sidebar: true, listArt: true, dashboardTab: true, currency: "USD", claudeKeySecret: "", claudeModel: "claude-opus-5-5" };
+
+// 設定で選んだ名前のキーを、キーチェーンから取る。未設定・見つからないときは null
+export const claudeKey = (app: App, s: Settings): string | null => (s.claudeKeySecret ? app.secretStorage.getSecret(s.claudeKeySecret) : null);
 
 export class SettingsTab extends PluginSettingTab {
   constructor(app: App, plugin: Plugin, private settings: Settings, private save: () => Promise<void>, private onSidebar: () => void) {
@@ -90,5 +95,24 @@ export class SettingsTab extends PluginSettingTab {
       );
     lang("効果テキストの言語 / Text language", "カード名と効果テキスト。無い言語は英語で表示。新しく取得するカードから反映。", "textLang");
     lang("カードの言語 / Card language", "カード画像とイラスト選択の言語。その言語の版が無いカードは英語になる。新しく取得するカードから反映。", "cardLang");
+    new Setting(this.containerEl).setName("AI(ノードの組み立て) / AI").setHeading();
+    new Setting(this.containerEl)
+      .setName("API キー / Claude API key")
+      .setDesc("Obsidian のキーチェーンに保存される。このプラグインの設定(data.json)には、保存先の名前だけが残る。")
+      .addComponent((el) =>
+        new SecretComponent(this.app, el).setValue(this.settings.claudeKeySecret).onChange(async (id) => {
+          this.settings.claudeKeySecret = id ?? "";
+          await this.save();
+        }),
+      );
+    new Setting(this.containerEl)
+      .setName("モデル / Model")
+      .setDesc("安く済ませたいときは claude-sonnet-5-5 など。")
+      .addText((t) =>
+        t.setValue(this.settings.claudeModel).onChange(async (v) => {
+          this.settings.claudeModel = v.trim() || DEFAULT_SETTINGS.claudeModel;
+          await this.save();
+        }),
+      );
   }
 }
