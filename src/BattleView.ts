@@ -99,7 +99,7 @@ export class BattleView extends ItemView {
     const oppLife = stage.createDiv({ cls: "mtg-bt-life is-opp" });
     const selfLife = stage.createDiv({ cls: "mtg-bt-life is-self" });
     const piles: Record<string, HTMLElement> = {};
-    for (const key of ["opp-library", "opp-yard", "self-library", "self-yard"]) piles[key] = stage.createDiv({ cls: `mtg-bt-deck is-${key}` });
+    for (const key of ["opp-library", "opp-yard", "self-library", "self-yard"]) piles[key] = board.createDiv({ cls: `mtg-bt-deck is-${key}` }); // 盤面 (3D の面) の上に置く
     const mana = stage.createDiv("mtg-bt-mana");
     const phase = stage.createDiv("mtg-bt-phase");
     const step = stage.createDiv("mtg-bt-step");
@@ -128,7 +128,7 @@ export class BattleView extends ItemView {
   private paint() {
     const m = boardModel(this.game, this.rules, VIEWER, (c) => this.urls.get(c.name));
     const ui = this.ui;
-    this.sync(ui.rows["opp-lands"], "opp-lands", this.stackItems(m.opp.landStacks));
+    this.sync(ui.rows["opp-lands"], "opp-lands", this.stackItems(m.opp.landStacks, true));
     this.sync(ui.rows["opp-others"], "opp-others", this.cardItems(m.opp.others));
     this.sync(ui.rows["opp-creatures"], "opp-creatures", this.cardItems(m.opp.creatures));
     this.sync(ui.rows["self-creatures"], "self-creatures", this.cardItems(m.self.creatures));
@@ -160,8 +160,9 @@ export class BattleView extends ItemView {
   }
 
   // 同じ名前の土地の山 (src/battle/boardModel.ts の LandStack)
-  private stackItems(stacks: LandStack[]): Item[] {
-    return stacks.map((s) => ({ key: `stack:${s.name}`, data: s, name: s.name, paint: (el) => this.fillStack(el, s) }));
+  // mirror = 相手側 (自分側の鏡。山の中の左右を反転する)
+  private stackItems(stacks: LandStack[], mirror = false): Item[] {
+    return stacks.map((s) => ({ key: `stack:${s.name}`, data: s, name: s.name, paint: (el) => this.fillStack(el, s, mirror) }));
   }
 
   // 1つのゾーンの要素を、キーで対応づけて更新する。変わった (sig が違う) ものだけ中身を作り直し、並びが違うところだけ動かす
@@ -213,7 +214,8 @@ export class BattleView extends ItemView {
   }
 
   // 土地の山: 立っている土地は少しずつずらして重ね、タップした土地は、横向きに倒して、山の脇に並べる。2枚以上なら枚数を出す
-  private fillStack(el: HTMLElement, s: LandStack) {
+  private fillStack(el: HTMLElement, s: LandStack, mirror: boolean) {
+    const edge = mirror ? "right" : "left"; // 相手側は、右の端からずらす
     el.className = "mtg-bt-landstack";
     el.empty();
     const standing = s.cards.filter((c) => !c.tapped);
@@ -222,7 +224,7 @@ export class BattleView extends ItemView {
     pile.style.width = `${CARD_W + Math.max(0, standing.length - 1) * 5}px`;
     standing.forEach((c, i) => {
       const card = pile.createDiv("mtg-bt-card");
-      card.style.left = `${i * 5}px`;
+      card.style[edge] = `${i * 5}px`;
       card.style.top = `${-i * 2}px`;
       this.face(card, c);
     });
@@ -231,23 +233,25 @@ export class BattleView extends ItemView {
       side.style.width = `${86 + (tapped.length - 1) * 14}px`;
       tapped.forEach((c, i) => {
         const card = side.createDiv("mtg-bt-card is-lying");
-        card.style.left = `${i * 14 + 12}px`; // 横向き (86×62) が、i * 14 の位置に収まる
+        card.style[edge] = `${i * 14 + 12}px`; // 横向き (86×62) が、i * 14 の位置に収まる
         this.face(card, c);
       });
     }
     if (s.cards.length > 1) el.createDiv({ cls: "mtg-bt-count", text: `×${s.cards.length}` });
   }
 
-  // 山札・墓地: 枚数に応じた厚み (10 枚ごとに 1 層。box-shadow を重ねる)。山札は裏向き、墓地は一番上のカードを見せる。枚数を下に出す
+  // 山札・墓地: 盤面の上に立体で置く。枚数に応じた厚み (10 枚ごとに 1 層。層ごとに translateZ で高さを付ける)。山札は裏向き、墓地は一番上のカードを見せる。枚数を下に出す
   private paintPile(el: HTMLElement, count: number, top?: CardView) {
     const sig = `${count}|${top?.id ?? ""}|${top?.image ?? ""}`;
     if (el.dataset.sig === sig) return;
     el.dataset.sig = sig;
     el.empty();
     const layers = pileLayers(count);
-    el.style.boxShadow = Array.from({ length: layers }, (_, i) => `${(i + 1) * LAYER_PX}px ${(i + 1) * LAYER_PX}px 0 ${i % 2 ? "#3a2a10" : "#6a4a1a"}`).join(",") || "none";
     el.toggleClass("is-empty", count === 0);
-    if (top) this.face(el, top);
+    for (let i = 0; i < layers; i++) el.createDiv({ cls: `mtg-bt-layer${i % 2 ? " is-odd" : ""}` }).style.transform = `translateZ(${i * LAYER_PX}px)`; // 層ごとに高さを付けて、本当の厚みにする
+    const faceEl = el.createDiv("mtg-bt-dface");
+    faceEl.style.transform = `translateZ(${layers * LAYER_PX}px)`;
+    if (top) this.face(faceEl, top);
     el.createDiv({ cls: "mtg-bt-dcount", text: String(count) });
   }
 
