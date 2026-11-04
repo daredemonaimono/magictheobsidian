@@ -59,3 +59,5 @@
 ## あとでまとめて書くもの
 
 - シナリオ (`src/battle/samples.ts` の `SCENARIOS`。動いた記録): 無いカードは Chandra, Chill of Compliance / The Theorist, Jace Beleren / Into the Roil / Island / Octopus Form / We Say Thee Nay! (打ち消し3種だけある)。無いと `Battle: rules coverage` で partial になる。
+
+- 対戦の画面のサイドバー統合 (ユーザー依頼 2026-11-05、急がない): カードプレビューと対戦ログを、BattleView 内の右カラムではなく Obsidian のサイドバー機能に載せる。対戦を始めるとサイドバーが開き、対戦用のサイドバーアイコンが追加される。対戦のタブを閉じると、アイコンごと消えてサイドバーも閉じる。デッキ作成画面に同じ動きの実装がある (DeckView 周辺) ので、それと同じ作りにする。
