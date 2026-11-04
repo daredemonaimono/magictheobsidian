@@ -128,7 +128,7 @@ export class BattleView extends ItemView {
   private paint() {
     const m = boardModel(this.game, this.rules, VIEWER, (c) => this.urls.get(c.name));
     const ui = this.ui;
-    this.sync(ui.rows["opp-lands"], "opp-lands", this.stackItems(m.opp.landStacks, true));
+    this.sync(ui.rows["opp-lands"], "opp-lands", this.stackItems(m.opp.landStacks));
     this.sync(ui.rows["opp-others"], "opp-others", this.cardItems(m.opp.others));
     this.sync(ui.rows["opp-creatures"], "opp-creatures", this.cardItems(m.opp.creatures));
     this.sync(ui.rows["self-creatures"], "self-creatures", this.cardItems(m.self.creatures));
@@ -160,9 +160,8 @@ export class BattleView extends ItemView {
   }
 
   // 同じ名前の土地の山 (src/battle/boardModel.ts の LandStack)
-  // mirror = 相手側 (自分側の鏡。山の中の左右を反転する)
-  private stackItems(stacks: LandStack[], mirror = false): Item[] {
-    return stacks.map((s) => ({ key: `stack:${s.name}`, data: s, name: s.name, paint: (el) => this.fillStack(el, s, mirror) }));
+  private stackItems(stacks: LandStack[]): Item[] {
+    return stacks.map((s) => ({ key: `stack:${s.name}`, data: s, name: s.name, paint: (el) => this.fillStack(el, s) }));
   }
 
   // 1つのゾーンの要素を、キーで対応づけて更新する。変わった (sig が違う) ものだけ中身を作り直し、並びが違うところだけ動かす
@@ -214,8 +213,7 @@ export class BattleView extends ItemView {
   }
 
   // 土地の山: 立っている土地は少しずつずらして重ね、タップした土地は、横向きに倒して、山の脇に並べる。2枚以上なら枚数を出す
-  private fillStack(el: HTMLElement, s: LandStack, mirror: boolean) {
-    const edge = mirror ? "right" : "left"; // 相手側は、右の端からずらす
+  private fillStack(el: HTMLElement, s: LandStack) {
     el.className = "mtg-bt-landstack";
     el.empty();
     const standing = s.cards.filter((c) => !c.tapped);
@@ -224,7 +222,7 @@ export class BattleView extends ItemView {
     pile.style.width = `${CARD_W + Math.max(0, standing.length - 1) * 5}px`;
     standing.forEach((c, i) => {
       const card = pile.createDiv("mtg-bt-card");
-      card.style[edge] = `${i * 5}px`;
+      card.style.left = `${i * 5}px`;
       card.style.top = `${-i * 2}px`;
       this.face(card, c);
     });
@@ -233,7 +231,7 @@ export class BattleView extends ItemView {
       side.style.width = `${86 + (tapped.length - 1) * 14}px`;
       tapped.forEach((c, i) => {
         const card = side.createDiv("mtg-bt-card is-lying");
-        card.style[edge] = `${i * 14 + 12}px`; // 横向き (86×62) が、i * 14 の位置に収まる
+        card.style.left = `${i * 14 + 12}px`; // 横向き (86×62) が、i * 14 の位置に収まる
         this.face(card, c);
       });
     }

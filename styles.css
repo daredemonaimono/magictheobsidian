@@ -299,10 +299,7 @@ button.mtg-color .mtg-sym { width: 20px; height: 20px; display: block; }
 .mtg-bt-board .mtg-bt-card.is-lying:hover { transform: rotate(90deg) scale(1.08); }
 .mtg-bt-count { position: absolute; right: -6px; top: -8px; background: #000c; border-radius: 8px; padding: 0 6px; font-size: 11px; font-weight: 700; z-index: 3; }
 
-/* 相手側は、自分側の鏡 (点対称): 列のカードの並びと、土地の山の中の左右を反転する。カードの絵の向きは、そのまま */
-.mtg-bt-opp-lands, .mtg-bt-opp-others, .mtg-bt-opp-creatures { flex-direction: row-reverse; }
-.mtg-bt-opp-lands > *, .mtg-bt-opp-others > *, .mtg-bt-opp-creatures > * { margin-left: 0; margin-right: calc(10px - var(--ov)); }
-.mtg-bt-opp-lands > *:first-child, .mtg-bt-opp-others > *:first-child, .mtg-bt-opp-creatures > *:first-child { margin-right: 0; }
-.mtg-bt-opp-lands > .is-tapped, .mtg-bt-opp-others > .is-tapped, .mtg-bt-opp-creatures > .is-tapped { margin-left: 12px; margin-right: calc(22px - var(--ov)); }
-.mtg-bt-opp-lands > .is-tapped:first-child, .mtg-bt-opp-others > .is-tapped:first-child, .mtg-bt-opp-creatures > .is-tapped:first-child { margin-right: 12px; }
-.mtg-bt-opp-lands .mtg-bt-landstack { flex-direction: row-reverse; }
+/* 相手側は、相手の向き (180 度回転)。列ごと回すので、並びと土地の山の左右も、自分側の点対称になる。雰囲気重視 (効果は、ホバーのプレビューで読める) */
+.mtg-bt-opp-lands, .mtg-bt-opp-others, .mtg-bt-opp-creatures { transform: rotate(180deg); }
+.mtg-bt-deck.is-opp-library, .mtg-bt-deck.is-opp-yard { transform: rotate(180deg); }
+.mtg-bt-deck.is-opp-library .mtg-bt-dcount, .mtg-bt-deck.is-opp-yard .mtg-bt-dcount { transform: translateX(-50%) rotate(180deg); }
