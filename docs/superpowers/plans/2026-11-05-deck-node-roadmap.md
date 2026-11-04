@@ -16,7 +16,7 @@
 | Accumulate Wisdom | ○ | —(`look`・`choose`・`move`・数の条件、第2弾で実装済み) |
 | Aetherize | ○ | —(`select`、第2弾で実装済み。攻撃の処理は戦闘の実装で) |
 | Island | ○ | —(`cost tap` + `addMana`、土地を出す `playLand`、第3弾で実装済み) |
-| Bender's Waterskin | ○ | —(`untapDuring who=opponents` + `cost tap` + `addMana`、第6弾で実装済み。「好きな色」はマナの色の実装まで区別しない) |
+| Bender's Waterskin | ○ | —(`untapDuring who=opponents` + `cost tap` + `addMana color=any`、第6・8弾で実装済み) |
 | Brineborn Cutthroat / Elementalist Adept | ○ | —(`when event=cast`・`self`・`addCounter`・`keyword name=flash`、第3弾で実装済み。果敢は `keyword name=prowess`) |
 | Cryogen Relic | ○ | —(`when event=enters/leaves self=true`・起動型・麻痺カウンター、第3弾で実装済み) |
 | Geist of Saint Thalia | ○ | —(`keyword flying`・`reduceCost`、第4弾で実装済み) |
@@ -44,7 +44,7 @@
 
 依存の順に、下のものは上のものを使う。1 つ終えるごとに、テスト・レビューを通してから次へ。
 
-1. **第8弾: マナの色** — マナを色ごとに持つ(`Game.mana` を数から色別に)、マナコストの色つきシンボルを払う、`addMana` の色、「好きな色」。呪文を唱める・土地・マナ能力のすべてに触れるので、戦闘より先に、整合性を固める。
+1. **第8弾(実装済み)**: マナの色。`Game.mana`(合計。互換のため残す)+ `Game.pool`(色つきの内訳 W U B R G と好きな色 A。合計から引いた残りは無色)。`addMana color=W|U|B|R|G|C|any`、`cost` / `additionalCost` の `manaCost="{1}{U}"`(混成 {W/U}・{2/W}・{C}、{X}=0、{S}=無色1)、`GameCard.manaCost`(`payManaCosts` のとき、色まで払う。コスト軽減は汎用の分だけ)、制限つきマナにも色。払い方は `src/battle/mana.ts` の `trySpend` 1か所(色つき → 混成 → 汎用。汎用は、制限つき → 無色 → 好きな色 → 色の余りの順)。限界: 好きな色のマナは、払うときに色を決める(本来は出すときに決める)。マナ・プールは、ステップの終わりに空にならない(ターンの進行で)。ファイレクシアマナ {W/P} はライフで払えない(色のマナ1点として読む)。
 2. **第9弾: 戦闘** — 攻撃宣言・ブロック宣言・戦闘ダメージ(`damage` を使う)・先制攻撃・飛行・到達・接死・絆魂・トランプルなど。ライフとダメージが先に要る。
 3. **第10弾: ターンの進行** — ターン開始時のドロー、手札上限、クリンナップ、先手の最初のドローなし。
 4. **対戦の画面** — エンジンが固まってから。判断の入力 (`Decider`) の置き換えもここ。

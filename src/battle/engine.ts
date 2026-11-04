@@ -1,6 +1,7 @@
 import { characteristics, costReduction, extraTriggers, untapsDuring } from "./continuous";
 import { CastRecord, NodeCall, RunCtx, Value } from "./node";
 import { checkCall, evalCondition, getNode } from "./registry";
+import { addCosts, describeCost, emptyCost, ManaCost, parseManaCost, trySpend } from "./mana";
 import { Game, GameCard, GameEvent, Perm, PlayerId, RuleBook, StackItem, Step, typeIn, untapPerm } from "./state";
 
 // ステップ進行・優先権・スタック。画面なしで、テストから動かせる
@@ -184,9 +185,9 @@ function checkModes(body: NodeCall[], cast: CastRecord, name: string): void {
   }
 }
 
-// コスト (cost / additionalCost のノードから集める)。マナの色は区別しない。shortcut: 色・種類ごとのマナは、マナの仕組みを作るときに
+// コスト (cost / additionalCost のノードから集める)。mana = 汎用の数、manaCost = 色つきのマナコスト ("{1}{U}")
 interface CostSpec {
-  mana: number;
+  sym: ManaCost; // 払うマナ (mana の汎用も、ここに入る)
   tap: boolean;
   sacrifice: boolean;
   tapCreatures: number;
@@ -194,8 +195,16 @@ interface CostSpec {
   loyaltyX: boolean; // −X
   isLoyalty: boolean; // 忠誠度能力 (ソーサリーのタイミングで、1ターンに1回)
 }
+// manaCost の形が違うときは RuleError (保存時の検査を通らなかった rule でも、エンジンが落ちないように)
+const parseOrRule = (s: string): ManaCost => {
+  try {
+    return parseManaCost(s);
+  } catch (e) {
+    throw new RuleError((e as Error).message);
+  }
+};
 const costOf = (calls: NodeCall[]): CostSpec => ({
-  mana: calls.reduce((a, c) => a + Number(c.args.mana ?? 0), 0),
+  sym: calls.reduce((a, c) => addCosts(addCosts(a, { ...emptyCost(), generic: Number(c.args.mana ?? 0) }), typeof c.args.manaCost === "string" ? parseOrRule(c.args.manaCost) : emptyCost()), emptyCost()),
   tap: calls.some((c) => c.args.tap === true),
   sacrifice: calls.some((c) => c.args.sacrifice === true),
   tapCreatures: calls.reduce((a, c) => a + Number(c.args.tapCreatures ?? 0), 0),
@@ -204,13 +213,9 @@ const costOf = (calls: NodeCall[]): CostSpec => ({
   isLoyalty: calls.some((c) => c.args.loyalty !== undefined || c.args.loyaltyX === true),
 });
 
-// 呪文のコストに使える、制限つきマナ (その呪文の型に合うもの)
-const restrictedFor = (g: Game, p: PlayerId, spell?: GameCard) =>
-  spell ? (g.restrictedMana[p] ?? []).filter((e) => (!e.type || typeIn(spell.typeLine, e.type)) && (!e.notType || !typeIn(spell.typeLine, e.notType))) : [];
-
 // 払えるか。払えなければ理由 (状態は変えない)。tapIds = パワーの合計のためにタップするクリーチャー
 function costProblem(g: Game, p: PlayerId, cost: CostSpec, source: Perm | undefined, tapIds: string[], rules: RuleBook, spell?: GameCard, x = 0): string | null {
-  if ((g.mana[p] ?? 0) + restrictedFor(g, p, spell).reduce((a, e) => a + e.amount, 0) < cost.mana) return `マナが足りない (${cost.mana} 要る)`;
+  if (!trySpend(g, p, cost.sym, spell, false)) return `マナが足りない (${describeCost(cost.sym)} 要る)`;
   if (cost.isLoyalty) {
     const now = source?.counters?.loyalty ?? 0;
     if (!source || source.loyaltyUsed) return "このターンは、もう忠誠度能力を起動した (1ターンに1回)";
@@ -233,14 +238,7 @@ function costProblem(g: Game, p: PlayerId, cost: CostSpec, source: Perm | undefi
 }
 
 function payCost(g: Game, p: PlayerId, cost: CostSpec, source: Perm | undefined, tapIds: string[], spell?: GameCard, x = 0): void {
-  let rest = cost.mana;
-  for (const e of restrictedFor(g, p, spell)) {
-    const use = Math.min(e.amount, rest); // 制限つきマナを先に使う
-    e.amount -= use;
-    rest -= use;
-  }
-  if (g.restrictedMana[p]) g.restrictedMana[p] = g.restrictedMana[p].filter((e) => e.amount > 0);
-  g.mana[p] = (g.mana[p] ?? 0) - rest;
+  if (!trySpend(g, p, cost.sym, spell, true)) throw new Error("マナが払えない (costProblem を通っていない)");
   if (cost.isLoyalty && source) {
     source.counters = { ...source.counters, loyalty: (source.counters?.loyalty ?? 0) + cost.loyalty - (cost.loyaltyX ? x : 0) };
     source.loyaltyUsed = true;
@@ -274,7 +272,16 @@ export function castSpell(g: Game, p: PlayerId, cardId: string, targets: Record<
     return d;
   });
   const cost = costOf(decls);
-  if (g.payManaCosts) cost.mana += Math.max(0, card.mv - costReduction(g, p, card, rules)); // カード自体のマナコスト (マナ総量 − コスト軽減)。shortcut: 色は区別しない
+  if (g.payManaCosts) {
+    // カード自体のマナコスト。コスト軽減は、汎用の分だけ減らす (色は減らない)。manaCost が無いカードは、マナ総量の数だけ (色なし)
+    let own: ManaCost;
+    try {
+      own = card.manaCost !== undefined ? parseManaCost(card.manaCost) : { ...emptyCost(), generic: card.mv };
+    } catch (e) {
+      throw new RuleError(`${card.name}: ${(e as Error).message}`);
+    }
+    cost.sym = addCosts(cost.sym, { ...own, generic: Math.max(0, own.generic - costReduction(g, p, card, rules)) });
+  }
   const why = costProblem(g, p, cost, undefined, cast.tap ?? [], rules, card);
   if (why) throw new RuleError(`${card.name}: ${why}`);
   payCost(g, p, cost, undefined, cast.tap ?? [], card);

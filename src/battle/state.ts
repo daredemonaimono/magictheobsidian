@@ -4,11 +4,16 @@ import { CardRule, CastRecord, NodeCall } from "./node";
 export type PlayerId = string;
 export type Step = "untap" | "upkeep" | "draw" | "main1" | "combat" | "main2" | "end";
 
+// 色つきのマナ (W U B R G) と、好きな色のマナ (A)
+export type ManaColor = "W" | "U" | "B" | "R" | "G";
+export type PoolKey = ManaColor | "A";
+export type Pool = Partial<Record<PoolKey, number>>;
 export interface GameCard {
   id: string;
   name: string;
   typeLine: string;
   mv: number;
+  manaCost?: string; // マナコストの表記 ("{1}{U}{U}")。payManaCosts のとき、色まで払う。無ければ、マナ総量の数だけ (色なし)
   owner: PlayerId;
   flash?: boolean;
   power?: number; // クリーチャーのパワー・タフネス・キーワード (もとの値)
@@ -70,15 +75,16 @@ export interface Game {
   libraries: Record<PlayerId, GameCard[]>; // 先頭が一番上
   graveyards: Record<PlayerId, GameCard[]>;
   battlefield: Perm[];
-  mana: Record<PlayerId, number>; // 使えるマナの数 (色はまだ区別しない)
+  mana: Record<PlayerId, number>; // 使えるマナの合計
+  pool: Record<PlayerId, Pool>; // そのうち、色のついたもの。合計から引いた残りは、無色のマナ
   decide?: Decider;
-  payManaCosts?: boolean; // 真なら、呪文を唱えるとき、カード自体のマナコスト (マナ総量 − 軽減) を払う。shortcut: 対戦の画面ができるまでは偽 (色は区別しない)
+  payManaCosts?: boolean; // 真なら、呪文を唱えるとき、カード自体のマナコスト (マナ総量 − 軽減) を払う。shortcut: 対戦の画面ができるまでは偽
   stack: StackItem[]; // 末尾が一番上
   log: string[];
   serial: number; // 起動型・誘発型能力の id を作るための通し番号
   events: GameEvent[]; // まだ誘発型能力を探していないイベント
   emblems: Perm[]; // 紋章 (戦場の外に残り続ける。元のカードのルールにある、emblem で始まる誘発型能力が働く)
-  restrictedMana: Record<PlayerId, { amount: number; type?: string; notType?: string }[]>; // 使い道に制限のあるマナ (「クリーチャーでない呪文を唱えるためにしか使えない」)
+  restrictedMana: Record<PlayerId, { amount: number; color?: PoolKey; type?: string; notType?: string }[]>; // 使い道に制限のあるマナ (「クリーチャーでない呪文を唱えるためにしか使えない」)
   landsPlayed: number; // このターンに出した土地の数 (1ターンに1枚)
   life: Record<PlayerId, number>;
   drewEmpty: PlayerId[]; // 空のライブラリーから引こうとした人 (次の状況起因処理で負ける)
@@ -91,7 +97,7 @@ export interface RuleBook {
 
 export function createGame(players: PlayerId[]): Game {
   const each = <T>(f: () => T) => Object.fromEntries(players.map((p) => [p, f()])) as Record<PlayerId, T>;
-  return { players, active: players[0], step: "main1", priority: players[0], passes: [], hands: each<GameCard[]>(() => []), libraries: each<GameCard[]>(() => []), graveyards: each<GameCard[]>(() => []), battlefield: [], mana: each(() => 0), stack: [], log: [], serial: 0, events: [], emblems: [], restrictedMana: each(() => []), landsPlayed: 0, life: each(() => 20), drewEmpty: [], lost: [] };
+  return { players, active: players[0], step: "main1", priority: players[0], passes: [], hands: each<GameCard[]>(() => []), libraries: each<GameCard[]>(() => []), graveyards: each<GameCard[]>(() => []), battlefield: [], mana: each(() => 0), pool: each<Pool>(() => ({})), stack: [], log: [], serial: 0, events: [], emblems: [], restrictedMana: each(() => []), landsPlayed: 0, life: each(() => 20), drewEmpty: [], lost: [] };
 }
 
 export const opponentsOf = (g: Game, p: PlayerId): PlayerId[] => g.players.filter((x) => x !== p);

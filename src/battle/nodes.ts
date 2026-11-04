@@ -1,6 +1,7 @@
 import { characteristics } from "./continuous";
 import { RunCtx, Value } from "./node";
 import { defineCondition, defineNode, getNode } from "./registry";
+import { parseManaCost, spendGeneric } from "./mana";
 import { Game, GameCard, Perm, playersOf, typeIn, untapPerm } from "./state";
 
 // 実装済みの基本ノード。打ち消しは「対象」+「打ち消す」の組み合わせで、カードごとの違いは対象の条件 (引数) だけ
@@ -332,8 +333,9 @@ export function registerBuiltinNodes(): void {
   defineNode({
     id: "cost",
     title: "コスト",
-    summary: "起動型能力のコスト(能力の最初に書く)。mana=払うマナの数 / tap=このパーマネントをタップ / sacrifice=このパーマネントを生け贄に捧げる / tapCreatures=パワーの合計がこの値以上になるよう、自分のクリーチャーをタップ / loyalty=忠誠度を足す(+1 は loyalty=1、−2 は loyalty=-2。プレインズウォーカーの能力。ソーサリーのタイミングで1ターンに1回) / loyaltyX=true で −X(X は起動時に選び、効果の中で $X として参照する)",
-    params: { mana: { type: "number", min: 0 }, tap: { type: "boolean" }, sacrifice: { type: "boolean" }, tapCreatures: { type: "number", min: 0 }, loyalty: { type: "number" }, loyaltyX: { type: "boolean" } },
+    summary: "起動型能力のコスト(能力の最初に書く)。mana=払う汎用マナの数 / manaCost=色つきのマナコスト(\"{1}{U}\") / tap=このパーマネントをタップ / sacrifice=このパーマネントを生け贄に捧げる / tapCreatures=パワーの合計がこの値以上になるよう、自分のクリーチャーをタップ / loyalty=忠誠度を足す(+1 は loyalty=1、−2 は loyalty=-2。プレインズウォーカーの能力。ソーサリーのタイミングで1ターンに1回) / loyaltyX=true で −X(X は起動時に選び、効果の中で $X として参照する)",
+    params: { mana: { type: "number", min: 0 }, manaCost: { type: "string" }, tap: { type: "boolean" }, sacrifice: { type: "boolean" }, tapCreatures: { type: "number", min: 0 }, loyalty: { type: "number" }, loyaltyX: { type: "boolean" } },
+    check: (a) => { try { if (typeof a.manaCost === "string") parseManaCost(a.manaCost); return null; } catch (e) { return (e as Error).message; } },
     outputs: {},
     declaration: true,
     only: ["activated"],
@@ -342,8 +344,9 @@ export function registerBuiltinNodes(): void {
   defineNode({
     id: "additionalCost",
     title: "追加コスト(任意)",
-    summary: "呪文を唱えるときに払ってもよい追加コスト(キッカー・チームワーク)。flag=kicked / teamwork。払って唱えると、if=<flag> のノードが実行される。mana=マナ / tapCreatures=パワーの合計がこの値以上になるよう、自分のクリーチャーをタップ",
-    params: { flag: { type: "string", required: true, choices: ["kicked", "teamwork"] }, mana: { type: "number", min: 0 }, tapCreatures: { type: "number", min: 0 } },
+    summary: "呪文を唱えるときに払ってもよい追加コスト(キッカー・チームワーク)。flag=kicked / teamwork。払って唱えると、if=<flag> のノードが実行される。mana=汎用のマナ / manaCost=色つきのマナコスト(\"{1}{U}\") / tapCreatures=パワーの合計がこの値以上になるよう、自分のクリーチャーをタップ",
+    params: { flag: { type: "string", required: true, choices: ["kicked", "teamwork"] }, mana: { type: "number", min: 0 }, manaCost: { type: "string" }, tapCreatures: { type: "number", min: 0 } },
+    check: (a) => { try { if (typeof a.manaCost === "string") parseManaCost(a.manaCost); return null; } catch (e) { return (e as Error).message; } },
     outputs: {},
     declaration: true,
     only: ["spell"],
@@ -568,16 +571,25 @@ export function registerBuiltinNodes(): void {
   defineNode({
     id: "addMana",
     title: "マナを加える",
-    summary: "コントローラーがマナを amount 点加える(色はまだ区別しない)。spellType / spellNotType を添えると、そのマナは、その型の呪文(spellNotType ならその型でない呪文)を唱えるためにしか使えない(「クリーチャーでない呪文を唱えるためにしか使えない」は spellNotType=creature)",
-    params: { amount: { type: "number", required: true, min: 0 }, spellType: { type: "string" }, spellNotType: { type: "string" } },
+    summary:
+      "コントローラーがマナを amount 点加える。color=W・U・B・R・G(その色) / C(無色。既定) / any(好きな色。どの色のコストにも使える)。spellType / spellNotType を添えると、そのマナは、その型の呪文(spellNotType ならその型でない呪文)を唱えるためにしか使えない(「クリーチャーでない呪文を唱えるためにしか使えない」は spellNotType=creature)",
+    params: { amount: { type: "number", required: true, min: 0 }, color: { type: "string", choices: ["W", "U", "B", "R", "G", "C", "any"] }, spellType: { type: "string" }, spellNotType: { type: "string" } },
     outputs: {},
     run: (ctx, a): Record<string, Value> => {
       const g = ctx.game;
       const p = ctx.item.controller;
+      const n = Number(a.amount);
+      const key = a.color === "any" ? "A" : a.color === undefined || a.color === "C" ? undefined : (String(a.color) as "W" | "U" | "B" | "R" | "G"); // undefined = 無色
       if (typeof a.spellType === "string" || typeof a.spellNotType === "string") {
         g.restrictedMana[p] ??= [];
-        g.restrictedMana[p].push({ amount: Number(a.amount), ...(typeof a.spellType === "string" ? { type: a.spellType } : {}), ...(typeof a.spellNotType === "string" ? { notType: a.spellNotType } : {}) });
-      } else g.mana[p] = (g.mana[p] ?? 0) + Number(a.amount);
+        g.restrictedMana[p].push({ amount: n, ...(key ? { color: key } : {}), ...(typeof a.spellType === "string" ? { type: a.spellType } : {}), ...(typeof a.spellNotType === "string" ? { notType: a.spellNotType } : {}) });
+        return {};
+      }
+      g.mana[p] = (g.mana[p] ?? 0) + n;
+      if (key) {
+        g.pool[p] ??= {};
+        g.pool[p][key] = (g.pool[p][key] ?? 0) + n;
+      }
       return {};
     },
   });
@@ -595,10 +607,10 @@ export function registerBuiltinNodes(): void {
         const i = g.stack.findIndex((s) => s.id === id);
         if (i < 0) continue;
         if (typeof a.unlessPay === "number") {
-          // shortcut: マナの色は区別しない。払うかどうかは g.decide.pay (既定は払えるなら払う)。判断の入力を作るときに置き換える
+          // 払うのは汎用の N 点 (色つきのマナでも払える)。払うかどうかは g.decide.pay (既定は払えるなら払う)。判断の入力を作るときに置き換える
           const p = g.stack[i].controller;
-          if (g.mana[p] >= a.unlessPay && (g.decide?.pay?.(g, p, a.unlessPay) ?? true)) {
-            g.mana[p] -= a.unlessPay;
+          if (spendGeneric(g, p, a.unlessPay, false) && (g.decide?.pay?.(g, p, a.unlessPay) ?? true)) {
+            spendGeneric(g, p, a.unlessPay);
             g.log.push(`${p} が ${a.unlessPay} を支払い、${g.stack[i].card.name} は打ち消されなかった`);
             continue;
           }

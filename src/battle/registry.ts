@@ -1,4 +1,4 @@
-import { Ability, AbilityKind, NodeCall, NodeDef, RunCtx } from "./node";
+import { Ability, AbilityKind, NodeCall, NodeDef, RunCtx, Value } from "./node";
 
 const nodes = new Map<string, NodeDef>();
 
@@ -140,5 +140,5 @@ export function checkCall(call: NodeCall): string | null {
     if (p.max !== undefined && typeof v === "number" && v > p.max) return `値が大きすぎる: ${name} (${p.max} 以下)`;
   }
   for (const name of Object.keys(call.args)) if (!(name in def.params)) return `未知の引数: ${name}`;
-  return null;
+  return def.check?.(call.args as Record<string, Value>) ?? null;
 }

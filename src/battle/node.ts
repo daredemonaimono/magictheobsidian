@@ -46,6 +46,7 @@ export interface NodeDef {
   isTarget?: boolean; // 唱えるときに対象を選ぶノード
   declaration?: boolean; // コストなどの宣言のノード (エンジンが読む。条件 if= は付けられない)
   only?: AbilityKind[]; // 書ける能力の種類 (無ければどの能力にも書ける)
+  check?: (args: Record<string, Value>) => string | null; // 引数の値の検査 (形式など。checkCall が呼ぶ)
   run?: (ctx: RunCtx, args: Record<string, Value>) => Record<string, Value>; // 無ければ「未実装」
 }
 

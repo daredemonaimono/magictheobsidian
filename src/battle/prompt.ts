@@ -44,7 +44,7 @@ ${conditionList() || "(まだ無い)"}
 ## 規則
 - カード専用のノードは作らない。違いは、汎用ノードの引数で表す。
 - ノードで表せない部分は、ノードを作らずに、末尾の \`## 未対応\` の下に、箇条書き1行ずつ、元のテキストのまま書く。
-- 起動型能力(「コスト: 効果」の形)は \`## 起動型能力\` の最初のノードに \`cost\` を書く(例: 「{T}: マナを加える」は \`- cost tap=true\` と \`- addMana amount=1\`。「{1}{U}, 生け贄に捧げる: …」は \`- cost mana=2 sacrifice=true\`)。
+- 起動型能力(「コスト: 効果」の形)は \`## 起動型能力\` の最初のノードに \`cost\` を書く(例: 「{T}: {U} を加える」は \`- cost tap=true\` と \`- addMana amount=1 color=U\`。「{1}{U}, 生け贄に捧げる: …」は \`- cost manaCost="{1}{U}" sacrifice=true\`。色のないコスト {N} は \`mana=N\` でもよい)。
 - 誘発型能力(「〜したとき」「〜するたび」)は \`## 誘発型能力\` の最初のノードに \`when\` を書き、その後ろに効果のノードを書く(例: 「対戦相手のターン中に、あなたが呪文を唱えるたび、このクリーチャーの上に +1/+1 カウンターを1個置く」は \`- when event=cast who=you turn=opponents\` / \`- self as=s\` / \`- addCounter target=$s kind=+1/+1 count=1\`。「戦場に出たとき」は \`when event=enters self=true\`、「戦場を離れたとき」は \`when event=leaves self=true\`。「このパーマネント」は \`self\` ノードを as= で受けて target に渡す。果敢(prowess)は誘発型能力で書かず、常在型能力に \`keyword name=prowess\` と書く。エンジンが誘発させる)。誘発型能力の対象は、誘発したときに自動で選ばれる(合法な対象が無ければ、能力は使われない)。
 - 継続効果(「装備しているクリーチャーは +1/+2」「エンチャントしているクリーチャーは〜になる」「あなたのクリーチャーは〜」)は、\`## 常在型能力\` の最初のノードに \`affect who=attached\`(付いているもの。装備・オーラ。ほかに self / yours / all と、type・notType の絞り込み)を書き、その後ろに効果のノードを並べる。効果のノード: \`staticModify power= toughness=\`(+X/+Y)、\`staticGrant keyword=\`(キーワードを与える。果敢は prowess)、\`loseAbilities\`(すべての能力を失う)、\`setBaseStats power= toughness=\`(基本のパワー・タフネス)、\`setTypes types="Creature — Citizen"\`、\`setColors colors="G W"\`、\`setName name=\`、\`extraTriggers amount=1\`(誘発の追加)。
 - 装備: 「装備 {N}」は \`## 起動型能力\` に \`timing sorcery=true\`、\`cost mana=N\`、\`target ...\`(例: type=creature controller=you)、\`attach target=$t\` と書く。「戦場に出たとき、〜に付ける」は誘発型能力の \`target\` と \`attach\`。
@@ -57,9 +57,10 @@ ${conditionList() || "(まだ無い)"}
 - トークンを作る: \`createToken name=Illusion types="Creature — Illusion" power=1 toughness=1 colors=U\`。
 - 紋章(emblem)を得る: \`createEmblem name=<名前>\`。紋章の能力は、同じカードのルールの中に、\`## 誘発型能力\` として \`emblem name=<同じ名前>\` と \`when …\` の順に書く。紋章の常在型能力 (static) は未対応なので、\`## 未対応\` に書く。
 - 「ステップの開始時に」は \`when event=step step=draw who=opponents\`(who は、そのターンのプレイヤー)。
+- マナの色: \`addMana color=W|U|B|R|G\`(その色)、無色は color を書かないか \`color=C\`、「好きな色1色」は \`color=any\`。コストの色は \`manaCost="{1}{U}"\` と書く(混成 {W/U} も書ける)。
 - 「このマナは、〜を唱えるためにしか使えない」は \`addMana amount=1 spellNotType=creature\`(spellType はその型だけ)。
 - 瞬速などのキーワード能力は、\`## 常在型能力\` に \`- keyword name=flash\` と書く(瞬速は、インスタントのタイミングで唱えられる)。ほかのキーワードは、戦場に出たときに得る。
-- キッカー・チームワークなど、呪文を唱えるときに払ってもよい追加コストは、\`## 呪文能力\` の最初に \`additionalCost flag=kicked mana=2\` / \`additionalCost flag=teamwork tapCreatures=2\` と書く。払ったときだけ実行するノードには \`if=kicked\` / \`if=teamwork\` を付ける。
+- キッカー・チームワークなど、呪文を唱えるときに払ってもよい追加コストは、\`## 呪文能力\` の最初に \`additionalCost flag=kicked manaCost="{1}{U}"\`(色のないコストなら \`mana=2\`) / \`additionalCost flag=teamwork tapCreatures=2\` と書く。払ったときだけ実行するノードには \`if=kicked\` / \`if=teamwork\` を付ける。
 - 「裁定後のテキスト」が付いているときは、それを正しいテキストとして組む(カードのテキストが古いか、裁定で変わったため)。
 - 返事は md 1つだけを \`\`\`md の囲みで返す。説明は書かない。
 
