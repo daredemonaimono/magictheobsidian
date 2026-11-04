@@ -53,6 +53,13 @@ Obsidian を Magic: The Gathering のデッキ構築ツールにするプラグ�
 - ホバーして「↻」で、そのカードだけ Scryfall から取り直す。frontmatter は取り直した項目だけ上書きし、本文は作り直す(本文に書いたメモは消える)。
 - 効果テキストの言語が日本語のときは「Wiki」で、MTG Wiki のそのカードのページをブラウザで開く。
 
+## 対戦(作成中)
+
+対戦機能の核を作っている途中で、対戦の画面はまだ無い。カードの能力を、汎用のノードの組み合わせで `Rules/<カード名>.md` に書く(Obsidian 上で手で直せる)。
+
+- コマンド「Battle: create sample rules」で、打ち消し3種(Negate / Essence Scatter / Spell Snare)のサンプルを `Rules/` に作る。
+- コマンド「Battle: rules coverage」で、`Cards/` の全カードの状況(ok / partial / unbuilt)を `Rules/_coverage.md` に書き出す。ok は、最小シナリオを実際に動かして通ったものだけ。
+
 ## フォーマットのルール
 
 デッキのノートの `format:` で決まる(Standard / Pioneer / Modern / Legacy / Vintage / Pauper / Commander。作成時に選ぶ)。`format:` が無い・知らないデッキは「制限なし」(同名4枚とサイド15枚だけ)。

@@ -1,4 +1,7 @@
 import { App, EventRef, Modal, Notice, Plugin, Setting, TFile, WorkspaceLeaf, normalizePath } from "obsidian";
+import { cardStatus, report } from "./battle/coverage";
+import { registerBuiltinNodes } from "./battle/nodes";
+import { SAMPLE_RULES } from "./battle/samples";
 import { ensureCardFile, localCards, updateLegality } from "./cards";
 import { DECK_DIR, foldCommander, writeDeck } from "./deck";
 import { CREATABLE, FORMATS } from "./rules";
@@ -14,6 +17,8 @@ import { priceStore, updateCollectionPrices } from "./prices";
 import { DEFAULT_SETTINGS, Settings, SettingsTab } from "./settings";
 
 // 「動き方」はカード行の外なので、デッキ画面で枚数を変えても書き換わらない。統率戦だけコマンダー欄があり、サイドは無い
+const RULES_DIR = "Rules"; // カードの能力をノードで組んだ md (Cards/ と同じ並び。Obsidian の画面で手で直せる)
+
 const deckTemplate = (format: string) =>
   `---\nmtg: deck\nformat: ${format}\ntags: [mtg/deck]\n---\n\n${format === "commander" ? "## Commander\n\n## Main\n" : "## Main\n\n## Side\n"}\n## 動き方\n\n- 勝ち筋:\n- 序盤:\n- 中盤:\n- 注意点:\n`;
 
@@ -62,6 +67,7 @@ export default class MagicTheObsidian extends Plugin {
   private opening = false;
 
   async onload() {
+    registerBuiltinNodes();
     // data.json: 設定 + 価格キャッシュ (フラットな1つのオブジェクト)
     const d = (await this.loadData()) ?? {};
     this.settings = {
@@ -145,6 +151,8 @@ export default class MagicTheObsidian extends Plugin {
         }
       },
     });
+    this.addCommand({ id: "battle-sample-rules", name: "Battle: create sample rules", callback: () => void this.createSampleRules() });
+    this.addCommand({ id: "battle-rules-coverage", name: "Battle: rules coverage", callback: () => void this.rulesCoverage() });
     this.addCommand({ id: "open-dashboard", name: "Open dashboard", callback: () => void this.openOrReveal(DASHBOARD_VIEW) });
     this.addRibbonIcon("layout-dashboard", "Magic the Obsidian", () => void this.openOrReveal(DASHBOARD_VIEW));
     this.addCommand({
@@ -266,6 +274,39 @@ export default class MagicTheObsidian extends Plugin {
     }
     this.prevCount = count;
     this.updateLists();
+  }
+
+  private async ensureRulesDir() {
+    if (!this.app.vault.getAbstractFileByPath(RULES_DIR)) await this.app.vault.createFolder(RULES_DIR);
+  }
+
+  // 打ち消し3種のサンプルを Rules/ に作る (すでにあるファイルは上書きしない)
+  private async createSampleRules() {
+    await this.ensureRulesDir();
+    let made = 0;
+    for (const [name, md] of Object.entries(SAMPLE_RULES)) {
+      const path = normalizePath(`${RULES_DIR}/${fileSafe(name)}.md`);
+      if (this.app.vault.getAbstractFileByPath(path)) continue;
+      await this.app.vault.create(path, md);
+      made++;
+    }
+    new Notice(`サンプルのルールを ${made} 枚作った (すでにあるものは飛ばした)`);
+  }
+
+  // Cards/ の全カードについて、Rules/<名前>.md の状況 (ok / partial / unbuilt) を Rules/_coverage.md に書き出す
+  private async rulesCoverage() {
+    await this.ensureRulesDir();
+    const statuses = [];
+    for (const c of localCards(this.app)) {
+      const f = this.app.vault.getAbstractFileByPath(normalizePath(`${RULES_DIR}/${c.file.basename}.md`));
+      statuses.push(cardStatus(c.file.basename, f instanceof TFile ? await this.app.vault.read(f) : undefined));
+    }
+    const path = normalizePath(`${RULES_DIR}/_coverage.md`);
+    const body = report(statuses.sort((a, b) => a.card.localeCompare(b.card)));
+    const old = this.app.vault.getAbstractFileByPath(path);
+    if (old instanceof TFile) await this.app.vault.modify(old, body);
+    else await this.app.vault.create(path, body);
+    new Notice(`ルールの状況を書き出した: ok ${statuses.filter((s) => s.status === "ok").length} / ${statuses.length} 枚`);
   }
 
   private async fetchCardNote(query: string) {
