@@ -25,7 +25,7 @@ export interface CardRule {
   unsupported?: string[]; // ノードで表せない部分 (md の「## 未対応」。文章のまま)
 }
 
-export type ParamDef = { type: "string" | "number" | "boolean" | "ref"; required?: boolean; choices?: string[]; min?: number };
+export type ParamDef = { type: "string" | "number" | "boolean" | "ref"; required?: boolean; choices?: string[]; min?: number; max?: number };
 
 // ノードを実行するときに渡すもの。vars は、前のノードの as の名前 → 出力
 export interface RunCtx {
@@ -33,6 +33,7 @@ export interface RunCtx {
   item: StackItem; // いま解決している (唱えている) 呪文
   vars: Record<string, Value>;
   call: NodeCall; // 実行中の呼び出し (対象のノードが、自分の as を知るのに使う)
+  phase?: "cast" | "resolve"; // cast = 唱える・起動するときの検査 (対象は全部が合法でなければならない)。無ければ解決 (残った合法な対象にだけ効く)
 }
 
 export interface NodeDef {

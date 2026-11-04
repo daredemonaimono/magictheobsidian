@@ -15,11 +15,25 @@ export function defineCondition(c: Condition): void {
   conditions.set(c.id, c);
 }
 export const allConditions = (): Condition[] => [...conditions.values()];
+// 数の条件 (カード専用にしない、汎用の形): <場所>:<型>:<数>[+|-]  例: graveyard:lesson:3+ (自分の墓地に Lesson が3枚以上) / hand:any:0 (手札が0枚) / library:any:5- (ライブラリーが5枚以下)
+// 場所は graveyard / hand / library / battlefield (コントローラーのもの)、型は型行に含まれる語 (any = すべて)。+ は以上、- は以下、無印はちょうど
+const COUNT = /^(graveyard|hand|library|battlefield):([^:\s]+):(\d+)([+-]?)$/;
+const bare = (expr: string) => (expr.startsWith("!") ? expr.slice(1) : expr);
+
 // 問題なければ null
-export const checkCondition = (expr: string): string | null => (conditions.has(expr.startsWith("!") ? expr.slice(1) : expr) ? null : `未知の条件: ${expr}`);
+export const checkCondition = (expr: string): string | null => (conditions.has(bare(expr)) || COUNT.test(bare(expr)) ? null : `未知の条件: ${expr}`);
 export function evalCondition(expr: string, ctx: RunCtx): boolean {
   const neg = expr.startsWith("!");
-  const r = conditions.get(neg ? expr.slice(1) : expr)?.test(ctx) ?? false;
+  const id = bare(expr);
+  let r = conditions.get(id)?.test(ctx) ?? false;
+  const m = id.match(COUNT);
+  if (m) {
+    const g = ctx.game;
+    const p = ctx.item.controller;
+    const cards = m[1] === "battlefield" ? g.battlefield.filter((x) => x.controller === p).map((x) => x.card) : m[1] === "graveyard" ? g.graveyards[p] : m[1] === "hand" ? g.hands[p] : g.libraries[p];
+    const n = cards.filter((c) => m[2].toLowerCase() === "any" || c.typeLine.toLowerCase().includes(m[2].toLowerCase())).length;
+    r = m[4] === "+" ? n >= Number(m[3]) : m[4] === "-" ? n <= Number(m[3]) : n === Number(m[3]);
+  }
   return neg ? !r : r;
 }
 
@@ -47,7 +61,6 @@ export function checkCall(call: NodeCall): string | null {
   const def = nodes.get(call.node);
   if (!def) return `未知のノード: ${call.node}`;
   if (call.if !== undefined) {
-    if (def.isTarget) return "対象を決めるノードには条件を付けられない"; // 唱えるときの対象の検査が条件を見ないため
     if (def.declaration) return `宣言のノード (${def.id}) には条件を付けられない`; // エンジンが条件を見ずに読むため
     const bad = checkCondition(call.if);
     if (bad) return bad;
@@ -62,6 +75,7 @@ export function checkCall(call: NodeCall): string | null {
     if (p.type === "ref" ? !isRef : isRef || typeof v !== p.type) return `型が違う: ${name}`;
     if (p.choices && !p.choices.includes(String(v))) return `選べない値: ${name}=${v}`;
     if (p.min !== undefined && typeof v === "number" && v < p.min) return `値が小さすぎる: ${name} (${p.min} 以上)`;
+    if (p.max !== undefined && typeof v === "number" && v > p.max) return `値が大きすぎる: ${name} (${p.max} 以下)`;
   }
   for (const name of Object.keys(call.args)) if (!(name in def.params)) return `未知の引数: ${name}`;
   return null;

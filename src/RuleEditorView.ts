@@ -254,7 +254,7 @@ export class RuleEditorView extends ItemView {
         const cr = card.createDiv("mtg-ed-param");
         cr.createSpan({ text: "条件", cls: "mtg-ed-label" });
         const cs = cr.createEl("select");
-        cs.createEl("option", { text: "(いつでも)", value: "" });
+        cs.createEl("option", { text: "(条件なし)", value: "" });
         const opts = allConditions().flatMap((c) => [{ v: c.id, t: c.title }, { v: `!${c.id}`, t: `${c.title}ではない` }]);
         if (call.if && !opts.some((o) => o.v === call.if)) opts.push({ v: call.if, t: call.if });
         for (const o of opts) cs.createEl("option", { text: o.t, value: o.v });
@@ -289,6 +289,12 @@ export class RuleEditorView extends ItemView {
             for (const c of p.choices) sel.createEl("option", { text: c, value: c });
             sel.value = typeof v === "string" ? v : "";
             sel.onchange = () => this.quiet(setArg(this.rule!, a, n, k, sel.value || undefined));
+          } else if (p.type === "boolean" && !p.required) {
+            // 任意の真偽は3択: 指定なし / はい / いいえ (チェックボックスだと、外すだけで false を書いてしまい、「攻撃中でない」の絞り込みになる)
+            const sel = pr.createEl("select");
+            for (const [val, text] of [["", "(未指定)"], ["true", "はい"], ["false", "いいえ"]]) sel.createEl("option", { text, value: val });
+            sel.value = typeof v === "boolean" ? String(v) : "";
+            sel.onchange = () => this.quiet(setArg(this.rule!, a, n, k, sel.value === "" ? undefined : sel.value === "true"));
           } else if (p.type === "boolean") {
             const cb = pr.createEl("input", { type: "checkbox" });
             cb.checked = v === true;

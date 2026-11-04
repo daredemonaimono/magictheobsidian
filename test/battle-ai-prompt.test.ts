@@ -53,3 +53,11 @@ assert.ok(buildPrompt("Negate", "x").system.includes("foresee"));
   const sys = buildPrompt("Island", "x").system;
   for (const w of ["additionalCost", "addMana", "## 起動型能力", "cost mana=", "tapCreatures"]) assert.ok(sys.includes(w), `system に ${w}`);
 }
+
+// 第2弾: モード・数の条件・複数の対象・リスト (look / choose / move / select) の書き方を載せる
+{
+  resetRegistry();
+  registerBuiltinNodes();
+  const sys = buildPrompt("Confusticate and Bebother", "x").system;
+  for (const w of ["modes", "if=mode1", "graveyard:lesson:3+", "最大", "select", "look", "choose", "move", "except", "attacking"]) assert.ok(sys.includes(w), `system に ${w}`);
+}

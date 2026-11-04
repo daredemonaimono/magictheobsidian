@@ -102,6 +102,6 @@ const duel = (mana: number, cast: CastRecord) => {
   assert.deepEqual(duel(4, { teamwork: true }).stack.map((s) => s.id), ["bolt"], "4 払えば通る");
 }
 
-// 対象を決めるノード (target) には条件を付けられない: 唱えるときの対象の検査が条件を見ないため、条件つきの target は意味が食い違う
-assert.ok(checkCall(call("target", { zone: "stack", kind: "spell" }, { if: "kicked" }))?.includes("対象"));
+// 対象を決めるノード (target) にも条件を付けられる (選ばれなかったモードの対象は求めない)。唱えるときに条件を評価する (battle-batch2.test.ts)
+assert.equal(checkCall(call("target", { zone: "stack", kind: "spell" }, { if: "kicked" })), null);
 assert.equal(checkCall(call("target", { zone: "stack", kind: "spell" })), null);

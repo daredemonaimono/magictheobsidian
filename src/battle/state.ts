@@ -44,6 +44,7 @@ export interface Perm {
 export interface Decider {
   discard?(g: Game, p: PlayerId, n: number): GameCard[]; // 捨てるカード
   pay?(g: Game, p: PlayerId, n: number): boolean; // 「支払わないかぎり」を払うか
+  choose?(g: Game, p: PlayerId, from: GameCard[], n: number): GameCard[]; // 選ぶカード (look / choose)
 }
 export interface Game {
   players: PlayerId[];

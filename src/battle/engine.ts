@@ -23,14 +23,32 @@ function resolveArgs(call: NodeCall, vars: Record<string, Value>): Record<string
   return out;
 }
 
-// 全ノードの検証 (checkCall) と、対象がすべて合法か。だめなら RuleError
+// 全ノードの検証 (checkCall) と、対象がすべて合法か。だめなら RuleError。
+// 条件 (if=) を満たさないノードの対象は求めない (選ばれなかったモード、キッカーされなかったときの対象など)。条件は唱えるときの選択 (item.cast) で決まる
 function validate(g: Game, item: StackItem, body: NodeCall[], name: string): void {
   for (const call of body) {
     const bad = checkCall(call);
     if (bad) throw new RuleError(`${name}: ${bad}`);
+  }
+  for (const call of body) {
     const def = getNode(call.node)!;
-    if (!def.isTarget) continue;
-    if (!def.run!({ game: g, item, vars: {}, call }, resolveArgs(call, {})!).id) throw new RuleError(`合法な対象が無い: ${name} (${call.as ?? "?"})`);
+    const ctx: RunCtx = { game: g, item, vars: {}, call, phase: "cast" };
+    if (!def.isTarget || (call.if !== undefined && !evalCondition(call.if, ctx))) continue;
+    if (def.run!(ctx, resolveArgs(call, {})!).id === undefined) throw new RuleError(`合法な対象が無い: ${name} (${call.as ?? "?"})`);
+  }
+}
+
+// モードの選び方 (modes の宣言): min〜max 個、1〜count 番、重複なし。宣言が無いのにモードを選ぶのもだめ
+function checkModes(body: NodeCall[], cast: CastRecord, name: string): void {
+  const decl = body.find((c) => c.node === "modes");
+  const modes = cast.modes ?? [];
+  if (!decl) {
+    if (modes.length) throw new RuleError(`${name}: モードの宣言 (modes) が書かれていない`);
+    return;
+  }
+  const [count, min, max] = [Number(decl.args.count), Number(decl.args.min), Number(decl.args.max)];
+  if (modes.length < min || modes.length > max || new Set(modes).size !== modes.length || modes.some((m) => !Number.isInteger(m) || m < 1 || m > count)) {
+    throw new RuleError(`${name}: モードの選び方が不正 (${min === max ? min : `${min}〜${max}`} 個を、1〜${count} 番から。重複なし)`);
   }
 }
 
@@ -84,6 +102,7 @@ export function castSpell(g: Game, p: PlayerId, cardId: string, targets: Record<
   const body = spellBody(rules, card);
   if (!body) throw new RuleError(`呪文能力のルールが無い: ${card.name}`);
   const item: StackItem = { id: card.id, card, controller: p, targets, cast };
+  checkModes(body, cast, card.name);
   validate(g, item, body, card.name);
   const chosen = (["kicked", "teamwork"] as const).filter((f) => cast[f]);
   const decls = chosen.flatMap((f) => {
@@ -133,7 +152,8 @@ export function resolveTop(g: Game, rules: RuleBook): void {
   if (!item) return;
   const body = item.body ?? spellBody(rules, item.card) ?? [];
   const ctx = (call: NodeCall, vars: Record<string, Value>): RunCtx => ({ game: g, item, vars, call });
-  const targets = body.filter((c) => getNode(c.node)?.isTarget);
+  // 条件を満たす対象のノードのうち、1つでも対象が残っていれば解決する (残った対象にだけ効く)。選ばれなかったモードの対象は数えない
+  const targets = body.filter((c) => getNode(c.node)?.isTarget && (c.if === undefined || evalCondition(c.if, ctx(c, {}))));
   const alive = targets.some((c) => getNode(c.node)!.run!(ctx(c, {}), resolveArgs(c, {})!).id !== undefined);
   if (targets.length && !alive) g.log.push(`${item.card.name}: 対象が無くなったので解決しない`);
   else {
