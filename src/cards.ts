@@ -22,6 +22,8 @@ export interface CardInfo {
   legal?: string[]; // 使えるフォーマット。未取得なら undefined
   restricted?: string[]; // 制限カードのフォーマット (Vintage)
   layout?: string; // Scryfall のレイアウト (transform / prepare など)。古いノートには無い
+  loyalty?: number; // プレインズウォーカーの初期忠誠度。古いノート・X には無い
+  loyaltyKnown?: boolean; // loyalty: が書いてある (X も)。無いのは、古いノート (情報取得で付く)
 }
 
 function toInfo(app: App, file: TFile): CardInfo | null {
@@ -43,6 +45,8 @@ function toInfo(app: App, file: TFile): CardInfo | null {
     legal: Array.isArray(fm.legal) ? fm.legal : undefined,
     restricted: Array.isArray(fm.restricted) ? fm.restricted : undefined,
     layout: fm.layout,
+    loyalty: typeof fm.loyalty === "number" ? fm.loyalty : undefined,
+    loyaltyKnown: fm.loyalty !== undefined,
   };
 }
 

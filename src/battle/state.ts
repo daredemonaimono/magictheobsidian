@@ -88,6 +88,7 @@ export interface Game {
   mana: Record<PlayerId, number>; // 使えるマナの合計
   pool: Record<PlayerId, Pool>; // そのうち、色のついたもの。合計から引いた残りは、無色のマナ
   decide?: Decider;
+  skipUnruled?: boolean; // 真なら、ルールが設定されていないカード (ルールが無い・ノードが空) は、使うと「ルールが設定されていません。スキップします。」とログに出して、効果を飛ばす (唱える・出すことはできる)。shortcut: 偽 (既定) なら、これまでどおり (呪文は RuleError)。対戦の画面が真にする
   payManaCosts?: boolean; // 真なら、呪文を唱えるとき、カード自体のマナコスト (マナ総量 − 軽減) を払う。shortcut: 対戦の画面ができるまでは偽
   stack: StackItem[]; // 末尾が一番上
   log: string[];

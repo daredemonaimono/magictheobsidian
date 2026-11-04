@@ -13,6 +13,10 @@ export const nextPlayer = (g: Game, p: PlayerId): PlayerId => g.players[(g.playe
 
 export class RuleError extends Error {}
 
+const UNRULED = "ルールが設定されていません。スキップします。";
+// ルールが設定されていないカード (skipUnruled が真のとき): ルールが無い、またはノードが1つも無い
+const unruled = (g: Game, rules: RuleBook, card: GameCard): boolean => !!g.skipUnruled && (rules.get(card.name)?.abilities ?? []).every((a) => a.body.length === 0);
+
 const isPermanentCard = (c: GameCard): boolean => !/\b(Instant|Sorcery)\b/.test(c.typeLine);
 
 // ルールの常在型能力に書かれたキーワード (keyword name=…)
@@ -308,10 +312,12 @@ export function castSpell(g: Game, p: PlayerId, cardId: string, targets: Record<
   if (!card) throw new RuleError(`手札に無い: ${cardId}`);
   if (/\bLand\b/.test(card.typeLine)) throw new RuleError(`土地は唱えられない (playLand で出す): ${card.name}`); // 1ターン1枚の制限は playLand にある
   if (!canCastNow(g, p, card, rules)) throw new RuleError(`いまは唱えられない: ${card.name}`);
-  const body = spellBody(rules, card) ?? (rules.get(card.name) && isPermanentCard(card) ? [] : undefined); // 呪文能力の無いパーマネントも、ルールがあれば唱えられる
+  const skipped = unruled(g, rules, card); // ルールが設定されていないカード: 効果は飛ばす
+  const body = skipped ? [] : spellBody(rules, card) ?? (rules.get(card.name) && isPermanentCard(card) ? [] : undefined); // 呪文能力の無いパーマネントも、ルールがあれば唱えられる
   if (!body) throw new RuleError(`呪文能力のルールが無い: ${card.name}`);
   castCore(g, p, card, body, targets, rules, cast, () => {
     g.hands[p] = g.hands[p].filter((c) => c !== card);
+    if (skipped) g.log.push(`${card.name}: ${UNRULED}`);
   });
 }
 
@@ -359,6 +365,7 @@ export function playLand(g: Game, p: PlayerId, cardId: string, rules: RuleBook):
   if (g.landsPlayed >= 1) throw new RuleError("このターンは、もう土地を出した");
   g.hands[p] = g.hands[p].filter((c) => c !== card);
   g.landsPlayed++;
+  if (unruled(g, rules, card)) g.log.push(`${card.name}: ${UNRULED}`);
   enterBattlefield(g, card, p, rules);
   flushEvents(g, rules);
 }

@@ -147,6 +147,7 @@ export class DeckView extends ItemView {
         for (const k of keys) {
           const i = cardInfo(this.app, k);
           if (i && i.name.includes(" // ") && !i.layout && !noText.includes(k)) noText.push(k);
+          if (i && /\bPlaneswalker\b/.test(i.typeLine) && !i.loyaltyKnown && !noText.includes(k)) noText.push(k); // 忠誠度の行が無い古いノートも取り直す (対戦で使う。X は X と書くので、取り直しは1回だけ)
         }
         let fetched = 0;
         let failedCards = 0;

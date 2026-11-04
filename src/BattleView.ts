@@ -1,6 +1,7 @@
 import { ItemView, WorkspaceLeaf } from "obsidian";
 import { BoardModel, CardView, LandStack, PhaseId, boardModel } from "./battle/boardModel";
 import { CARD_H, CARD_W, GAP, HAND_H, HAND_W, LAYER_PX, TAP_EXTRA, cardBackUrl, overlapFor, pileLayers, rowNeed } from "./battle/layout";
+import { BattleSession } from "./battle/deckToGame";
 import { sampleBattle } from "./battle/sampleBattle";
 import { Game, RuleBook } from "./battle/state";
 import { cardImage, cardInfo, cardText } from "./cards";
@@ -50,7 +51,8 @@ export class BattleView extends ItemView {
   private previewSeq = 0;
   private watcher?: ResizeObserver;
 
-  constructor(leaf: WorkspaceLeaf) {
+  // getSession = 対戦の局面 (無ければ、サンプルの局面)。対戦を始め直したときは、begin() で読み直す
+  constructor(leaf: WorkspaceLeaf, private getSession: () => BattleSession | undefined) {
     super(leaf);
   }
 
@@ -65,7 +67,12 @@ export class BattleView extends ItemView {
   }
 
   async onOpen() {
-    const { game, rules } = sampleBattle();
+    await this.begin();
+  }
+
+  // 局面を (読み直して) 描き始める
+  async begin() {
+    const { game, rules } = this.getSession() ?? sampleBattle();
     this.game = game;
     this.rules = rules;
     this.build();

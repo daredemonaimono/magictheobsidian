@@ -18,6 +18,9 @@ import { CREATABLE, FORMATS } from "./rules";
 import { ImportModal, resolveDeck } from "./import";
 import { CARDLIST_VIEW, CardListView } from "./CardListView";
 import { BATTLE_VIEW, BattleView } from "./BattleView";
+import { BattleStartModal } from "./BattleStartModal";
+import { BattleSession, MatchError } from "./battle/deckToGame";
+import { listDecks, startBattle } from "./battleStart";
 import { COLLECTION_VIEW, CollectionView } from "./CollectionView";
 import { CARDS_VIEW, CardsView } from "./CardsView";
 import { DASHBOARD_VIEW, DashboardView } from "./DashboardView";
@@ -105,7 +108,7 @@ export default class MagicTheObsidian extends Plugin {
       }),
     );
     this.registerView(DECK_VIEW, (leaf) => new DeckView(leaf, this.settings));
-    this.registerView(BATTLE_VIEW, (leaf) => new BattleView(leaf));
+    this.registerView(BATTLE_VIEW, (leaf) => new BattleView(leaf, () => this.battleSession));
     this.registerView(DASHBOARD_VIEW, (leaf) => new DashboardView(leaf, { collection: () => void this.openOrReveal(COLLECTION_VIEW), deck: () => void this.openOrReveal(DECKLIST_VIEW), cards: () => void this.openOrReveal(CARDS_VIEW) }));
     this.registerView(CARDS_VIEW, (leaf) => new CardsView(leaf, this.settings));
     this.registerView(
@@ -186,7 +189,8 @@ export default class MagicTheObsidian extends Plugin {
         }
       },
     });
-    this.addCommand({ id: "battle-open", name: "Battle: open battle screen (sample)", callback: () => void this.app.workspace.getLeaf(true).setViewState({ type: BATTLE_VIEW, active: true }) });
+    this.addCommand({ id: "battle-open", name: "Battle: open battle screen (sample)", callback: () => { this.battleSession = undefined; void this.app.workspace.getLeaf(true).setViewState({ type: BATTLE_VIEW, active: true }); } });
+    this.addCommand({ id: "battle-start", name: "Battle: start battle", callback: () => void this.openBattleStart() });
     this.addCommand({ id: "battle-sample-rules", name: "Battle: create sample rules", callback: () => void this.createSampleRules() });
     this.addCommand({ id: "battle-create-glossary", name: "Battle: create glossary note", callback: () => void this.createGlossaryNote() });
     this.addCommand({ id: "battle-build-rules", name: "Battle: build rules with AI", callback: () => void this.openBuildRules() });
@@ -314,6 +318,29 @@ export default class MagicTheObsidian extends Plugin {
     }
     this.prevCount = count;
     this.updateLists();
+  }
+
+  // ---- 対戦: デッキを選んで始める
+  private battleSession?: BattleSession;
+
+  private async openBattleStart() {
+    const decks = await listDecks(this.app);
+    if (!decks.length) return void new Notice("デッキがありません (Decks/)");
+    new BattleStartModal(this.app, decks, (self, opp) => void this.beginBattle(self, opp)).open();
+  }
+
+  private async beginBattle(self: string, opp: string) {
+    try {
+      this.battleSession = await startBattle(this.app, self, opp);
+    } catch (e) {
+      new Notice(e instanceof MatchError ? e.message : `始められません: ${(e as Error).message}`);
+      return;
+    }
+    const open = this.app.workspace.getLeavesOfType(BATTLE_VIEW)[0]; // 開いている対戦の画面があれば、その局面を置き換える
+    if (open?.view instanceof BattleView) {
+      await open.view.begin();
+      void this.app.workspace.revealLeaf(open);
+    } else await this.app.workspace.getLeaf(true).setViewState({ type: BATTLE_VIEW, active: true });
   }
 
   private async ensureRulesDir() {

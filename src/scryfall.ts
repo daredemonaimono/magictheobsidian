@@ -3,6 +3,7 @@ import { backUrl } from "./flip";
 
 export interface ScryfallCard {
   layout?: string;
+  loyalty?: string; // プレインズウォーカーの初期忠誠度 (Scryfall は文字列。X などもある)
   id: string;
   oracle_id: string;
   name: string;
@@ -36,6 +37,7 @@ export interface ScryfallCard {
     printed_name?: string;
     printed_text?: string;
     printed_type_line?: string;
+    loyalty?: string;
     image_uris?: { normal: string };
   }[];
   oracle_text?: string;
@@ -166,6 +168,8 @@ export interface CardOptions {
   printings: Printing[];
 }
 
+const loyaltyOf = (c: ScryfallCard): string | undefined => c.loyalty ?? c.card_faces?.[0]?.loyalty;
+
 export function toMarkdown(c: ScryfallCard, { lang, local, printings }: CardOptions): string {
   const faces = c.card_faces ?? [c];
   const text = faces
@@ -197,6 +201,7 @@ export function toMarkdown(c: ScryfallCard, { lang, local, printings }: CardOpti
     `scryfall_id: ${c.id}`,
     `oracle_id: ${c.oracle_id}`,
     ...(c.layout ? [`layout: ${c.layout}`] : []), // 無い = 古いノート (取り直すと付く)
+    ...(loyaltyOf(c) ? [`loyalty: ${loyaltyOf(c)}`] : []), // プレインズウォーカーの初期忠誠度 (対戦で使う。X は X と書く: 取得済みだと分かる。両面は、前面の側)
     `legal: [${legalList(c.legalities).join(", ")}]`,
     `restricted: [${restrictedList(c.legalities).join(", ")}]`, // 空でも書く (キーが無い = 未取得、と区別するため)
     `tags: [mtg/card]`,

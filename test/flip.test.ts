@@ -52,3 +52,17 @@ const md2 = toMarkdown(prep, { lang: "en", printings: [] });
 assert.ok(md2.includes("layout: prepare"));
 assert.equal(backImageOf(md2), undefined, "裏面の画像が無いカードには書かない");
 assert.ok(md2.includes("![](https://cards.scryfall.io/normal/front/7/5/x.jpg)"), "表の画像は今までどおり");
+
+// ---- 忠誠度: プレインズウォーカーのノートに loyalty を書く (数だけ。X や無いものは書かない)
+{
+  const walker = { ...base, name: "Jace", type_line: "Legendary Planeswalker — Jace", layout: "normal", loyalty: "4", image_uris: { normal: "https://cards.scryfall.io/normal/front/6/9/x.jpg" } } as unknown as ScryfallCard;
+  assert.ok(toMarkdown(walker, { lang: "en", printings: [] }).includes("loyalty: 4\n"));
+  const x = { ...walker, loyalty: "X" } as unknown as ScryfallCard;
+  assert.ok(toMarkdown(x, { lang: "en", printings: [] }).includes("loyalty: X\n"), "X は X と書く (取得済みだと分かる。情報取得で、毎回取り直さない)");
+  const none = { ...walker, loyalty: undefined } as unknown as ScryfallCard;
+  assert.ok(!toMarkdown(none, { lang: "en", printings: [] }).includes("loyalty:"));
+  // 両面のプレインズウォーカー: 忠誠度は、面 (card_faces) の側にある
+  const dfcWalker = { ...walker, loyalty: undefined, card_faces: [{ name: "Jace, Vryn's Prodigy", type_line: "Creature", loyalty: undefined, image_uris: { normal: "x" } }, { name: "Jace, Telepath Unbound", type_line: "Planeswalker", loyalty: "5" }] } as unknown as ScryfallCard;
+  const faces = { ...dfcWalker, card_faces: [{ ...dfcWalker.card_faces![0], loyalty: "3" }, dfcWalker.card_faces![1]] } as unknown as ScryfallCard;
+  assert.ok(toMarkdown(faces, { lang: "en", printings: [] }).includes("loyalty: 3\n"), "前面の忠誠度");
+}

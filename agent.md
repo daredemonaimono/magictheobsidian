@@ -13,7 +13,7 @@ Obsidian を Magic: The Gathering 専用のソフトにするプラグイン。�
 - デッキ・コレクション・価格・カード一覧は完成していて、README に使い方がある。
 - **対戦機能は「核」まで**。対戦の画面・Bot・戦闘・ライフ/勝敗は、まだ無い。0.40.0 までの古い実装は捨てて作り直した(旧実装は git タグ `archive/battle-rules-0.40.0`。参照は `git show archive/battle-rules-0.40.0:src/<ファイル>`)。
 - 設計は `docs/superpowers/specs/2026-11-04-battle-core-design.md`。ノードを足す順番は `docs/superpowers/plans/2026-11-05-deck-node-roadmap.md`(デッキ「Gentry Mono U」のカードを組めるかで決める。第1〜11弾まで実装済み。これからの順番はロードマップの末尾 (対戦の画面。エンジンは `startGame` で始め、`declareAttackers` などの入口を呼ぶ。`Game.strictTurns` と `payManaCosts` は、画面の側で真にする))。小さな手順の計画は `docs/superpowers/plans/` の各ファイル。ROADMAP.md は、デッキ側の予定。
-- 第11弾までの未対応: マリガン・先手後手の決め方、追加ターン、対戦の画面、多人数戦(「各対戦相手」は1対1の `max=1` で近似)、紋章の常在型能力。
+- 第11弾までの未対応: 先手後手の決め方、追加ターン、マリガン (対戦の画面の段階4で作る)、対戦の画面、多人数戦(「各対戦相手」は1対1の `max=1` で近似)、紋章の常在型能力。
 
 ## 3. 対戦の核の仕組み (`src/battle/`)
 
