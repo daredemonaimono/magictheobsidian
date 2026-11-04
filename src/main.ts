@@ -3,11 +3,14 @@ import { buildRule } from "./battle/build";
 import { Kind, freeName, parseVersion, sortNewestFirst } from "./battle/history";
 import { askClaude, obsidianHttp } from "./battle/claude";
 import { CardStatus, cardStatus, report } from "./battle/coverage";
+import { blankRule } from "./battle/editor";
 import { registerBuiltinNodes } from "./battle/nodes";
 import { SAMPLE_RULES } from "./battle/samples";
+import { parseRule } from "./battle/ruleMd";
 import { toRows } from "./battle/select";
 import { BuildRulesModal } from "./BuildRulesModal";
 import { RestoreRuleModal } from "./RestoreRuleModal";
+import { RULE_EDITOR_VIEW, RuleEditorView } from "./RuleEditorView";
 import { ensureCardFile, localCards, oracleEnglish, updateLegality } from "./cards";
 import { DECK_DIR, foldCommander, writeDeck } from "./deck";
 import { CREATABLE, FORMATS } from "./rules";
@@ -111,6 +114,27 @@ export default class MagicTheObsidian extends Plugin {
         }),
     );
     this.registerView(COLLECTION_VIEW, (leaf) => new CollectionView(leaf, this.settings));
+    // ノード設定画面: 「保存」で、saveRule が履歴を残してから md を書く
+    this.registerView(
+      RULE_EDITOR_VIEW,
+      (leaf) =>
+        new RuleEditorView(leaf, {
+          load: async (card) => {
+            const f = this.app.vault.getAbstractFileByPath(normalizePath(`${RULES_DIR}/${card}.md`));
+            if (!(f instanceof TFile)) return { rule: blankRule(card) };
+            try {
+              const rule = parseRule(await this.app.vault.read(f));
+              return rule.card === card ? { rule } : { error: `card: が "${rule.card}" で、ファイル名 (${card}) と合わない` };
+            } catch (e) {
+              return { error: `${(e as Error).message} (md を直すか、空のルールから作り直してください)` };
+            }
+          },
+          save: async (card, md) => {
+            await this.ensureRulesDir();
+            return this.saveRule(card, md, "edit");
+          },
+        }),
+    );
     this.registerView(CARDLIST_VIEW, (leaf) => new CardListView(leaf, this.settings, () => this.liveTarget()));
 
     const ws = this.app.workspace;
@@ -161,6 +185,7 @@ export default class MagicTheObsidian extends Plugin {
     });
     this.addCommand({ id: "battle-sample-rules", name: "Battle: create sample rules", callback: () => void this.createSampleRules() });
     this.addCommand({ id: "battle-build-rules", name: "Battle: build rules with AI", callback: () => void this.openBuildRules() });
+    this.addCommand({ id: "battle-edit-rule", name: "Battle: edit rule nodes", callback: () => void this.openEditor() });
     this.addCommand({ id: "battle-restore-rule", name: "Battle: restore rule version", callback: () => void this.openRestore() });
     this.addCommand({ id: "battle-rules-coverage", name: "Battle: rules coverage", callback: () => void this.rulesCoverage() });
     this.addCommand({ id: "open-dashboard", name: "Open dashboard", callback: () => void this.openOrReveal(DASHBOARD_VIEW) });
@@ -392,6 +417,16 @@ export default class MagicTheObsidian extends Plugin {
     const lf = files.find((f) => f.name === latest);
     if (lf && (await this.app.vault.read(lf)) === content) return;
     await this.app.vault.create(normalizePath(`${RULES_DIR}/_backup/${name}/${freeName(new Date(), kind, new Set(files.map((f) => f.name)))}`), content);
+  }
+
+  // 開いている Rules/<名前>.md か Cards/<名前>.md のノード設定画面を開く (同じカードが開いていれば、そのタブへ)
+  private async openEditor() {
+    const path = this.app.workspace.getActiveFile()?.path ?? "";
+    const card = this.ruleName(path) ?? path.match(/^Cards\/([^/]+)\.md$/)?.[1];
+    if (!card) return void new Notice("Rules/<カード名>.md か Cards/<カード名>.md を開いてから実行してください");
+    const open = this.app.workspace.getLeavesOfType(RULE_EDITOR_VIEW).find((l) => l.getViewState().state?.card === card);
+    if (open) return void this.app.workspace.revealLeaf(open);
+    await this.app.workspace.getLeaf(true).setViewState({ type: RULE_EDITOR_VIEW, state: { card }, active: true });
   }
 
   // 開いているルール (または履歴のノート) の、版の一覧から戻す
