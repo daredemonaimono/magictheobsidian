@@ -1,6 +1,6 @@
 import { Msg } from "./claude";
 import { buildPrompt } from "./prompt";
-import { checkCall, placementProblem } from "./registry";
+import { checkCall, placementProblem, structureProblem } from "./registry";
 import { RuleParseError, parseRule } from "./ruleMd";
 
 export class BuildError extends Error {
@@ -20,12 +20,16 @@ function problemsOf(md: string, card: string): string[] {
   try {
     const rule = parseRule(md);
     if (rule.card !== card) return [`card: が "${rule.card}" になっている。"${card}" にする`];
-    return rule.abilities.flatMap((a) =>
-      a.body.flatMap((c) => {
-        const why = checkCall(c) ?? placementProblem(a.kind, c);
-        return why ? [`${c.line ?? "?"} 行目: ${why}`] : [];
-      }),
-    );
+    return rule.abilities.flatMap((a) => {
+      const sp = structureProblem(a);
+      return [
+        ...(sp ? [`${a.body[0].line ?? "?"} 行目: ${sp}`] : []),
+        ...a.body.flatMap((c) => {
+          const why = checkCall(c) ?? placementProblem(a.kind, c);
+          return why ? [`${c.line ?? "?"} 行目: ${why}`] : [];
+        }),
+      ];
+    });
   } catch (e) {
     if (e instanceof RuleParseError) return [e.message];
     throw e;

@@ -1,6 +1,6 @@
 import { CastRecord, NodeCall, RunCtx, Value } from "./node";
 import { checkCall, evalCondition, getNode } from "./registry";
-import { Game, GameCard, Perm, PlayerId, RuleBook, StackItem, Step, statsOf } from "./state";
+import { Game, GameCard, GameEvent, Perm, PlayerId, RuleBook, StackItem, Step, statsOf, untapPerm } from "./state";
 
 // ステップ進行・優先権・スタック。画面なしで、テストから動かせる
 
@@ -9,6 +9,55 @@ const STEPS: Step[] = ["untap", "upkeep", "draw", "main1", "combat", "main2", "e
 export const nextPlayer = (g: Game, p: PlayerId): PlayerId => g.players[(g.players.indexOf(p) + 1) % g.players.length];
 
 export class RuleError extends Error {}
+
+const isPermanentCard = (c: GameCard): boolean => !/\b(Instant|Sorcery)\b/.test(c.typeLine);
+
+// ルールの常在型能力に書かれたキーワード (keyword name=…)
+const staticKeywords = (rules: RuleBook, card: GameCard): string[] => (rules.get(card.name)?.abilities ?? []).filter((a) => a.kind === "static").flatMap((a) => a.body.filter((c) => c.node === "keyword").map((c) => String(c.args.name)));
+
+// パーマネントを戦場に出す。宣言されたキーワードを得て、「戦場に出た」イベントを積む
+function enterBattlefield(g: Game, card: GameCard, controller: PlayerId, rules: RuleBook): void {
+  const perm: Perm = { id: card.id, card, controller };
+  for (const k of staticKeywords(rules, card)) (perm.mods ??= []).push({ power: 0, toughness: 0, keyword: k, until: "forever" });
+  g.battlefield.push(perm);
+  g.events.push({ type: "enters", perm });
+}
+
+// 誘発型能力の最初のノード (when) が、このイベントに合うか。s = 能力の発生源のパーマネント
+function matchesEvent(g: Game, s: Perm, when: NodeCall, ev: GameEvent): boolean {
+  const a = when.args;
+  if (a.event !== ev.type) return false;
+  const subject = ev.type === "cast" ? { controller: ev.player, card: ev.card } : ev.perm;
+  if (a.self === true && (ev.type === "cast" || ev.perm !== s)) return false;
+  if (a.who === "you" && subject.controller !== s.controller) return false;
+  if (a.who === "opponents" && subject.controller === s.controller) return false;
+  const line = subject.card.typeLine.toLowerCase();
+  if (typeof a.type === "string" && !line.includes(a.type.toLowerCase())) return false;
+  if (typeof a.notType === "string" && line.includes(a.notType.toLowerCase())) return false;
+  if (a.turn === "yours" && g.active !== s.controller) return false;
+  if (a.turn === "opponents" && g.active === s.controller) return false;
+  return true;
+}
+
+// 積まれたイベントを見て、戦場のパーマネントの誘発型能力のうち条件に合うものを、スタックに積む。戦場を離れたパーマネント自身も見る。
+// shortcut: 誘発の順番 (APNAP) は決めず、戦場の順。誘発型能力の対象は、誘発時に選べない (対象を取る誘発型能力は、解決時に対象が無く、解決しない)
+function flushEvents(g: Game, rules: RuleBook): void {
+  let added = false;
+  while (g.events.length) {
+    const ev = g.events.shift()!;
+    const sources = ev.type === "leaves" && !g.battlefield.includes(ev.perm) ? [...g.battlefield, ev.perm] : [...g.battlefield];
+    for (const s of sources) {
+      for (const ab of rules.get(s.card.name)?.abilities ?? []) {
+        const when = ab.body[0];
+        if (ab.kind !== "triggered" || when?.node !== "when" || !matchesEvent(g, s, when, ev)) continue;
+        g.serial++;
+        g.stack.push({ id: `${s.id}#${g.serial}`, card: s.card, controller: s.controller, targets: {}, cast: {}, body: ab.body.slice(1), ability: true, source: s.id });
+        added = true;
+      }
+    }
+  }
+  if (added) g.passes = []; // 優先権は動かさない (唱えた・起動した本人が、積まれた誘発にも応答できる。解決のあとは、アクティブ・プレイヤーに戻る)
+}
 
 const spellBody = (rules: RuleBook, card: GameCard): NodeCall[] | undefined => rules.get(card.name)?.abilities.find((a) => a.kind === "spell")?.body;
 
@@ -90,6 +139,7 @@ function payCost(g: Game, p: PlayerId, cost: CostSpec, source: Perm | undefined,
   if (cost.sacrifice && source) {
     g.battlefield = g.battlefield.filter((x) => x !== source);
     g.graveyards[source.card.owner].push(source.card);
+    g.events.push({ type: "leaves", perm: source });
   }
 }
 
@@ -98,8 +148,9 @@ function payCost(g: Game, p: PlayerId, cost: CostSpec, source: Perm | undefined,
 export function castSpell(g: Game, p: PlayerId, cardId: string, targets: Record<string, string>, rules: RuleBook, cast: CastRecord = {}): void {
   const card = g.hands[p]?.find((c) => c.id === cardId);
   if (!card) throw new RuleError(`手札に無い: ${cardId}`);
-  if (!canCastNow(g, p, card)) throw new RuleError(`いまは唱えられない: ${card.name}`);
-  const body = spellBody(rules, card);
+  if (/\bLand\b/.test(card.typeLine)) throw new RuleError(`土地は唱えられない (playLand で出す): ${card.name}`); // 1ターン1枚の制限は playLand にある
+  if (!canCastNow(g, p, card, rules)) throw new RuleError(`いまは唱えられない: ${card.name}`);
+  const body = spellBody(rules, card) ?? (rules.get(card.name) && isPermanentCard(card) ? [] : undefined); // 呪文能力の無いパーマネントも、ルールがあれば唱えられる
   if (!body) throw new RuleError(`呪文能力のルールが無い: ${card.name}`);
   const item: StackItem = { id: card.id, card, controller: p, targets, cast };
   checkModes(body, cast, card.name);
@@ -118,6 +169,21 @@ export function castSpell(g: Game, p: PlayerId, cardId: string, targets: Record<
   g.stack.push(item);
   g.priority = p;
   g.passes = [];
+  g.events.push({ type: "cast", player: p, card });
+  flushEvents(g, rules); // 「呪文を唱えた」ときの誘発型能力は、その呪文の上に積まれる
+}
+
+// 土地を出す。自分のメインフェイズで、スタックが空で、優先権があり、このターンにまだ出していないとき (スタックを使わない特別な動作)
+export function playLand(g: Game, p: PlayerId, cardId: string, rules: RuleBook): void {
+  const card = g.hands[p]?.find((c) => c.id === cardId);
+  if (!card) throw new RuleError(`手札に無い: ${cardId}`);
+  if (!/\bLand\b/.test(card.typeLine)) throw new RuleError(`土地ではない: ${card.name}`);
+  if (g.priority !== p || p !== g.active || (g.step !== "main1" && g.step !== "main2") || g.stack.length) throw new RuleError(`いまは土地を出せない (自分のメインフェイズで、スタックが空のときだけ)`);
+  if (g.landsPlayed >= 1) throw new RuleError("このターンは、もう土地を出した");
+  g.hands[p] = g.hands[p].filter((c) => c !== card);
+  g.landsPlayed++;
+  enterBattlefield(g, card, p, rules);
+  flushEvents(g, rules);
 }
 
 // 戦場のパーマネントの起動型能力を起動する (index = そのカードの起動型能力の何番目か)。コストを払い、マナだけの能力 (addMana のみ) は即座に実行、
@@ -130,7 +196,7 @@ export function activateAbility(g: Game, p: PlayerId, permId: string, index: num
   const ab = rules.get(perm.card.name)?.abilities.filter((a) => a.kind === "activated")[index];
   if (!ab) throw new RuleError(`起動型能力が無い: ${perm.card.name} (${index} 番目)`);
   const effects = ab.body.filter((c) => c.node !== "cost");
-  const item: StackItem = { id: `${perm.id}#${g.serial + 1}`, card: perm.card, controller: p, targets, cast: {}, body: effects, ability: true };
+  const item: StackItem = { id: `${perm.id}#${g.serial + 1}`, card: perm.card, controller: p, targets, cast: {}, body: effects, ability: true, source: perm.id };
   validate(g, item, ab.body, perm.card.name);
   const cost = costOf(ab.body.filter((c) => c.node === "cost"));
   const why = costProblem(g, p, cost, perm, tapIds);
@@ -139,11 +205,13 @@ export function activateAbility(g: Game, p: PlayerId, permId: string, index: num
   g.serial++;
   if (effects.length && effects.every((c) => c.node === "addMana")) {
     for (const call of effects) getNode(call.node)!.run!({ game: g, item, vars: {}, call }, resolveArgs(call, {})!); // マナ能力はスタックを使わない
+    flushEvents(g, rules);
     return;
   }
   g.stack.push(item);
   g.priority = p;
   g.passes = [];
+  flushEvents(g, rules); // 生け贄などで「戦場を離れた」誘発は、この能力の上に積まれる
 }
 
 // 一番上の呪文を解決する。対象のノードがあるのに全部が不正になっていたら、何もせず墓地へ。実装の無いノードは飛ばして記録する
@@ -153,9 +221,13 @@ export function resolveTop(g: Game, rules: RuleBook): void {
   const body = item.body ?? spellBody(rules, item.card) ?? [];
   const ctx = (call: NodeCall, vars: Record<string, Value>): RunCtx => ({ game: g, item, vars, call });
   // 条件を満たす対象のノードのうち、1つでも対象が残っていれば解決する (残った対象にだけ効く)。選ばれなかったモードの対象は数えない
+  let fizzled = false;
   const targets = body.filter((c) => getNode(c.node)?.isTarget && (c.if === undefined || evalCondition(c.if, ctx(c, {}))));
   const alive = targets.some((c) => getNode(c.node)!.run!(ctx(c, {}), resolveArgs(c, {})!).id !== undefined);
-  if (targets.length && !alive) g.log.push(`${item.card.name}: 対象が無くなったので解決しない`);
+  if (targets.length && !alive) {
+    fizzled = true;
+    g.log.push(`${item.card.name}: 対象が無くなったので解決しない`);
+  }
   else {
     const vars: Record<string, Value> = {};
     for (const call of body) {
@@ -171,14 +243,20 @@ export function resolveTop(g: Game, rules: RuleBook): void {
       if (call.as && Object.keys(out).length) vars[call.as] = Object.values(out)[0];
     }
   }
-  if (!item.ability) g.graveyards[item.card.owner].push(item.card); // 起動型能力は、解決してもカードは墓地に行かない
+  // 起動型・誘発型能力は、解決してもカードは動かない。パーマネント呪文は戦場へ(解決しなかったときは墓地へ)、インスタント・ソーサリーは墓地へ
+  if (!item.ability) {
+    if (isPermanentCard(item.card) && !fizzled) enterBattlefield(g, item.card, item.controller, rules);
+    else g.graveyards[item.card.owner].push(item.card);
+  }
+  flushEvents(g, rules);
 }
 
 function advanceStep(g: Game): void {
   if (g.step === "end") {
     for (const p of g.battlefield) if (p.mods) p.mods = p.mods.filter((m) => m.until !== "endOfTurn"); // ターン終了時までの効果が消える
     g.active = nextPlayer(g, g.active);
-    for (const p of g.battlefield) if (p.controller === g.active) p.tapped = false; // アンタップ・ステップ (優先権が無いので、ここで済ませてアップキープへ)
+    g.landsPlayed = 0;
+    for (const p of g.battlefield) if (p.controller === g.active) untapPerm(g, p); // アンタップ・ステップ (優先権が無いので、ここで済ませてアップキープへ)。麻痺カウンターは、アンタップのかわりに取り除く
     g.step = "upkeep";
   } else g.step = STEPS[STEPS.indexOf(g.step) + 1];
   g.priority = g.active;
@@ -203,8 +281,8 @@ export function passPriority(g: Game, p: PlayerId, rules: RuleBook): "passed" | 
 }
 
 // 唱えられるタイミングは、カードタイプから決まる (ノードにはしない)
-export function canCastNow(g: Game, p: PlayerId, card: GameCard): boolean {
+export function canCastNow(g: Game, p: PlayerId, card: GameCard, rules?: RuleBook): boolean {
   if (g.priority !== p) return false;
-  if (/\bInstant\b/.test(card.typeLine) || card.flash) return true;
+  if (/\bInstant\b/.test(card.typeLine) || card.flash || (rules && staticKeywords(rules, card).includes("flash"))) return true;
   return p === g.active && (g.step === "main1" || g.step === "main2") && g.stack.length === 0;
 }

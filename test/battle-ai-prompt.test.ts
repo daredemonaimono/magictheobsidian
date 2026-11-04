@@ -61,3 +61,11 @@ assert.ok(buildPrompt("Negate", "x").system.includes("foresee"));
   const sys = buildPrompt("Confusticate and Bebother", "x").system;
   for (const w of ["modes", "if=mode1", "graveyard:lesson:3+", "最大", "select", "look", "choose", "move", "except", "attacking"]) assert.ok(sys.includes(w), `system に ${w}`);
 }
+
+// 第3弾: 誘発型能力 (when)・self・カウンター・キーワードの宣言の書き方を載せる
+{
+  resetRegistry();
+  registerBuiltinNodes();
+  const sys = buildPrompt("Brineborn Cutthroat", "x").system;
+  for (const w of ["## 誘発型能力", "when event=", "self", "addCounter", "keyword name=", "enters", "leaves", "## 常在型能力"]) assert.ok(sys.includes(w), `system に ${w}`);
+}

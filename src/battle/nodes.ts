@@ -1,6 +1,6 @@
 import { RunCtx, Value } from "./node";
 import { defineCondition, defineNode, getNode } from "./registry";
-import { Game, GameCard, Perm, keywordsOf, playersOf } from "./state";
+import { Game, GameCard, Perm, keywordsOf, playersOf, untapPerm } from "./state";
 
 // 実装済みの基本ノード。打ち消しは「対象」+「打ち消す」の組み合わせで、カードごとの違いは対象の条件 (引数) だけ
 
@@ -71,6 +71,7 @@ export function registerBuiltinNodes(): void {
       const list = idList(ctx.item.targets[ctx.call.as ?? ""]);
       const min = typeof a.min === "number" ? a.min : 1;
       const max = typeof a.max === "number" ? a.max : Math.max(1, min);
+      if (list.length === 0 && min > 0) return {}; // 必要な対象が無い (誘発型能力は、誘発時に対象を選べない)
       const strict = ctx.phase === "cast"; // 唱えるときは、数も、すべての対象も合法でなければならない
       if (strict && (list.length < min || list.length > max || new Set(list).size !== list.length)) return {};
       const g = ctx.game;
@@ -223,6 +224,7 @@ export function registerBuiltinNodes(): void {
         const [gone] = ctx.game.battlefield.splice(i, 1);
         ctx.game.hands[gone.card.owner].push(gone.card);
         ctx.game.log.push(`${gone.card.name} を手札に戻した`);
+        ctx.game.events.push({ type: "leaves", perm: gone });
       }
       return {};
     },
@@ -239,7 +241,9 @@ export function registerBuiltinNodes(): void {
       run: (ctx, a): Record<string, Value> => {
         for (const x of idList(a.target)) {
           const p = ctx.game.battlefield.find((y) => y.id === x);
-          if (p) p.tapped = tapped;
+          if (!p) continue;
+          if (tapped) p.tapped = true;
+          else untapPerm(ctx.game, p); // 麻痺カウンターがあれば、アンタップのかわりに取り除く
         }
         return {};
       },
@@ -307,6 +311,63 @@ export function registerBuiltinNodes(): void {
     declaration: true,
     only: ["spell"],
     run: (): Record<string, Value> => ({}),
+  });
+
+  // 宣言のノード (誘発型・常在型): 誘発のきっかけ (when)、キーワード (keyword)。エンジンが読む
+  defineNode({
+    id: "when",
+    title: "どうなったら",
+    summary:
+      "誘発型能力の最初に書く、誘発のきっかけ。event=cast(呪文を唱えた) / enters(戦場に出た) / leaves(戦場を離れた)。絞り込み: who=you・opponents(唱えた/コントロールするプレイヤー) / type・notType(その呪文・パーマネントの型) / turn=yours・opponents(だれのターン中か) / self=true(このパーマネント自身のとき。enters / leaves)",
+    params: {
+      event: { type: "string", required: true, choices: ["cast", "enters", "leaves"] },
+      who: { type: "string", choices: ["you", "opponents"] },
+      type: { type: "string" },
+      notType: { type: "string" },
+      turn: { type: "string", choices: ["yours", "opponents"] },
+      self: { type: "boolean" },
+    },
+    outputs: {},
+    declaration: true,
+    only: ["triggered"],
+    run: (): Record<string, Value> => ({}),
+  });
+  defineNode({
+    id: "keyword",
+    title: "キーワード能力",
+    summary: "常在型能力に書く、キーワード能力の宣言。name=flash なら瞬速で唱えられ、それ以外は戦場に出たときにそのキーワードを得る",
+    params: { name: { type: "string", required: true, choices: KEYWORDS } },
+    outputs: {},
+    declaration: true,
+    only: ["static"],
+    run: (): Record<string, Value> => ({}),
+  });
+  // このパーマネント自身 (誘発型・起動型能力の発生源)
+  defineNode({
+    id: "self",
+    title: "このパーマネント",
+    summary: "この能力の発生源のパーマネント自身の id を出力する(「このクリーチャーの上に」など。as= を付けて、target に渡す)",
+    params: {},
+    outputs: { id: "id" },
+    run: (ctx): Record<string, Value> => ({ id: ctx.item.source ?? "" }),
+  });
+  // カウンターを置く。対象が戦場に無ければ何もしない
+  defineNode({
+    id: "addCounter",
+    title: "カウンターを置く",
+    summary: "対象のパーマネントの上にカウンターを count 個置く。kind=+1/+1(パワー・タフネスに足される) / stun(麻痺。アンタップするかわりに1つ取り除く)",
+    params: { target: { type: "ref", required: true }, kind: { type: "string", required: true, choices: ["+1/+1", "stun"] }, count: { type: "number", required: true, min: 0 } },
+    outputs: {},
+    run: (ctx, a): Record<string, Value> => {
+      for (const x of idList(a.target)) {
+        const p = ctx.game.battlefield.find((y) => y.id === x);
+        if (p) {
+          p.counters ??= {};
+          p.counters[String(a.kind)] = (p.counters[String(a.kind)] ?? 0) + Number(a.count);
+        }
+      }
+      return {};
+    },
   });
 
   // マナを加える。マナだけの起動型能力は、スタックを使わずに即座に解決する

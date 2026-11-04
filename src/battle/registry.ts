@@ -1,4 +1,4 @@
-import { AbilityKind, NodeCall, NodeDef, RunCtx } from "./node";
+import { Ability, AbilityKind, NodeCall, NodeDef, RunCtx } from "./node";
 
 const nodes = new Map<string, NodeDef>();
 
@@ -54,6 +54,14 @@ const KIND_LABEL: Record<AbilityKind, string> = { spell: "呪文能力", activat
 export function placementProblem(kind: AbilityKind, call: NodeCall): string | null {
   const only = nodes.get(call.node)?.only;
   return only && !only.includes(kind) ? `${call.node} は${only.map((k) => KIND_LABEL[k]).join("・")}だけに書ける` : null;
+}
+
+// 能力の構造: 誘発型能力の最初のノードは when (エンジンは先頭だけを見る。ほかの位置の when や、無い場合は、黙って誘発しない)。問題なければ null
+export function structureProblem(ab: Ability): string | null {
+  if (ab.kind !== "triggered" || !ab.body.length) return null;
+  if (ab.body[0].node !== "when") return "誘発型能力の最初のノードは when にする (誘発のきっかけ)";
+  if (ab.body.slice(1).some((c) => c.node === "when")) return "when は誘発型能力の最初のノードだけに書ける";
+  return null;
 }
 
 // 問題なければ null、あれば日本語の理由
