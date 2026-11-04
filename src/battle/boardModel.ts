@@ -36,6 +36,7 @@ export interface SideView {
   life: number;
   library: number;
   graveyard: number;
+  graveyardTop?: CardView; // 墓地の一番上 (最後に置かれたもの)
   exile: number;
   handCount: number;
   hand: CardView[]; // 相手 (showHand が偽) は空。枚数は handCount
@@ -105,6 +106,8 @@ export function sideView(g: Game, rules: RuleBook, player: PlayerId, imageOf: Im
     creatures: [],
     others: [],
   };
+  const top = g.graveyards[player]?.[g.graveyards[player].length - 1];
+  if (top) out.graveyardTop = inHand(top, imageOf(top));
   for (const p of g.battlefield) {
     if (p.controller !== player) continue;
     const v = permView(g, rules, p, imageOf);

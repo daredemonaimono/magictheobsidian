@@ -1,6 +1,6 @@
 import { ItemView, WorkspaceLeaf } from "obsidian";
 import { BoardModel, CardView, LandStack, PhaseId, boardModel } from "./battle/boardModel";
-import { GAP, overlapFor, rowNeed } from "./battle/layout";
+import { GAP, cardBackUrl, overlapFor, pileLayers, rowNeed } from "./battle/layout";
 import { sampleBattle } from "./battle/sampleBattle";
 import { Game, RuleBook } from "./battle/state";
 import { cardImage, cardInfo, cardText } from "./cards";
@@ -9,7 +9,6 @@ export const BATTLE_VIEW = "mtg-battle";
 
 const PHASES: [PhaseId, string][] = [["beginning", "開始"], ["main1", "戦闘前メイン"], ["combat", "戦闘"], ["main2", "戦闘後メイン"], ["ending", "最終"]];
 const MANA_COLORS = ["W", "U", "B", "R", "G", "A"] as const;
-const OPP_HAND_SHOWN = 10; // 相手の裏向きの手札は、これだけ描いて、残りは数字
 const VIEWER = "you";
 const CARD_W = 62; // 盤面のカードの幅 (CSS の --cw と同じ)
 const HAND_W = 96;
@@ -37,13 +36,11 @@ export class BattleView extends ItemView {
     stage: HTMLElement;
     rows: Record<string, HTMLElement>;
     hand: HTMLElement;
-    ohand: HTMLElement;
     phase: HTMLElement;
     step: HTMLElement;
     selfLife: HTMLElement;
     oppLife: HTMLElement;
-    selfPile: HTMLElement;
-    oppPile: HTMLElement;
+    piles: Record<string, HTMLElement>;
     mana: HTMLElement;
     belt: HTMLElement;
     banner: HTMLElement;
@@ -90,19 +87,19 @@ export class BattleView extends ItemView {
     root.empty();
     root.addClass("mtg-bt");
     const stage = root.createDiv("mtg-bt-stage");
+    stage.style.setProperty("--back", `url("${cardBackUrl()}")`); // 山札の裏面の絵 (読めなければ、CSS の代わりの絵)
     const side = root.createDiv("mtg-bt-side");
     const board = stage.createDiv("mtg-bt-board");
     const rows: Record<string, HTMLElement> = {};
     for (const key of ["opp-lands", "opp-others", "opp-creatures", "self-creatures", "self-others", "self-lands"]) rows[key] = board.createDiv({ cls: `mtg-bt-row mtg-bt-${key}` });
     const belt = board.createDiv({ cls: "mtg-bt-belt", text: "戦 闘" });
-    const ohand = stage.createDiv("mtg-bt-ohand");
     const hand = stage.createDiv("mtg-bt-hand");
     stage.createDiv({ cls: "mtg-bt-avatar is-opp" });
     stage.createDiv({ cls: "mtg-bt-avatar is-self" });
     const oppLife = stage.createDiv({ cls: "mtg-bt-life is-opp" });
     const selfLife = stage.createDiv({ cls: "mtg-bt-life is-self" });
-    const oppPile = stage.createDiv({ cls: "mtg-bt-pile is-opp" });
-    const selfPile = stage.createDiv({ cls: "mtg-bt-pile is-self" });
+    const piles: Record<string, HTMLElement> = {};
+    for (const key of ["opp-library", "opp-yard", "self-library", "self-yard"]) piles[key] = stage.createDiv({ cls: `mtg-bt-deck is-${key}` });
     const mana = stage.createDiv("mtg-bt-mana");
     const phase = stage.createDiv("mtg-bt-phase");
     const step = stage.createDiv("mtg-bt-step");
@@ -111,7 +108,7 @@ export class BattleView extends ItemView {
     const preview = side.createDiv("mtg-bt-preview");
     preview.createDiv({ cls: "mtg-bt-hint", text: "カードにカーソルを合わせると、ここに画像と効果が出ます" });
     const log = side.createDiv("mtg-bt-log");
-    this.ui = { stage, rows, hand, ohand, phase, step, selfLife, oppLife, selfPile, oppPile, mana, belt, banner, stack, preview, log };
+    this.ui = { stage, rows, hand, phase, step, selfLife, oppLife, piles, mana, belt, banner, stack, preview, log };
   }
 
   // 画像の URL: カード名でノートを引いて、保存済みの URL を使う (新しい通信はしない)。無いカードは、名前と P/T の代わりの面
@@ -138,11 +135,12 @@ export class BattleView extends ItemView {
     this.sync(ui.rows["self-others"], "self-others", this.cardItems(m.self.others));
     this.sync(ui.rows["self-lands"], "self-lands", this.stackItems(m.self.landStacks));
     this.sync(ui.hand, "hand", this.cardItems(m.self.hand));
-    this.paintOppHand(m);
     this.setText(ui.selfLife, String(m.self.life), m.self.life);
     this.setText(ui.oppLife, String(m.opp.life), m.opp.life);
-    this.setText(ui.selfPile, `山札 ${m.self.library} / 墓地 ${m.self.graveyard}`);
-    this.setText(ui.oppPile, `山札 ${m.opp.library} / 墓地 ${m.opp.graveyard}`);
+    this.paintPile(ui.piles["self-library"], m.self.library);
+    this.paintPile(ui.piles["self-yard"], m.self.graveyard, m.self.graveyardTop);
+    this.paintPile(ui.piles["opp-library"], m.opp.library);
+    this.paintPile(ui.piles["opp-yard"], m.opp.graveyard, m.opp.graveyardTop);
     this.paintMana(m);
     ui.belt.toggleClass("is-on", m.combat);
     this.paintPhase(m);
@@ -240,15 +238,17 @@ export class BattleView extends ItemView {
     if (s.cards.length > 1) el.createDiv({ cls: "mtg-bt-count", text: `×${s.cards.length}` });
   }
 
-  private paintOppHand(m: BoardModel) {
-    const el = this.ui.ohand;
-    const shown = Math.min(m.opp.handCount, OPP_HAND_SHOWN);
-    const sig = `${shown}/${m.opp.handCount}`;
+  // 山札・墓地: 枚数に応じた厚み (box-shadow を重ねる)。山札は裏向き、墓地は一番上のカードを見せる。枚数を下に出す
+  private paintPile(el: HTMLElement, count: number, top?: CardView) {
+    const sig = `${count}|${top?.id ?? ""}|${top?.image ?? ""}`;
     if (el.dataset.sig === sig) return;
     el.dataset.sig = sig;
     el.empty();
-    for (let i = 0; i < shown; i++) el.createDiv("mtg-bt-back");
-    if (m.opp.handCount > shown) el.createDiv({ cls: "mtg-bt-more", text: `+${m.opp.handCount - shown}` });
+    const layers = pileLayers(count);
+    el.style.boxShadow = Array.from({ length: layers }, (_, i) => `${i + 1}px ${i + 1}px 0 ${i % 2 ? "#3a2a10" : "#6a4a1a"}`).join(",") || "none";
+    el.toggleClass("is-empty", count === 0);
+    if (top) this.face(el, top);
+    el.createDiv({ cls: "mtg-bt-dcount", text: String(count) });
   }
 
   private paintMana(m: BoardModel) {

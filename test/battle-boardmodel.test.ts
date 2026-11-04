@@ -1,7 +1,7 @@
 import assert from "node:assert";
 import { boardModel, sideView } from "../src/battle/boardModel";
 import { sampleBattle } from "../src/battle/sampleBattle";
-import { overlapFor, rowNeed } from "../src/battle/layout";
+import { CARD_BACK_ID, cardBackUrl, overlapFor, pileLayers, rowNeed } from "../src/battle/layout";
 import { Game, GameCard, Perm, RuleBook, createGame } from "../src/battle/state";
 
 const noRules: RuleBook = { get: () => undefined };
@@ -259,5 +259,38 @@ const none = () => undefined;
   g.turn = 2;
   g.battlefield.push(perm("Fresh", "Creature — Bear", "A", { enteredTurn: 2 }, { power: 1, toughness: 1 }));
   assert.equal(sideView(g, noRules, "A", none, true).creatures[0].sick, true);
+}
+
+// ---- 山札・墓地の厚み: 枚数が多いほど厚く、上限がある。0 枚なら 0 (空の枠だけ)
+{
+  assert.equal(pileLayers(0), 0);
+  assert.equal(pileLayers(1), 1);
+  assert.equal(pileLayers(4), 1);
+  assert.equal(pileLayers(5), 2);
+  assert.equal(pileLayers(46), 10);
+  assert.equal(pileLayers(100), 12, "上限");
+  assert.equal(pileLayers(-3), 0, "負の数でも落ちない");
+  let prev = 0;
+  for (let n = 0; n <= 120; n++) {
+    const v = pileLayers(n);
+    assert.ok(v >= prev, "枚数が増えて、薄くならない");
+    prev = v;
+  }
+}
+
+// ---- 墓地の一番上のカード (画像つき)。墓地が空なら無い
+{
+  const g = createGame(["A", "B"]);
+  assert.equal(sideView(g, noRules, "A", none, true).graveyardTop, undefined);
+  g.graveyards["A"].push(card("g1", "Instant"), card("g2", "Sorcery"));
+  const top = sideView(g, noRules, "A", (c) => (c.id === "g2" ? "https://example.test/g2.jpg" : undefined), true).graveyardTop!;
+  assert.deepEqual([top.id, top.image], ["g2", "https://example.test/g2.jpg"], "最後に墓地に置かれたものが、一番上");
+}
+
+// ---- カードの裏面 (Scryfall の card_back_id。公式のカードの裏の絵)
+{
+  assert.equal(CARD_BACK_ID, "0aeebaf5-8c7d-4636-9e82-8c27447861f7");
+  assert.equal(cardBackUrl(), "https://backs.scryfall.io/small/0/a/0aeebaf5-8c7d-4636-9e82-8c27447861f7.jpg");
+  assert.equal(cardBackUrl("normal"), "https://backs.scryfall.io/normal/0/a/0aeebaf5-8c7d-4636-9e82-8c27447861f7.jpg");
 }
 console.log("boardmodel ok");
