@@ -1,4 +1,4 @@
-import { Value } from "./node";
+import { RunCtx, Value } from "./node";
 import { defineNode, getNode } from "./registry";
 import { playersOf } from "./state";
 
@@ -11,10 +11,10 @@ export function registerBuiltinNodes(): void {
   defineNode({
     id: "target",
     title: "対象",
-    summary: "対象を決める。zone=stack + kind=spell(スタックの呪文) / zone=battlefield + kind=permanent(戦場のパーマネント)。type=型 / notType=その型でない / mv=マナ総量 で絞る",
+    summary: "対象を決める。zone=stack + kind=spell(スタックの呪文) / zone=battlefield + kind=permanent(戦場のパーマネント) / zone=player + kind=player(プレイヤー。draw や discard の player=target と使う)。type=型 / notType=その型でない / mv=マナ総量 で絞る",
     params: {
-      zone: { type: "string", required: true, choices: ["stack", "battlefield"] },
-      kind: { type: "string", required: true, choices: ["spell", "permanent"] },
+      zone: { type: "string", required: true, choices: ["stack", "battlefield", "player"] },
+      kind: { type: "string", required: true, choices: ["spell", "permanent", "player"] },
       type: { type: "string" },
       notType: { type: "string" },
       mv: { type: "number" },
@@ -23,6 +23,7 @@ export function registerBuiltinNodes(): void {
     isTarget: true,
     run: (ctx, a): Record<string, Value> => {
       const id = ctx.item.targets[ctx.call.as ?? ""];
+      if (a.zone === "player" && a.kind === "player") return ctx.game.players.includes(id) ? { id } : {}; // プレイヤーは型・マナ総量で絞らない
       // zone と kind の組み合わせは stack+spell / battlefield+permanent だけ。それ以外は対象無し
       const hit = a.zone === "stack" && a.kind === "spell" ? ctx.game.stack.find((s) => s.id === id) : a.zone === "battlefield" && a.kind === "permanent" ? ctx.game.battlefield.find((p) => p.id === id) : undefined;
       if (!hit) return {};
@@ -34,18 +35,27 @@ export function registerBuiltinNodes(): void {
     },
   });
 
-  const who = { type: "string" as const, required: true, choices: ["you", "opponents"] };
+  const who = { type: "string" as const, required: true, choices: ["you", "opponents", "target"] };
+  const targetPlayer = { type: "ref" as const }; // player=target のとき、target ノード (zone=player) の出力を渡す
+
+  // player 引数を、実際のプレイヤーに直す。target で対象が無ければ、記録を残して空
+  const playersFor = (ctx: RunCtx, a: Record<string, Value>): string[] => {
+    if (a.player !== "target") return playersOf(ctx.game, ctx.item.controller, String(a.player));
+    if (typeof a.target === "string" && ctx.game.players.includes(a.target)) return [a.target];
+    ctx.game.log.push("対象のプレイヤーが無い");
+    return [];
+  };
 
   // 引く。ライブラリーが足りなければ、引ける分だけ引いて記録を残す
   defineNode({
     id: "draw",
     title: "引く",
-    summary: "プレイヤーがカードを count 枚引く。player=you(呪文のコントローラー) / opponents(全相手)",
-    params: { player: who, count: { type: "number", required: true } },
+    summary: "プレイヤーがカードを count 枚引く。player=you(呪文のコントローラー) / opponents(全相手) / target(target ノードで選んだプレイヤー。target=$名前 を渡す)",
+    params: { player: who, target: targetPlayer, count: { type: "number", required: true } },
     outputs: {},
     run: (ctx, a): Record<string, Value> => {
       const g = ctx.game;
-      for (const p of playersOf(g, ctx.item.controller, String(a.player))) {
+      for (const p of playersFor(ctx, a)) {
         for (let i = 0; i < Number(a.count); i++) {
           const top = g.libraries[p].shift();
           if (!top) {
@@ -63,12 +73,12 @@ export function registerBuiltinNodes(): void {
   defineNode({
     id: "discard",
     title: "捨てる",
-    summary: "プレイヤーが手札を count 枚捨てる。player=you / opponents",
-    params: { player: who, count: { type: "number", required: true } },
+    summary: "プレイヤーが手札を count 枚捨てる。player=you / opponents / target(draw と同じ)",
+    params: { player: who, target: targetPlayer, count: { type: "number", required: true } },
     outputs: {},
     run: (ctx, a): Record<string, Value> => {
       const g = ctx.game;
-      for (const p of playersOf(g, ctx.item.controller, String(a.player))) {
+      for (const p of playersFor(ctx, a)) {
         const n = Math.min(Number(a.count), g.hands[p].length);
         const picked = (g.decide?.discard?.(g, p, n) ?? g.hands[p].slice(g.hands[p].length - n)).filter((c) => g.hands[p].includes(c)).slice(0, n);
         g.hands[p] = g.hands[p].filter((c) => !picked.includes(c));

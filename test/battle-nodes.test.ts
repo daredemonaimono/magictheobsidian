@@ -123,3 +123,22 @@ const duel = (mana: number, decide?: Game["decide"]) => {
   const liar = duel(3, { pay: () => true });
   assert.deepEqual(liar.stack, [], "払うと言っても、マナが足りなければ打ち消される");
 }
+
+// プレイヤーを対象にする (Ancestral Recall の "Target player draws three cards"): target zone=player kind=player + draw player=target
+const recall = [call("target", { zone: "player", kind: "player" }, "t"), call("draw", { player: "target", target: { ref: "t" }, count: 3 })];
+{
+  const lib = (o: string) => [card(`${o}1`), card(`${o}2`), card(`${o}3`), card(`${o}4`)];
+  const other = run(recall, (g) => (g.libraries["B"] = lib("b")), { t: "B" });
+  assert.deepEqual(ids(other.hands["B"]), ["b1", "b2", "b3"], "対象に選んだ相手が引く");
+  assert.deepEqual(ids(other.hands["A"]), []);
+  const self = run(recall, (g) => (g.libraries["A"] = lib("a")), { t: "A" });
+  assert.deepEqual(ids(self.hands["A"]), ["a1", "a2", "a3"], "自分も対象にできる");
+  // 存在しないプレイヤーは対象にできない
+  const g = createGame(["A", "B"]);
+  g.hands["A"].push(card("spell", "Sorcery"));
+  assert.throws(() => castSpell(g, "A", "spell", { t: "Z" }, bookOf({ spell: recall })));
+  // player=target で対象を渡し忘れても、落ちずに記録を残す
+  const lost = run([call("draw", { player: "target", count: 1 })], (g) => (g.libraries["A"] = lib("a")));
+  assert.ok(lost.log.some((l) => l.includes("対象のプレイヤーが無い")));
+  assert.deepEqual(ids(lost.hands["A"]), []);
+}
