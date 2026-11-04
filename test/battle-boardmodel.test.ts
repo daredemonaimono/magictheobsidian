@@ -1,7 +1,7 @@
 import assert from "node:assert";
 import { boardModel, sideView } from "../src/battle/boardModel";
 import { sampleBattle } from "../src/battle/sampleBattle";
-import { CARD_BACK_ID, cardBackUrl, overlapFor, pileLayers, rowNeed } from "../src/battle/layout";
+import { CARD_BACK_ID, CARD_H, CARD_W, GAP, TAP_EXTRA, cardBackUrl, overlapFor, pileLayers, rowNeed } from "../src/battle/layout";
 import { Game, GameCard, Perm, RuleBook, createGame } from "../src/battle/state";
 
 const noRules: RuleBook = { get: () => undefined };
@@ -244,8 +244,9 @@ const none = () => undefined;
 
 // ---- 列の重なり: 幅に収まるように、重ねる量を決める (タップしたカードの横幅の分も数える。Review の重要な指摘)
 {
-  const need = rowNeed(62, 30, 30); // 30 枚すべてタップ
-  assert.equal(need, 30 * 62 + 29 * 10 + 30 * 24);
+  const need = rowNeed(CARD_W, 30, 30); // 30 枚すべてタップ
+  assert.equal(need, 30 * CARD_W + 29 * GAP + 30 * TAP_EXTRA);
+  assert.equal(TAP_EXTRA, CARD_H - CARD_W, "横向きのカードが余分に取る幅 = 縦と横の差");
   const ov = overlapFor(need, 30, 846);
   assert.ok(need - ov * 29 <= 846, "重ねたあとの幅が、収まる");
   assert.equal(overlapFor(500, 5, 846), 0, "収まるなら重ねない");

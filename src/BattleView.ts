@@ -1,6 +1,6 @@
 import { ItemView, WorkspaceLeaf } from "obsidian";
 import { BoardModel, CardView, LandStack, PhaseId, boardModel } from "./battle/boardModel";
-import { GAP, LAYER_PX, cardBackUrl, overlapFor, pileLayers, rowNeed } from "./battle/layout";
+import { CARD_H, CARD_W, GAP, HAND_H, HAND_W, LAYER_PX, TAP_EXTRA, cardBackUrl, overlapFor, pileLayers, rowNeed } from "./battle/layout";
 import { sampleBattle } from "./battle/sampleBattle";
 import { Game, RuleBook } from "./battle/state";
 import { cardImage, cardInfo, cardText } from "./cards";
@@ -10,8 +10,6 @@ export const BATTLE_VIEW = "mtg-battle";
 const PHASES: [PhaseId, string][] = [["beginning", "開始"], ["main1", "戦闘前メイン"], ["combat", "戦闘"], ["main2", "戦闘後メイン"], ["ending", "最終"]];
 const MANA_COLORS = ["W", "U", "B", "R", "G", "A"] as const;
 const VIEWER = "you";
-const CARD_W = 62; // 盤面のカードの幅 (CSS の --cw と同じ)
-const HAND_W = 96;
 
 interface Entry {
   el: HTMLElement;
@@ -87,6 +85,7 @@ export class BattleView extends ItemView {
     root.empty();
     root.addClass("mtg-bt");
     const stage = root.createDiv("mtg-bt-stage");
+    for (const [k, v] of [["--bw", CARD_W], ["--bh", CARD_H], ["--hw", HAND_W], ["--hh", HAND_H], ["--tx", TAP_EXTRA / 2]] as const) stage.style.setProperty(k, `${v}px`); // カードの大きさ (src/battle/layout.ts)
     stage.style.setProperty("--back", `url("${cardBackUrl()}")`); // 山札の裏面の絵 (読めなければ、CSS の代わりの絵)
     const side = root.createDiv("mtg-bt-side");
     const board = stage.createDiv("mtg-bt-board");
@@ -228,10 +227,12 @@ export class BattleView extends ItemView {
     });
     if (tapped.length) {
       const side = el.createDiv("mtg-bt-tapgroup");
-      side.style.width = `${86 + (tapped.length - 1) * 14}px`;
+      side.style.width = `${CARD_H + (tapped.length - 1) * 14}px`;
+      side.style.height = `${CARD_W}px`;
       tapped.forEach((c, i) => {
         const card = side.createDiv("mtg-bt-card is-lying");
-        card.style.left = `${i * 14 + 12}px`; // 横向き (86×62) が、i * 14 の位置に収まる
+        card.style.left = `${i * 14 + TAP_EXTRA / 2}px`; // 横向き (縦と横が入れ替わる) が、i * 14 の位置に収まる
+        card.style.top = `${-TAP_EXTRA / 2}px`;
         this.face(card, c);
       });
     }

@@ -1,7 +1,12 @@
 // 対戦の画面の、列の重なりの計算 (DOM を持たない。テストで確かめる)。列の幅に収まるように、カードを重ねる量を決める
 
+// カードの大きさ (px)。盤面のカードと、手前の手札。CSS の変数 (--cw / --ch) は、画面を作るときに、これらから入れる
+export const CARD_W = 76;
+export const CARD_H = 106;
+export const HAND_W = 120;
+export const HAND_H = 168;
 export const GAP = 10; // カードどうしの間
-export const TAP_EXTRA = 24; // タップして横向きになったカードが、列の中で余分に取る幅 (左右 12px ずつ)
+export const TAP_EXTRA = CARD_H - CARD_W; // タップして横向きになったカードが、列の中で余分に取る幅 (左右に半分ずつ)
 
 // 列に必要な幅。cardW = カード1枚の幅、n = 枚数、tapped = そのうちタップしている枚数
 export const rowNeed = (cardW: number, n: number, tapped: number): number => n * cardW + Math.max(0, n - 1) * GAP + tapped * TAP_EXTRA;
