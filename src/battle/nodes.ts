@@ -56,11 +56,11 @@ export function registerBuiltinNodes(): void {
     id: "target",
     title: "対象",
     summary:
-      "対象を決める。zone=stack + kind=spell(スタックの呪文) / zone=battlefield + kind=permanent(戦場のパーマネント) / zone=player + kind=player(プレイヤー。draw や discard の player=target と使う)。" +
+      "対象を決める。zone=stack + kind=spell(スタックの呪文) / zone=battlefield + kind=permanent(戦場のパーマネント) / zone=player + kind=player(プレイヤー。draw や discard の player=target と使う) / zone=any + kind=any(「any target」。プレイヤー・クリーチャー・プレインズウォーカー。damage と使う)。" +
       "type=型 / notType=その型でない / mv=マナ総量 / controller=you(この呪文のコントローラーのもの)・opponents(それ以外) / attacking=攻撃中か / tapped=タップ状態 で絞る。min / max = 対象の数(既定は1。「1体か2体」は min=1 max=2、「最大1つ」は min=0 max=1)",
     params: {
-      zone: { type: "string", required: true, choices: ["stack", "battlefield", "player"] },
-      kind: { type: "string", required: true, choices: ["spell", "permanent", "player"] },
+      zone: { type: "string", required: true, choices: ["stack", "battlefield", "player", "any"] },
+      kind: { type: "string", required: true, choices: ["spell", "permanent", "player", "any"] },
       ...filterParams,
       min: { type: "number", min: 0 },
       max: { type: "number", min: 1 },
@@ -77,10 +77,12 @@ export function registerBuiltinNodes(): void {
       const g = ctx.game;
       const legal = (id: string): boolean => {
         if (a.zone === "player" && a.kind === "player") return g.players.includes(id); // プレイヤーは型・マナ総量で絞らない
+        if (a.zone === "any" && a.kind === "any" && g.players.includes(id)) return true;
+        const anyHit = a.zone === "any" && a.kind === "any" ? g.battlefield.find((p) => p.id === id && /\b(Creature|Planeswalker)\b/.test(characteristics(g, p, ctx.rules).typeLine)) : undefined;
         // zone と kind の組み合わせは stack+spell / battlefield+permanent だけ。それ以外は対象無し (スタックの起動型能力は呪文ではない)
-        const hit = a.zone === "stack" && a.kind === "spell" ? g.stack.find((s) => s.id === id && !s.ability) : a.zone === "battlefield" && a.kind === "permanent" ? g.battlefield.find((p) => p.id === id) : undefined;
+        const hit = a.zone === "stack" && a.kind === "spell" ? g.stack.find((s) => s.id === id && !s.ability) : (a.zone === "battlefield" && a.kind === "permanent") || anyHit ? g.battlefield.find((p) => p.id === id && (a.zone !== "any" || p === anyHit)) : undefined;
         if (!hit) return false;
-        const now = a.zone === "battlefield" ? characteristics(g, hit as Perm, ctx.rules) : undefined; // 継続効果をふまえた、いまの型・キーワード
+        const now = a.zone === "battlefield" || a.zone === "any" ? characteristics(g, hit as Perm, ctx.rules) : undefined; // 継続効果をふまえた、いまの型・キーワード
         if (!matches(ctx, a, hit, now?.typeLine)) return false;
         // 呪禁: 相手のコントロールする呪文や能力の対象にならない
         return !(now && now.keywords.includes("hexproof") && hit.controller !== ctx.item.controller);
@@ -134,10 +136,52 @@ export function registerBuiltinNodes(): void {
           const top = g.libraries[p].shift();
           if (!top) {
             g.log.push(`${p}: ライブラリーが空で引けなかった`);
+            g.drewEmpty.push(p); // 次の状況起因処理で負ける
             break;
           }
           g.hands[p].push(top);
         }
+      }
+      return {};
+    },
+  });
+
+  // ライフ。amount は 0 以上 (数の引数なので、countCards の出力なども渡せる)
+  for (const [id, title, sign] of [["gainLife", "ライフを得る", 1], ["loseLife", "ライフを失う", -1]] as const) {
+    defineNode({
+      id,
+      title,
+      summary: `プレイヤーが amount 点のライフを${sign > 0 ? "得る" : "失う"}。player=you / opponents / target(draw と同じ)`,
+      params: { player: who, target: targetPlayer, amount: { type: "number", required: true, min: 0 } },
+      outputs: {},
+      run: (ctx, a): Record<string, Value> => {
+        for (const p of playersFor(ctx, a)) ctx.game.life[p] += sign * Number(a.amount);
+        return {};
+      },
+    });
+  }
+
+  // ダメージ。プレイヤー → ライフを失う / クリーチャー → ダメージが載る (タフネス以上で死ぬ。ターン終了時に消える) / プレインズウォーカー → 忠誠度カウンターを取り除く
+  defineNode({
+    id: "damage",
+    title: "ダメージを与える",
+    summary: "対象 (target ノードの出力。zone=any なら、プレイヤー・クリーチャー・プレインズウォーカー) に amount 点のダメージを与える",
+    params: { target: { type: "ref", required: true }, amount: { type: "number", required: true, min: 0 } },
+    outputs: {},
+    run: (ctx, a): Record<string, Value> => {
+      const g = ctx.game;
+      const n = Number(a.amount);
+      if (n <= 0) return {};
+      for (const id of idList(a.target)) {
+        if (g.players.includes(id)) {
+          g.life[id] -= n;
+          continue;
+        }
+        const p = g.battlefield.find((x) => x.id === id);
+        if (!p) continue;
+        const type = characteristics(g, p, ctx.rules).typeLine;
+        if (/\bCreature\b/.test(type)) p.damage = (p.damage ?? 0) + n;
+        if (/\bPlaneswalker\b/.test(type)) p.counters = { ...p.counters, loyalty: Math.max(0, (p.counters?.loyalty ?? 0) - n) };
       }
       return {};
     },

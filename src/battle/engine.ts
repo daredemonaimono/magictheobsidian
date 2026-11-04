@@ -32,14 +32,26 @@ function removeFromBattlefield(g: Game, perm: Perm): void {
 }
 
 // 状態起因処理: 忠誠度 0 以下のプレインズウォーカー、タフネス 0 以下のクリーチャー、付いている先を失ったオーラは、墓地へ。落ち着くまで繰り返す
+const live = (g: Game): void => {
+  if (g.over) throw new RuleError("ゲームはもう終わっている");
+};
+
 function stateBased(g: Game, rules: RuleBook): void {
   for (let changed = true; changed; ) {
     changed = false;
+    // 負け: ライフが 0 以下 / 空のライブラリーから引こうとした。残りが1人以下になったらゲームが終わる (残りが0人なら引き分け)
+    const losers = g.players.filter((p) => !g.lost.includes(p) && (g.life[p] <= 0 || g.drewEmpty.includes(p)));
+    g.drewEmpty = [];
+    if (losers.length) {
+      g.lost.push(...losers);
+      const left = g.players.filter((p) => !g.lost.includes(p));
+      if (left.length <= 1) g.over = left.length ? { winner: left[0] } : {};
+    }
     for (const p of [...g.battlefield]) {
       const now = characteristics(g, p, rules);
       const dead =
         (/\bPlaneswalker\b/.test(now.typeLine) && (p.counters?.loyalty ?? 1) <= 0) ||
-        (/\bCreature\b/.test(now.typeLine) && now.toughness !== null && now.toughness <= 0) ||
+        (/\bCreature\b/.test(now.typeLine) && now.toughness !== null && (now.toughness <= 0 || ((p.damage ?? 0) >= now.toughness && !now.keywords.includes("indestructible")))) ||
         (/\bAura\b/.test(now.typeLine) && !g.battlefield.some((o) => o.id === p.attachedTo));
       if (dead) {
         removeFromBattlefield(g, p);
@@ -77,7 +89,7 @@ function chooseTargets(g: Game, item: StackItem, rules: RuleBook): boolean {
     const a = call.args as Record<string, Value>; // 対象のノードの引数は、参照ではない
     const min = typeof a.min === "number" ? a.min : 1;
     const max = typeof a.max === "number" ? a.max : Math.max(1, min);
-    const pool = a.zone === "stack" ? g.stack.filter((x) => !x.ability).map((x) => x.id) : a.zone === "battlefield" ? g.battlefield.map((x) => x.id) : g.players;
+    const pool = a.zone === "stack" ? g.stack.filter((x) => !x.ability).map((x) => x.id) : a.zone === "battlefield" ? g.battlefield.map((x) => x.id) : a.zone === "any" ? [...g.players, ...g.battlefield.map((x) => x.id)] : g.players;
     const legal = pool.filter((id) => def.run!({ ...ctx, item: { ...item, targets: { [call.as ?? ""]: id } } }, a).id !== undefined);
     const picked = (g.decide?.target?.(g, item, call, legal) ?? legal.slice(0, max)).filter((id) => legal.includes(id)).slice(0, max);
     if (picked.length < min) return false;
@@ -245,6 +257,7 @@ function payCost(g: Game, p: PlayerId, cost: CostSpec, source: Perm | undefined,
 // 唱える。手札にある・いま唱えられる・ルールがある・追加コストを払える・対象がすべて合法、のどれかが欠けると RuleError で、状態は変えない。
 // cast = 唱えるときの選択 (kicked / teamwork = 追加コストを払う、tap = チームワークでタップするクリーチャー)。宣言 (additionalCost) の無いフラグは選べない
 export function castSpell(g: Game, p: PlayerId, cardId: string, targets: Record<string, string>, rules: RuleBook, cast: CastRecord = {}): void {
+  live(g);
   const card = g.hands[p]?.find((c) => c.id === cardId);
   if (!card) throw new RuleError(`手札に無い: ${cardId}`);
   if (/\bLand\b/.test(card.typeLine)) throw new RuleError(`土地は唱えられない (playLand で出す): ${card.name}`); // 1ターン1枚の制限は playLand にある
@@ -275,6 +288,7 @@ export function castSpell(g: Game, p: PlayerId, cardId: string, targets: Record<
 
 // 土地を出す。自分のメインフェイズで、スタックが空で、優先権があり、このターンにまだ出していないとき (スタックを使わない特別な動作)
 export function playLand(g: Game, p: PlayerId, cardId: string, rules: RuleBook): void {
+  live(g);
   const card = g.hands[p]?.find((c) => c.id === cardId);
   if (!card) throw new RuleError(`手札に無い: ${cardId}`);
   if (!/\bLand\b/.test(card.typeLine)) throw new RuleError(`土地ではない: ${card.name}`);
@@ -289,6 +303,7 @@ export function playLand(g: Game, p: PlayerId, cardId: string, rules: RuleBook):
 // 戦場のパーマネントの起動型能力を起動する (index = そのカードの起動型能力の何番目か)。コストを払い、マナだけの能力 (addMana のみ) は即座に実行、
 // それ以外はスタックに積む。優先権が必要。払えない・対象が不正なら RuleError で、状態は変えない
 export function activateAbility(g: Game, p: PlayerId, permId: string, index: number, targets: Record<string, string>, rules: RuleBook, tapIds: string[] = [], x = 0): void {
+  live(g);
   const perm = g.battlefield.find((x) => x.id === permId);
   if (!perm) throw new RuleError(`戦場に無い: ${permId}`);
   if (perm.controller !== p) throw new RuleError(`${p} のコントロールするパーマネントではない: ${permId}`);
@@ -319,6 +334,7 @@ export function activateAbility(g: Game, p: PlayerId, permId: string, index: num
 // 一番上の呪文・能力を解決する。対象のノードがあるのに全部が不正になっていたら、何もせず (呪文は墓地へ)。実装の無いノードは飛ばして記録する。
 // パーマネント呪文は、先に戦場に出てから効果を実行する (オーラが、出た自分を付けるため)
 export function resolveTop(g: Game, rules: RuleBook): void {
+  live(g);
   const item = g.stack.pop();
   if (!item) return;
   const body = item.body ?? spellBody(rules, item.card) ?? [];
@@ -355,6 +371,7 @@ export function resolveTop(g: Game, rules: RuleBook): void {
 function advanceStep(g: Game, rules: RuleBook): void {
   if (g.step === "end") {
     for (const p of g.battlefield) if (p.mods) p.mods = p.mods.filter((m) => m.until !== "endOfTurn"); // ターン終了時までの効果が消える
+    for (const p of g.battlefield) delete p.damage; // ダメージも消える
     g.active = nextPlayer(g, g.active);
     g.landsPlayed = 0;
     for (const p of g.battlefield) delete p.loyaltyUsed; // 忠誠度能力は、1ターンに1回
@@ -368,6 +385,7 @@ function advanceStep(g: Game, rules: RuleBook): void {
 
 // 優先権を持つ人がパスする。全員が連続でパスしたら、スタックが空なら次のステップへ、空でなければ一番上だけを解決する
 export function passPriority(g: Game, p: PlayerId, rules: RuleBook): "passed" | "resolved" | "stepEnded" {
+  live(g);
   if (g.priority !== p) throw new Error(`${p} は優先権を持っていない`);
   g.passes.push(p);
   if (g.passes.length < g.players.length) {

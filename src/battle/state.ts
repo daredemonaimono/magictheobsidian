@@ -47,6 +47,7 @@ export interface Perm {
   attachedTo?: string; // 装備品・オーラが付いているパーマネントの id
   loyaltyUsed?: boolean; // このターンに忠誠度能力を起動した (1ターンに1回)
   emblem?: string; // 紋章のとき、その名前 (createEmblem の name)。紋章は戦場の外 (Game.emblems) にある
+  damage?: number; // クリーチャーに載っているダメージ (ターン終了時に消える)
   counters?: Record<string, number>; // "+1/+1" (パワー・タフネスに足される) / "stun" (麻痺: アンタップのかわりに1つ取り除く)
 }
 
@@ -79,6 +80,10 @@ export interface Game {
   emblems: Perm[]; // 紋章 (戦場の外に残り続ける。元のカードのルールにある、emblem で始まる誘発型能力が働く)
   restrictedMana: Record<PlayerId, { amount: number; type?: string; notType?: string }[]>; // 使い道に制限のあるマナ (「クリーチャーでない呪文を唱えるためにしか使えない」)
   landsPlayed: number; // このターンに出した土地の数 (1ターンに1枚)
+  life: Record<PlayerId, number>;
+  drewEmpty: PlayerId[]; // 空のライブラリーから引こうとした人 (次の状況起因処理で負ける)
+  lost: PlayerId[]; // 負けた人
+  over?: { winner?: PlayerId }; // ゲームが終わった。winner が無ければ引き分け
 }
 export interface RuleBook {
   get(card: string): CardRule | undefined;
@@ -86,7 +91,7 @@ export interface RuleBook {
 
 export function createGame(players: PlayerId[]): Game {
   const each = <T>(f: () => T) => Object.fromEntries(players.map((p) => [p, f()])) as Record<PlayerId, T>;
-  return { players, active: players[0], step: "main1", priority: players[0], passes: [], hands: each<GameCard[]>(() => []), libraries: each<GameCard[]>(() => []), graveyards: each<GameCard[]>(() => []), battlefield: [], mana: each(() => 0), stack: [], log: [], serial: 0, events: [], emblems: [], restrictedMana: each(() => []), landsPlayed: 0 };
+  return { players, active: players[0], step: "main1", priority: players[0], passes: [], hands: each<GameCard[]>(() => []), libraries: each<GameCard[]>(() => []), graveyards: each<GameCard[]>(() => []), battlefield: [], mana: each(() => 0), stack: [], log: [], serial: 0, events: [], emblems: [], restrictedMana: each(() => []), landsPlayed: 0, life: each(() => 20), drewEmpty: [], lost: [] };
 }
 
 export const opponentsOf = (g: Game, p: PlayerId): PlayerId[] => g.players.filter((x) => x !== p);
