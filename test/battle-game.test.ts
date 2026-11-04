@@ -70,3 +70,15 @@ assert.deepEqual(z.libraries, { A: [], B: [] });
 assert.deepEqual(z.mana, { A: 0, B: 0 });
 assert.deepEqual(z.battlefield, []);
 assert.equal(z.decide, undefined);
+
+// アンタップ・ステップ: ターンが替わるとき、次のターンのプレイヤーのパーマネントがアンタップされる (相手のものはそのまま)
+{
+  const u = createGame(["A", "B"]);
+  u.battlefield.push({ id: "a1", card: card("a1", "Creature — Bear", "A"), controller: "A", tapped: true }, { id: "b1", card: card("b1", "Creature — Bear", "B"), controller: "B", tapped: true });
+  u.step = "end";
+  passPriority(u, "A", none);
+  passPriority(u, "B", none);
+  assert.equal(u.active, "B");
+  assert.equal(u.battlefield.find((p) => p.id === "b1")!.tapped, false, "B のターンの最初に、B のものがアンタップ");
+  assert.equal(u.battlefield.find((p) => p.id === "a1")!.tapped, true, "A のものはそのまま");
+}

@@ -57,6 +57,14 @@ export function setAs(rule: CardRule, a: number, n: number, name: string | undef
   return r;
 }
 
+// 条件の付け外し (undefined で外す)。このノードは、その条件のときだけ実行する
+export function setIf(rule: CardRule, a: number, n: number, expr: string | undefined): CardRule {
+  const r = copy(rule);
+  if (expr) bodyOf(r, a)[n].if = expr;
+  else delete bodyOf(r, a)[n].if;
+  return r;
+}
+
 // つなぐ: from の出力を to の param に渡す。from に as が無ければ、重複しない名前 (t, t2, ...) を付ける。出力の無いノードからはつなげない
 export function connect(rule: CardRule, a: number, from: number, to: number, param: string): CardRule {
   const r = copy(rule);

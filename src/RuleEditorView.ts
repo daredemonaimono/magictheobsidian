@@ -1,7 +1,7 @@
 import { ItemView, Notice, ViewStateResult, WorkspaceLeaf } from "obsidian";
-import { addAbility, addNode, blankRule, connect, moveNode, problems, removeAbility, removeNode, setArg, setAs, setUnsupported } from "./battle/editor";
+import { addAbility, addNode, blankRule, connect, moveNode, problems, removeAbility, removeNode, setArg, setAs, setIf, setUnsupported } from "./battle/editor";
 import { AbilityKind, CardRule } from "./battle/node";
-import { allNodes, getNode } from "./battle/registry";
+import { allConditions, allNodes, getNode } from "./battle/registry";
 import { writeRule } from "./battle/ruleMd";
 
 export const RULE_EDITOR_VIEW = "mtg-rule-editor";
@@ -250,6 +250,16 @@ export class RuleEditorView extends ItemView {
             });
           }
         }
+        // 条件: このノードは、その条件のときだけ実行する (「〜なら」「代わりに」)
+        const cr = card.createDiv("mtg-ed-param");
+        cr.createSpan({ text: "条件", cls: "mtg-ed-label" });
+        const cs = cr.createEl("select");
+        cs.createEl("option", { text: "(いつでも)", value: "" });
+        const opts = allConditions().flatMap((c) => [{ v: c.id, t: c.title }, { v: `!${c.id}`, t: `${c.title}ではない` }]);
+        if (call.if && !opts.some((o) => o.v === call.if)) opts.push({ v: call.if, t: call.if });
+        for (const o of opts) cs.createEl("option", { text: o.t, value: o.v });
+        cs.value = call.if ?? "";
+        cs.onchange = () => this.quiet(setIf(this.rule!, a, n, cs.value || undefined));
         for (const [k, p] of Object.entries(def.params)) {
           const pr = card.createDiv("mtg-ed-param");
           const v = call.args[k];

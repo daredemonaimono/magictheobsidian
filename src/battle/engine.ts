@@ -1,5 +1,5 @@
-import { NodeCall, RunCtx, Value } from "./node";
-import { checkCall, getNode } from "./registry";
+import { CastRecord, NodeCall, RunCtx, Value } from "./node";
+import { checkCall, evalCondition, getNode } from "./registry";
 import { Game, GameCard, PlayerId, RuleBook, StackItem, Step } from "./state";
 
 // ステップ進行・優先権・スタック。画面なしで、テストから動かせる
@@ -24,13 +24,13 @@ function resolveArgs(call: NodeCall, vars: Record<string, Value>): Record<string
 }
 
 // 唱える。手札にある・いま唱えられる・ルールがある・対象がすべて合法、のどれかが欠けると RuleError で、状態は変えない
-export function castSpell(g: Game, p: PlayerId, cardId: string, targets: Record<string, string>, rules: RuleBook): void {
+export function castSpell(g: Game, p: PlayerId, cardId: string, targets: Record<string, string>, rules: RuleBook, cast: CastRecord = {}): void {
   const card = g.hands[p]?.find((c) => c.id === cardId);
   if (!card) throw new RuleError(`手札に無い: ${cardId}`);
   if (!canCastNow(g, p, card)) throw new RuleError(`いまは唱えられない: ${card.name}`);
   const body = spellBody(rules, card);
   if (!body) throw new RuleError(`呪文能力のルールが無い: ${card.name}`);
-  const item: StackItem = { id: card.id, card, controller: p, targets, cast: {} };
+  const item: StackItem = { id: card.id, card, controller: p, targets, cast };
   for (const call of body) {
     const bad = checkCall(call);
     if (bad) throw new RuleError(`${card.name}: ${bad}`);
@@ -57,6 +57,7 @@ export function resolveTop(g: Game, rules: RuleBook): void {
   else {
     const vars: Record<string, Value> = {};
     for (const call of body) {
+      if (call.if !== undefined && !evalCondition(call.if, ctx(call, vars))) continue; // 条件を満たさないノードは飛ばす
       const def = getNode(call.node);
       if (!def?.run) {
         g.log.push(`未実装: ${call.node}`);
@@ -73,8 +74,10 @@ export function resolveTop(g: Game, rules: RuleBook): void {
 
 function advanceStep(g: Game): void {
   if (g.step === "end") {
+    for (const p of g.battlefield) if (p.mods) p.mods = p.mods.filter((m) => m.until !== "endOfTurn"); // ターン終了時までの効果が消える
     g.active = nextPlayer(g, g.active);
-    g.step = "upkeep"; // アンタップは優先権が無いので飛ばして進める
+    for (const p of g.battlefield) if (p.controller === g.active) p.tapped = false; // アンタップ・ステップ (優先権が無いので、ここで済ませてアップキープへ)
+    g.step = "upkeep";
   } else g.step = STEPS[STEPS.indexOf(g.step) + 1];
   g.priority = g.active;
 }

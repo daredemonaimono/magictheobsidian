@@ -37,3 +37,11 @@ assert.ok(buildPrompt("Negate", "x").system.includes("foresee"));
   assert.ok(withRuling.system.includes("裁定後のテキスト"), "system に、付いていたらそれを正とする規則");
   assert.ok(!buildPrompt("Negate", "x", "   ").user.includes("裁定後"), "空白だけなら無いのと同じ");
 }
+
+// 条件 if=: 登録された条件の一覧と、書き方・「代わりに」の表し方を載せる
+{
+  resetRegistry();
+  registerBuiltinNodes();
+  const sys = buildPrompt("Into the Roil", "x").system;
+  for (const w of ["if=", "kicked", "teamwork", "if=!", "代わりに"]) assert.ok(sys.includes(w), `system に ${w}`);
+}

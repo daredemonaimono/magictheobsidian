@@ -1,5 +1,5 @@
 import { ParamDef } from "./node";
-import { allNodes } from "./registry";
+import { allConditions, allNodes } from "./registry";
 import { SAMPLE_RULES } from "./samples";
 
 // AI への指示文。使えるノードの一覧は、レジストリ (NodeDef) から作る。ノードを足せば、指示文にも出る
@@ -9,6 +9,8 @@ const nodeList = () =>
   allNodes()
     .map((n) => `- ${n.id} (${n.title}): ${n.summary}\n  引数: ${Object.entries(n.params).map(([k, p]) => param(k, p)).join(", ") || "なし"}${Object.keys(n.outputs).length ? `\n  as= を付けると、出力 ${Object.keys(n.outputs).join(", ")} を $名前 で後のノードの ref 引数に渡せる` : ""}`)
     .join("\n");
+
+const conditionList = () => allConditions().map((c) => `- ${c.id} (${c.title}): ${c.summary}`).join("\n");
 
 export function buildPrompt(card: string, oracle: string, ruling?: string): { system: string; user: string } {
   const system = `あなたは Magic: The Gathering のカードのテキストを、汎用のノードの組み合わせ (Obsidian のノート) に直す役です。
@@ -20,6 +22,11 @@ export function buildPrompt(card: string, oracle: string, ruling?: string): { sy
 
 ## 使えるノード (これだけ。ここに無いノードは使わない)
 ${nodeList() || "(まだ無い)"}
+
+## 条件 (ノードの if=)
+ノードに \`if=<条件>\` を付けると、その条件のときだけ実行される。\`if=!<条件>\` は否定。「〜なら」「代わりに」は、条件と否定のノードを並べて表す
+(例: \`- counter target=$t unlessPay=4 if=teamwork\` と \`- counter target=$t unlessPay=2 if=!teamwork\`)。
+${conditionList() || "(まだ無い)"}
 
 ## 規則
 - カード専用のノードは作らない。違いは、汎用ノードの引数で表す。

@@ -1,23 +1,31 @@
 import { RunCtx, Value } from "./node";
-import { defineNode, getNode } from "./registry";
-import { playersOf } from "./state";
+import { defineCondition, defineNode, getNode } from "./registry";
+import { Perm, keywordsOf, playersOf } from "./state";
 
 // 実装済みの基本ノード。打ち消しは「対象」+「打ち消す」の組み合わせで、カードごとの違いは対象の条件 (引数) だけ
 
+// 「キーワードを得る」で選べるキーワード能力 (増やすときはここへ)
+const KEYWORDS = ["flying", "hexproof", "flash", "haste", "vigilance", "trample", "lifelink", "deathtouch", "firstStrike", "doubleStrike", "reach", "menace", "defender", "prowess", "indestructible"];
+
 export function registerBuiltinNodes(): void {
   if (getNode("target")) return;
+
+  // 条件: 呪文を唱えたときの記録 (キッカー・チームワークを使ったか)
+  defineCondition({ id: "kicked", title: "キッカーされた", summary: "この呪文がキッカーされて唱えられた", test: (ctx) => !!ctx.item.cast.kicked });
+  defineCondition({ id: "teamwork", title: "チームワークを用いた", summary: "この呪文がチームワークを用いて唱えられた", test: (ctx) => !!ctx.item.cast.teamwork });
 
   // 対象を決める。唱えるときに選んだ対象 (ctx.item.targets[as]) が、いまも条件に合っていれば id を返す。合わなければ空
   defineNode({
     id: "target",
     title: "対象",
-    summary: "対象を決める。zone=stack + kind=spell(スタックの呪文) / zone=battlefield + kind=permanent(戦場のパーマネント) / zone=player + kind=player(プレイヤー。draw や discard の player=target と使う)。type=型 / notType=その型でない / mv=マナ総量 で絞る",
+    summary: "対象を決める。zone=stack + kind=spell(スタックの呪文) / zone=battlefield + kind=permanent(戦場のパーマネント) / zone=player + kind=player(プレイヤー。draw や discard の player=target と使う)。type=型 / notType=その型でない / mv=マナ総量 / controller=you(この呪文のコントローラーのもの)・opponents(それ以外) で絞る",
     params: {
       zone: { type: "string", required: true, choices: ["stack", "battlefield", "player"] },
       kind: { type: "string", required: true, choices: ["spell", "permanent", "player"] },
       type: { type: "string" },
       notType: { type: "string" },
       mv: { type: "number" },
+      controller: { type: "string", choices: ["you", "opponents"] },
     },
     outputs: { id: "id" },
     isTarget: true,
@@ -31,6 +39,9 @@ export function registerBuiltinNodes(): void {
       if (typeof a.type === "string" && !line.includes(a.type.toLowerCase())) return {};
       if (typeof a.notType === "string" && line.includes(a.notType.toLowerCase())) return {};
       if (typeof a.mv === "number" && hit.card.mv !== a.mv) return {};
+      // 呪禁: 相手のコントロールする呪文や能力の対象にならない
+      if (a.zone === "battlefield" && keywordsOf(hit as Perm).includes("hexproof") && hit.controller !== ctx.item.controller) return {};
+      if (typeof a.controller === "string" && (a.controller === "you") !== (hit.controller === ctx.item.controller)) return {};
       return { id: hit.id };
     },
   });
@@ -101,6 +112,49 @@ export function registerBuiltinNodes(): void {
       const [gone] = ctx.game.battlefield.splice(i, 1);
       ctx.game.hands[gone.card.owner].push(gone.card);
       ctx.game.log.push(`${gone.card.name} を手札に戻した`);
+      return {};
+    },
+  });
+
+  // タップ / アンタップ。戦場のパーマネントの状態。対象が戦場に無ければ何もしない
+  for (const [id, title, tapped] of [["tap", "タップする", true], ["untap", "アンタップする", false]] as const) {
+    defineNode({
+      id,
+      title,
+      summary: `対象のパーマネントを${title}`,
+      params: { target: { type: "ref", required: true } },
+      outputs: {},
+      run: (ctx, a): Record<string, Value> => {
+        const p = ctx.game.battlefield.find((x) => x.id === a.target);
+        if (p) p.tapped = tapped;
+        return {};
+      },
+    });
+  }
+
+  // 修整 (+X/+Y) とキーワードを得る。持続は「ターン終了時まで」か forever。対象が戦場に無ければ何もしない
+  const duration = { type: "string" as const, required: true, choices: ["endOfTurn", "forever"] };
+  defineNode({
+    id: "modify",
+    title: "修整を受ける",
+    summary: "対象のクリーチャーが +power/+toughness の修整を受ける。duration=endOfTurn(ターン終了時まで) / forever",
+    params: { target: { type: "ref", required: true }, power: { type: "number", required: true }, toughness: { type: "number", required: true }, duration },
+    outputs: {},
+    run: (ctx, a): Record<string, Value> => {
+      const p = ctx.game.battlefield.find((x) => x.id === a.target);
+      if (p) (p.mods ??= []).push({ power: Number(a.power), toughness: Number(a.toughness), until: a.duration as "endOfTurn" | "forever" });
+      return {};
+    },
+  });
+  defineNode({
+    id: "grant",
+    title: "キーワードを得る",
+    summary: "対象のクリーチャーがキーワード能力を得る。duration=endOfTurn(ターン終了時まで) / forever",
+    params: { target: { type: "ref", required: true }, keyword: { type: "string", required: true, choices: KEYWORDS }, duration },
+    outputs: {},
+    run: (ctx, a): Record<string, Value> => {
+      const p = ctx.game.battlefield.find((x) => x.id === a.target);
+      if (p) (p.mods ??= []).push({ power: 0, toughness: 0, keyword: String(a.keyword), until: a.duration as "endOfTurn" | "forever" });
       return {};
     },
   });

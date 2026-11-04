@@ -59,6 +59,7 @@ function parseCall(s: string, line: number): NodeCall {
     const val = t.text.slice(eq + 1);
     if (!val && !t.quoted) throw new RuleParseError(`値が空: ${key}`, line);
     if (key === "as") call.as = val;
+    else if (key === "if") call.if = val;
     else call.args[key] = arg(val, t.quoted);
   }
   return call;
@@ -113,7 +114,7 @@ const show = (a: Arg): string => {
 export function writeRule(rule: CardRule): string {
   let out = `---\nmtg: rule\ncard: "[[${rule.card}]]"\n---\n`;
   for (const a of rule.abilities) {
-    const body = a.body.map((c) => `- ${[c.node, ...(c.as ? [`as=${c.as}`] : []), ...Object.entries(c.args).map(([k, v]) => `${k}=${show(v)}`)].join(" ")}`);
+    const body = a.body.map((c) => `- ${[c.node, ...(c.as ? [`as=${c.as}`] : []), ...(c.if ? [`if=${c.if}`] : []), ...Object.entries(c.args).map(([k, v]) => `${k}=${show(v)}`)].join(" ")}`);
     out += `\n## ${HEADING_OF[a.kind]}\n\n${body.join("\n")}\n`;
   }
   if (rule.unsupported?.length) out += `\n## ${NOTE}\n\n${rule.unsupported.map((u) => `- ${u}`).join("\n")}\n`;

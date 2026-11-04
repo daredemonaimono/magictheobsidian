@@ -8,6 +8,7 @@ export type Arg = Value | { ref: string }; // ref = 前のノードの as の名
 export interface NodeCall {
   node: string;
   as?: string;
+  if?: string; // 条件。このノードは、その条件のときだけ実行する ("kicked" / 否定は "!kicked")
   args: Record<string, Arg>;
   line?: number; // md の何行目か (parseRule が付ける。検証エラーに使う。列挙されない)
 }
@@ -48,6 +49,7 @@ export interface NodeDef {
 export type Duration = { until: "endOfTurn" | "whileAttached" | "forever" };
 export interface CastRecord {
   kicked?: boolean;
+  teamwork?: boolean;
   modes?: number[];
   extraCosts?: string[];
 }

@@ -11,6 +11,9 @@ export interface GameCard {
   mv: number;
   owner: PlayerId;
   flash?: boolean;
+  power?: number; // クリーチャーのパワー・タフネス・キーワード (もとの値)
+  toughness?: number;
+  keywords?: string[];
 }
 export interface StackItem {
   id: string;
@@ -19,6 +22,13 @@ export interface StackItem {
   targets: Record<string, string>; // ノードの as → 対象の StackItem.id
   cast: CastRecord;
 }
+// 修整とキーワードの変更。持続「ターン終了時まで」はターンの終わりに消え、forever は残る
+export interface Mod {
+  power: number;
+  toughness: number;
+  keyword?: string;
+  until: "endOfTurn" | "forever";
+}
 // 戦場のパーマネント
 export interface Perm {
   id: string;
@@ -26,6 +36,7 @@ export interface Perm {
   controller: PlayerId;
   tapped?: boolean;
   attacking?: boolean;
+  mods?: Mod[];
 }
 // 人の判断の差し替え口。無ければ決まった動きになる (shortcut: 判断の入力はまだ無い。入力の仕組みを作るときに置き換える)
 export interface Decider {
@@ -60,3 +71,14 @@ export const opponentsOf = (g: Game, p: PlayerId): PlayerId[] => g.players.filte
 
 // ノードの player 引数: "you" = 呪文のコントローラー、"opponents" = その全相手
 export const playersOf = (g: Game, controller: PlayerId, who: string): PlayerId[] => (who === "opponents" ? opponentsOf(g, controller) : [controller]);
+
+// いまのパワー・タフネス (もとの値 + 修整)。パワーの無いカードは null
+export function statsOf(p: Perm): { power: number; toughness: number } | null {
+  if (p.card.power === undefined || p.card.toughness === undefined) return null;
+  const mods = p.mods ?? [];
+  return { power: p.card.power + mods.reduce((a, m) => a + m.power, 0), toughness: p.card.toughness + mods.reduce((a, m) => a + m.toughness, 0) };
+}
+
+// いまのキーワード (もとのもの + 得たもの)。表記ゆれ (Scryfall の "First strike" と、こちらの "firstStrike") をそろえて、小文字・空白なしで返す
+const norm = (k: string) => k.toLowerCase().replace(/\s+/g, "");
+export const keywordsOf = (p: Perm): string[] => [...new Set([...(p.card.keywords ?? []), ...(p.mods ?? []).flatMap((m) => (m.keyword ? [m.keyword] : []))].map(norm))];
