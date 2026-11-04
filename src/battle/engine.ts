@@ -1,4 +1,4 @@
-import { characteristics, costReduction, extraTriggers } from "./continuous";
+import { characteristics, costReduction, extraTriggers, untapsDuring } from "./continuous";
 import { CastRecord, NodeCall, RunCtx, Value } from "./node";
 import { checkCall, evalCondition, getNode } from "./registry";
 import { Game, GameCard, GameEvent, Perm, PlayerId, RuleBook, StackItem, Step, typeIn, untapPerm } from "./state";
@@ -358,7 +358,7 @@ function advanceStep(g: Game, rules: RuleBook): void {
     g.active = nextPlayer(g, g.active);
     g.landsPlayed = 0;
     for (const p of g.battlefield) delete p.loyaltyUsed; // 忠誠度能力は、1ターンに1回
-    for (const p of g.battlefield) if (p.controller === g.active) untapPerm(g, p); // アンタップ・ステップ (優先権が無いので、ここで済ませてアップキープへ)。麻痺カウンターは、アンタップのかわりに取り除く
+    for (const p of g.battlefield) if (untapsDuring(g, p, g.active, rules)) untapPerm(g, p); // アンタップ・ステップ (優先権が無いので、ここで済ませてアップキープへ)。麻痺カウンターは、アンタップのかわりに取り除く
     g.step = "upkeep";
   } else g.step = STEPS[STEPS.indexOf(g.step) + 1];
   g.priority = g.active;

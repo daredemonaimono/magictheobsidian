@@ -16,7 +16,7 @@
 | Accumulate Wisdom | ○ | —(`look`・`choose`・`move`・数の条件、第2弾で実装済み) |
 | Aetherize | ○ | —(`select`、第2弾で実装済み。攻撃の処理は戦闘の実装で) |
 | Island | ○ | —(`cost tap` + `addMana`、土地を出す `playLand`、第3弾で実装済み) |
-| Bender's Waterskin | △ | アンタップ・ステップの変更(常在型) |
+| Bender's Waterskin | ○ | —(`untapDuring who=opponents` + `cost tap` + `addMana`、第6弾で実装済み。「好きな色」はマナの色の実装まで区別しない) |
 | Brineborn Cutthroat / Elementalist Adept | ○ | —(`when event=cast`・`self`・`addCounter`・`keyword name=flash`、第3弾で実装済み。果敢は `keyword name=prowess`) |
 | Cryogen Relic | ○ | —(`when event=enters/leaves self=true`・起動型・麻痺カウンター、第3弾で実装済み) |
 | Geist of Saint Thalia | ○ | —(`keyword flying`・`reduceCost`、第4弾で実装済み) |
@@ -37,5 +37,10 @@
 4. **第3弾(実装済み)**: 戦場に出る処理(クリーチャー・アーティファクト・土地が戦場に置かれる)、誘発型の枠(イベント)、麻痺カウンター・カウンターを置く。→ Island(戦場に出す)、Cutthroat、Adept、Cryogen Relic。限界: 対象を取る誘発型能力(誘発時に対象を選ぶ)は、まだ。誘発の順番(APNAP)は、戦場の順。戦闘(攻撃・ブロック)は、まだ。
 5. **第4弾(実装済み)**: 常在型(キーワード・コスト軽減・継続効果)、装備・オーラ、レイヤー。→ Geist、Light Jammer、Wizard's Staff、Witness Protection。限界: タイムスタンプは見ない(戦場の順)。カード自体のマナコストの支払いは `Game.payManaCosts` のときだけ(色は区別しない)。
 6. **第5弾(実装済み)**: 忠誠度能力・トークン・紋章。→ Chandra、Jace。状態起因処理(忠誠度0・タフネス0以下・付いていないオーラ)も入った。限界: 多人数戦の「各対戦相手につき」、マナ・プールが空にならない(マナはステップをまたいで残る)、静的な紋章の能力。
+7. **第6弾(実装済み)**: `untapDuring`(他のプレイヤーのアンタップ・ステップにもアンタップ)。→ Bender's Waterskin。
 
 準備済(Emeritus)は、ルールの正本を確認するまで扱わない。
+
+## あとでまとめて書くもの
+
+- シナリオ (`src/battle/samples.ts` の `SCENARIOS`。動いた記録): 無いカードは Chandra, Chill of Compliance / The Theorist, Jace Beleren / Into the Roil / Island / Octopus Form / We Say Thee Nay! (打ち消し3種だけある)。無いと `Battle: rules coverage` で partial になる。

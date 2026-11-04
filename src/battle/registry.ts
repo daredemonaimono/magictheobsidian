@@ -65,7 +65,7 @@ export function structureProblem(ab: Ability): string | null {
     if (ab.body[0].node !== "affect" && ab.body.some((c) => effects.includes(c.node))) return "継続効果のノードは、常在型能力の最初に affect (及ぶ先) を書く";
     if (ab.body.slice(1).some((c) => c.node === "affect")) return "affect は常在型能力の最初のノードだけに書ける";
     // keyword と reduceCost は、affect の無い常在型能力として読まれる (affect の後ろに書くと、黙って無視される)
-    const stray = ab.body[0].node === "affect" ? ab.body.find((c) => c.node === "keyword" || c.node === "reduceCost") : undefined;
+    const stray = ab.body[0].node === "affect" ? ab.body.find((c) => c.node === "keyword" || c.node === "reduceCost" || c.node === "untapDuring") : undefined;
     if (stray) return `${stray.node} は、affect の後ろには書けない (affect の無い常在型能力に書く)`;
     return null;
   }

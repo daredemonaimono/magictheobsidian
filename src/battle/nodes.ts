@@ -371,6 +371,13 @@ export function registerBuiltinNodes(): void {
     params: { amount: { type: "number", required: true, min: 1 }, who: { type: "string", choices: ["you", "opponents", "all"] }, type: { type: "string" }, notType: { type: "string" } },
     ...cont,
   });
+  defineNode({
+    id: "untapDuring",
+    title: "他のプレイヤーのアンタップ",
+    summary: "このパーマネントを、他のプレイヤーのアンタップ・ステップにもアンタップする(Bender's Waterskin など)。who=opponents(対戦相手のターン) / all。自分のアンタップ・ステップでは、ふつうにアンタップする。affect は要らない",
+    params: { who: { type: "string", required: true, choices: ["opponents", "all"] } },
+    ...cont,
+  });
   // 起動のタイミング (装備など): sorcery=true なら、自分のメインフェイズで、スタックが空のときだけ起動できる
   defineNode({
     id: "timing",

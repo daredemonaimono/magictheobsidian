@@ -112,3 +112,10 @@ export function costReduction(g: Game, p: PlayerId, card: GameCard, rules: RuleB
   }
   return sum;
 }
+
+// アンタップ・ステップ (active のターン) に、s をアンタップするか。ふつうは自分のターンだけ。untapDuring who=opponents / all があれば、他のプレイヤーのターンにも (能力を失っていなければ)
+export function untapsDuring(g: Game, s: Perm, active: PlayerId, rules: RuleBook): boolean {
+  if (s.controller === active) return true;
+  if (losesAll(g, s, rules)) return false;
+  return (rules.get(s.card.name)?.abilities ?? []).some((ab) => ab.kind === "static" && ab.body.some((c) => c.node === "untapDuring" && (c.args.who === "all" || c.args.who === "opponents")));
+}
