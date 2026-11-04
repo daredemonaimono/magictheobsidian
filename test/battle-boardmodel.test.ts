@@ -265,10 +265,12 @@ const none = () => undefined;
 {
   assert.equal(pileLayers(0), 0);
   assert.equal(pileLayers(1), 1);
-  assert.equal(pileLayers(4), 1);
-  assert.equal(pileLayers(5), 2);
-  assert.equal(pileLayers(46), 10);
-  assert.equal(pileLayers(100), 12, "上限");
+  assert.equal(pileLayers(10), 1, "10 枚までは 1 層");
+  assert.equal(pileLayers(11), 2, "10 枚ごとに 1 層");
+  assert.equal(pileLayers(46), 5);
+  assert.equal(pileLayers(60), 6);
+  assert.equal(pileLayers(100), 10);
+  assert.equal(pileLayers(250), 12, "上限");
   assert.equal(pileLayers(-3), 0, "負の数でも落ちない");
   let prev = 0;
   for (let n = 0; n <= 120; n++) {

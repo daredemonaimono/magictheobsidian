@@ -9,9 +9,10 @@ export const rowNeed = (cardW: number, n: number, tapped: number): number => n *
 // 重ねる量 (px。隣との間の、負の余白)。need が avail に収まるなら 0。枚数が 1 以下・幅が測れない (0) ときも 0
 export const overlapFor = (need: number, n: number, avail: number): number => (n > 1 && avail > 0 ? Math.max(0, Math.ceil((need - avail) / (n - 1))) : 0);
 
-// 山札・墓地の厚み (重ねる枚数の見た目)。5 枚ごとに 1 層、上限 12。0 枚なら 0 (空の枠だけ)
+// 山札・墓地の厚み (重ねる層の数)。10 枚ごとに 1 層 (1〜10 枚 = 1 層、11〜20 枚 = 2 層 …)、上限 12。0 枚なら 0 (空の枠だけ)。枚数を、見た目でも確かめられるように (ドレッジなど)
 export const MAX_LAYERS = 12;
-export const pileLayers = (count: number): number => (count > 0 ? Math.min(MAX_LAYERS, 1 + Math.floor(count / 5)) : 0);
+export const LAYER_PX = 2; // 1 層の厚み (px)
+export const pileLayers = (count: number): number => (count > 0 ? Math.min(MAX_LAYERS, Math.ceil(count / 10)) : 0);
 
 // カードの裏面の絵。Scryfall の card_back_id (公式のカードの裏) は、普通のカードすべてで同じ。画像は backs.scryfall.io から読む (ブラウザが覚える。読めなければ、CSS の代わりの絵)
 export const CARD_BACK_ID = "0aeebaf5-8c7d-4636-9e82-8c27447861f7";

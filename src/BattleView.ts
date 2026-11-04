@@ -1,6 +1,6 @@
 import { ItemView, WorkspaceLeaf } from "obsidian";
 import { BoardModel, CardView, LandStack, PhaseId, boardModel } from "./battle/boardModel";
-import { GAP, cardBackUrl, overlapFor, pileLayers, rowNeed } from "./battle/layout";
+import { GAP, LAYER_PX, cardBackUrl, overlapFor, pileLayers, rowNeed } from "./battle/layout";
 import { sampleBattle } from "./battle/sampleBattle";
 import { Game, RuleBook } from "./battle/state";
 import { cardImage, cardInfo, cardText } from "./cards";
@@ -238,14 +238,14 @@ export class BattleView extends ItemView {
     if (s.cards.length > 1) el.createDiv({ cls: "mtg-bt-count", text: `×${s.cards.length}` });
   }
 
-  // 山札・墓地: 枚数に応じた厚み (box-shadow を重ねる)。山札は裏向き、墓地は一番上のカードを見せる。枚数を下に出す
+  // 山札・墓地: 枚数に応じた厚み (10 枚ごとに 1 層。box-shadow を重ねる)。山札は裏向き、墓地は一番上のカードを見せる。枚数を下に出す
   private paintPile(el: HTMLElement, count: number, top?: CardView) {
     const sig = `${count}|${top?.id ?? ""}|${top?.image ?? ""}`;
     if (el.dataset.sig === sig) return;
     el.dataset.sig = sig;
     el.empty();
     const layers = pileLayers(count);
-    el.style.boxShadow = Array.from({ length: layers }, (_, i) => `${i + 1}px ${i + 1}px 0 ${i % 2 ? "#3a2a10" : "#6a4a1a"}`).join(",") || "none";
+    el.style.boxShadow = Array.from({ length: layers }, (_, i) => `${(i + 1) * LAYER_PX}px ${(i + 1) * LAYER_PX}px 0 ${i % 2 ? "#3a2a10" : "#6a4a1a"}`).join(",") || "none";
     el.toggleClass("is-empty", count === 0);
     if (top) this.face(el, top);
     el.createDiv({ cls: "mtg-bt-dcount", text: String(count) });
