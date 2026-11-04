@@ -1,19 +1,21 @@
 // AI への用語集 (基本の定義)。AI が「パーマネントは何を指すか」「どの文が誘発型か」で迷わないように、指示文に載せる。
-// vault の Rules/_用語.md があれば、既定のかわりにその内容を載せる (コマンド「Battle: create glossary note」で、既定から作れる)
-export const GLOSSARY_NOTE = "_用語.md";
+// カードのテキスト (オラクルテキスト) もノードの名前も英語なので、用語集も英語にする。ただし、能力の見出し (## 誘発型能力 など) は md の書式なので日本語のまま。
+// vault の Rules/_glossary.md があれば、既定のかわりにその内容を載せる (コマンド「Battle: create glossary note」で、既定から作れる)
+export const GLOSSARY_NOTE = "_glossary.md";
+export const OLD_GLOSSARY_NOTE = "_用語.md"; // 以前の名前。_glossary.md が無いときだけ読む
 
-export const DEFAULT_GLOSSARY = `### パーマネント
-- パーマネントは、戦場にあるカード(トークンを含む)。種類は アーティファクト・クリーチャー・エンチャント・土地・プレインズウォーカー・バトル。「パーマネント」は、これらすべてを指す(target の kind=permanent)。種類は type=creature のように絞る。「土地でないパーマネント」は notType=land。
-- 「クリーチャー」「アーティファクト」「エンチャント」「土地」「プレインズウォーカー」「バトル」は、それぞれパーマネントの一部。
-- 次のものは、パーマネントではない: 戦場にないカード(手札・墓地・ライブラリー・追放領域)、スタックにある呪文や能力(呪文は kind=spell)、カウンター(+1/+1 カウンターなど)、紋章。
+export const DEFAULT_GLOSSARY = `### Permanents
+- A permanent is a card (or token) on the battlefield. Its types are artifact, creature, enchantment, land, planeswalker and battle. "Permanent" refers to all of them (target kind=permanent); narrow it by type with type=creature. "Nonland permanent" is notType=land.
+- Creature, artifact, enchantment, land, planeswalker and battle are each a subset of permanent.
+- These are NOT permanents: cards that are not on the battlefield (hand, graveyard, library, exile), spells and abilities on the stack (a spell is kind=spell), counters (e.g. +1/+1 counters) and emblems.
 
-### 能力の見分け方
-- 誘発型能力: 「〜とき」「〜するたび」「〜の時に」を含む節。英語では When・Whenever・At を含む節(例: "When this creature enters", "Whenever you cast", "At the beginning of")。→ \`## 誘発型能力\` と \`when\`。
-- 起動型能力: 「コスト: 効果」の形(コロン : がある)。Equip {N} などのキーワードも起動型。→ \`## 起動型能力\` と \`cost\`。
-- 常在型能力: 上のどれでもない、事実や状態を述べる文(「〜は〜を得る」「〜できない」「〜のコストは少なくなる」)。→ \`## 常在型能力\`。
-- 呪文能力: インスタント・ソーサリーのテキスト。オーラの "Enchant 〜" は、対象を取る呪文能力(target と attach)で、効果は常在型能力に書く。
-- "Enchanted 〜" / "Equipped 〜" は、付いているもの(\`affect who=attached\`)。
+### Telling abilities apart
+- Triggered ability: a clause containing "When", "Whenever" or "At" (Japanese: 〜とき / 〜たび / 〜の時に), e.g. "When this creature enters", "Whenever you cast", "At the beginning of". Write it under \`## 誘発型能力\` with \`when\`.
+- Activated ability: "cost: effect" (it has a colon). Keywords such as Equip {N} are also activated abilities. Write it under \`## 起動型能力\` with \`cost\`.
+- Static ability: a sentence that states a fact or a state ("gets", "has", "can't", "costs {1} less") and is none of the above. Write it under \`## 常在型能力\`.
+- Spell ability: the text of an instant or sorcery. An Aura's "Enchant …" is a targeted spell ability (target + attach); its effect goes in a static ability.
+- "Enchanted …" / "Equipped …" means the permanent it is attached to (\`affect who=attached\`).
 
-### その他
-- 「あなた」は呪文や能力のコントローラー(who=you / controller=you)、「対戦相手」は opponents。
-- 「ターン終了時まで」は duration=endOfTurn。`;
+### Other
+- "you" is the controller of the spell or ability (who=you / controller=you); "opponent" is opponents.
+- "until end of turn" is duration=endOfTurn.`;

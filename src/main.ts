@@ -1,6 +1,6 @@
 import { App, EventRef, Modal, Notice, Plugin, Setting, TFile, WorkspaceLeaf, normalizePath } from "obsidian";
 import { buildRule } from "./battle/build";
-import { DEFAULT_GLOSSARY, GLOSSARY_NOTE } from "./battle/glossary";
+import { DEFAULT_GLOSSARY, GLOSSARY_NOTE, OLD_GLOSSARY_NOTE } from "./battle/glossary";
 import { Kind, freeName, parseVersion, sortNewestFirst } from "./battle/history";
 import { askClaude, obsidianHttp } from "./battle/claude";
 import { CardStatus, cardStatus, report } from "./battle/coverage";
@@ -360,13 +360,13 @@ export default class MagicTheObsidian extends Plugin {
     new BuildRulesModal(this.app, toRows([...statuses.keys()], statuses), (names, ruling) => void this.buildRulesFor(names, ruling)).open();
   }
 
-  // AI への用語集: Rules/_用語.md があれば、その内容 (先頭のフロントマターは除く)。無ければ undefined (既定の用語集)
+  // AI への用語集: Rules/_glossary.md (以前の名前 _用語.md でもよい) があれば、その内容 (先頭のフロントマターは除く)。無ければ undefined (既定の用語集)
   private async readGlossary(): Promise<string | undefined> {
-    const f = this.app.vault.getAbstractFileByPath(normalizePath(`${RULES_DIR}/${GLOSSARY_NOTE}`));
+    const f = this.app.vault.getAbstractFileByPath(normalizePath(`${RULES_DIR}/${GLOSSARY_NOTE}`)) ?? this.app.vault.getAbstractFileByPath(normalizePath(`${RULES_DIR}/${OLD_GLOSSARY_NOTE}`));
     return f instanceof TFile ? (await this.app.vault.read(f)).replace(/^---\n[\s\S]*?\n---\n/, "").trim() || undefined : undefined;
   }
 
-  // 既定の用語集から Rules/_用語.md を作る (あれば作らない)。作ったあとは、この内容が既定のかわりに AI へ渡る
+  // 既定の用語集から Rules/_glossary.md を作る (あれば作らない)。作ったあとは、この内容が既定のかわりに AI へ渡る
   private async createGlossaryNote() {
     await this.ensureRulesDir();
     const path = normalizePath(`${RULES_DIR}/${GLOSSARY_NOTE}`);

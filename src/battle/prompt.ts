@@ -21,7 +21,7 @@ export function buildPrompt(card: string, oracle: string, ruling?: string, gloss
 - 見出しは能力の4分類: ## 呪文能力 / ## 起動型能力 / ## 誘発型能力 / ## 常在型能力。1つの見出し = 1つの能力。同じ見出しを何度書いてもよい。
 - 箇条書き1行 = ノード1つ: \`- <ノードid> [as=<名前>] <引数>=<値> ...\`。値は $名前 (前のノードの as を参照)、整数、true / false、それ以外は文字列 (空白を含むときは "..." で囲む)。
 
-## 用語集 (基本の定義。迷ったらこれに従う)
+## Glossary (basic definitions; follow these when unsure)
 ${glossary?.trim() || DEFAULT_GLOSSARY}
 
 ## 使えるノード (これだけ。ここに無いノードは使わない)

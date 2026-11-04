@@ -84,9 +84,9 @@ assert.ok(buildPrompt("Negate", "x").system.includes("foresee"));
   resetRegistry();
   registerBuiltinNodes();
   const sys = buildPrompt("Geist of Saint Thalia", "x").system;
-  for (const w of ["用語", "パーマネント", "カウンター", "紋章", "Whenever", "Equip"]) assert.ok(sys.includes(w), `system に ${w}`);
+  for (const w of ["Glossary", "permanent", "counters", "emblems", "Whenever", "Equip", "## 誘発型能力"]) assert.ok(sys.includes(w), `system に ${w}`); // 用語集は英語。能力の見出しは md の書式なので日本語のまま
   const mine = buildPrompt("X", "x", undefined, "独自の定義XYZ").system;
   assert.ok(mine.includes("独自の定義XYZ"));
-  assert.ok(!mine.includes("戦場にあるカード"), "自分の用語集があれば、既定は載せない");
-  assert.ok(buildPrompt("X", "x", undefined, "   ").system.includes("戦場にあるカード"), "空白だけなら既定");
+  assert.ok(!mine.includes("A permanent is a card"), "自分の用語集があれば、既定は載せない");
+  assert.ok(buildPrompt("X", "x", undefined, "   ").system.includes("A permanent is a card"), "空白だけなら既定");
 }
