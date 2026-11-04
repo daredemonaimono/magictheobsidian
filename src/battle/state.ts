@@ -93,6 +93,7 @@ export interface Game {
   restrictedMana: Record<PlayerId, { amount: number; color?: PoolKey; type?: string; notType?: string }[]>; // 使い道に制限のあるマナ (「クリーチャーでない呪文を唱えるためにしか使えない」)
   landsPlayed: number; // このターンに出した土地の数 (1ターンに1枚)
   life: Record<PlayerId, number>;
+  strictTurns?: boolean; // 真なら、ターンを厳密に進める: ドロー・ステップに引く (最初のターンを除く)・ステップの終わりにマナが消える・終了ステップの終わりに手札を 7 枚まで捨てる。shortcut: 対戦の画面ができるまでは偽 (startGame が真にする)
   turn: number; // ターン数 (1 から。アクティブ・プレイヤーが替わるたびに +1)
   combatPhase?: "attackers" | "blockers" | "firstStrike" | "damage"; // 戦闘ステップの中の段階 (戦闘ステップのあいだだけ)
   attackersDeclared?: boolean;
@@ -139,3 +140,24 @@ export function untapPerm(g: Game, p: Perm): void {
 
 // 型行に、spec (| は「または」) のどれかが含まれるか。type=artifact|creature、notType=creature|land (どちらでもない) の判定に使う
 export const typeIn = (typeLine: string, spec: string): boolean => spec.split("|").some((t) => typeLine.toLowerCase().includes(t.trim().toLowerCase()));
+
+// カードを n 枚引く。ライブラリーが空で引けなかったら、次の状況起因処理で負ける
+export function drawCards(g: Game, p: PlayerId, n: number): void {
+  for (let i = 0; i < n; i++) {
+    const top = g.libraries[p].shift();
+    if (!top) {
+      g.log.push(`${p}: ライブラリーが空で引けなかった`);
+      g.drewEmpty.push(p);
+      return;
+    }
+    g.hands[p].push(top);
+  }
+}
+
+// 手札を n 枚捨てる (持っている分だけ)。捨てるカードは g.decide.discard で選べる。既定は手札の後ろから (shortcut: 判断の入力を作るときに置き換える)
+export function discardCards(g: Game, p: PlayerId, n: number): void {
+  const k = Math.min(n, g.hands[p].length);
+  const picked = (g.decide?.discard?.(g, p, k) ?? g.hands[p].slice(g.hands[p].length - k)).filter((c) => g.hands[p].includes(c)).slice(0, k);
+  g.hands[p] = g.hands[p].filter((c) => !picked.includes(c));
+  g.graveyards[p].push(...picked);
+}

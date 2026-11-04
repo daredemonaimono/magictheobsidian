@@ -3,7 +3,7 @@ import { RunCtx, Value } from "./node";
 import { defineCondition, defineNode, getNode } from "./registry";
 import { dealDamage } from "./damage";
 import { parseManaCost, spendGeneric } from "./mana";
-import { Game, GameCard, Perm, playersOf, typeIn, untapPerm } from "./state";
+import { discardCards, drawCards, Game, GameCard, Perm, playersOf, typeIn, untapPerm } from "./state";
 
 // 実装済みの基本ノード。打ち消しは「対象」+「打ち消す」の組み合わせで、カードごとの違いは対象の条件 (引数) だけ
 
@@ -132,18 +132,7 @@ export function registerBuiltinNodes(): void {
     params: { player: who, target: targetPlayer, count: { type: "number", required: true, min: 0 } },
     outputs: {},
     run: (ctx, a): Record<string, Value> => {
-      const g = ctx.game;
-      for (const p of playersFor(ctx, a)) {
-        for (let i = 0; i < Number(a.count); i++) {
-          const top = g.libraries[p].shift();
-          if (!top) {
-            g.log.push(`${p}: ライブラリーが空で引けなかった`);
-            g.drewEmpty.push(p); // 次の状況起因処理で負ける
-            break;
-          }
-          g.hands[p].push(top);
-        }
-      }
+      for (const p of playersFor(ctx, a)) drawCards(ctx.game, p, Number(a.count));
       return {};
     },
   });
@@ -186,13 +175,7 @@ export function registerBuiltinNodes(): void {
     params: { player: who, target: targetPlayer, count: { type: "number", required: true, min: 0 } },
     outputs: {},
     run: (ctx, a): Record<string, Value> => {
-      const g = ctx.game;
-      for (const p of playersFor(ctx, a)) {
-        const n = Math.min(Number(a.count), g.hands[p].length);
-        const picked = (g.decide?.discard?.(g, p, n) ?? g.hands[p].slice(g.hands[p].length - n)).filter((c) => g.hands[p].includes(c)).slice(0, n);
-        g.hands[p] = g.hands[p].filter((c) => !picked.includes(c));
-        g.graveyards[p].push(...picked);
-      }
+      for (const p of playersFor(ctx, a)) discardCards(ctx.game, p, Number(a.count));
       return {};
     },
   });

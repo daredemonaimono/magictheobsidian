@@ -3,7 +3,7 @@ import { dealDamage } from "./damage";
 import { CastRecord, NodeCall, RunCtx, Value } from "./node";
 import { checkCall, evalCondition, getNode } from "./registry";
 import { addCosts, describeCost, emptyCost, ManaCost, parseManaCost, trySpend } from "./mana";
-import { Game, GameCard, GameEvent, Perm, PlayerId, RuleBook, StackItem, Step, typeIn, untapPerm } from "./state";
+import { discardCards, drawCards, Game, GameCard, GameEvent, Perm, PlayerId, RuleBook, StackItem, Step, typeIn, untapPerm } from "./state";
 
 // ステップ進行・優先権・スタック。画面なしで、テストから動かせる
 
@@ -385,8 +385,21 @@ export function resolveTop(g: Game, rules: RuleBook): void {
   flushEvents(g, rules);
 }
 
+// マナ・プールを空にする (全員。色つき・制限つきも)
+function emptyPools(g: Game): void {
+  for (const p of g.players) {
+    g.mana[p] = 0;
+    g.pool[p] = {};
+    g.restrictedMana[p] = [];
+  }
+}
+
+const HAND_LIMIT = 7;
+
 function advanceStep(g: Game, rules: RuleBook): void {
+  if (g.strictTurns) emptyPools(g); // ステップの終わりに、マナが消える
   if (g.step === "end") {
+    if (g.strictTurns && g.hands[g.active].length > HAND_LIMIT) discardCards(g, g.active, g.hands[g.active].length - HAND_LIMIT); // クリンナップ: 手札を 7 枚まで
     for (const p of g.battlefield) if (p.mods) p.mods = p.mods.filter((m) => m.until !== "endOfTurn"); // ターン終了時までの効果が消える
     for (const p of g.battlefield) {
       delete p.damage; // ダメージも消える
@@ -405,6 +418,7 @@ function advanceStep(g: Game, rules: RuleBook): void {
     g.attackersDeclared = false;
     g.blockersDeclared = [];
   }
+  if (g.strictTurns && g.step === "draw" && g.turn > 1) drawCards(g, g.active, 1); // ターンのドロー (ゲームの最初のターンは引かない)。「ドロー・ステップの開始時」の誘発より先
   g.priority = g.active;
   g.events.push({ type: "step", step: g.step, player: g.active }); // 「ステップの開始時に」の誘発型能力
   flushEvents(g, rules);
@@ -589,8 +603,25 @@ function advanceCombat(g: Game, rules: RuleBook): boolean {
       endCombat(g);
       return false;
   }
+  if (g.strictTurns) emptyPools(g); // 戦闘の段階の終わりにも、マナが消える
   g.passes = [];
   g.priority = g.active;
   flushEvents(g, rules);
   return true;
+}
+
+// ゲームを始める: 手札を 7 枚ずつ引き (ライブラリーは、呼び出し側が切ったもの。マリガンは未対応)、先手のターン 1 の維持ステップから、厳密なターンで進める。
+// 手札が足りなければ、負ける。createGame したばかりのゲームに、1回だけ呼ぶ (2回呼ぶと、さらに 7 枚引く)。shortcut: 2人戦の、最初のターンのドローなし (3人以上では、先手も引く) は未対応
+export function startGame(g: Game, rules: RuleBook, first: PlayerId = g.players[0]): void {
+  live(g);
+  if (!g.players.includes(first)) throw new RuleError(`先手が、プレイヤーにいない: ${first}`);
+  g.strictTurns = true;
+  g.turn = 1;
+  g.active = first;
+  g.step = "upkeep";
+  g.priority = first;
+  g.passes = [];
+  for (const p of g.players) drawCards(g, p, 7);
+  g.events.push({ type: "step", step: "upkeep", player: first });
+  flushEvents(g, rules);
 }
