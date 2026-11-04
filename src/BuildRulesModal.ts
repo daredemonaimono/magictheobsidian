@@ -4,7 +4,7 @@ import { Row, filterRows, initialChecked, overwriteCount, runCheck, setShown } f
 const LABEL: Record<Row["status"], string> = { none: "ルールなし", ok: "ok", partial: "partial", unbuilt: "unbuilt" };
 
 // 「Battle: build rules with AI」: AI にノードを組み立ててもらうカードにチェックを入れる画面。
-// 初期のチェックは、ノードの設定が無いカード。ルールがあるカードにチェックして実行すると上書きになる (直前の内容は退避される)
+// 初期のチェックは、ノードの設定が無いカードと、未対応が残っているカード。ルールがあるカードにチェックして実行すると上書きになる (直前の内容は退避される)
 export class BuildRulesModal extends Modal {
   private checked: Set<string>;
   private query = "";
@@ -72,7 +72,7 @@ export class BuildRulesModal extends Modal {
         this.refresh();
       });
       label.createSpan({ text: r.card });
-      label.createSpan({ text: r.hasRule ? `${LABEL[r.status]}(上書きされる)` : LABEL[r.status], cls: "setting-item-description" });
+      label.createSpan({ text: r.hasRule ? `${LABEL[r.status]}(上書きされる)` : `${LABEL[r.status]}${r.unsupported ? "(未対応あり)" : ""}`, cls: "setting-item-description" });
     }
     this.refresh();
   }

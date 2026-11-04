@@ -5,6 +5,7 @@ export interface Row {
   card: string;
   hasRule: boolean; // ノードを設定したルールがある (壊れていても true。ノートが無い・ノードが未設定は false)。チェックして実行すると、あれば上書きになる
   status: Status | "none"; // none = ルールのノートが無い
+  unsupported?: boolean; // ノードはあるが、## 未対応 が残っている (ルールなし扱い。新しいノードで組めるようになったかもしれないので、頼み直せる)
 }
 
 export function toRows(cards: string[], statuses: Map<string, CardStatus>): Row[] {
@@ -12,12 +13,13 @@ export function toRows(cards: string[], statuses: Map<string, CardStatus>): Row[
     .sort((a, b) => a.localeCompare(b))
     .map((card) => {
       const s = statuses.get(card);
-      const none = !s || s.reasons[0] === NO_RULE || s.reasons[0] === NO_NODES; // ノートが無い・ノードが未設定は、どちらも「ルールなし」
-      return { card, hasRule: !none, status: none ? "none" : s!.status };
+      const unsupported = s?.status === "partial" && s.reasons.some((r) => r.startsWith("未対応: ")); // ノードがあっても、## 未対応 が残っている
+      const none = !s || s.reasons[0] === NO_RULE || s.reasons[0] === NO_NODES || unsupported; // ノートが無い・ノードが未設定・未対応が残っているものは、「ルールなし」
+      return { card, hasRule: !none, status: none ? "none" : s!.status, ...(unsupported ? { unsupported } : {}) };
     });
 }
 
-// 初期のチェックは、ノードの設定が無い (ルールのノートが無い) カードだけ
+// 初期のチェックは、ルールなし (ノートが無い・ノードが未設定・未対応が残っている) のカード
 export const initialChecked = (rows: Row[]): Set<string> => new Set(rows.filter((r) => !r.hasRule).map((r) => r.card));
 
 export const filterRows = (rows: Row[], q: string): Row[] => rows.filter((r) => r.card.toLowerCase().includes(q.trim().toLowerCase()));

@@ -58,3 +58,15 @@ assert.equal(runCheck(3, "   "), null, "空白だけなら無いのと同じ");
 assert.equal(runCheck(1, "Counter target spell."), null);
 assert.ok(runCheck(2, "Counter target spell.")?.includes("1枚だけ"), "裁定があって2枚は不可");
 assert.ok(runCheck(0, "x")?.includes("カードを選んで"), "0枚が先");
+
+// ノードが一部あっても、## 未対応 が残っているカードは、ルールなし (未設定) 扱い。初期のチェックに入り、AI に頼み直せる
+{
+  const md = `---\ncard: "[[Emeritus]]"\n---\n\n## 常在型能力\n\n- keyword name=flying\n\n## 未対応\n\n- ward {2}\n`;
+  const st = cardStatus("Emeritus", md);
+  assert.equal(st.status, "partial");
+  const r = toRows(["Emeritus", "Negate"], new Map([["Emeritus", st], ["Negate", cardStatus("Negate", SAMPLE_RULES["Negate"])]]));
+  const em = r.find((x) => x.card === "Emeritus")!;
+  assert.deepEqual([em.hasRule, em.status, em.unsupported], [false, "none", true], "未対応が残っていれば、ルールなし");
+  assert.deepEqual([...initialChecked(r)], ["Emeritus"], "初期のチェックに入る");
+  assert.equal(r.find((x) => x.card === "Negate")!.unsupported, undefined);
+}
