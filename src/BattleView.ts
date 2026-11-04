@@ -1,4 +1,5 @@
 import { ItemView, WorkspaceLeaf } from "obsidian";
+import { BattleController } from "./battle/play";
 import { BoardModel, CardView, LandStack, PhaseId, boardModel } from "./battle/boardModel";
 import { CARD_H, CARD_W, GAP, HAND_H, HAND_W, LAYER_PX, TAP_EXTRA, cardBackUrl, overlapFor, pileLayers, rowNeed } from "./battle/layout";
 import { BattleSession } from "./battle/deckToGame";
@@ -15,6 +16,8 @@ const VIEWER = "you";
 interface Entry {
   el: HTMLElement;
   sig: string; // 中身。同じなら、その要素は触らない
+  use?: () => void; // ダブルクリック (使う)
+  pick?: () => void; // 1回クリック (選ぶ。能力が複数あれば、一覧)
 }
 // 1つのゾーンに並べるもの。key = ゾーンの中で重ならない名前、data = 中身 (sig の元)、paint = 要素の中身の作り方
 interface Item {
@@ -22,6 +25,8 @@ interface Item {
   data: unknown;
   name: string; // ホバーのプレビューに使うカード名
   paint: (el: HTMLElement) => void;
+  use?: () => void;
+  pick?: () => void;
 }
 
 // 対戦の画面 (段階1: サンプルの局面を見るだけ)。Game → BoardModel (src/battle/boardModel.ts) の内容を描くだけで、ルールは持たない。
@@ -43,10 +48,14 @@ export class BattleView extends ItemView {
     mana: HTMLElement;
     belt: HTMLElement;
     banner: HTMLElement;
+    next: HTMLButtonElement;
     stack: HTMLElement;
     preview: HTMLElement;
     log: HTMLElement;
   };
+  private ctl?: BattleController; // 対戦のとき。サンプルの局面では無い (操作できない)
+  private menu?: HTMLElement;
+  private tried = new Set<string>(); // 画像を探したカード名
   private logSig = "";
   private previewSeq = 0;
   private watcher?: ResizeObserver;
@@ -72,9 +81,12 @@ export class BattleView extends ItemView {
 
   // 局面を (読み直して) 描き始める
   async begin() {
-    const { game, rules } = this.getSession() ?? sampleBattle();
+    const session = this.getSession();
+    const { game, rules } = session ?? sampleBattle();
     this.game = game;
     this.rules = rules;
+    this.ctl = session ? new BattleController(game, rules) : undefined;
+    this.tried.clear();
     this.build();
     await this.loadImages();
     this.paint();
@@ -82,7 +94,13 @@ export class BattleView extends ItemView {
     this.watcher = new ResizeObserver(() => this.fit());
     this.watcher.observe(this.ui.stage);
     this.register(() => this.watcher?.disconnect());
+    if (!this.keysOn) {
+      this.keysOn = true;
+      this.registerDomEvent(document, "keydown", (e) => e.key === "Escape" && this.closeMenu()); // 途中でやめるのは Esc だけ
+      this.registerDomEvent(this.contentEl, "click", (e) => !(e.target as HTMLElement).closest(".mtg-bt-menu") && this.closeMenu(), true); // 捕捉の段階で閉じる (そのあと、クリックしたカードが、必要なら開き直す)
+    }
   }
+  private keysOn = false;
 
   // ---- 画面の骨組み (作り直すたびに、前の状態を捨てる)
   private build() {
@@ -110,19 +128,22 @@ export class BattleView extends ItemView {
     const phase = stage.createDiv("mtg-bt-phase");
     const step = stage.createDiv("mtg-bt-step");
     const banner = stage.createDiv("mtg-bt-banner");
+    const next = stage.createEl("button", { cls: "mtg-bt-next mod-cta", text: "次へ" });
+    next.addEventListener("click", () => this.ctl && this.run(() => this.ctl!.next()));
     const stack = stage.createDiv("mtg-bt-stack");
     const preview = side.createDiv("mtg-bt-preview");
     preview.createDiv({ cls: "mtg-bt-hint", text: "カードにカーソルを合わせると、ここに画像と効果が出ます" });
     const log = side.createDiv("mtg-bt-log");
-    this.ui = { stage, rows, hand, phase, step, selfLife, oppLife, piles, mana, belt, banner, stack, preview, log };
+    this.ui = { stage, rows, hand, phase, step, selfLife, oppLife, piles, mana, belt, banner, next, stack, preview, log };
   }
 
   // 画像の URL: カード名でノートを引いて、保存済みの URL を使う (新しい通信はしない)。無いカードは、名前と P/T の代わりの面
   private async loadImages() {
     const g = this.game;
-    const names = new Set<string>([...g.battlefield.map((p) => p.card.name), ...Object.values(g.hands).flat().map((c) => c.name)]);
+    const names = new Set<string>([...g.battlefield.map((p) => p.card.name), ...Object.values(g.hands).flat().map((c) => c.name), ...Object.values(g.graveyards).flat().map((c) => c.name), ...g.stack.map((s) => s.card.name)]);
     await Promise.all(
-      [...names].map(async (n) => {
+      [...names].filter((n) => !this.tried.has(n)).map(async (n) => {
+        this.tried.add(n);
         const info = cardInfo(this.app, n);
         const url = info ? await cardImage(this.app, info.file) : undefined;
         if (url) this.urls.set(n, url);
@@ -134,13 +155,13 @@ export class BattleView extends ItemView {
   private paint() {
     const m = boardModel(this.game, this.rules, VIEWER, (c) => this.urls.get(c.name));
     const ui = this.ui;
-    this.sync(ui.rows["opp-lands"], "opp-lands", this.stackItems(m.opp.landStacks));
-    this.sync(ui.rows["opp-others"], "opp-others", this.cardItems(m.opp.others));
-    this.sync(ui.rows["opp-creatures"], "opp-creatures", this.cardItems(m.opp.creatures));
-    this.sync(ui.rows["self-creatures"], "self-creatures", this.cardItems(m.self.creatures));
-    this.sync(ui.rows["self-others"], "self-others", this.cardItems(m.self.others));
-    this.sync(ui.rows["self-lands"], "self-lands", this.stackItems(m.self.landStacks));
-    this.sync(ui.hand, "hand", this.cardItems(m.self.hand));
+    this.sync(ui.rows["opp-lands"], "opp-lands", this.stackItems(m.opp.landStacks, false));
+    this.sync(ui.rows["opp-others"], "opp-others", this.cardItems(m.opp.others, "opp"));
+    this.sync(ui.rows["opp-creatures"], "opp-creatures", this.cardItems(m.opp.creatures, "opp"));
+    this.sync(ui.rows["self-creatures"], "self-creatures", this.cardItems(m.self.creatures, "perm"));
+    this.sync(ui.rows["self-others"], "self-others", this.cardItems(m.self.others, "perm"));
+    this.sync(ui.rows["self-lands"], "self-lands", this.stackItems(m.self.landStacks, true));
+    this.sync(ui.hand, "hand", this.cardItems(m.self.hand, "hand"));
     this.setText(ui.selfLife, String(m.self.life), m.self.life);
     this.setText(ui.oppLife, String(m.opp.life), m.opp.life);
     this.paintPile(ui.piles["self-library"], m.self.library);
@@ -161,13 +182,57 @@ export class BattleView extends ItemView {
     if (life !== undefined) el.toggleClass("is-long", Math.abs(life) >= 1000 || life < -99);
   }
 
-  private cardItems(cards: CardView[]): Item[] {
-    return cards.map((c) => ({ key: c.id, data: c, name: c.name, paint: (el) => this.fill(el, c) }));
+  // kind = hand (手札: ダブルクリックで使う) / perm (自分のパーマネント: 能力) / opp (相手: 操作なし)
+  private cardItems(cards: CardView[], kind: "hand" | "perm" | "opp"): Item[] {
+    return cards.map((c) => ({
+      key: c.id,
+      data: c,
+      name: c.name,
+      paint: (el) => this.fill(el, c),
+      ...(this.ctl && kind === "hand" ? { use: () => this.run(() => this.ctl!.use(c.id)) } : {}),
+      ...(this.ctl && kind === "perm" ? { use: () => this.useAbility(c.id), pick: () => this.pickAbility(c.id) } : {}),
+    }));
   }
 
-  // 同じ名前の土地の山 (src/battle/boardModel.ts の LandStack)
-  private stackItems(stacks: LandStack[]): Item[] {
-    return stacks.map((s) => ({ key: `stack:${s.name}`, data: s, name: s.name, paint: (el) => this.fillStack(el, s) }));
+  // 同じ名前の土地の山 (src/battle/boardModel.ts の LandStack)。自分の山は、ダブルクリックで、使える土地を1枚タップ
+  private stackItems(stacks: LandStack[], mine: boolean): Item[] {
+    return stacks.map((s) => {
+      const land = () => s.cards.find((c) => c.playable)?.id;
+      return { key: `stack:${s.name}`, data: s, name: s.name, paint: (el) => this.fillStack(el, s), ...(this.ctl && mine ? { use: () => { const id = land(); if (id) this.useAbility(id); }, pick: () => { const id = land(); if (id) this.pickAbility(id); } } : {}) };
+    });
+  }
+
+  // ---- 操作 (ルールはコントローラーにある。ここは、呼んで描き直すだけ)
+  private run(f: () => unknown) {
+    this.closeMenu();
+    f();
+    void this.loadImages().then(() => this.paint());
+    this.paint();
+  }
+  private useAbility(permId: string) {
+    const abs = this.ctl!.abilities(permId);
+    const first = abs.find((a) => a.usable) ?? abs[0];
+    if (first) this.run(() => this.ctl!.activate(permId, first.index));
+  }
+  // 1回クリック: 能力が2つ以上あれば、一覧を出す
+  private pickAbility(permId: string) {
+    const abs = this.ctl!.abilities(permId);
+    this.closeMenu();
+    if (abs.length < 2) return;
+    const anchor = Array.from(this.els.values()).find((e) => e.el.dataset.id === permId)?.el ?? this.ui.stage.querySelector(`[data-id="${permId}"]`);
+    const menu = this.ui.stage.createDiv("mtg-bt-menu");
+    const box = (anchor as HTMLElement | null)?.getBoundingClientRect();
+    const st = this.ui.stage.getBoundingClientRect();
+    if (box) menu.setCssStyles({ left: `${box.left - st.left}px`, top: `${Math.max(4, box.top - st.top - abs.length * 28 - 8)}px` });
+    for (const a of abs) {
+      const row = menu.createDiv({ cls: `mtg-bt-menuitem${a.usable ? "" : " is-off"}`, text: a.label });
+      row.addEventListener("click", (e) => { e.stopPropagation(); if (a.usable) this.run(() => this.ctl!.activate(permId, a.index)); });
+    }
+    this.menu = menu;
+  }
+  private closeMenu() {
+    this.menu?.remove();
+    this.menu = undefined;
   }
 
   // 1つのゾーンの要素を、キーで対応づけて更新する。変わった (sig が違う) ものだけ中身を作り直し、並びが違うところだけ動かす
@@ -181,11 +246,16 @@ export class BattleView extends ItemView {
       if (!entry) {
         const el = document.createElement("div");
         el.addEventListener("mouseenter", () => void this.showPreview(el.dataset.name ?? ""));
+        el.addEventListener("click", () => this.entryOf(el)?.pick?.());
+        el.addEventListener("dblclick", () => this.entryOf(el)?.use?.());
         entry = { el, sig: "" };
         this.els.set(key, entry);
       }
+      entry.use = it.use;
+      entry.pick = it.pick;
       if (entry.sig !== sig) {
         entry.el.dataset.name = it.name;
+        entry.el.dataset.id = it.key.startsWith("stack:") ? "" : it.key;
         it.paint(entry.el);
         entry.sig = sig;
       }
@@ -200,10 +270,15 @@ export class BattleView extends ItemView {
     }
   }
 
+  private entryOf(el: HTMLElement): Entry | undefined {
+    for (const e of this.els.values()) if (e.el === el) return e;
+    return undefined;
+  }
+
   // 1枚のカードの中身。画像があれば画像、無ければ名前の代わりの面。P/T と忠誠度は、あるものを両方出す
   private fill(el: HTMLElement, c: CardView) {
     el.className = "mtg-bt-card";
-    for (const [on, cls] of [[c.tapped, "is-tapped"], [c.attacking, "is-attacking"], [c.blocking, "is-blocking"], [c.sick, "is-sick"], [c.prepared, "is-prepared"], [c.token, "is-token"]] as const) if (on) el.addClass(cls);
+    for (const [on, cls] of [[c.tapped, "is-tapped"], [c.attacking, "is-attacking"], [c.blocking, "is-blocking"], [c.sick, "is-sick"], [c.prepared, "is-prepared"], [c.token, "is-token"], [c.playable && !!this.ctl, "is-playable"]] as const) if (on) el.addClass(cls);
     el.empty();
     this.face(el, c);
     if (c.power !== null && c.toughness !== null) el.createDiv({ cls: "mtg-bt-pt", text: `${c.power}/${c.toughness}` });
@@ -221,6 +296,7 @@ export class BattleView extends ItemView {
   // 土地の山: 立っている土地は少しずつずらして重ね、タップした土地は、横向きに倒して、山の脇に並べる。2枚以上なら枚数を出す
   private fillStack(el: HTMLElement, s: LandStack) {
     el.className = "mtg-bt-landstack";
+    if (this.ctl && s.cards.some((c) => c.playable)) el.addClass("is-playable");
     el.empty();
     const standing = s.cards.filter((c) => !c.tapped);
     const tapped = s.cards.filter((c) => c.tapped);
@@ -276,6 +352,8 @@ export class BattleView extends ItemView {
     if (!el.firstChild) for (const [id, label] of PHASES) el.createDiv({ text: label, attr: { "data-phase": id } });
     for (const child of Array.from(el.children) as HTMLElement[]) child.toggleClass("on", child.dataset.phase === m.phase);
     this.setText(this.ui.step, `ターン ${m.turn}・${m.step}`);
+    this.ui.next.setText(m.nextLabel);
+    this.ui.next.disabled = !this.ctl || !m.canNext;
   }
 
   private paintBanner(m: BoardModel) {

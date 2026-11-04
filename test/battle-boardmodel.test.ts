@@ -296,4 +296,31 @@ const none = () => undefined;
   assert.equal(cardBackUrl(), "https://backs.scryfall.io/small/0/a/0aeebaf5-8c7d-4636-9e82-8c27447861f7.jpg");
   assert.equal(cardBackUrl("normal"), "https://backs.scryfall.io/normal/0/a/0aeebaf5-8c7d-4636-9e82-8c27447861f7.jpg");
 }
+// ---- 使えるもの (playable)・「次へ」
+{
+  const { registerBuiltinNodes } = await import("../src/battle/nodes");
+  const { resetRegistry } = await import("../src/battle/registry");
+  const { createGame } = await import("../src/battle/state");
+  resetRegistry();
+  registerBuiltinNodes();
+  const book = { get: (c: string) => (c === "Island" ? { card: c, abilities: [{ kind: "activated" as const, body: [{ node: "cost", args: { tap: true } }, { node: "addMana", args: { amount: 1, color: "U" } }] }] } : c === "Bear" ? { card: c, abilities: [] } : undefined) };
+  const g = createGame(["A", "B"]);
+  g.payManaCosts = true;
+  g.step = "main1";
+  const isl = { id: "i1", name: "Island", typeLine: "Basic Land — Island", mv: 0, owner: "A" };
+  g.battlefield.push({ id: "i1", card: isl, controller: "A" });
+  g.hands["A"].push({ id: "b1", name: "Bear", typeLine: "Creature — Bear", mv: 1, manaCost: "{U}", owner: "A" });
+  let m = boardModel(g, book, "A", none);
+  assert.deepEqual([m.self.lands[0].playable, m.self.hand[0].playable, m.canNext, m.nextLabel], [true, false, true, "次へ"]);
+  g.battlefield[0].tapped = true;
+  g.mana["A"] = 1;
+  g.pool["A"] = { U: 1 };
+  m = boardModel(g, book, "A", none);
+  assert.deepEqual([m.self.lands[0].playable, m.self.hand[0].playable], [false, true]);
+  g.stack.push({ id: "s", card: isl, controller: "A", targets: {}, cast: {} });
+  assert.equal(boardModel(g, book, "A", none).nextLabel, "解決する");
+  g.over = {};
+  assert.equal(boardModel(g, book, "A", none).canNext, false);
+  assert.equal(boardModel(g, book, "B", none).self.hand.every((c) => !c.playable), true);
+}
 console.log("boardmodel ok");

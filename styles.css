@@ -303,3 +303,13 @@ button.mtg-color .mtg-sym { width: 20px; height: 20px; display: block; }
 .mtg-bt-opp-lands, .mtg-bt-opp-others, .mtg-bt-opp-creatures { transform: rotate(180deg); }
 .mtg-bt-deck.is-opp-library, .mtg-bt-deck.is-opp-yard { transform: rotate(180deg); }
 .mtg-bt-deck.is-opp-library .mtg-bt-dcount, .mtg-bt-deck.is-opp-yard .mtg-bt-dcount { transform: translateX(-50%) rotate(180deg); }
+
+/* 対戦の画面: 操作 (段階3) */
+.mtg-bt-card.is-playable, .mtg-bt-hand .mtg-bt-card.is-playable { box-shadow: 0 0 0 2px #6fe0c0, 0 0 12px #6fe0c0; cursor: pointer; }
+.mtg-bt-landstack.is-playable .mtg-bt-card:not(.is-lying) { box-shadow: 0 0 0 2px #6fe0c0, 0 0 10px #6fe0c0; cursor: pointer; }
+.mtg-bt-next { position: absolute; right: 10px; bottom: 14px; z-index: 5; padding: 6px 18px; }
+.mtg-bt-next:disabled { opacity: .4; }
+.mtg-bt-menu { position: absolute; z-index: 10; background: #1c232af0; border: 1px solid #6fe0c0; border-radius: 8px; padding: 4px; min-width: 160px; font-size: 12px; color: #eee; }
+.mtg-bt-menuitem { padding: 4px 10px; border-radius: 5px; cursor: pointer; }
+.mtg-bt-menuitem:hover { background: #335; }
+.mtg-bt-menuitem.is-off { opacity: .4; cursor: default; }

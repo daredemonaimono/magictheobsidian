@@ -1,3 +1,4 @@
+import { actionsFor } from "./actions";
 import { characteristics } from "./continuous";
 import { isSick } from "./engine";
 import { Game, GameCard, Perm, PlayerId, RuleBook } from "./state";
@@ -21,6 +22,7 @@ export interface CardView {
   prepared: boolean;
   sick: boolean; // 召喚酔い (このターンに出たクリーチャーで、速攻が無い)
   keywords: string[];
+  playable: boolean; // 自分が、いま使える・起動できる (手札のカード / 戦場のパーマネント)
   image?: string;
 }
 
@@ -48,7 +50,7 @@ export interface SideView {
 
 export type ImageOf = (card: GameCard) => string | undefined;
 
-const inHand = (c: GameCard, image?: string): CardView => ({
+const inHand = (c: GameCard, image?: string, playable = false): CardView => ({
   id: c.id,
   name: c.name,
   typeLine: c.typeLine,
@@ -64,10 +66,11 @@ const inHand = (c: GameCard, image?: string): CardView => ({
   prepared: false,
   sick: false,
   keywords: [],
+  playable,
   ...(image !== undefined ? { image } : {}),
 });
 
-function permView(g: Game, rules: RuleBook, p: Perm, imageOf: ImageOf): CardView {
+function permView(g: Game, rules: RuleBook, p: Perm, imageOf: ImageOf, playable: boolean): CardView {
   const now = characteristics(g, p, rules); // 継続効果をふまえた、いまの型行・P/T・キーワード
   const image = imageOf(p.card);
   return {
@@ -87,12 +90,13 @@ function permView(g: Game, rules: RuleBook, p: Perm, imageOf: ImageOf): CardView
     prepared: p.prepared === true,
     sick: isSick(g, p, rules), // 召喚酔いの判定は、エンジンのもの
     keywords: now.keywords,
+    playable,
     ...(image !== undefined ? { image } : {}),
   };
 }
 
 // 1人分の表示内容。列の分け方: 型行に Creature → creatures (土地クリーチャーも) / Land → lands / それ以外 → others。順番は戦場の順
-export function sideView(g: Game, rules: RuleBook, player: PlayerId, imageOf: ImageOf, showHand: boolean): SideView {
+export function sideView(g: Game, rules: RuleBook, player: PlayerId, imageOf: ImageOf, showHand: boolean, playable: ReadonlySet<string> = new Set()): SideView {
   const out: SideView = {
     player,
     life: g.life[player],
@@ -100,7 +104,7 @@ export function sideView(g: Game, rules: RuleBook, player: PlayerId, imageOf: Im
     graveyard: g.graveyards[player]?.length ?? 0,
     exile: g.exile[player]?.length ?? 0,
     handCount: g.hands[player]?.length ?? 0,
-    hand: showHand ? (g.hands[player] ?? []).map((c) => inHand(c, imageOf(c))) : [],
+    hand: showHand ? (g.hands[player] ?? []).map((c) => inHand(c, imageOf(c), playable.has(c.id))) : [],
     lands: [],
     landStacks: [],
     creatures: [],
@@ -110,7 +114,7 @@ export function sideView(g: Game, rules: RuleBook, player: PlayerId, imageOf: Im
   if (top) out.graveyardTop = inHand(top, imageOf(top));
   for (const p of g.battlefield) {
     if (p.controller !== player) continue;
-    const v = permView(g, rules, p, imageOf);
+    const v = permView(g, rules, p, imageOf, playable.has(p.id));
     if (/\bCreature\b/.test(v.typeLine)) out.creatures.push(v);
     else if (/\bLand\b/.test(v.typeLine)) {
       out.lands.push(v);
@@ -147,6 +151,8 @@ export interface BoardModel {
   activeSide: "self" | "opp";
   turn: number;
   stack: StackView[];
+  canNext: boolean; // 「次へ」を押せる (ゲームが続いている。相手が優先権を持っていても、押せば自動でパスする)
+  nextLabel: string; // スタックに積まれているものがあれば「解決する」
   over?: { winner?: "self" | "opp" }; // 勝者がいなければ引き分け
   log: string[]; // 最後の 50 行
 }
@@ -160,10 +166,11 @@ const LOG_LINES = 50;
 export function boardModel(g: Game, rules: RuleBook, viewer: PlayerId, imageOf: ImageOf): BoardModel {
   const oppId = g.players.find((p) => p !== viewer) ?? viewer;
   const side = (p: PlayerId): "self" | "opp" => (p === viewer ? "self" : "opp");
+  const can = new Set(actionsFor(g, rules, viewer).map((a) => (a.kind === "activate" ? a.perm : a.card)));
   const pool = g.pool[viewer] ?? {};
   const colored = Object.values(pool).reduce((a, n) => a + (n ?? 0), 0);
   const out: BoardModel = {
-    self: sideView(g, rules, viewer, imageOf, true),
+    self: sideView(g, rules, viewer, imageOf, true, can),
     opp: sideView(g, rules, oppId, imageOf, false),
     manaSelf: { total: g.mana[viewer] ?? 0, colors: { ...pool }, colorless: Math.max(0, (g.mana[viewer] ?? 0) - colored) },
     phase: PHASE_OF[g.step],
@@ -171,6 +178,8 @@ export function boardModel(g: Game, rules: RuleBook, viewer: PlayerId, imageOf: 
     combat: g.step === "combat",
     activeSide: side(g.active),
     turn: g.turn,
+    canNext: !g.over,
+    nextLabel: g.stack.length ? "解決する" : "次へ",
     stack: g.stack.map((s) => ({ id: s.id, name: s.card.name, controller: side(s.controller), ability: !!s.ability })),
     log: g.log.slice(-LOG_LINES),
   };
