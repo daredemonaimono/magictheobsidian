@@ -26,8 +26,8 @@ const VIEWER = "you";
 interface Entry {
   el: HTMLElement;
   sig: string; // 中身。同じなら、その要素は触らない
-  use?: () => void; // ダブルクリック (使う)
-  pick?: () => void; // 1回クリック (選ぶ。能力が複数あれば、一覧)
+  use?: (e?: MouseEvent) => void; // ダブルクリック (使う)
+  pick?: (e?: MouseEvent) => void; // 1回クリック (選ぶ。能力が複数あれば、一覧)
 }
 // 1つのゾーンに並べるもの。key = ゾーンの中で重ならない名前、data = 中身 (sig の元)、paint = 要素の中身の作り方
 interface Item {
@@ -35,8 +35,8 @@ interface Item {
   data: unknown;
   name: string; // ホバーのプレビューに使うカード名
   paint: (el: HTMLElement) => void;
-  use?: () => void;
-  pick?: () => void;
+  use?: (e?: MouseEvent) => void;
+  pick?: (e?: MouseEvent) => void;
 }
 
 // 対戦の画面 (段階1: サンプルの局面を見るだけ)。Game → BoardModel (src/battle/boardModel.ts) の内容を描くだけで、ルールは持たない。
@@ -610,13 +610,18 @@ export class BattleView extends ItemView {
   // ダブルクリックで、山の中の、使える土地の最初の1枚で起動する。能力が2つ以上ある土地は、1回クリックで、一覧を出す
   private stackItems(stacks: LandStack[], mine: boolean): Item[] {
     return stacks.map((s) => {
+      const clicked = (e?: MouseEvent) => { const id = (e?.target as HTMLElement | undefined)?.closest?.<HTMLElement>("[data-tid]")?.dataset.tid; return s.cards.find((c) => c.id === id && this.ctl!.abilities(c.id).length > 0); };
       const usable = () => (mine && this.ctl ? s.cards.find((c) => !c.tapped && this.ctl!.abilities(c.id).some((a) => a.usable)) : undefined);
       return {
         key: `stack:${s.name}`,
         data: s,
         name: s.name,
         paint: (el: HTMLElement) => this.fillStack(el, s),
-        ...(mine && this.ctl ? { use: () => { const c = usable(); if (c) this.useAbility(c.id); }, pick: () => { const c = s.cards.find((x) => this.ctl!.abilities(x.id).length >= 2); if (c) this.pickAbility(c.id); } } : {}),
+        ...(mine && this.ctl ? {
+          // 押したカードに、使える能力があれば、そのカードで。山の隙間 (カードでないところ) を押したら、使える土地の最初の1枚
+          use: (e?: MouseEvent) => { const c = clicked(e) ?? usable(); if (c) this.useAbility(c.id); },
+          pick: (e?: MouseEvent) => { const c = clicked(e) ?? s.cards.find((x) => this.ctl!.abilities(x.id).length >= 2); if (c && this.ctl!.abilities(c.id).length >= 2) this.pickAbility(c.id); },
+        } : {}),
       };
     });
   }
@@ -1033,8 +1038,8 @@ export class BattleView extends ItemView {
       if (!entry) {
         const el = document.createElement("div");
         el.addEventListener("mouseenter", () => void this.showPreview(el.dataset.name ?? ""));
-        el.addEventListener("click", () => this.entryOf(el)?.pick?.());
-        el.addEventListener("dblclick", () => this.entryOf(el)?.use?.());
+        el.addEventListener("click", (e) => this.entryOf(el)?.pick?.(e));
+        el.addEventListener("dblclick", (e) => this.entryOf(el)?.use?.(e));
         entry = { el, sig: "" };
         this.els.set(key, entry);
       }
