@@ -3,7 +3,7 @@
 export { nextPlayer, RuleError, isSick } from "./shared";
 export { targetSlots } from "./targets";
 export type { TargetSlot } from "./targets";
-export { castSpell, playLand, activateAbility, canCastNow, castPrepared } from "./cast";
+export { castSpell, playLand, activateAbility, canCastNow, castPrepared, pitchable } from "./cast";
 export { resolveTop } from "./stack";
 export { passPriority, startGame } from "./turn";
 export { canAttackPerm, canAttackWith, attackersAt, declareAttackers, canBlock, declareBlockers, assignDamage } from "./combat";

@@ -58,7 +58,7 @@ export function flushEvents(g: Game, rules: RuleBook): void {
   let added = false;
   const push = (s: Perm, body: NodeCall[], trigger?: string) => {
     for (let k = 0; k <= extraTriggers(g, s, rules); k++) {
-      const item: StackItem = { id: `${s.id}#${g.serial + 1}`, card: s.card, controller: s.controller, targets: {}, cast: {}, body, ability: true, source: s.id, ...(trigger ? { trigger } : {}) };
+      const item: StackItem = { id: `${s.id}#${g.serial + 1}`, card: s.card, controller: s.controller, targets: {}, cast: s.cast ?? {}, body, ability: true, source: s.id, ...(trigger ? { trigger } : {}) };
       if (!chooseTargets(g, item, rules)) continue; // 合法な対象が足りない誘発型能力は、スタックに積まれない
       g.serial++;
       g.stack.push(item);

@@ -11,6 +11,8 @@ export function registerDeclarations(): void {
   // 条件: 呪文を唱えたときの記録 (キッカー・チームワーク・選んだモード)
   defineCondition({ id: "kicked", title: "キッカーされた", summary: "この呪文がキッカーされて唱えられた", test: (ctx) => !!ctx.item.cast.kicked });
 
+  defineCondition({ id: "alt", title: "別のコストで唱えられた", summary: "この呪文 (出てきたパーマネントの誘発では、そのパーマネント) が、altCost の別のコストで唱えられた (召喚者・Force of Will など)", test: (ctx) => !!ctx.item.cast.alt });
+
   defineCondition({ id: "teamwork", title: "チームワークを用いた", summary: "この呪文がチームワークを用いて唱えられた", test: (ctx) => !!ctx.item.cast.teamwork });
 
   for (let i = 1; i <= 5; i++) defineCondition({ id: `mode${i}`, title: `モード${i}が選ばれた`, summary: `この呪文のモード${i}が選ばれて唱えられた (modes の宣言と使う)`, test: (ctx) => !!ctx.item.cast.modes?.includes(i) });
@@ -36,6 +38,19 @@ export function registerDeclarations(): void {
     summary: "呪文を唱えるときに払ってもよい追加コスト(キッカー・チームワーク)。flag=kicked / teamwork。払って唱えると、if=<flag> のノードが実行される。mana=汎用のマナ / manaCost=色つきのマナコスト(\"{1}{U}\") / tapCreatures=パワーの合計がこの値以上になるよう、自分のクリーチャーをタップ",
     params: { flag: { type: "string", required: true, choices: ["kicked", "teamwork"] }, mana: { type: "number", min: 0 }, manaCost: { type: "string" }, tapCreatures: { type: "number", min: 0 } },
     check: (a) => { try { if (typeof a.manaCost === "string") parseManaCost(a.manaCost); return null; } catch (e) { return (e as Error).message; } },
+    outputs: {},
+    declaration: true,
+    only: ["spell"],
+    run: (): Record<string, Value> => ({}),
+  });
+
+  node({
+    id: "altCost",
+    core: true,
+    title: "別のコスト",
+    summary: "呪文を唱えるとき、マナコストのかわりに払ってもよい別のコスト(Force of Will・召喚者)。払って唱えると、if=alt のノードが実行される。mana=汎用のマナ / manaCost=色つきのマナコスト / life=払うライフ / exile=手札から追放するカードの枚数(exileColor=W・U・B・R・G でその色のカード。唱える呪文自身は数えない) / notYourTurn=true で、自分のターンでないときだけ",
+    params: { mana: { type: "number", min: 0 }, manaCost: { type: "string" }, life: { type: "number", min: 0 }, exile: { type: "number", min: 1 }, exileColor: { type: "string", choices: ["W", "U", "B", "R", "G"] }, notYourTurn: { type: "boolean" } },
+    check: (a) => { try { if (typeof a.manaCost === "string") parseManaCost(a.manaCost); } catch (e) { return (e as Error).message; } return a.exileColor !== undefined && a.exile === undefined ? "exileColor には exile (枚数) が要る" : null; },
     outputs: {},
     declaration: true,
     only: ["spell"],

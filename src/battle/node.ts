@@ -57,6 +57,8 @@ export type Duration = { until: "endOfTurn" | "whileAttached" | "forever" };
 export interface CastRecord {
   kicked?: boolean;
   teamwork?: boolean;
+  alt?: boolean; // 別のコスト (altCost) で唱えた
+  exile?: string[]; // 別のコストで追放する手札のカードの id (無ければ、条件に合う先頭から)
   tap?: string[]; // 追加コストでタップするクリーチャー (チームワーク)
   modes?: number[];
   extraCosts?: string[];

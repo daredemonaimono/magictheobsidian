@@ -57,6 +57,7 @@ export interface Perm {
   damage?: number; // クリーチャーに載っているダメージ (ターン終了時に消える)
   prepared?: boolean; // 準備済 (準備呪文を、追放領域のコピーとして唱えられる。戦場を離れると消える)
   deathtouched?: boolean; // 接死のダメージを受けた (ターン終了時に消える)
+  cast?: CastRecord; // 呪文として唱えられて出たとき、その記録 (キッカー・別のコスト)。誘発型能力の if=kicked / if=alt が見る
   enteredTurn?: number; // 戦場に出たターン (Game.turn)。召喚酔いの判定
   attackTarget?: string; // 攻撃しているとき、攻撃先 (プレイヤー、またはプレインズウォーカーの id)
   blocked?: boolean; // 攻撃しているとき、ブロックされた (ブロッカーがいなくなっても、ブロックされたまま)

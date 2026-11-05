@@ -1,11 +1,12 @@
 import { characteristics } from "../continuous";
+import { CastRecord } from "../node";
 import { prepareAbilityOf, Game, GameCard, Perm, PlayerId, RuleBook } from "../state";
 
 // 戦場に出る・離れる・状況起因処理
 
 // パーマネントを戦場に出す。「戦場に出た」イベントを積む (宣言されたキーワードは、characteristics が導く)
-export function enterBattlefield(g: Game, card: GameCard, controller: PlayerId, rules: RuleBook): void {
-  const perm: Perm = { id: card.id, card, controller, enteredTurn: g.turn };
+export function enterBattlefield(g: Game, card: GameCard, controller: PlayerId, rules: RuleBook, cast?: CastRecord): void {
+  const perm: Perm = { id: card.id, card, controller, enteredTurn: g.turn, ...(cast && (cast.kicked || cast.teamwork || cast.alt) ? { cast } : {}) };
   // 「準備済状態で戦場に出る」: 準備呪文を持つクリーチャーだけ
   if (prepareAbilityOf(rules, card.name) && (rules.get(card.name)?.abilities ?? []).some((a) => a.kind === "static" && a.body.some((c) => c.node === "entersPrepared"))) perm.prepared = true;
   if (card.loyalty !== undefined) perm.counters = { loyalty: card.loyalty }; // プレインズウォーカーは、初期忠誠度で戦場に出る

@@ -71,8 +71,8 @@ export function registerCombat(): void {
   node({
     id: "counter",
     title: "打ち消す",
-    summary: "対象の呪文を打ち消す (スタックから取り除いて、持ち主の墓地へ)。unlessPay=N を付けると「そのコントローラーが N を支払わないかぎり」",
-    params: { target: { type: "ref", required: true }, unlessPay: { type: "number", min: 0 } },
+    summary: "対象の呪文を打ち消す (スタックから取り除いて、持ち主の墓地へ)。unlessPay=N を付けると「そのコントローラーが N を支払わないかぎり」。exile=true で「墓地に置くかわりに追放する」",
+    params: { target: { type: "ref", required: true }, unlessPay: { type: "number", min: 0 }, exile: { type: "boolean" } },
     outputs: {},
     run: (ctx, a): Record<string, Value> => {
       const g = ctx.game;
@@ -89,7 +89,7 @@ export function registerCombat(): void {
           }
         }
         const [gone] = g.stack.splice(i, 1);
-        if (!gone.copy && !gone.ability) g.graveyards[gone.card.owner].push(gone.card); // 呪文のコピーと能力は、墓地に行かず消える
+        if (!gone.copy && !gone.ability) (a.exile === true ? g.exile : g.graveyards)[gone.card.owner].push(gone.card); // 呪文のコピーと能力は、墓地に行かず消える
         g.log.push(`${gone.card.name} を打ち消した`);
       }
       return {};

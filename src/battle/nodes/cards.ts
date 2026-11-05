@@ -157,6 +157,26 @@ export function registerCards(): void {
 
   // 破壊する。対象 (戦場のパーマネント) を、墓地へ (トークンは消える)。破壊不能は、破壊されない。対象が戦場に無ければ、何もしない
   node({
+    id: "sacrifice",
+    title: "生け贄に捧げる",
+    summary: "コントローラーが、対象のパーマネント(自分のもの。self ノードの出力で「これを生け贄に捧げる」)を生け贄に捧げる(持ち主の墓地へ。破壊不能でも捧げられる)。他人のパーマネントは、捧げられない",
+    params: { target: { type: "ref", required: true } },
+    outputs: {},
+    run: (ctx, a): Record<string, Value> => {
+      const g = ctx.game;
+      for (const id of idList(a.target)) {
+        const perm = g.battlefield.find((p) => p.id === id && p.controller === ctx.item.controller);
+        if (!perm) continue;
+        g.battlefield = g.battlefield.filter((p) => p !== perm);
+        if (!perm.card.token) g.graveyards[perm.card.owner].push(perm.card);
+        g.log.push(`${perm.card.name} を生け贄に捧げた`);
+        g.events.push({ type: "leaves", perm });
+      }
+      return {};
+    },
+  });
+
+  node({
     id: "destroy",
     title: "破壊する",
     summary: "対象(select の出力も可)のパーマネントを破壊する (持ち主の墓地へ。破壊不能は、破壊されない)。「土地を破壊する」(Wasteland・Strip Mine)・「アーティファクトやエンチャントを、最大2つ破壊する」は、target(type=・notType=・min=・max=)と使う",

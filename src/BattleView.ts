@@ -8,6 +8,7 @@ import { bump, focus } from "./battle/assignMath";
 import { AskAi } from "./battle/ai";
 import { aiStep } from "./battle/aiRun";
 import { BattleController, StopMode } from "./battle/play";
+import type { CastRecord } from "./battle/node";
 import { stackEffectText } from "./battle/stackText";
 import { BoardModel, CardView, CombatChoice, LandStack, PhaseId, boardModel } from "./battle/boardModel";
 import { CARD_H, CARD_W, GAP, GAUGE_SEC, HAND_H, HAND_W, LAYER_PX, TAP_EXTRA, cardBackUrl, overlapFor, pileLayers, rowNeed } from "./battle/layout";
@@ -598,7 +599,7 @@ export class BattleView extends ItemView {
       ...(this.ctl && kind === "hand" ? { use: () => {
         const why = this.ctl!.whyNot(c.id); // カードを選んだ時点で、使えない理由 (マナが足りません、など) を出す
         if (why) return this.toast(why);
-        this.askKick(c.name, this.ctl!.kickChoices(c.id), (cast) => this.ask(c.name, this.ctl!.needsForCard(c.id), (t) => this.askMana(c.name, { kind: "cast", card: c.id }, t, cast, (ids) => this.run(() => this.ctl!.use(c.id, t, cast, ids)))));
+        this.askKick(c.name, this.ctl!.kickChoices(c.id), this.ctl!.canCastNormally(c.id), c.id, (cast) => this.ask(c.name, this.ctl!.needsForCard(c.id), (t) => this.askMana(c.name, { kind: "cast", card: c.id }, t, cast, (ids) => this.run(() => this.ctl!.use(c.id, t, cast, ids)))));
       } } : {}),
       ...(this.ctl && kind === "perm" ? { use: () => this.useAbility(c.id), pick: () => this.pickAbility(c.id) } : {}),
     }));
@@ -702,7 +703,7 @@ export class BattleView extends ItemView {
   }
 
   // 払うマナの選択: 足りないマナを自動でタップするとき、種類の違う土地・マナ源から選べる余地があれば、どれをタップするか選ばせる (払えるだけ選ぶと、「確定」が押せる)。「自動」で、並んでいる順。余地が無ければ、聞かない。Esc で取り消し
-  private askMana(title: string, a: Action, t: Record<string, string>, cast: { kicked?: boolean; teamwork?: boolean } | undefined, then: (ids?: string[]) => void) {
+  private askMana(title: string, a: Action, t: Record<string, string>, cast: CastRecord | undefined, then: (ids?: string[]) => void) {
     const ctl = this.ctl!;
     const src = ctl.payChoice(a, t, cast);
     if (!src) return then();
@@ -754,7 +755,7 @@ export class BattleView extends ItemView {
   }
 
   // 追加コスト (キッカーなど) を払えるマナがあるとき、払うかを選ばせる (そのあとで、対象を選ぶ)。選べなければ (払えない・追加コストが無い)、聞かずに、払わない。Esc で取り消し
-  private askKick(name: string, choices: { flag: "kicked" | "teamwork"; cost: string }[], then: (cast?: { kicked?: boolean; teamwork?: boolean }) => void) {
+  private askKick(name: string, choices: { flag: "kicked" | "teamwork" | "alt"; cost: string }[], normalOk: boolean, cardId: string, then: (cast?: CastRecord) => void) {
     if (!choices.length) return then();
     const box = this.ui.stage.createDiv("mtg-bt-ask");
     this.askEl = box;
@@ -762,15 +763,35 @@ export class BattleView extends ItemView {
     this.askCancel = () => {}; // 取り消し: 何も起きない
     box.createDiv({ cls: "mtg-bt-asktitle", text: `${name}: 追加コストを払って唱えますか?` });
     const row = box.createDiv("mtg-bt-askrow");
-    const go = (cast?: { kicked?: boolean; teamwork?: boolean }) => {
+    const close = () => {
       box.remove();
       this.askEl = undefined;
       this.askCancel = undefined;
       this.ui.stage.removeClass("is-asking");
+    };
+    const go = (cast?: CastRecord) => {
+      close();
       then(cast);
     };
-    for (const c of choices) row.createEl("button", { cls: "mod-cta", text: `${c.flag === "kicked" ? "キッカー" : "チームワーク"} ${c.cost} を払って唱える` }).addEventListener("click", () => go({ [c.flag]: true }));
-    row.createEl("button", { text: "払わずに唱える" }).addEventListener("click", () => go());
+    for (const c of choices) {
+      const label = c.flag === "alt" ? `別のコスト (${c.cost}) で唱える` : `${c.flag === "kicked" ? "キッカー" : "チームワーク"} ${c.cost} を払って唱える`;
+      row.createEl("button", { cls: "mod-cta", text: label }).addEventListener("click", () => {
+        if (c.flag !== "alt") return go({ [c.flag]: true });
+        const pitch = this.ctl!.pitchChoices(cardId);
+        if (!pitch || pitch.cards.length <= pitch.n) return go({ alt: true }); // 選ぶ余地が無ければ、そのまま
+        close(); // いまの質問を閉じて、追放するカードを選ばせる
+        this.ui.stage.addClass("is-asking");
+        this.askCancel = () => {};
+        void this.loadImages(pitch.cards.map((p) => p.name)).then(() => this.showAsk({ kind: "choose", min: pitch.n, max: pitch.n, cards: pitch.cards }, (ids) => {
+          this.askEl?.remove();
+          this.askEl = undefined;
+          this.askCancel = undefined;
+          this.ui.stage.removeClass("is-asking");
+          then({ alt: true, exile: ids as string[] });
+        }, `${name}: 追放する手札のカードを選ぶ`));
+      });
+    }
+    if (normalOk) row.createEl("button", { text: choices.some((c) => c.flag === "alt") && choices.length === 1 ? "通常のコストで唱える" : "払わずに唱える" }).addEventListener("click", () => go());
     box.createDiv({ cls: "mtg-bt-askhint", text: "Esc で取り消し (何も起きなかったことになる)" });
   }
 

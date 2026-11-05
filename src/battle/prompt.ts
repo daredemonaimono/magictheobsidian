@@ -65,6 +65,8 @@ ${conditionList() || "(まだ無い)"}
 - 紋章(emblem)を得る: \`createEmblem name=<名前>\`。紋章の能力は、同じカードのルールの中に、\`## 誘発型能力\` として \`emblem name=<同じ名前>\` と \`when …\` の順に書く。紋章の常在型能力 (static) は未対応なので、\`## 未対応\` に書く。
 - 「ステップの開始時に」は \`when event=step step=draw who=opponents\`(who は、そのターンのプレイヤー)。
 - マナの色: \`addMana color=W|U|B|R|G\`(その色)、無色は color を書かないか \`color=C\`、「好きな色1色」は \`color=any\`。コストの色は \`manaCost="{1}{U}"\` と書く(混成 {W/U} も書ける)。
+- 「{G}、{W}、{U} のどれか1色」は \`addMana amount=1 colors=GWU\`。「単独で攻撃するたび」は \`when event=attacks who=you alone=true\` と、攻撃したクリーチャーを指す \`eventPerm as=c\`(「そのクリーチャーは +1/+1」は \`modify target=$c power=1 toughness=1 duration=endOfTurn\`)。
+- 「マナコストを支払うかわりに、〜してもよい」(Force of Will など)は、\`## 呪文能力\` の最初に \`altCost exile=1 exileColor=U life=1\`(自分のターンでないときだけは \`notYourTurn=true\`)。別のコストで唱えたときだけの効果は \`if=alt\`(召喚者の「出たら生け贄」は \`sacrifice target=$s if=alt\`)。打ち消した呪文を追放するなら \`counter target=$t exile=true\`。
 - 「このマナは、〜を唱えるためにしか使えない」は \`addMana amount=1 spellNotType=creature\`(spellType はその型だけ)。
 - 瞬速などのキーワード能力は、\`## 常在型能力\` に \`- keyword name=flash\` と書く(瞬速は、インスタントのタイミングで唱えられる)。ほかのキーワードは、戦場に出たときに得る。
 - キッカー・チームワークなど、呪文を唱えるときに払ってもよい追加コストは、\`## 呪文能力\` の最初に \`additionalCost flag=kicked manaCost="{1}{U}"\`(色のないコストなら \`mana=2\`) / \`additionalCost flag=teamwork tapCreatures=2\` と書く。払ったときだけ実行するノードには \`if=kicked\` / \`if=teamwork\` を付ける。

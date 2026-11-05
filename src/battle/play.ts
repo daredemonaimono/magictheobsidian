@@ -1,5 +1,5 @@
 import { Action, abilityLabels, actionsFor, autoTargets, manaOnly, slotsOf, tryAction, tryWithMana, uselessMana, withAllMana } from "./actions";
-import { RuleError, TargetSlot, activateAbility, attackersAt, canAttackWith, castSpell, declareAttackers, declareBlockers, assignDamage, passPriority, playLand } from "./engine";
+import { RuleError, TargetSlot, activateAbility, attackersAt, canAttackWith, castSpell, pitchable, declareAttackers, declareBlockers, assignDamage, passPriority, playLand } from "./engine";
 import { AiOption, aiAttackers, aiBlockers, aiOptions } from "./ai";
 import { cpuAct, cpuAttack, cpuBlock, cpuDo, tapFor, tapOne } from "./cpu";
 import { Answer, InputRequest, NeedInput, makeDecider } from "./input";
@@ -21,6 +21,17 @@ const MAX_PASSES = 100; // 無限ループ防止
 // 対戦の画面の操作の入口。画面は、これを呼んで描き直すだけ。失敗は、理由を返して、ログにも1行書く (局面は変わらない)。
 // 操作は、コピーした局面で実行して、成功したら元に書き戻す。途中で自分への質問 (捨てる・選ぶ・してもよい・支払う・誘発の対象) があって、答えが無ければ、pending に質問を置いて止まる
 // (元の局面は、まだ変わっていない)。answer() で答えを足すと、最初からやり直す。cancel() で、何も起きなかったことになる
+// 別のコストの表示 ("手札の青のカード1枚を追放・1 ライフ")
+const COLOR_JA: Record<string, string> = { W: "白", U: "青", B: "黒", R: "赤", G: "緑" };
+export function describeAlt(a: Record<string, unknown>): string {
+  const parts: string[] = [];
+  if (typeof a.manaCost === "string") parts.push(a.manaCost);
+  else if (a.mana !== undefined) parts.push(`{${Number(a.mana)}}`);
+  if (a.exile !== undefined) parts.push(`手札の${typeof a.exileColor === "string" ? COLOR_JA[a.exileColor] : ""}のカード${Number(a.exile)}枚を追放`.replace("のカード", typeof a.exileColor === "string" ? "のカード" : "カード"));
+  if (a.life !== undefined) parts.push(`${Number(a.life)} ライフ`);
+  return parts.join("・");
+}
+
 export class BattleController {
   pending?: { request: InputRequest };
   private redo?: (answers: Answer[]) => string | undefined;
@@ -275,7 +286,9 @@ export class BattleController {
     const card = g.hands[this.me].find((c) => c.id === cardId);
     if (!card) return "手札に無い";
     const a: Action = /\bLand\b/.test(card.typeLine) ? { kind: "land", card: cardId } : { kind: "cast", card: cardId };
-    const why = tryWithMana(g, this.rules, this.me, a, autoTargets(slotsOf(g, this.rules, this.me, a))); // 土地を出すのに、マナは要らない: 本物の局面で調べる
+    const t0 = autoTargets(slotsOf(g, this.rules, this.me, a));
+    let why = tryWithMana(g, this.rules, this.me, a, t0); // 土地を出すのに、マナは要らない: 本物の局面で調べる
+    if (why && this.altOf(cardId) && tryWithMana(g, this.rules, this.me, a, t0, { alt: true }) === undefined) why = undefined; // 別のコストなら唱えられる
     const msg = why?.replace("マナが足りない", "マナが足りません");
     return msg ? `${msg.startsWith(card.name) ? msg : `${card.name}: ${msg}`}${msg.includes("マナが足りません") ? this.manaHint(card) : ""}` : undefined;
   }
@@ -352,7 +365,24 @@ export class BattleController {
 
   // 唱えるときに選べる、マナだけの追加コスト (キッカーなど)のうち、いまの (出せるマナを全部使った) マナで払えるもの。払える (=唱えるときに、払うか選べる) ときだけ返す
   // 払うかどうかを選ぶのは、「総コストを決める」とき (対象を選ぶより前)。マナは、そのあと、払う
-  kickChoices(cardId: string): { flag: "kicked" | "teamwork"; cost: string }[] {
+  // 別のコスト (altCost) の宣言
+  private altOf(cardId: string) {
+    const card = this.game.hands[this.me].find((x) => x.id === cardId);
+    return card && !/\bLand\b/.test(card.typeLine) ? this.rules.get(card.name)?.abilities.find((a) => a.kind === "spell")?.body.find((c) => c.node === "altCost") : undefined;
+  }
+  // 通常のコストで唱えられるか (マナを全部出せるとして)
+  canCastNormally(cardId: string): boolean {
+    const a: Action = { kind: "cast", card: cardId };
+    return tryWithMana(this.game, this.rules, this.me, a, autoTargets(slotsOf(this.game, this.rules, this.me, a))) === undefined;
+  }
+  // 別のコストで追放する手札のカードの候補 (n 枚)。選ぶ余地 (候補が n 枚より多い) があるときだけ、画面が選ばせる
+  pitchChoices(cardId: string): { n: number; cards: { id: string; name: string }[] } | undefined {
+    const alt = this.altOf(cardId);
+    const card = this.game.hands[this.me].find((x) => x.id === cardId);
+    if (!alt || !card || !Number(alt.args.exile ?? 0)) return undefined;
+    return { n: Number(alt.args.exile), cards: pitchable(this.game, this.me, card, alt).map((c) => ({ id: c.id, name: c.name })) };
+  }
+  kickChoices(cardId: string): { flag: "kicked" | "teamwork" | "alt"; cost: string }[] {
     const g = this.game;
     const card = g.hands[this.me].find((x) => x.id === cardId);
     const body = card && !/\bLand\b/.test(card.typeLine) ? this.rules.get(card.name)?.abilities.find((a) => a.kind === "spell")?.body : undefined;
@@ -360,14 +390,17 @@ export class BattleController {
     const act: Action = { kind: "cast", card: cardId };
     const t = autoTargets(slotsOf(g, this.rules, this.me, act));
     const sim = withAllMana(g, this.rules, this.me); // 土地・マナ能力のマナを全部出せるとして、払えるか (足りないマナは、唱えるとき、自動でタップする)
-    if (tryAction(sim, this.rules, this.me, act, t) !== undefined) return []; // 払わずに唱えることも、できなければ、聞かない
-    const out: { flag: "kicked" | "teamwork"; cost: string }[] = [];
+    const altCall = this.altOf(cardId);
+    const altOk = !!altCall && tryAction(sim, this.rules, this.me, act, t, { alt: true }) === undefined;
+    const altChoice: { flag: "alt"; cost: string }[] = altOk ? [{ flag: "alt", cost: describeAlt(altCall!.args) }] : [];
+    if (tryAction(sim, this.rules, this.me, act, t) !== undefined) return altChoice; // 払わずに唱えることも、できなければ、聞かない (別のコストだけ)
+    const out: { flag: "kicked" | "teamwork" | "alt"; cost: string }[] = [];
     for (const flag of ["kicked", "teamwork"] as const) {
       const d = body.filter((c) => c.node === "additionalCost" && c.args.flag === flag);
       if (!d.length || d.some((c) => c.args.tapCreatures !== undefined)) continue; // クリーチャーをタップする追加コストは、まだ選ばせない
       if (tryAction(sim, this.rules, this.me, act, t, { [flag]: true }) === undefined) out.push({ flag, cost: d.map((c) => (typeof c.args.manaCost === "string" ? c.args.manaCost : `{${Number(c.args.mana ?? 0)}}`)).join("") });
     }
-    return out;
+    return [...out, ...altChoice];
   }
 
   // 手札のカードを使う (土地は出す、それ以外は唱える)。targets = 選んだ対象 (as → id をカンマでつなぐ)。cast = 払う追加コスト (kicked など)
@@ -384,7 +417,7 @@ export class BattleController {
     if (why) return this.fail(card.name, why.replace("マナが足りない", "マナが足りません"));
     this.rec("use", [cardId, targets, cast, tapIds]);
     return this.perform(card.name, (x) => {
-      x.log.push(`あなたが ${card.name} を${land ? "出した" : cast?.kicked ? "キッカーを払って唱えた" : cast?.teamwork ? "チームワークで唱えた" : "唱えた"}`);
+      x.log.push(`あなたが ${card.name} を${land ? "出した" : cast?.alt ? "別のコストで唱えた" : cast?.kicked ? "キッカーを払って唱えた" : cast?.teamwork ? "チームワークで唱えた" : "唱えた"}`);
       if (land) playLand(x, this.me, cardId, this.rules);
       else {
         this.tapChosen(x, tapIds); // 選んだ土地を、先にタップ (選ばなければ、自動)

@@ -40,8 +40,12 @@ export function castCore(g: Game, p: PlayerId, card: GameCard, body: NodeCall[],
     if (!d.length) throw new RuleError(`${card.name}: ${f} の追加コストが書かれていない`);
     return d;
   });
-  const cost = costOf(decls);
-  if (g.payManaCosts) {
+  const alt = cast.alt ? body.find((c) => c.node === "altCost") : undefined;
+  if (cast.alt && !alt) throw new RuleError(`${card.name}: 別のコストが書かれていない`);
+  if (alt?.args.notYourTurn === true && g.active === p) throw new RuleError(`${card.name}: 自分のターンには、別のコストで唱えられない`);
+  const pitch = alt ? pitchCards(g, p, card, alt, cast) : [];
+  const cost = costOf(alt ? [...decls, alt] : decls);
+  if (g.payManaCosts && !alt) {
     // カード自体のマナコスト。コスト軽減は、汎用の分だけ減らす (色は減らない)。manaCost が無いカードは、マナ総量の数だけ (色なし)
     let own: ManaCost;
     try {
@@ -55,12 +59,33 @@ export function castCore(g: Game, p: PlayerId, card: GameCard, body: NodeCall[],
   if (why) throw new RuleError(`${card.name}: ${why}`);
   payCost(g, p, cost, undefined, cast.tap ?? [], card);
   afterPay();
+  for (const c of pitch) {
+    g.hands[p] = g.hands[p].filter((x) => x !== c);
+    g.exile[c.owner].push(c);
+    g.log.push(`${c.name} を手札から追放した (${card.name} の別のコスト)`);
+  }
   g.stack.push(item);
   announceTargets(g, item, rules);
   g.priority = p;
   g.passes = [];
   g.events.push({ type: "cast", player: p, card });
   flushEvents(g, rules); // 「呪文を唱えた」ときの誘発型能力は、その呪文の上に積まれる
+}
+
+// 別のコストで追放する手札のカード: cast.exile があればそれを確かめ、無ければ条件に合う先頭から選ぶ。足りなければ RuleError
+export function pitchCards(g: Game, p: PlayerId, spell: GameCard, alt: NodeCall, cast: CastRecord): GameCard[] {
+  const n = Number(alt.args.exile ?? 0);
+  if (!n) return [];
+  const eligible = pitchable(g, p, spell, alt);
+  const picked = cast.exile ? cast.exile.map((id) => eligible.find((c) => c.id === id)) : eligible.slice(0, n);
+  if (picked.some((c) => !c) || new Set(picked).size !== n || picked.length !== n) throw new RuleError(`${spell.name}: 追放できるカードが足りない (${typeof alt.args.exileColor === "string" ? alt.args.exileColor + " の" : ""}カードを手札から ${n} 枚)`);
+  return picked as GameCard[];
+}
+// 追放できる手札のカード (唱える呪文自身は除く)。色は、カードの colors、無ければマナコストの色
+export function pitchable(g: Game, p: PlayerId, spell: GameCard, alt: NodeCall): GameCard[] {
+  const color = typeof alt.args.exileColor === "string" ? alt.args.exileColor : undefined;
+  const colorsOf = (c: GameCard) => c.colors ?? [...new Set((c.manaCost ?? "").match(/[WUBRG]/g) ?? [])];
+  return (g.hands[p] ?? []).filter((c) => c !== spell && c.id !== spell.id && (!color || colorsOf(c).includes(color)));
 }
 
 // 土地を出す。自分のメインフェイズで、スタックが空で、優先権があり、このターンにまだ出していないとき (スタックを使わない特別な動作)
