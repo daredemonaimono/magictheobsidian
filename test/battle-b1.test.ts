@@ -155,6 +155,7 @@ const resolveAll = (g: Game) => {
   assert.equal(c.whyNot("End"), undefined);
   assert.equal(c.use("End", {}, { alt: true }), undefined);
   assert.deepEqual(g.exile["you"].map((x) => x.id), ["GR"]);
+  g.decide = { target: () => ["opp"] }; // Endurance の「墓地を底へ」は、相手を選ぶ (自分を選ぶと、生け贄の Endurance 自身も、底に行く)
   resolveAll(g);
   assert.ok(!g.battlefield.some((p) => p.id === "End"), "召喚で出たら、生け贄に捧げられる");
   assert.ok(g.graveyards["you"].some((x) => x.id === "End"));

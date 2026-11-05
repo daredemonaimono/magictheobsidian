@@ -606,9 +606,19 @@ export class BattleView extends ItemView {
   }
 
   // 同じ名前の土地の山 (src/battle/boardModel.ts の LandStack)。自分の山は、ダブルクリックで、使える土地を1枚タップ
-  // 土地の山: 手でタップする操作は無い (マナは、カードを使うとき、自動で払う)
-  private stackItems(stacks: LandStack[], _mine: boolean): Item[] {
-    return stacks.map((s) => ({ key: `stack:${s.name}`, data: s, name: s.name, paint: (el: HTMLElement) => this.fillStack(el, s) }));
+  // 土地の山: マナを出すだけのタップは、手でしない (マナは、カードを使うとき、自動で払う)。マナ以外の能力 (Wasteland・Strip Mine・フェッチランドなど) は、
+  // ダブルクリックで、山の中の、使える土地の最初の1枚で起動する。能力が2つ以上ある土地は、1回クリックで、一覧を出す
+  private stackItems(stacks: LandStack[], mine: boolean): Item[] {
+    return stacks.map((s) => {
+      const usable = () => (mine && this.ctl ? s.cards.find((c) => !c.tapped && this.ctl!.abilities(c.id).some((a) => a.usable)) : undefined);
+      return {
+        key: `stack:${s.name}`,
+        data: s,
+        name: s.name,
+        paint: (el: HTMLElement) => this.fillStack(el, s),
+        ...(mine && this.ctl ? { use: () => { const c = usable(); if (c) this.useAbility(c.id); }, pick: () => { const c = s.cards.find((x) => this.ctl!.abilities(x.id).length >= 2); if (c) this.pickAbility(c.id); } } : {}),
+      };
+    });
   }
 
   // ---- 操作 (ルールはコントローラーにある。ここは、呼んで描き直すだけ)
@@ -938,7 +948,7 @@ export class BattleView extends ItemView {
     const abs = this.ctl!.abilities(permId);
     this.closeMenu();
     if (abs.length < 2) return;
-    const anchor = Array.from(this.els.values()).find((e) => e.el.dataset.id === permId)?.el ?? this.ui.stage.querySelector(`[data-id="${permId}"]`);
+    const anchor = Array.from(this.els.values()).find((e) => e.el.dataset.id === permId)?.el ?? this.ui.stage.querySelector(`[data-id="${permId}"], [data-tid="${permId}"]`);
     const menu = this.ui.stage.createDiv("mtg-bt-menu");
     const box = (anchor as HTMLElement | null)?.getBoundingClientRect();
     const st = this.ui.stage.getBoundingClientRect();
