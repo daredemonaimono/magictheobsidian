@@ -1088,7 +1088,16 @@ export class BattleView extends ItemView {
     this.logSig = sig;
     const el = this.ui.log;
     el.empty();
-    for (const l of lines) el.createDiv({ cls: "mtg-bt-logline", text: l });
+    // カード名は太字。ターンの始まりの行には、罫線 (ターンごとの区切り)
+    const names = new Set<string>();
+    const g = this.game;
+    for (const c of [...g.battlefield.map((p) => p.card), ...g.stack.map((s) => s.card), ...Object.values(g.hands).flat(), ...Object.values(g.libraries).flat(), ...Object.values(g.graveyards).flat(), ...Object.values(g.exile).flat()]) names.add(c.name);
+    const re = names.size ? new RegExp(`(${[...names].sort((a, b) => b.length - a.length).map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})`) : undefined;
+    for (const l of lines) {
+      const row = el.createDiv({ cls: `mtg-bt-logline${/^ターン \d+:/.test(l) ? " is-turn" : ""}` });
+      if (!re) row.setText(l);
+      else l.split(re).forEach((part, i) => (i % 2 ? row.createEl("strong", { text: part }) : part && row.createSpan({ text: part })));
+    }
     el.scrollTop = el.scrollHeight;
   }
 

@@ -411,3 +411,13 @@ button.mtg-color .mtg-sym { width: 20px; height: 20px; display: block; }
 /* 対戦のサイドバー (右): 上にプレビュー、下にログ */
 .mtg-bt-sideview { padding: 8px; }
 .mtg-bt-sideview .mtg-bt-side { width: auto; height: 100%; }
+
+/* サイドバー: カードの情報 (上) とログ (下) の境目をはっきりさせる。ログは、ターンごとに罫線、カード名は太字 */
+.mtg-bt-side { gap: 12px; }
+.mtg-bt-preview, .mtg-bt-log { border: 1px solid var(--background-modifier-border); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12); }
+.mtg-bt-preview { background: var(--background-primary); }
+.mtg-bt-preview::before { content: "カード"; display: block; margin-bottom: 6px; padding-bottom: 4px; border-bottom: 1px solid var(--background-modifier-border); color: var(--text-faint); font-size: var(--font-ui-smaller); font-weight: 600; letter-spacing: 0.1em; }
+.mtg-bt-log::before { content: "ログ"; display: block; position: sticky; top: -8px; z-index: 1; margin: -8px -8px 6px; padding: 6px 8px 4px; background: var(--background-secondary); border-bottom: 1px solid var(--background-modifier-border); color: var(--text-faint); font-size: var(--font-ui-smaller); font-weight: 600; letter-spacing: 0.1em; }
+.mtg-bt-logline.is-turn { margin-top: 8px; padding-top: 6px; border-top: 2px solid var(--background-modifier-border-hover); color: var(--text-normal); font-weight: 600; }
+.mtg-bt-logline:first-of-type.is-turn { margin-top: 0; }
+.mtg-bt-logline strong { color: var(--text-normal); font-weight: 700; }
