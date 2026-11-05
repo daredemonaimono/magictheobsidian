@@ -13,6 +13,7 @@ export interface SavedBattle {
   tokens?: { input: number; output: number };
   date: string; // ISO
   entries: RecordEntry[];
+  notes?: { n: number; why: string }[]; // AI が返した理由 (n = 記録の何件目の行動か)。読めるログには出さない (あとで学ぶのに使う)
   log: string[];
 }
 
@@ -36,7 +37,7 @@ export function battleNote(b: SavedBattle): string {
     `seed: ${b.seed}`,
     "---",
   ];
-  const data = { version: b.version, seed: b.seed, mode: b.mode, self: b.self, opp: b.opp, entries: b.entries };
+  const data = { version: b.version, seed: b.seed, mode: b.mode, self: b.self, opp: b.opp, entries: b.entries, ...(b.notes?.length ? { notes: b.notes } : {}) };
   return [
     ...fm,
     "",
@@ -77,6 +78,7 @@ export function parseBattleNote(md: string): SavedBattle | undefined {
       ...(get("tokens_in") !== undefined ? { tokens: { input: Number(get("tokens_in")), output: Number(get("tokens_out") ?? 0) } } : {}),
       date: get("date") ?? "",
       entries: d.entries,
+      ...(Array.isArray(d.notes) && d.notes.length ? { notes: d.notes } : {}),
       log: [...md.matchAll(/^- (.*)$/gm)].map((m) => m[1]),
     };
   } catch {

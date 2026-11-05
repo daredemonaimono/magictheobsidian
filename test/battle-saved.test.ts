@@ -12,8 +12,9 @@ const b: SavedBattle = {
   turns: 9,
   tokens: { input: 1000, output: 200 },
   date: "2026-11-05T14:30:00.000Z",
+  notes: [{ n: 1, why: "土地を出して、次のターンに備える" }],
   entries: [{ op: "keep", args: [] }, { op: "use", args: ["Bear#1", null, null, null], answers: [["x"]] }, { op: "next", args: [] }],
-  log: ["ターン 1: あなたのターン", "あなたが Island を出した", "相手の考え: 土地 - 「テスト」"],
+  log: ["ターン 1: あなたのターン", "あなたが Island を出した", "相手が Island を出した"],
 };
 const md = battleNote(b);
 assert.ok(md.startsWith("---\nmtg: battle\n"));

@@ -168,6 +168,7 @@ assert.deepEqual(aiParse('考え中 {メモ} です {"choice": 1, "why": "}"}'),
   assert.equal(c.aiActive, true, "API 自体は壊れていないので、Claude のまま");
   assert.ok(g.log.some((l) => l.includes("この判断だけ、雑魚 CPU")));
   assert.equal(c.aiTokens.input, 20);
+  assert.equal(g.log.some((l) => l.includes("相手の考え")), false, "理由は、ログに出さない");
 }
 // ---- 1回目が使えなくても、2回目が使えれば、そのまま
 {
@@ -178,6 +179,8 @@ assert.deepEqual(aiParse('考え中 {メモ} です {"choice": 1, "why": "}"}'),
   assert.equal(r, "acted");
   assert.ok(g.battlefield.some((p) => p.id === "Island1"));
   assert.equal(g.log.some((l) => l.includes("使えない")), false);
+  assert.deepEqual(c.aiNotes.map((n) => n.why), ["土地"], "理由は、裏側 (aiNotes) に残る");
+  assert.equal(g.log.some((l) => l.includes("土地") && l.includes("考え")), false);
 }
 // ---- API 自体の失敗 (例外) は、以降ずっと雑魚 CPU。キー未設定も
 {

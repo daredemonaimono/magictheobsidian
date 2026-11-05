@@ -48,7 +48,7 @@ export async function aiStep(ctl: BattleController, ask: AskAi | undefined, ai: 
       const o = opts[Number(reply.choice)];
       if (!o) err = `選択肢の番号が不正 (${String(reply.choice)})`;
       else {
-        if (why) g.log.push(`相手の考え: ${why}`);
+        if (why) ctl.aiNotes.push({ n: ctl.record.length, why }); // 理由は、ログには出さない (履歴の「裏側」に残す。あとで学ぶのに使える)
         err = ctl.aiDo(o);
       }
     } else if (w === "attack") {
@@ -58,7 +58,7 @@ export async function aiStep(ctl: BattleController, ask: AskAi | undefined, ai: 
       if (!m || !ids) err = "attackers の配列が無い";
       else if ((reply.attackers as unknown[]).length > 0 && !ids.length) err = `attackers の id が合わない (${m.unknown.join("、")})。攻撃できるのは: ${ableList.map((x) => `${x.id}`).join("、")}`; // 「攻撃する」と言いながら、無効な id: 黙って攻撃しないのではなく、聞き直す
       else {
-        if (why) g.log.push(`相手の考え: ${why}`);
+        if (why) ctl.aiNotes.push({ n: ctl.record.length, why }); // 理由は、ログには出さない (履歴の「裏側」に残す。あとで学ぶのに使える)
         err = ctl.aiAttack(ids);
       }
     } else {
@@ -73,7 +73,7 @@ export async function aiStep(ctl: BattleController, ask: AskAi | undefined, ai: 
       if (!rawBlocks || !pairs) err = "blocks の配列が無い";
       else if (rawBlocks.length > 0 && !pairs.length) err = `blocks の id が合わない。ブロックできるのは: ${blockerList.map((x) => x.id).join("、")} / 攻撃しているのは: ${attackerList.map((x) => x.id).join("、")}`;
       else {
-        if (why) g.log.push(`相手の考え: ${why}`);
+        if (why) ctl.aiNotes.push({ n: ctl.record.length, why }); // 理由は、ログには出さない (履歴の「裏側」に残す。あとで学ぶのに使える)
         err = ctl.aiBlock(pairs);
       }
     }

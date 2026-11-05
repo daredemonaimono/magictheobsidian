@@ -189,6 +189,7 @@ export class BattleView extends ItemView {
       ...(ctl.aiTokens.input || ctl.aiTokens.output ? { tokens: { ...ctl.aiTokens } } : {}),
       date: new Date().toISOString(),
       entries: ctl.record,
+      ...(ctl.aiNotes.length ? { notes: ctl.aiNotes } : {}),
       log: [...ctl.game.log],
     });
   }
