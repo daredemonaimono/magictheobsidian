@@ -1,5 +1,5 @@
-import { Action, abilityLabels, actionsFor, tryAction } from "./actions";
-import { activateAbility, castSpell, passPriority, playLand } from "./engine";
+import { Action, abilityLabels, actionsFor, autoTargets, slotsOf, tryAction } from "./actions";
+import { TargetSlot, activateAbility, castSpell, passPriority, playLand } from "./engine";
 import { Game, PlayerId, RuleBook } from "./state";
 
 const HAND_LIMIT = 7;
@@ -19,18 +19,28 @@ export class BattleController {
     return actionsFor(this.game, this.rules, this.me);
   }
 
-  // 手札のカードを使う (土地は出す、それ以外は唱える)
-  use(cardId: string): string | undefined {
+  // 手札のカードを使うとき、選ばせる対象 (対象を取らなければ空)
+  needsForCard(cardId: string): TargetSlot[] {
+    const c = this.game.hands[this.me].find((x) => x.id === cardId);
+    return c && !/\bLand\b/.test(c.typeLine) ? slotsOf(this.game, this.rules, this.me, { kind: "cast", card: cardId }) : [];
+  }
+  needsForAbility(permId: string, index: number): TargetSlot[] {
+    return slotsOf(this.game, this.rules, this.me, { kind: "activate", perm: permId, index });
+  }
+
+  // 手札のカードを使う (土地は出す、それ以外は唱える)。targets = 選んだ対象 (as → id をカンマでつなぐ)
+  use(cardId: string, targets?: Record<string, string>): string | undefined {
     const g = this.game;
     const card = g.hands[this.me].find((c) => c.id === cardId);
     if (!card) return this.fail(cardId, "手札に無い");
     const land = /\bLand\b/.test(card.typeLine);
     const a: Action = { kind: land ? "land" : "cast", card: cardId };
-    const why = tryAction(g, this.rules, this.me, a);
+    const t = targets ?? autoTargets(slotsOf(g, this.rules, this.me, a)); // 試し撃ちと本番で、同じ対象を使う
+    const why = tryAction(g, this.rules, this.me, a, t);
     if (why) return this.fail(card.name, why);
     g.log.push(`あなたが ${card.name} を${land ? "出した" : "唱えた"}`);
     if (land) playLand(g, this.me, cardId, this.rules);
-    else castSpell(g, this.me, cardId, {}, this.rules);
+    else castSpell(g, this.me, cardId, t, this.rules);
     return undefined;
   }
 
@@ -41,15 +51,17 @@ export class BattleController {
   }
 
   // 戦場の自分のパーマネントの、index 番目の起動型能力
-  activate(permId: string, index: number): string | undefined {
+  activate(permId: string, index: number, targets?: Record<string, string>): string | undefined {
     const g = this.game;
     const { perm, ab } = this.abilityOf(permId, index);
     if (!perm || !ab) return this.fail(permId, "起動できる能力が無い");
-    const why = tryAction(g, this.rules, this.me, { kind: "activate", perm: permId, index });
+    const act: Action = { kind: "activate", perm: permId, index };
+    const t = targets ?? autoTargets(slotsOf(g, this.rules, this.me, act));
+    const why = tryAction(g, this.rules, this.me, act, t);
     if (why) return this.fail(perm.card.name, why);
     const manaOnly = ab.body.some((c) => c.node === "addMana") && ab.body.every((c) => c.node === "addMana" || c.node === "cost");
     g.log.push(manaOnly ? `あなたが ${perm.card.name} をタップしてマナを出した` : `あなたが ${perm.card.name} の能力を起動した`);
-    activateAbility(g, this.me, permId, index, {}, this.rules);
+    activateAbility(g, this.me, permId, index, t, this.rules);
     return undefined;
   }
 

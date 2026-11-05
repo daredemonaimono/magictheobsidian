@@ -1,33 +1,41 @@
-import { RuleError, activateAbility, castSpell, playLand } from "./engine";
-import { NodeCall } from "./node";
+import { RuleError, TargetSlot, activateAbility, castSpell, playLand, targetSlots } from "./engine";
 import { getNode } from "./registry";
 import { Game, PlayerId, RuleBook } from "./state";
 
 // いまできる行動の一覧 (対戦の画面・CPU・AI が使う)。判定は、エンジンの本物の入口を、コピーした局面で試し撃ちして決める (エンジンと食い違わない)
-export type Action = { kind: "land" | "cast"; card: string } | { kind: "activate"; perm: string; index: number };
+export type Action = { kind: "land"; card: string } | { kind: "cast"; card: string } | { kind: "activate"; perm: string; index: number };
 
-export const NEEDS_TARGET = "対象を選ぶカードは、まだ使えません";
+export const NO_TARGET = "対象にできるものがありません";
 
-export const needsTarget = (body: NodeCall[]): boolean => body.some((c) => getNode(c.node)?.isTarget);
+const activatedOf = (rules: RuleBook, cardName: string) => rules.get(cardName)?.abilities.filter((x) => x.kind === "activated") ?? [];
 
-const activatedOf = (rules: RuleBook, cardName: string) => rules.get(cardName)?.abilities.filter((a) => a.kind === "activated") ?? [];
-
-// 行動を試す。できれば undefined、できなければ理由。g は変えない
-export function tryAction(g: Game, rules: RuleBook, p: PlayerId, a: Action): string | undefined {
-  const spell = (name: string) => rules.get(name)?.abilities.find((x) => x.kind === "spell")?.body ?? [];
+// 行動が選ばせる対象の一覧 (対象を取らなければ空)
+export function slotsOf(g: Game, rules: RuleBook, p: PlayerId, a: Action): TargetSlot[] {
+  if (a.kind === "land") return [];
   if (a.kind === "cast") {
-    const c = g.hands[p]?.find((x) => x.id === a.card);
-    if (c && needsTarget(spell(c.name))) return NEEDS_TARGET;
-  } else if (a.kind === "activate") {
-    const perm = g.battlefield.find((x) => x.id === a.perm);
-    const ab = perm && activatedOf(rules, perm.card.name)[a.index];
-    if (ab && needsTarget(ab.body)) return NEEDS_TARGET;
+    const card = g.hands[p]?.find((x) => x.id === a.card);
+    const body = card && rules.get(card.name)?.abilities.find((x) => x.kind === "spell")?.body;
+    return card && body ? targetSlots(g, rules, { id: card.id, card, controller: p, targets: {}, cast: {}, body }) : [];
   }
+  const perm = g.battlefield.find((x) => x.id === a.perm);
+  const ab = perm && activatedOf(rules, perm.card.name)[a.index];
+  return perm && ab ? targetSlots(g, rules, { id: perm.id, card: perm.card, controller: p, targets: {}, cast: {}, body: ab.body, ability: true, source: perm.id }) : [];
+}
+
+// 「使えるか」を調べるための、仮の対象 (各スロットの先頭から、min か 1 個)
+export const autoTargets = (slots: TargetSlot[]): Record<string, string> =>
+  Object.fromEntries(slots.filter((x) => x.legal.length).map((x) => [x.as, x.legal.slice(0, Math.max(x.min, 1)).join(",")]));
+
+// 行動を試す。できれば undefined、できなければ理由。g は変えない。targets が無ければ、仮の対象で試す
+export function tryAction(g: Game, rules: RuleBook, p: PlayerId, a: Action, targets?: Record<string, string>): string | undefined {
+  const slots = slotsOf(g, rules, p, a);
+  if (slots.some((x) => x.legal.length < x.min)) return NO_TARGET;
+  const t = targets ?? autoTargets(slots);
   const copy = structuredClone({ ...g, decide: undefined }) as Game;
   try {
     if (a.kind === "land") playLand(copy, p, a.card, rules);
-    else if (a.kind === "cast") castSpell(copy, p, a.card, {}, rules);
-    else if (a.kind === "activate") activateAbility(copy, p, a.perm, a.index, {}, rules);
+    else if (a.kind === "cast") castSpell(copy, p, a.card, t, rules);
+    else activateAbility(copy, p, a.perm, a.index, t, rules);
   } catch (e) {
     return e instanceof RuleError ? e.message : `内部エラー: ${(e as Error).message}`; // ルールのノートの不備でも、画面を止めない (使えない扱い)
   }
@@ -40,7 +48,7 @@ export function actionsFor(g: Game, rules: RuleBook, p: PlayerId): Action[] {
   const add = (a: Action) => {
     if (tryAction(g, rules, p, a) === undefined) out.push(a);
   };
-  for (const c of g.hands[p] ?? []) add({ kind: /\bLand\b/.test(c.typeLine) ? "land" : "cast", card: c.id });
+  for (const c of g.hands[p] ?? []) add(/\bLand\b/.test(c.typeLine) ? { kind: "land", card: c.id } : { kind: "cast", card: c.id });
   for (const perm of g.battlefield) {
     if (perm.controller !== p) continue;
     activatedOf(rules, perm.card.name).forEach((_, index) => add({ kind: "activate", perm: perm.id, index }));

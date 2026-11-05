@@ -88,8 +88,17 @@ function matchesEvent(g: Game, s: Perm, when: NodeCall, ev: GameEvent): boolean 
   return true;
 }
 
-// 誘発型能力を積むとき、対象を自動で選ぶ (誘発時に対象を選ぶ)。合法な対象を先頭から max 個 (g.decide.target で差し替え可)。min に足りなければ、能力は積まれない (false)
-function chooseTargets(g: Game, item: StackItem, rules: RuleBook): boolean {
+// 対象を取るノードごとに、いま選べる合法な対象の一覧 (条件 if= を満たすノードだけ)。唱える・起動するときの対象の選択 (画面・CPU) と、誘発時の自動選択が使う
+export interface TargetSlot {
+  as: string; // ノードの as (targets のキー)
+  min: number;
+  max: number;
+  legal: string[];
+  zone: string;
+  kind: string;
+}
+export function targetSlots(g: Game, rules: RuleBook, item: StackItem): TargetSlot[] {
+  const out: TargetSlot[] = [];
   for (const call of item.body ?? []) {
     const def = getNode(call.node);
     if (!def?.isTarget) continue;
@@ -100,9 +109,18 @@ function chooseTargets(g: Game, item: StackItem, rules: RuleBook): boolean {
     const max = typeof a.max === "number" ? a.max : Math.max(1, min);
     const pool = a.zone === "stack" ? g.stack.filter((x) => !x.ability).map((x) => x.id) : a.zone === "battlefield" ? g.battlefield.map((x) => x.id) : a.zone === "any" ? [...g.players, ...g.battlefield.map((x) => x.id)] : g.players;
     const legal = pool.filter((id) => def.run!({ ...ctx, item: { ...item, targets: { [call.as ?? ""]: id } } }, a).id !== undefined);
-    const picked = (g.decide?.target?.(g, item, call, legal) ?? legal.slice(0, max)).filter((id) => legal.includes(id)).slice(0, max);
-    if (picked.length < min) return false;
-    item.targets[call.as ?? ""] = picked.join(",");
+    out.push({ as: call.as ?? "", min, max, legal, zone: String(a.zone), kind: String(a.kind) });
+  }
+  return out;
+}
+
+// 誘発型能力を積むとき、対象を自動で選ぶ (誘発時に対象を選ぶ)。合法な対象を先頭から max 個 (g.decide.target で差し替え可)。min に足りなければ、能力は積まれない (false)
+function chooseTargets(g: Game, item: StackItem, rules: RuleBook): boolean {
+  for (const slot of targetSlots(g, rules, item)) {
+    const call = (item.body ?? []).find((c) => (c.as ?? "") === slot.as && getNode(c.node)?.isTarget)!;
+    const picked = (g.decide?.target?.(g, item, call, slot.legal) ?? slot.legal.slice(0, slot.max)).filter((id) => slot.legal.includes(id)).slice(0, slot.max);
+    if (picked.length < slot.min) return false;
+    item.targets[slot.as] = picked.join(",");
   }
   return true;
 }

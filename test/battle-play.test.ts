@@ -14,7 +14,7 @@ const rulesOf = (m: Record<string, Ability[]>): RuleBook => ({ get: (c) => (m[c]
 const rules = rulesOf({
   Island: [{ kind: "activated", body: [call("cost", { tap: true }), call("addMana", { amount: 1, color: "U" })] }],
   Bear: [],
-  Zap: [{ kind: "spell", body: [call("target", { zone: "battlefield", kind: "permanent", type: "creature" }, { as: "t" }), call("damage", { target: "$t", amount: 2 })] }],
+  Zap: [{ kind: "spell", body: [call("target", { zone: "battlefield", kind: "permanent", type: "creature" }, { as: "t" }), call("damage", { target: { ref: "t" }, amount: 2 })] }],
 });
 const data = (name: string, extra: Partial<CardData> = {}) => ({ key: name, data: { name, typeLine: "Creature — Bear", cmc: 2, manaCost: "{1}{U}", colors: ["U"], power: "2", toughness: "2", ...extra } as CardData });
 const deck = (): DeckData => ({
@@ -72,18 +72,33 @@ const toMain = (c: BattleController) => {
   assert.ok(g.battlefield.some((p) => p.id === bear.id), "「次へ」で解決して、戦場に出る");
   assert.equal(g.step, "main1", "解決で止まる");
 }
-// 対象が必要なカード: 状態は変わらず、理由が返る
+// 対象を取るカード: 対象にできるものが無ければ使えない。あれば、対象を選んで唱えて、解決でダメージ
 {
   const { g, c } = setup();
   const zap = hold(g, "Zap");
   toMain(c);
-  g.mana["you"] = 5;
-  const before = JSON.stringify(g);
-  const msg = c.use(zap.id);
-  assert.ok(msg?.includes("対象を選ぶカードは、まだ使えません"));
-  const after = JSON.parse(JSON.stringify(g));
-  assert.equal(after.log.length, JSON.parse(before).log.length + 1);
-  assert.deepEqual(after.hands, JSON.parse(before).hands);
+  g.mana["you"] = 2;
+  g.pool["you"] = { U: 2 };
+  const before = JSON.parse(JSON.stringify(g));
+  assert.ok(c.use(zap.id)?.includes("対象にできるものがありません"));
+  assert.deepEqual(JSON.parse(JSON.stringify(g)).hands, before.hands);
+  const bear = hold(g, "Bear", "opp");
+  g.battlefield.push({ id: bear.id, card: { ...bear, power: 2, toughness: 3 }, controller: "opp" });
+  const slots = c.needsForCard(zap.id);
+  assert.deepEqual(slots.map((x) => [x.as, x.legal]), [["t", [bear.id]]]);
+  assert.ok(c.use(zap.id, { t: "nope" }), "不正な対象は、使えない");
+  assert.ok(g.hands["you"].some((x) => x.id === zap.id));
+  assert.equal(c.use(zap.id), undefined, "対象を渡さなくても、試し撃ちと同じ仮の対象で、例外にならない");
+  g.stack.length = 0;
+  g.hands["you"].push(zap);
+  g.graveyards["you"] = g.graveyards["you"].filter((x) => x.id !== zap.id);
+  g.mana["you"] = 2;
+  g.pool["you"] = { U: 2 };
+  assert.equal(c.use(zap.id, { t: bear.id }), undefined);
+  assert.equal(g.stack.length, 1);
+  c.next();
+  assert.equal(g.battlefield.find((p) => p.id === bear.id)!.damage, 2);
+  assert.ok(g.graveyards["you"].some((x) => x.id === zap.id));
 }
 // 「次へ」を繰り返す: 自分のターンを進み、相手のターンを飛ばして、ターン 3 のアップキープで止まる。マナ・プールは空になる
 {

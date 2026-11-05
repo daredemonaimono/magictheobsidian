@@ -1,4 +1,5 @@
 import { ItemView, WorkspaceLeaf } from "obsidian";
+import { TargetSlot } from "./battle/engine";
 import { BattleController } from "./battle/play";
 import { BoardModel, CardView, LandStack, PhaseId, boardModel } from "./battle/boardModel";
 import { CARD_H, CARD_W, GAP, HAND_H, HAND_W, LAYER_PX, TAP_EXTRA, cardBackUrl, overlapFor, pileLayers, rowNeed } from "./battle/layout";
@@ -55,6 +56,9 @@ export class BattleView extends ItemView {
   };
   private ctl?: BattleController; // 対戦のとき。サンプルの局面では無い (操作できない)
   private menu?: HTMLElement;
+  // 対象を選んでいる途中 (Esc で取り消し。局面は変わらない)。slots = 聞くこと、i = いまのスロット、picks = スロットごとの選んだ id
+  private targeting?: { title: string; slots: TargetSlot[]; i: number; picks: string[][]; done: (t: Record<string, string>) => void };
+  private tbar?: HTMLElement;
   private tried = new Set<string>(); // 画像を探したカード名
   private logSig = "";
   private previewSeq = 0;
@@ -87,6 +91,9 @@ export class BattleView extends ItemView {
     this.rules = rules;
     this.ctl = session ? new BattleController(game, rules) : undefined;
     this.tried.clear();
+    this.targeting = undefined;
+    this.tbar = undefined;
+    this.menu = undefined;
     this.build();
     await this.loadImages();
     this.paint();
@@ -96,8 +103,16 @@ export class BattleView extends ItemView {
     this.register(() => this.watcher?.disconnect());
     if (!this.keysOn) {
       this.keysOn = true;
-      this.registerDomEvent(document, "keydown", (e) => e.key === "Escape" && this.closeMenu()); // 途中でやめるのは Esc だけ
-      this.registerDomEvent(this.contentEl, "click", (e) => !(e.target as HTMLElement).closest(".mtg-bt-menu") && this.closeMenu(), true); // 捕捉の段階で閉じる (そのあと、クリックしたカードが、必要なら開き直す)
+      this.registerDomEvent(document, "keydown", (e) => {
+        if (e.key !== "Escape") return;
+        if (this.targeting) this.endTargeting(); // 途中でやめるのは Esc だけ
+        else this.closeMenu();
+      });
+      this.registerDomEvent(this.contentEl, "click", (e) => {
+        if (this.targeting) return this.clickTarget(e);
+        if (!(e.target as HTMLElement).closest(".mtg-bt-menu")) this.closeMenu(); // 捕捉の段階で閉じる (そのあと、クリックしたカードが、必要なら開き直す)
+      }, true);
+      this.registerDomEvent(this.contentEl, "dblclick", (e) => this.targeting && e.stopPropagation(), true);
     }
   }
   private keysOn = false;
@@ -118,8 +133,8 @@ export class BattleView extends ItemView {
     for (const key of ["opp-lands", "opp-others", "opp-creatures", "self-creatures", "self-others", "self-lands"]) rows[key] = board.createDiv({ cls: `mtg-bt-row mtg-bt-${key}` });
     const belt = board.createDiv({ cls: "mtg-bt-belt", text: "戦 闘" });
     const hand = stage.createDiv("mtg-bt-hand");
-    stage.createDiv({ cls: "mtg-bt-avatar is-opp" });
-    stage.createDiv({ cls: "mtg-bt-avatar is-self" });
+    stage.createDiv({ cls: "mtg-bt-avatar is-opp" }).dataset.tid = this.game.players.find((p) => p !== VIEWER) ?? "";
+    stage.createDiv({ cls: "mtg-bt-avatar is-self" }).dataset.tid = VIEWER;
     const oppLife = stage.createDiv({ cls: "mtg-bt-life is-opp" });
     const selfLife = stage.createDiv({ cls: "mtg-bt-life is-self" });
     const piles: Record<string, HTMLElement> = {};
@@ -129,7 +144,7 @@ export class BattleView extends ItemView {
     const step = stage.createDiv("mtg-bt-step");
     const banner = stage.createDiv("mtg-bt-banner");
     const next = stage.createEl("button", { cls: "mtg-bt-next mod-cta", text: "次へ" });
-    next.addEventListener("click", () => this.ctl && this.run(() => this.ctl!.next()));
+    next.addEventListener("click", () => this.ctl && !this.targeting && this.run(() => this.ctl!.next())); // 対象を選んでいる間は、進めない
     const stack = stage.createDiv("mtg-bt-stack");
     const preview = side.createDiv("mtg-bt-preview");
     preview.createDiv({ cls: "mtg-bt-hint", text: "カードにカーソルを合わせると、ここに画像と効果が出ます" });
@@ -175,6 +190,7 @@ export class BattleView extends ItemView {
     this.paintStack(m);
     this.paintLog(m.log);
     this.fit();
+    if (this.targeting) this.paintTargeting();
   }
 
   private setText(el: HTMLElement, text: string, life?: number) {
@@ -189,7 +205,7 @@ export class BattleView extends ItemView {
       data: c,
       name: c.name,
       paint: (el) => this.fill(el, c),
-      ...(this.ctl && kind === "hand" ? { use: () => this.run(() => this.ctl!.use(c.id)) } : {}),
+      ...(this.ctl && kind === "hand" ? { use: () => this.ask(c.name, this.ctl!.needsForCard(c.id), (t) => this.run(() => this.ctl!.use(c.id, t))) } : {}),
       ...(this.ctl && kind === "perm" ? { use: () => this.useAbility(c.id), pick: () => this.pickAbility(c.id) } : {}),
     }));
   }
@@ -211,11 +227,12 @@ export class BattleView extends ItemView {
   }
   private useAbility(permId: string) {
     const abs = this.ctl!.abilities(permId);
-    const first = abs.find((a) => a.usable) ?? abs[0];
-    if (first) this.run(() => this.ctl!.activate(permId, first.index));
+    const first = abs.find((a) => a.usable);
+    if (first) this.activateWith(permId, first.index);
   }
   // 1回クリック: 能力が2つ以上あれば、一覧を出す
   private pickAbility(permId: string) {
+    if (this.targeting) return;
     const abs = this.ctl!.abilities(permId);
     this.closeMenu();
     if (abs.length < 2) return;
@@ -226,9 +243,72 @@ export class BattleView extends ItemView {
     if (box) menu.setCssStyles({ left: `${box.left - st.left}px`, top: `${Math.max(4, box.top - st.top - abs.length * 28 - 8)}px` });
     for (const a of abs) {
       const row = menu.createDiv({ cls: `mtg-bt-menuitem${a.usable ? "" : " is-off"}`, text: a.label });
-      row.addEventListener("click", (e) => { e.stopPropagation(); if (a.usable) this.run(() => this.ctl!.activate(permId, a.index)); });
+      row.addEventListener("click", (e) => { e.stopPropagation(); if (a.usable) this.activateWith(permId, a.index); });
     }
     this.menu = menu;
+  }
+  private activateWith(permId: string, index: number) {
+    const name = this.game.battlefield.find((p) => p.id === permId)?.card.name ?? "";
+    this.closeMenu();
+    this.ask(name, this.ctl!.needsForAbility(permId, index), (t) => this.run(() => this.ctl!.activate(permId, index, t)));
+  }
+
+  // ---- 対象の選択: 合法な対象を光らせ、クリックで選ぶ (解除もクリック)。数が足りたら「確定」。スロットが複数なら順番に
+  private ask(title: string, slots: TargetSlot[], done: (t: Record<string, string>) => void) {
+    const asked = slots.filter((x) => x.legal.length > 0);
+    if (!asked.length || slots.some((x) => x.legal.length < x.min)) return done({}); // 対象が足りないときは、聞かずに、使おうとして、理由をログに出す
+    this.closeMenu();
+    this.targeting = { title, slots: asked, i: 0, picks: asked.map(() => []), done };
+    this.paintTargeting();
+  }
+  private endTargeting() {
+    this.targeting = undefined;
+    this.paintTargeting();
+  }
+  private clickTarget(e: MouseEvent) {
+    const t = this.targeting!;
+    const el = (e.target as HTMLElement).closest<HTMLElement>("[data-tid]");
+    if (!el || !t.slots[t.i].legal.includes(el.dataset.tid!)) return; // 対象にできないところ: 何も起きない (メニューなどは通常どおり)
+    e.stopPropagation();
+    e.preventDefault();
+    const picks = t.picks[t.i];
+    const at = picks.indexOf(el.dataset.tid!);
+    if (at >= 0) picks.splice(at, 1);
+    else if (picks.length < t.slots[t.i].max) picks.push(el.dataset.tid!);
+    else return;
+    this.paintTargeting();
+  }
+  private confirmTarget() {
+    const t = this.targeting!;
+    if (t.i < t.slots.length - 1) {
+      t.i++;
+      return this.paintTargeting();
+    }
+    const targets: Record<string, string> = {};
+    t.slots.forEach((s, k) => t.picks[k].length && (targets[s.as] = t.picks[k].join(",")));
+    this.targeting = undefined;
+    this.paintTargeting();
+    t.done(targets);
+  }
+  private paintTargeting() {
+    const st = this.ui.stage;
+    for (const el of Array.from(st.querySelectorAll(".is-target, .is-picked"))) el.classList.remove("is-target", "is-picked");
+    this.tbar?.remove();
+    this.tbar = undefined;
+    st.toggleClass("is-targeting", !!this.targeting);
+    const t = this.targeting;
+    if (!t) return;
+    const slot = t.slots[t.i];
+    const picks = t.picks[t.i];
+    for (const id of slot.legal) st.querySelector(`[data-tid="${id}"]`)?.classList.add(picks.includes(id) ? "is-picked" : "is-target");
+    const bar = st.createDiv("mtg-bt-tbar");
+    const range = slot.min === slot.max ? `${slot.max}` : `${slot.min}〜${slot.max}`;
+    bar.createSpan({ text: `${t.title}: 対象を選ぶ (${picks.length} / ${range})${t.slots.length > 1 ? `  [${t.i + 1}/${t.slots.length}]` : ""}` });
+    const ok = bar.createEl("button", { cls: "mod-cta", text: "確定" });
+    ok.disabled = picks.length < slot.min;
+    ok.addEventListener("click", () => this.confirmTarget());
+    bar.createEl("button", { text: "やめる (Esc)" }).addEventListener("click", () => this.endTargeting());
+    this.tbar = bar;
   }
   private closeMenu() {
     this.menu?.remove();
@@ -256,6 +336,7 @@ export class BattleView extends ItemView {
       if (entry.sig !== sig) {
         entry.el.dataset.name = it.name;
         entry.el.dataset.id = it.key.startsWith("stack:") ? "" : it.key;
+        if (!it.key.startsWith("stack:")) entry.el.dataset.tid = it.key; // 対象にできる (戦場のカード)
         it.paint(entry.el);
         entry.sig = sig;
       }
@@ -304,6 +385,7 @@ export class BattleView extends ItemView {
     pile.style.width = `${CARD_W + Math.max(0, standing.length - 1) * 5}px`;
     standing.forEach((c, i) => {
       const card = pile.createDiv("mtg-bt-card");
+      card.dataset.tid = c.id;
       card.style.left = `${i * 5}px`;
       card.style.top = `${-i * 2}px`;
       this.face(card, c);
@@ -314,6 +396,7 @@ export class BattleView extends ItemView {
       side.style.height = `${CARD_W}px`;
       tapped.forEach((c, i) => {
         const card = side.createDiv("mtg-bt-card is-lying");
+        card.dataset.tid = c.id;
         card.style.left = `${i * 14 + TAP_EXTRA / 2}px`; // 横向き (縦と横が入れ替わる) が、i * 14 の位置に収まる
         card.style.top = `${-TAP_EXTRA / 2}px`;
         this.face(card, c);
@@ -369,7 +452,10 @@ export class BattleView extends ItemView {
     if (el.dataset.sig === sig) return;
     el.dataset.sig = sig;
     el.empty();
-    for (const s of [...m.stack].reverse()) el.createDiv({ cls: `mtg-bt-stackitem is-${s.controller}`, text: `${s.ability ? "能力: " : ""}${s.name}` });
+    for (const s of [...m.stack].reverse()) {
+      const row = el.createDiv({ cls: `mtg-bt-stackitem is-${s.controller}`, text: `${s.ability ? "能力: " : ""}${s.name}` });
+      row.dataset.tid = s.id;
+    }
     el.toggleClass("is-on", m.stack.length > 0);
   }
 

@@ -1,5 +1,5 @@
 import assert from "node:assert";
-import { NEEDS_TARGET, abilityLabels, actionsFor, tryAction } from "../src/battle/actions";
+import { NO_TARGET, abilityLabels, actionsFor, slotsOf, tryAction } from "../src/battle/actions";
 import { activateAbility, castSpell, playLand } from "../src/battle/engine";
 import { Ability, NodeCall } from "../src/battle/node";
 import { registerBuiltinNodes } from "../src/battle/nodes";
@@ -15,7 +15,7 @@ const rulesOf = (m: Record<string, Ability[]>): RuleBook => ({ get: (c) => (m[c]
 const rules = rulesOf({
   Island: [{ kind: "activated", body: [call("cost", { tap: true }), call("addMana", { amount: 1, color: "U" })] }],
   Bear: [],
-  Zap: [{ kind: "spell", body: [call("target", { zone: "battlefield", kind: "permanent", type: "creature" }, { as: "t" }), call("damage", { target: "$t", amount: 2 })] }],
+  Zap: [{ kind: "spell", body: [call("target", { zone: "battlefield", kind: "permanent", type: "creature" }, { as: "t" }), call("damage", { target: { ref: "t" }, amount: 2 })] }],
 });
 const setup = () => {
   const g = createGame(["A", "B"]);
@@ -45,12 +45,19 @@ const kinds = (g: Game) => actionsFor(g, rules, "A").map((a) => (a.kind === "act
   activateAbility(g, "A", "Island2", 0, {}, rules);
   assert.deepEqual(kinds(g), ["cast:Bear"]);
 }
-// 対象が必要な呪文は、マナがあっても出ない。理由が返る
+// 対象を取る呪文: 対象にできるものがあれば使える。スロットが対象の候補を返す。無ければ、理由
 {
   const g = setup();
   g.hands["A"].push(card("Zap", "Instant", { mv: 0 }));
+  assert.equal(tryAction(g, rules, "A", { kind: "cast", card: "Zap" }), NO_TARGET, "戦場にクリーチャーがいない");
   assert.deepEqual(kinds(g), []);
-  assert.equal(tryAction(g, rules, "A", { kind: "cast", card: "Zap" }), NEEDS_TARGET);
+  g.battlefield.push({ id: "Bear", card: card("Bear", "Creature — Bear", { power: 2, toughness: 2 }), controller: "B" });
+  g.battlefield.push({ id: "Bear2", card: { ...card("Bear2", "Creature — Bear", { power: 2, toughness: 2 }), name: "Bear" }, controller: "A" });
+  assert.deepEqual(kinds(g), ["cast:Zap"]);
+  const slots = slotsOf(g, rules, "A", { kind: "cast", card: "Zap" });
+  assert.deepEqual(slots.map((x) => [x.as, x.min, x.max, x.legal]), [["t", 1, 1, ["Bear", "Bear2"]]]);
+  assert.equal(tryAction(g, rules, "A", { kind: "cast", card: "Zap" }, { t: "Bear" }), undefined);
+  assert.ok(tryAction(g, rules, "A", { kind: "cast", card: "Zap" }, { t: "nothing" }), "不正な対象は、使えない");
 }
 // 相手のターンのメインでは、クリーチャーは出ない。試しても、元の局面は変わらない
 {

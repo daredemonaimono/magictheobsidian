@@ -313,3 +313,8 @@ button.mtg-color .mtg-sym { width: 20px; height: 20px; display: block; }
 .mtg-bt-menuitem { padding: 4px 10px; border-radius: 5px; cursor: pointer; }
 .mtg-bt-menuitem:hover { background: #335; }
 .mtg-bt-menuitem.is-off { opacity: .4; cursor: default; }
+/* 対象の選択 (段階4a) */
+.mtg-bt-stage.is-targeting .is-target { outline: 3px solid #ffd24a; outline-offset: 1px; cursor: crosshair; }
+.mtg-bt-stage.is-targeting .is-picked { outline: 3px solid #ff5a5a; outline-offset: 1px; box-shadow: 0 0 14px #ff5a5a; cursor: pointer; }
+.mtg-bt-tbar { position: absolute; left: 50%; top: 8px; transform: translateX(-50%); z-index: 12; display: flex; gap: 8px; align-items: center; background: #1c232af0; border: 1px solid #ffd24a; border-radius: 8px; padding: 6px 12px; font-size: 12px; color: #eee; }
+.mtg-bt-tbar button:disabled { opacity: .4; }
