@@ -3,6 +3,7 @@ import { RunCtx, Value } from "./node";
 import { defineCondition, defineNode, getNode } from "./registry";
 import { dealDamage } from "./damage";
 import { parseManaCost, spendGeneric } from "./mana";
+import { nextRandom } from "./rng";
 import { discardCards, drawCards, prepareAbilityOf, Game, GameCard, Perm, playersOf, typeIn, untapPerm } from "./state";
 
 // 実装済みの基本ノード。打ち消しは「対象」+「打ち消す」の組み合わせで、カードごとの違いは対象の条件 (引数) だけ
@@ -194,16 +195,41 @@ export function registerBuiltinNodes(): void {
   defineNode({
     id: "lookHand",
     title: "手札を見る",
-    summary: "プレイヤーの手札を見る(動かさない。「手札を公開する」「手札を見て、1枚選んで、捨てさせる」)。見たカードの id を出力する: filter(絞る)・choose(選ぶ)・move(to=graveyard など)につなぐ。player=you / opponents / target。画面は、見た手札を、前に出して見せる",
+    summary: "プレイヤーの手札を見る(動かさない。「手札を公開する」「手札を見て、1枚選んで、捨てさせる」)。見たカードの id を出力する: filter(絞る)・choose(選ぶ)・move(to=graveyard / top など)につなぐ。player=you / opponents / target。相手の手札を見ると、画面は、見た手札を、前に出して見せる (自分の手札を、ほかのノードに渡すだけのときは、見せない)",
     params: { player: who, target: targetPlayer },
     outputs: { id: "id" },
     run: (ctx, a): Record<string, Value> => {
       const g = ctx.game;
       const ps = playersFor(ctx, a);
       const cards = ps.flatMap((p) => g.hands[p]);
-      if (ps.length) g.handLook = { by: ctx.item.controller, of: ps[0], ids: cards.map((c) => c.id), n: (g.handLook?.n ?? 0) + 1 };
-      g.log.push(`${ps.some((p) => p !== ctx.item.controller) ? "相手の" : "自分の"}手札を見た${cards.length ? `: ${cards.map((c) => c.name).join("、")}` : " (手札が無い)"}`);
+      // 自分の手札を、ほかのノードに渡すだけ (「手札から2枚選んで〜」) のときは、見せない・ログに出さない
+      if (ps.some((p) => p !== ctx.item.controller)) {
+        g.handLook = { by: ctx.item.controller, of: ps[0], ids: cards.map((c) => c.id), n: (g.handLook?.n ?? 0) + 1 };
+        g.log.push(`相手の手札を見た${cards.length ? `: ${cards.map((c) => c.name).join("、")}` : " (手札が無い)"}`);
+      }
       return { id: cards.map((c) => c.id).join(",") };
+    },
+  });
+
+  // ライブラリーを切る。optional=true なら「してもよい」(断れる)。切り方は、ゲームの乱数 (Game.rngState) から決まる (リプレイで、同じ結果)
+  defineNode({
+    id: "shuffle",
+    title: "ライブラリーを切る",
+    summary: "プレイヤーのライブラリーを切る。player=you / opponents / target。optional=true なら「してもよい」(断れる。「切ってもよい」)",
+    params: { player: who, target: targetPlayer, optional: { type: "boolean" } },
+    outputs: {},
+    run: (ctx, a): Record<string, Value> => {
+      const g = ctx.game;
+      if (a.optional === true && !(g.decide?.may?.(g, ctx.item.controller, "ライブラリーを切る") ?? true)) return {};
+      for (const p of playersFor(ctx, a)) {
+        const lib = g.libraries[p];
+        for (let i = lib.length - 1; i > 0; i--) {
+          const j = Math.floor(nextRandom(g) * (i + 1));
+          [lib[i], lib[j]] = [lib[j], lib[i]];
+        }
+        g.log.push(`${p === ctx.item.controller ? "自分の" : "相手の"}ライブラリーを切った`);
+      }
+      return {};
     },
   });
 

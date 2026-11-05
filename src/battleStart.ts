@@ -76,6 +76,7 @@ export function buildSession(inputs: Inputs, selfName: string, oppName: string, 
   const rng = seeded(seed); // 山札の切り直し・マリガンは、この種から決まる (履歴のリプレイで、同じ局面を作るため)
   const game = buildMatch(inputs.self, inputs.opp, inputs.rules, rng);
   game.mulligan = { count: 0 }; // 開始前に、マリガンを聞く
+  game.rngState = Math.imul(seed ^ 0x9e3779b9, 0x85ebca6b) >>> 0; // ゲームの中の乱数 (ライブラリーを切る、など) の初期状態: 種から決める (リプレイで、同じ結果)
   if (aiMulligan) applyMulligan(game, "opp", rng, aiMulligan);
   else if (cpu) cpuMulligan(game, "opp", rng);
   return { game, rules: inputs.rules, seed, rng, self: selfName, opp: oppName, ...(aiMulligan ? { aiMulligan } : {}) };

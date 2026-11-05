@@ -40,7 +40,7 @@ ${conditionList() || "(まだ無い)"}
 - 「N体を対象とする」「最大N」は、\`target\` の \`min\` / \`max\`(既定は1)。対象や \`select\` / \`look\` / \`choose\` の出力は、複数の id のリストで、\`tap\` / \`bounce\` / \`move\` などはリスト全部に効く。
 - 「すべての〜」は、対象を取らない \`select\`(絞り込みは \`target\` と同じ。攻撃中は \`attacking=true\`)。
 - 「対戦相手の手札を見て、(クリーチャーでも土地でもない)1枚を選んで、捨てさせる」は、\`lookHand player=opponents as=h\` → \`filter from=$h notType=creature|land as=f\` → \`choose from=$f count=1 as=c\` → \`move cards=$c to=graveyard\`。手札を公開させるだけなら、\`lookHand\` だけ。
-- 「ライブラリーの上からN枚を見て、1枚を手札に、残りを底に」は、\`look\` → \`choose\` → \`move cards=$選んだ to=hand\` と \`move cards=$見た except=$選んだ to=bottom\`。
+- 「手札から N 枚を選んで、ライブラリーの上に好きな順で置く」(Brainstorm) は、自分の手札を \`lookHand player=you as=h\` で渡して、\`choose from=$h count=N as=c\` → \`move cards=$c to=top\`。「上の N 枚を見て、好きな順で戻す。切ってもよい」(Ponder) は、\`look player=you count=N as=l\` → \`move cards=$l to=top\` → \`shuffle player=you optional=true\`(「切ってもよい」は optional=true)。\n- 「ライブラリーの上からN枚を見て、1枚を手札に、残りを底に」は、\`look\` → \`choose\` → \`move cards=$選んだ to=hand\` と \`move cards=$見た except=$選んだ to=bottom\`。
 
 ## 規則
 - カード専用のノードは作らない。違いは、汎用ノードの引数で表す。
