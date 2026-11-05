@@ -300,6 +300,62 @@ export function registerBuiltinNodes(): void {
     },
   });
 
+  // 破壊する。対象 (戦場のパーマネント) を、墓地へ (トークンは消える)。破壊不能は、破壊されない。対象が戦場に無ければ、何もしない
+  defineNode({
+    id: "destroy",
+    title: "破壊する",
+    summary: "対象(select の出力も可)のパーマネントを破壊する (持ち主の墓地へ。破壊不能は、破壊されない)。「土地を破壊する」(Wasteland・Strip Mine)・「アーティファクトやエンチャントを、最大2つ破壊する」は、target(type=・notType=・min=・max=)と使う",
+    params: { target: { type: "ref", required: true } },
+    outputs: {},
+    run: (ctx, a): Record<string, Value> => {
+      const g = ctx.game;
+      for (const id of idList(a.target)) {
+        const perm = g.battlefield.find((p) => p.id === id);
+        if (!perm || characteristics(g, perm, ctx.rules).keywords.includes("indestructible")) continue;
+        g.battlefield = g.battlefield.filter((p) => p !== perm);
+        if (!perm.card.token) g.graveyards[perm.card.owner].push(perm.card);
+        g.log.push(`${perm.card.name} を破壊した`);
+        g.events.push({ type: "leaves", perm });
+      }
+      return {};
+    },
+  });
+
+  // ライブラリーから、条件に合うカードを探して、戦場か手札に置く。そのあと、ライブラリーを切る (shuffle=false で切らない)。見つからなくても (または、選ばなくても) よい
+  defineNode({
+    id: "search",
+    title: "ライブラリーから探す",
+    summary: "コントローラーのライブラリーから、type(型・サブタイプ。例: Forest|Island)に合うカードを count 枚まで(既定は1)探して、to=battlefield / hand に置く。tapped=true ならタップ状態で戦場に出す。そのあとライブラリーを切る (shuffle=false で切らない)。見つかったカードの id を出力する (「そうしたなら」は if=$名前)。フェッチランド: `cost tap=true sacrifice=true life=1` → `search type=Forest|Island to=battlefield`",
+    params: { type: { type: "string" }, name: { type: "string" }, to: { type: "string", required: true, choices: ["battlefield", "hand"] }, count: { type: "number", min: 1 }, tapped: { type: "boolean" }, shuffle: { type: "boolean" } },
+    outputs: { id: "id" },
+    run: (ctx, a): Record<string, Value> => {
+      const g = ctx.game;
+      const p = ctx.item.controller;
+      const options = g.libraries[p].filter((c) => (typeof a.type !== "string" || typeIn(c.typeLine, a.type)) && (typeof a.name !== "string" || c.name === a.name));
+      const n = Math.min(typeof a.count === "number" ? a.count : 1, options.length);
+      // 選ぶのは、探す人。入力が無い (相手・自動) ときは、先頭から。断る (0 枚) こともできる
+      const picked = (g.decide?.choose?.(g, p, options, n, true) ?? options.slice(0, n)).filter((c) => options.includes(c)).slice(0, n);
+      for (const c of picked) {
+        g.libraries[p] = g.libraries[p].filter((x) => x !== c);
+        if (a.to === "hand") g.hands[p].push(c);
+        else {
+          const perm: Perm = { id: c.id, card: c, controller: p, enteredTurn: g.turn, ...(a.tapped === true ? { tapped: true } : {}), ...(c.loyalty !== undefined ? { counters: { loyalty: c.loyalty } } : {}) };
+          g.battlefield.push(perm);
+          g.events.push({ type: "enters", perm });
+        }
+      }
+      g.log.push(`${p === ctx.item.controller ? "自分" : "相手"}のライブラリーから${picked.length ? ` ${picked.map((c) => c.name).join("、")} を` : "何も"}${a.to === "hand" ? "手札に" : "戦場に"}${picked.length ? "置いた" : "置かなかった"}`);
+      if (a.shuffle !== false) {
+        const lib = g.libraries[p];
+        for (let i = lib.length - 1; i > 0; i--) {
+          const j = Math.floor(nextRandom(g) * (i + 1));
+          [lib[i], lib[j]] = [lib[j], lib[i]];
+        }
+      }
+      return { id: picked.map((c) => c.id).join(",") };
+    },
+  });
+
   // タップ / アンタップ。戦場のパーマネントの状態。対象が戦場に無ければ何もしない
   for (const [id, title, tapped] of [["tap", "タップする", true], ["untap", "アンタップする", false]] as const) {
     defineNode({
@@ -355,8 +411,8 @@ export function registerBuiltinNodes(): void {
   defineNode({
     id: "cost",
     title: "コスト",
-    summary: "起動型能力のコスト(能力の最初に書く)。mana=払う汎用マナの数 / manaCost=色つきのマナコスト(\"{1}{U}\") / tap=このパーマネントをタップ / sacrifice=このパーマネントを生け贄に捧げる / tapCreatures=パワーの合計がこの値以上になるよう、自分のクリーチャーをタップ / loyalty=忠誠度を足す(+1 は loyalty=1、−2 は loyalty=-2。プレインズウォーカーの能力。ソーサリーのタイミングで1ターンに1回) / loyaltyX=true で −X(X は起動時に選び、効果の中で $X として参照する)",
-    params: { mana: { type: "number", min: 0 }, manaCost: { type: "string" }, tap: { type: "boolean" }, sacrifice: { type: "boolean" }, tapCreatures: { type: "number", min: 0 }, loyalty: { type: "number" }, loyaltyX: { type: "boolean" } },
+    summary: "起動型能力のコスト(能力の最初に書く)。mana=払う汎用マナの数 / manaCost=色つきのマナコスト(\"{1}{U}\") / tap=このパーマネントをタップ / sacrifice=このパーマネントを生け贄に捧げる / life=N点のライフを払う (フェッチランド) / tapCreatures=パワーの合計がこの値以上になるよう、自分のクリーチャーをタップ / loyalty=忠誠度を足す(+1 は loyalty=1、−2 は loyalty=-2。プレインズウォーカーの能力。ソーサリーのタイミングで1ターンに1回) / loyaltyX=true で −X(X は起動時に選び、効果の中で $X として参照する)",
+    params: { mana: { type: "number", min: 0 }, manaCost: { type: "string" }, tap: { type: "boolean" }, sacrifice: { type: "boolean" }, life: { type: "number", min: 0 }, tapCreatures: { type: "number", min: 0 }, loyalty: { type: "number" }, loyaltyX: { type: "boolean" } },
     check: (a) => { try { if (typeof a.manaCost === "string") parseManaCost(a.manaCost); return null; } catch (e) { return (e as Error).message; } },
     outputs: {},
     declaration: true,

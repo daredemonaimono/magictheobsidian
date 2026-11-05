@@ -1,4 +1,4 @@
-import { Action, abilityLabels, actionsFor, autoTargets, manaOnly, slotsOf, tryAction, uselessMana, withAllMana } from "./actions";
+import { Action, abilityLabels, actionsFor, autoTargets, manaOnly, slotsOf, tryAction, tryWithMana, uselessMana, withAllMana } from "./actions";
 import { RuleError, TargetSlot, activateAbility, attackersAt, canAttackWith, castSpell, declareAttackers, declareBlockers, assignDamage, passPriority, playLand } from "./engine";
 import { AiOption, aiAttackers, aiBlockers, aiOptions } from "./ai";
 import { cpuAct, cpuAttack, cpuBlock, cpuDo, tapFor, tapOne } from "./cpu";
@@ -275,7 +275,7 @@ export class BattleController {
     const card = g.hands[this.me].find((c) => c.id === cardId);
     if (!card) return "手札に無い";
     const a: Action = /\bLand\b/.test(card.typeLine) ? { kind: "land", card: cardId } : { kind: "cast", card: cardId };
-    const why = tryAction(a.kind === "land" ? g : withAllMana(g, this.rules, this.me), this.rules, this.me, a, autoTargets(slotsOf(g, this.rules, this.me, a))); // 土地を出すのに、マナは要らない: 本物の局面で調べる
+    const why = tryWithMana(g, this.rules, this.me, a, autoTargets(slotsOf(g, this.rules, this.me, a))); // 土地を出すのに、マナは要らない: 本物の局面で調べる
     const msg = why?.replace("マナが足りない", "マナが足りません");
     return msg ? `${msg.startsWith(card.name) ? msg : `${card.name}: ${msg}`}${msg.includes("マナが足りません") ? this.manaHint(card) : ""}` : undefined;
   }
@@ -380,7 +380,7 @@ export class BattleController {
     const a: Action = land ? { kind: "land", card: cardId } : { kind: "cast", card: cardId };
     const t = targets ?? autoTargets(slotsOf(g, this.rules, this.me, a)); // 試し撃ちと本番で、同じ対象を使う
     // 土地・マナ能力のマナを全部出せるとして、払えるか。払えれば、足りないぶんは、唱えるとき、自動でタップする (先にタップしておいたぶんは、そのまま使う)
-    const why = tryAction(land ? g : withAllMana(g, this.rules, this.me), this.rules, this.me, a, t, cast); // 土地を出すのに、マナは要らない
+    const why = tryWithMana(g, this.rules, this.me, a, t, cast); // 土地を出すのに、マナは要らない
     if (why) return this.fail(card.name, why.replace("マナが足りない", "マナが足りません"));
     this.rec("use", [cardId, targets, cast, tapIds]);
     return this.perform(card.name, (x) => {
@@ -410,7 +410,7 @@ export class BattleController {
     const t = targets ?? autoTargets(slotsOf(g, this.rules, this.me, act));
     const manaOnly = ab.body.some((c) => c.node === "addMana") && ab.body.every((c) => c.node === "addMana" || c.node === "cost");
     // マナを出す能力はそのまま。マナを払う能力 (装備など) は、出せるマナを全部使えるとして調べ、足りないぶんは、自動でタップする
-    const why = tryAction(manaOnly ? g : withAllMana(g, this.rules, this.me), this.rules, this.me, act, t);
+    const why = manaOnly ? tryAction(g, this.rules, this.me, act, t) : tryWithMana(g, this.rules, this.me, act, t);
     if (why) return this.fail(perm.card.name, why.replace("マナが足りない", "マナが足りません"));
     if (uselessMana(g, this.rules, this.me, act)) return this.fail(perm.card.name, "いまは、このマナの使い道が無い (唱えられる呪文・使える能力が無い)");
     const name = perm.card.name;

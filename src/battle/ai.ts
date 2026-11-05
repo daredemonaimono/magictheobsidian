@@ -39,9 +39,13 @@ export function aiOptions(g: Game, rules: RuleBook, p: PlayerId): AiOption[] {
     if (!first) return void out.push({ id: out.length, label, action });
     for (const t of first.legal.slice(0, MAX_TARGET_OPTIONS)) out.push({ id: out.length, label: `${label} → 対象: ${nameOf(g, p, t)}`, action, targets: { ...base, [first.as]: t } });
   };
-  for (const a of actionsFor(sim, rules, p)) {
+  const seen = new Set<string>();
+  for (const a of [...actionsFor(sim, rules, p), ...actionsFor(g, rules, p)]) {
+    const key = JSON.stringify(a);
+    if (seen.has(key)) continue; // 本物の局面でできるもの (自分自身をタップする能力を含む) と、マナを全部出せばできるもの
+    seen.add(key);
     if (a.kind === "activate") {
-      const perm = sim.battlefield.find((x) => x.id === a.perm);
+      const perm = g.battlefield.find((x) => x.id === a.perm);
       const ab = perm && rules.get(perm.card.name)?.abilities.filter((x) => x.kind === "activated")[a.index];
       if (!perm || !ab || manaOnly(ab.body)) continue; // マナを出すだけの能力は、選択肢にしない
       add(`能力を使う: ${perm.card.name} の ${abilityLabels(rules, perm.card.name)[a.index]}`, a);

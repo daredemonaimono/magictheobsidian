@@ -62,6 +62,11 @@ export function actionsFor(g: Game, rules: RuleBook, p: PlayerId): Action[] {
 export const manaOnly = (body: { node: string; args?: Record<string, unknown> }[]): boolean =>
   body.some((c) => c.node === "addMana") && body.every((c) => c.node === "addMana" || c.node === "cost" || c.node === "timing") && !body.some((c) => c.node === "cost" && (c.args?.loyalty !== undefined || c.args?.loyaltyX === true));
 
+// いま (本物の局面で) できなければ、土地・マナ能力のマナを全部出せるとして、できるか。いまできるなら、本物の局面で決める (自分自身をタップする能力 (Wasteland の生け贄など) が、仮の局面で、タップ済みになって、できなくなるのを避ける)。できれば undefined、できなければ理由
+export function tryWithMana(g: Game, rules: RuleBook, p: PlayerId, a: Action, targets?: Record<string, string>, cast?: CastRecord): string | undefined {
+  return tryAction(g, rules, p, a, targets, cast) === undefined ? undefined : tryAction(withAllMana(g, rules, p), rules, p, a, targets, cast);
+}
+
 // 何かできるか (優先権の止まり方「使えるものがあるときだけ」の判定)。土地・マナ・アーティファクトなど、カードの能力のマナ (マナだけの起動型能力) を全部使ったと仮定して、土地を出せる・唱えられる呪文・使える (マナ以外の) 能力があるか。g は変えない
 // マナだけの起動型能力を全部使った (と仮定した) コピーの局面。p に優先権がある。g は変えない
 export function withAllMana(g: Game, rules: RuleBook, p: PlayerId): Game {

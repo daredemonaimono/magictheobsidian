@@ -206,7 +206,8 @@ export function boardModel(g: Game, rules: RuleBook, viewer: PlayerId, imageOf: 
   const sim = withAllMana(g, rules, viewer);
   const isMana = (a: Action) => a.kind === "activate" && ((x) => !!x && manaOnly(x.body))(rules.get(g.battlefield.find((p) => p.id === a.perm)?.card.name ?? "")?.abilities.filter((y) => y.kind === "activated")[a.index]);
   // 土地を出すのは、本物の局面で調べる (マナを出す能力を使った仮の局面では、スタックに何か積まれて、出せなくなることがある)
-  const can = new Set([...actionsFor(sim, rules, viewer).filter((a) => !isMana(a) && a.kind !== "land"), ...actionsFor(g, rules, viewer).filter((a) => a.kind === "land")].map((a) => (a.kind === "activate" ? a.perm : a.card)));
+  // 本物の局面でできるもの (自分自身をタップする能力を含む) と、マナを全部出せばできるもの (マナを出す能力そのものは、除く)
+  const can = new Set([...actionsFor(sim, rules, viewer).filter((a) => !isMana(a) && a.kind !== "land"), ...actionsFor(g, rules, viewer).filter((a) => a.kind === "land" || !isMana(a))].map((a) => (a.kind === "activate" ? a.perm : a.card)));
   let choice: CombatChoice | undefined;
   if (!g.over && !g.mulligan && g.step === "combat" && g.priority === viewer && !g.stack.length) { // スタックが空のとき (戦闘の最初の誘発が解決してから)
     if (g.combatPhase === "attackers" && !g.attackersDeclared && g.active === viewer) {
