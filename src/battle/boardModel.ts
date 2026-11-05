@@ -1,7 +1,8 @@
 import { actionsFor, canRespond, uselessMana } from "./actions";
 import { characteristics } from "./continuous";
 import { attackersAt, canAttackPerm, isSick } from "./engine";
-import { Game, GameCard, Perm, PlayerId, RuleBook } from "./state";
+import { getNode } from "./registry";
+import { Game, GameCard, Perm, PlayerId, RuleBook, StackItem } from "./state";
 
 // 対戦の画面に出す内容。Game → 画面の内容の変換だけをする純粋な関数 (DOM を持たない。テストで確かめる)。画面は、これを描くだけ
 
@@ -99,6 +100,16 @@ function permView(g: Game, rules: RuleBook, p: Perm, imageOf: ImageOf, playable:
   };
 }
 
+// スタックの能力の説明: 忠誠度能力なら「+1: 〜」「−2: 〜」、誘発型なら「誘発: 〜」、それ以外は「起動: 〜」。〜は、効果のノードの名前 (コスト・タイミング・対象は除く)
+function abilityLabel(s: StackItem): string | undefined {
+  if (!s.ability || !s.body) return undefined;
+  const cost = s.body.find((c) => c.node === "cost");
+  const loyalty = cost?.args.loyalty !== undefined ? Number(cost.args.loyalty) : undefined;
+  const what = s.body.filter((c) => !["cost", "timing", "when", "target", "self"].includes(c.node)).map((c) => getNode(c.node)?.title ?? c.node).join("、");
+  const head = cost?.args.loyaltyX === true ? `−X (X=${s.x ?? 0})` : loyalty !== undefined && !Number.isNaN(loyalty) ? (loyalty >= 0 ? `+${loyalty}` : `−${-loyalty}`) : s.body.some((c) => c.node === "when") ? "誘発" : "起動";
+  return what ? `${head}: ${what}` : head;
+}
+
 // 1人分の表示内容。列の分け方: 型行に Creature → creatures (土地クリーチャーも) / Land → lands / それ以外 → others。順番は戦場の順
 export function sideView(g: Game, rules: RuleBook, player: PlayerId, imageOf: ImageOf, showHand: boolean, playable: ReadonlySet<string> = new Set()): SideView {
   const out: SideView = {
@@ -144,6 +155,8 @@ export interface StackView {
   name: string;
   controller: "self" | "opp";
   ability: boolean;
+  label?: string; // 能力のとき、どの能力か ("+1: トークンを作る" / "−2: 手札に戻す" / "誘発: 引く")
+  image?: string; // カードの画像 (呪文・能力の発生源)
 }
 // 自分が、いま選ぶ戦闘の指定 (攻撃クリーチャー / ブロック)。mine = 選べる自分のクリーチャー、attackers = ブロックできる攻撃クリーチャー
 export type AssignItem = { attacker: string; name: string; power: number; trample: boolean; blockers: { id: string; name: string; lethal: number }[]; defaults: Record<string, number> };
@@ -224,7 +237,7 @@ export function boardModel(g: Game, rules: RuleBook, viewer: PlayerId, imageOf: 
     idle: !g.over && !g.mulligan && g.priority === viewer && !choice && !canRespond(g, rules, viewer), // 戦闘の指定を選ぶときは、自動で進めない
     canNext: !g.over && !g.mulligan,
     nextLabel: g.stack.length ? "解決する" : "次へ",
-    stack: g.stack.map((s) => ({ id: s.id, name: s.card.name, controller: side(s.controller), ability: !!s.ability })),
+    stack: g.stack.map((s) => ({ id: s.id, name: s.card.name, controller: side(s.controller), ability: !!s.ability, ...(abilityLabel(s) ? { label: abilityLabel(s)! } : {}), ...(imageOf(s.card) !== undefined ? { image: imageOf(s.card)! } : {}) })),
     log: g.log.slice(-LOG_LINES),
   };
   if (g.mulligan) out.mulligan = { ...g.mulligan };

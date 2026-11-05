@@ -168,10 +168,16 @@ export class BattleView extends ItemView {
     const selfLife = stage.createDiv({ cls: "mtg-bt-life is-self" });
     const piles: Record<string, HTMLElement> = {};
     for (const key of ["opp-library", "opp-yard", "self-library", "self-yard"]) piles[key] = board.createDiv({ cls: `mtg-bt-deck is-${key}` }); // 盤面 (3D の面) の上に置く
+    for (const [key, mine] of [["self-yard", true], ["opp-yard", false]] as const) piles[key].addEventListener("mouseenter", () => this.showYard(mine)); // 墓地にカーソルを合わせると、サイドバーに中身の一覧
     const mana = stage.createDiv("mtg-bt-mana");
     const banner = stage.createDiv("mtg-bt-banner");
     const next = stage.createEl("button", { cls: "mtg-bt-next mod-cta", text: "次へ" });
-    next.addEventListener("click", () => this.ctl && !this.targeting && this.run(() => this.ctl!.next())); // 対象を選んでいる間は、進めない
+    next.addEventListener("click", () => {
+      if (!this.ctl || this.targeting) return; // 対象を選んでいる間は、進めない
+      const sel = this.combatSel;
+      if (sel?.kind === "attack" && sel.picks.size) this.run(() => this.ctl!.declareAttackers([...sel.picks])); // 攻撃するクリーチャーを選んでいれば、「攻撃する」
+      else this.run(() => this.ctl!.next()); // 選んでいなければ、「次へ」(攻撃しない)
+    });
     const stack = stage.createDiv("mtg-bt-stack");
     const preview = side.createDiv("mtg-bt-preview");
     preview.createDiv({ cls: "mtg-bt-hint", text: "カードにカーソルを合わせると、ここに画像と効果が出ます" });
@@ -322,7 +328,14 @@ export class BattleView extends ItemView {
     this.paintCombat();
     return true;
   }
+  private nextLabel = "次へ";
+  // 攻撃するクリーチャーを選んでいる間は、「次へ」ボタンが「攻撃する」になる (選びを全部やめたら、「次へ」に戻る)
+  private applyNextLabel() {
+    const sel = this.combatSel;
+    this.ui.next.setText(sel?.kind === "attack" && sel.picks.size ? `攻撃する (${sel.picks.size} 体)` : this.nextLabel);
+  }
   private paintCombat() {
+    this.applyNextLabel();
     const st = this.ui.stage;
     for (const el of Array.from(st.querySelectorAll(".is-cmb-able, .is-cmb-picked, .is-cmb-target, [data-block-to]"))) {
       el.classList.remove("is-cmb-able", "is-cmb-picked", "is-cmb-target");
@@ -335,6 +348,10 @@ export class BattleView extends ItemView {
     if (!sel || !ch) return;
     const at = (id: string) => st.querySelector<HTMLElement>(`[data-tid="${id}"]`);
     const nameOf = (id: string) => this.game.battlefield.find((p) => p.id === id)?.card.name ?? id;
+    if (sel.kind === "attack") {
+      for (const id of ch.mine) at(id)?.classList.add(sel.picks.has(id) ? "is-cmb-picked" : "is-cmb-able"); // 攻撃の選択は、盤面の光りと「次へ」ボタンだけ (上の帯は出さない)
+      return;
+    }
     const bar = st.createDiv("mtg-bt-tbar");
     this.cbar = bar;
     if (sel.kind === "assign" && ch.kind === "assign") {
@@ -376,12 +393,7 @@ export class BattleView extends ItemView {
       ok.addEventListener("click", () => this.run(() => this.ctl!.assign(Object.fromEntries(sel.vals))));
       return;
     }
-    if (sel.kind === "attack") {
-      for (const id of ch.mine) at(id)?.classList.add(sel.picks.has(id) ? "is-cmb-picked" : "is-cmb-able");
-      bar.createSpan({ text: `攻撃するクリーチャーを選ぶ (${sel.picks.size} 体)` });
-      bar.createEl("button", { cls: "mod-cta", text: sel.picks.size ? `確定 (${sel.picks.size} 体で攻撃)` : "確定" }).addEventListener("click", () => sel.picks.size && this.run(() => this.ctl!.declareAttackers([...sel.picks])));
-      bar.createEl("button", { text: "攻撃しない" }).addEventListener("click", () => this.run(() => this.ctl!.next()));
-    } else if (sel.kind === "block" && ch.kind === "block") {
+    if (sel.kind === "block" && ch.kind === "block") {
       for (const id of ch.mine) at(id)?.classList.add(sel.pairs.has(id) ? "is-cmb-picked" : id === sel.cur ? "is-cmb-picked" : "is-cmb-able");
       if (sel.cur) for (const id of ch.attackers) at(id)?.classList.add("is-cmb-target");
       for (const [b, a] of sel.pairs) {
@@ -778,7 +790,7 @@ export class BattleView extends ItemView {
     if (c.power !== null && c.toughness !== null) {
       const pt = el.createDiv("mtg-bt-pt");
       pt.createSpan({ cls: c.powerMod ? `is-${c.powerMod}` : "", text: String(c.power) }); // 修整を受けている数字: 上がったら黄色、下がったら赤
-      pt.appendText("/");
+      pt.createSpan({ text: "/" });
       pt.createSpan({ cls: c.toughnessMod ? `is-${c.toughnessMod}` : "", text: String(c.toughness) });
     }
     if (c.loyalty !== undefined) el.createDiv({ cls: "mtg-bt-pt is-loyalty", text: String(c.loyalty) });
@@ -858,7 +870,8 @@ export class BattleView extends ItemView {
     this.ui.turn.toggleClass("is-opp", !mine);
     this.ui.stage.toggleClass("is-self-turn", mine);
     this.ui.stage.toggleClass("is-opp-turn", !mine);
-    this.ui.next.setText(m.nextLabel);
+    this.nextLabel = m.nextLabel;
+    this.applyNextLabel();
     this.ui.next.disabled = !this.ctl || !m.canNext;
   }
 
@@ -875,10 +888,19 @@ export class BattleView extends ItemView {
     if (el.dataset.sig === sig) return;
     el.dataset.sig = sig;
     el.empty();
-    for (const s of [...m.stack].reverse()) {
+    // 一番上 (次に解決されるもの) は、カードの画像を大きく (効果を読んで、応答できるように)。能力なら、どの能力かも。残りは、1行ずつ
+    [...m.stack].reverse().forEach((s, i) => {
+      if (i === 0) {
+        const big = el.createDiv({ cls: `mtg-bt-stackcard is-${s.controller}` });
+        big.dataset.tid = s.id;
+        if (s.image) big.createEl("img", { attr: { src: s.image, alt: s.name, draggable: "false" } });
+        else big.createDiv({ cls: "mtg-bt-face", text: s.name });
+        big.createDiv({ cls: "mtg-bt-stacklabel", text: s.label ? `${s.name} の能力 ${s.label}` : s.ability ? `${s.name} の能力` : `${s.controller === "self" ? "あなた" : "相手"}の呪文` });
+        return;
+      }
       const row = el.createDiv({ cls: `mtg-bt-stackitem is-${s.controller}`, text: `${s.ability ? "能力: " : ""}${s.name}` });
       row.dataset.tid = s.id;
-    }
+    });
     el.toggleClass("is-on", m.stack.length > 0);
   }
 
@@ -909,6 +931,38 @@ export class BattleView extends ItemView {
   }
 
   // ---- 右上のプレビュー: カーソルを合わせたカードの画像と効果テキスト
+  // 墓地の中身の一覧 (サイドバー)。新しく入ったものが上
+  private showYard(mine: boolean) {
+    const p = this.game.players.find((x) => (x === VIEWER) === mine);
+    if (p === undefined) return;
+    const cards = [...(this.game.graveyards[p] ?? [])].reverse();
+    this.previewSeq++; // 読み込み中のカードの表示を取り消す
+    const el = this.ui.preview;
+    el.empty();
+    el.createDiv({ cls: "mtg-bt-pname", text: `${mine ? "あなた" : "相手"}の墓地 (${cards.length} 枚)` });
+    if (!cards.length) return void el.createDiv({ cls: "mtg-bt-ptext", text: "(空)" });
+    const list = el.createDiv("mtg-bt-yardlist");
+    const detail = el.createDiv("mtg-bt-yarddetail"); // 一覧の下に、カーソルを合わせたカードの画像と効果 (一覧は消さない)
+    let seq = 0;
+    for (const c of cards) {
+      const row = list.createDiv("mtg-bt-yardrow");
+      const url = this.urls.get(c.name);
+      if (url) row.createEl("img", { attr: { src: url, alt: c.name, draggable: "false" } });
+      row.createSpan({ text: c.name });
+      row.addEventListener("mouseenter", () => {
+        const mine = ++seq;
+        void cardText(this.app, c.name).catch(() => "").then((text) => {
+          if (mine !== seq) return;
+          detail.empty();
+          const u = this.urls.get(c.name);
+          if (u) detail.createEl("img", { attr: { src: u, alt: c.name } });
+          detail.createDiv({ cls: "mtg-bt-pname", text: c.name });
+          detail.createDiv({ cls: "mtg-bt-ptext", text: text || "(効果テキストが見つかりません)" });
+        });
+      });
+    }
+  }
+
   private async showPreview(name: string) {
     if (!name) return;
     const seq = ++this.previewSeq;
