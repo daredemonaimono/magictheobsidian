@@ -6,8 +6,8 @@ export type Step = "untap" | "upkeep" | "draw" | "main1" | "combat" | "main2" | 
 
 // 色つきのマナ (W U B R G) と、好きな色のマナ (A)
 export type ManaColor = "W" | "U" | "B" | "R" | "G";
-export type PoolKey = ManaColor | "A";
-export type Pool = Partial<Record<PoolKey, number>>;
+export type PoolKey = ManaColor | "A" | `A:${string}`; // A = 好きな色、A:GWU = その中の1色
+export type Pool = Record<string, number>; // キーは PoolKey
 export interface GameCard {
   id: string;
   name: string;
@@ -32,6 +32,7 @@ export interface StackItem {
   body?: NodeCall[]; // 起動型能力のとき、その効果 (呪文のときは、カードの呪文能力)
   ability?: boolean; // 起動型・誘発型能力 (解決しても、カードは墓地に行かない)
   copy?: boolean; // 呪文のコピー (準備呪文など)。解決しても、打ち消されても、墓地に行かない (消える)。呪文としては、打ち消しの対象になる
+  trigger?: string; // 誘発型能力の引き金になったパーマネントの id (eventPerm ノードが返す)
   source?: string; // 能力の発生源のパーマネントの id (self ノードが返す)
   x?: number; // 起動時に選んだ X (忠誠度の −X など。効果の中で $X として参照する)
 }

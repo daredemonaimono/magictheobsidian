@@ -248,11 +248,20 @@ export function boardModel(g: Game, rules: RuleBook, viewer: PlayerId, imageOf: 
     if (items.length) choice = { kind: "assign", mine: [], items };
   }
   const pool = g.pool[viewer] ?? {};
+  // 「GWU のどれか」(A:GWU) は、画面では、好きな色 (★) にまとめる
+  const shownPool = (p: Record<string, number>) => {
+    const o: BoardModel["manaSelf"]["colors"] = {};
+    for (const [k, n] of Object.entries(p)) {
+      const key = (k.startsWith("A:") ? "A" : k) as "W" | "U" | "B" | "R" | "G" | "A";
+      o[key] = (o[key] ?? 0) + n;
+    }
+    return o;
+  };
   const colored = Object.values(pool).reduce((a, n) => a + (n ?? 0), 0);
   const out: BoardModel = {
     self: sideView(g, rules, viewer, imageOf, true, can),
     opp: sideView(g, rules, oppId, imageOf, false),
-    manaSelf: { total: g.mana[viewer] ?? 0, colors: { ...pool }, colorless: Math.max(0, (g.mana[viewer] ?? 0) - colored), ...((g.restrictedMana[viewer] ?? []).some((e) => e.amount > 0) ? { restricted: g.restrictedMana[viewer].filter((e) => e.amount > 0).map((e) => ({ ...e })) } : {}) },
+    manaSelf: { total: g.mana[viewer] ?? 0, colors: shownPool(pool), colorless: Math.max(0, (g.mana[viewer] ?? 0) - colored), ...((g.restrictedMana[viewer] ?? []).some((e) => e.amount > 0) ? { restricted: g.restrictedMana[viewer].filter((e) => e.amount > 0).map((e) => ({ ...e })) } : {}) },
     phase: PHASE_OF[g.step],
     step: g.step === "combat" && g.combatPhase ? COMBAT_LABEL[g.combatPhase] : STEP_LABEL[g.step],
     combat: g.step === "combat",

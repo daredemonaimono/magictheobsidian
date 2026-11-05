@@ -21,6 +21,7 @@ export function matchesEvent(g: Game, s: Perm, when: NodeCall, ev: GameEvent): b
     if (typeof a.type === "string" && !typeIn(subject.card.typeLine, a.type)) return false;
     if (typeof a.notType === "string" && typeIn(subject.card.typeLine, a.notType)) return false;
   }
+  if (a.alone === true && (ev.type !== "attacks" || g.battlefield.some((x) => x !== ev.perm && x.attacking && x.controller === ev.perm.controller))) return false; // 単独で攻撃したとき
   if (a.turn === "yours" && g.active !== s.controller) return false;
   if (a.turn === "opponents" && g.active === s.controller) return false;
   return true;
@@ -55,9 +56,9 @@ export function announceTargets(g: Game, item: StackItem, rules: RuleBook): void
 // shortcut: 誘発の順番 (APNAP) は決めず、戦場の順
 export function flushEvents(g: Game, rules: RuleBook): void {
   let added = false;
-  const push = (s: Perm, body: NodeCall[]) => {
+  const push = (s: Perm, body: NodeCall[], trigger?: string) => {
     for (let k = 0; k <= extraTriggers(g, s, rules); k++) {
-      const item: StackItem = { id: `${s.id}#${g.serial + 1}`, card: s.card, controller: s.controller, targets: {}, cast: {}, body, ability: true, source: s.id };
+      const item: StackItem = { id: `${s.id}#${g.serial + 1}`, card: s.card, controller: s.controller, targets: {}, cast: {}, body, ability: true, source: s.id, ...(trigger ? { trigger } : {}) };
       if (!chooseTargets(g, item, rules)) continue; // 合法な対象が足りない誘発型能力は、スタックに積まれない
       g.serial++;
       g.stack.push(item);
@@ -95,7 +96,7 @@ export function flushEvents(g: Game, rules: RuleBook): void {
           if (marker ? s.emblem !== marker.args.name : s.emblem !== undefined) continue;
           const at = marker ? 1 : 0;
           const when = ab.body[at];
-          if (ab.kind === "triggered" && when?.node === "when" && matchesEvent(g, s, when, ev)) push(s, ab.body.slice(at + 1));
+          if (ab.kind === "triggered" && when?.node === "when" && matchesEvent(g, s, when, ev)) push(s, ab.body.slice(at + 1), ev.type === "cast" || ev.type === "step" ? undefined : ev.perm.id);
         }
       }
       if (ev.type === "cast" && !s.emblem && ev.player === s.controller && now.keywords.includes("prowess") && !/\bcreature\b/i.test(ev.card.typeLine)) push(s, PROWESS);

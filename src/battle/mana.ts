@@ -96,6 +96,11 @@ export function trySpend(g: Game, p: PlayerId, cost: ManaCost, spell: GameCard |
       l.pool.A!--;
       return true;
     }
+    const some = (Object.keys(l.pool) as PoolKey[]).find((k) => k.startsWith("A:") && k.includes(c) && (l.pool[k] ?? 0) > 0); // 「GWU のいずれか」のマナ
+    if (some) {
+      l.pool[some]!--;
+      return true;
+    }
     return false;
   };
   const takeColorless = (): boolean => {

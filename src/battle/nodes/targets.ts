@@ -135,6 +135,17 @@ export function registerTargets(): void {
     }),
   });
 
+  // 誘発の引き金になったパーマネント (「攻撃したクリーチャー」「出てきたクリーチャー」)
+  node({
+    id: "eventPerm",
+    title: "引き金のパーマネント",
+    summary: "誘発型能力の引き金になったパーマネント (when の event が enters / leaves / attacks / blocks のときの、そのパーマネント) の id を出力する。as= を付けて target に渡す(「そのクリーチャーは +1/+1」など)",
+    params: {},
+    outputs: { id: "id" },
+    only: ["triggered"],
+    run: (ctx): Record<string, Value> => (ctx.item.trigger ? { id: ctx.item.trigger } : {}),
+  });
+
   // このパーマネント自身 (誘発型・起動型能力の発生源)
   node({
     id: "self",

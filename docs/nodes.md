@@ -2,7 +2,7 @@
 
 > このファイルは、自動で作られます (`src/battle/nodeDocs.ts`)。直接は書き換えません。ノードを足したら、`npm run docs:nodes` で更新します。ノードは、`src/battle/nodes/` の、カテゴリーごとのファイルにあります。
 
-全 53 個のノード、7 個の条件。
+全 54 個のノード、7 個の条件。
 
 目次: [宣言・コスト・条件](#宣言・コスト・条件) / [対象・数える・絞り込む](#対象・数える・絞り込む) / [カードの移動・ライブラリー・手札](#カードの移動・ライブラリー・手札) / [パーマネント・トークン・カウンター](#パーマネント・トークン・カウンター) / [ダメージ・ライフ・マナ・打ち消し](#ダメージ・ライフ・マナ・打ち消し) / [継続効果](#継続効果)
 
@@ -37,9 +37,9 @@
 
 ### `when` どうなったら
 
-誘発型能力の最初に書く、誘発のきっかけ。event=cast(呪文を唱えた) / enters(戦場に出た) / leaves(戦場を離れた) / attacks(攻撃した。「攻撃するたび」) / blocks(ブロックした) / step(ステップの開始時。step=upkeep・draw・main1・combat・main2・end を添える)。絞り込み: who=you・opponents(唱えた/コントロールするプレイヤー。attacks / blocks では、そのクリーチャーのコントローラー。step ではそのターンのプレイヤー) / type・notType(その呪文・パーマネントの型) / turn=yours・opponents(だれのターン中か) / self=true(このパーマネント自身のとき。enters / leaves / attacks / blocks)
+誘発型能力の最初に書く、誘発のきっかけ。event=cast(呪文を唱えた) / enters(戦場に出た) / leaves(戦場を離れた) / attacks(攻撃した。「攻撃するたび」) / blocks(ブロックした) / step(ステップの開始時。step=upkeep・draw・main1・combat・main2・end を添える)。絞り込み: who=you・opponents(唱えた/コントロールするプレイヤー。attacks / blocks では、そのクリーチャーのコントローラー。step ではそのターンのプレイヤー) / type・notType(その呪文・パーマネントの型) / turn=yours・opponents(だれのターン中か) / self=true(このパーマネント自身のとき。enters / leaves / attacks / blocks) / alone=true(attacks で、そのクリーチャーだけが攻撃しているとき)
 
-- 引数: `event`(string・必須・cast / enters / leaves / step / attacks / blocks)、`step`(string・upkeep / draw / main1 / combat / main2 / end)、`who`(string・you / opponents)、`type`(string)、`notType`(string)、`turn`(string・yours / opponents)、`self`(boolean)
+- 引数: `event`(string・必須・cast / enters / leaves / step / attacks / blocks)、`step`(string・upkeep / draw / main1 / combat / main2 / end)、`who`(string・you / opponents)、`type`(string)、`notType`(string)、`turn`(string・yours / opponents)、`self`(boolean)、`alone`(boolean)
 - 書ける能力: triggered
 - 宣言のノード (エンジンが読む。`if=` は付けられない)
 - 中心のノード (ルールを書かせるとき、いつも AI の指示に入る。ほかは、カードごとに選ぶ)
@@ -86,7 +86,7 @@
 - 宣言のノード (エンジンが読む。`if=` は付けられない)
 - 中心のノード (ルールを書かせるとき、いつも AI の指示に入る。ほかは、カードごとに選ぶ)
 
-## 対象・数える・絞り込む (7 個)
+## 対象・数える・絞り込む (8 個)
 
 ### `target` 対象
 
@@ -131,6 +131,14 @@ from(look / choose などの出力)のカードのうち、type(| は または)
 
 - 引数: `from`(ref・必須)、`type`(string)、`notType`(string)
 - 出力: `id`(id) (`as=名前` で受けて、`$名前` で渡す)
+
+### `eventPerm` 引き金のパーマネント
+
+誘発型能力の引き金になったパーマネント (when の event が enters / leaves / attacks / blocks のときの、そのパーマネント) の id を出力する。as= を付けて target に渡す(「そのクリーチャーは +1/+1」など)
+
+- 引数: なし
+- 出力: `id`(id) (`as=名前` で受けて、`$名前` で渡す)
+- 書ける能力: triggered
 
 ### `self` このパーマネント
 
@@ -316,9 +324,9 @@ cards(look / choose の出力)を、持ち主の to へ動かす。to=hand / gra
 
 ### `addMana` マナを加える
 
-コントローラーがマナを amount 点加える。color=W・U・B・R・G(その色) / C(無色。既定) / any(好きな色。どの色のコストにも使える)。spellType / spellNotType を添えると、そのマナは、その型の呪文(spellNotType ならその型でない呪文)を唱えるためにしか使えない(「クリーチャーでない呪文を唱えるためにしか使えない」は spellNotType=creature)
+コントローラーがマナを amount 点加える。colors=GWU(その中の好きな1色。「{G}、{W}、{U} のいずれか」)。color=W・U・B・R・G(その色) / C(無色。既定) / any(好きな色。どの色のコストにも使える)。spellType / spellNotType を添えると、そのマナは、その型の呪文(spellNotType ならその型でない呪文)を唱えるためにしか使えない(「クリーチャーでない呪文を唱えるためにしか使えない」は spellNotType=creature)
 
-- 引数: `amount`(number・必須)、`color`(string・W / U / B / R / G / C / any)、`spellType`(string)、`spellNotType`(string)
+- 引数: `amount`(number・必須)、`color`(string・W / U / B / R / G / C / any)、`colors`(string)、`spellType`(string)、`spellNotType`(string)
 
 ### `counter` 打ち消す
 

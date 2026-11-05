@@ -60,7 +60,7 @@ export function registerDeclarations(): void {
     core: true,
     title: "どうなったら",
     summary:
-      "誘発型能力の最初に書く、誘発のきっかけ。event=cast(呪文を唱えた) / enters(戦場に出た) / leaves(戦場を離れた) / attacks(攻撃した。「攻撃するたび」) / blocks(ブロックした) / step(ステップの開始時。step=upkeep・draw・main1・combat・main2・end を添える)。絞り込み: who=you・opponents(唱えた/コントロールするプレイヤー。attacks / blocks では、そのクリーチャーのコントローラー。step ではそのターンのプレイヤー) / type・notType(その呪文・パーマネントの型) / turn=yours・opponents(だれのターン中か) / self=true(このパーマネント自身のとき。enters / leaves / attacks / blocks)",
+      "誘発型能力の最初に書く、誘発のきっかけ。event=cast(呪文を唱えた) / enters(戦場に出た) / leaves(戦場を離れた) / attacks(攻撃した。「攻撃するたび」) / blocks(ブロックした) / step(ステップの開始時。step=upkeep・draw・main1・combat・main2・end を添える)。絞り込み: who=you・opponents(唱えた/コントロールするプレイヤー。attacks / blocks では、そのクリーチャーのコントローラー。step ではそのターンのプレイヤー) / type・notType(その呪文・パーマネントの型) / turn=yours・opponents(だれのターン中か) / self=true(このパーマネント自身のとき。enters / leaves / attacks / blocks) / alone=true(attacks で、そのクリーチャーだけが攻撃しているとき)",
     params: {
       event: { type: "string", required: true, choices: ["cast", "enters", "leaves", "step", "attacks", "blocks"] },
       step: { type: "string", choices: ["upkeep", "draw", "main1", "combat", "main2", "end"] },
@@ -69,6 +69,7 @@ export function registerDeclarations(): void {
       notType: { type: "string" },
       turn: { type: "string", choices: ["yours", "opponents"] },
       self: { type: "boolean" },
+      alone: { type: "boolean" },
     },
     outputs: {},
     declaration: true,
