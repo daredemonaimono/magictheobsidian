@@ -57,10 +57,11 @@ export function actionsFor(g: Game, rules: RuleBook, p: PlayerId): Action[] {
   return out;
 }
 
-const manaOnly = (body: { node: string }[]): boolean => body.some((c) => c.node === "addMana") && body.every((c) => c.node === "addMana" || c.node === "cost" || c.node === "timing"); // エンジンも、timing を除いて、マナ能力かを決める
+export const manaOnly = (body: { node: string }[]): boolean => body.some((c) => c.node === "addMana") && body.every((c) => c.node === "addMana" || c.node === "cost" || c.node === "timing"); // エンジンも、timing を除いて、マナ能力かを決める
 
 // 何かできるか (優先権の止まり方「使えるものがあるときだけ」の判定)。土地・マナ・アーティファクトなど、カードの能力のマナ (マナだけの起動型能力) を全部使ったと仮定して、土地を出せる・唱えられる呪文・使える (マナ以外の) 能力があるか。g は変えない
-export function canRespond(g: Game, rules: RuleBook, p: PlayerId): boolean {
+// マナだけの起動型能力を全部使った (と仮定した) コピーの局面。p に優先権がある。g は変えない
+export function withAllMana(g: Game, rules: RuleBook, p: PlayerId): Game {
   const copy = structuredClone({ ...g, decide: undefined }) as Game;
   copy.priority = p;
   for (const perm of copy.battlefield) {
@@ -74,6 +75,11 @@ export function canRespond(g: Game, rules: RuleBook, p: PlayerId): boolean {
       }
     });
   }
+  return copy;
+}
+
+export function canRespond(g: Game, rules: RuleBook, p: PlayerId): boolean {
+  const copy = withAllMana(g, rules, p);
   return actionsFor(copy, rules, p).some((a) => {
     if (a.kind === "cast" || a.kind === "land") return true; // 土地を出せるのも、できること
     if (a.kind !== "activate") return false;

@@ -25,12 +25,13 @@ export interface Settings {
   sidebar: boolean; // カード一覧を右サイドバーに出す。オフなら画面内の検索欄 (従来の表示)
   claudeKeySecret: string; // API キーの、Obsidian のキーチェーン (app.secretStorage) 上の名前。キーそのものは data.json に書かない
   claudeModel: string; // ノードの組み立てに使うモデル
-  battleOpponent: "cpu" | "passive"; // 対戦の相手。cpu = 雑魚 CPU (土地を出す・呪文を唱える) / passive = 何もしない
+  battleOpponent: "cpu" | "claude" | "passive"; // 対戦の相手。cpu = 雑魚 CPU (土地を出す・呪文を唱える) / claude = Claude の AI (API を、判断のたびに呼ぶ) / passive = 何もしない
+  battleModel: string; // Claude の AI の相手が使うモデル
   battleEffects: boolean; // 対戦の演出 (ダメージ・ライフの数字を大きく出す)
   battleStops: "always" | "smart"; // 対戦の優先権の止まり方。always = 毎回止まる / smart = 使えるものがあるときだけ (メインフェイズでは、必ず止まる)
 }
 
-export const DEFAULT_SETTINGS: Settings = { textLang: "en", cardLang: "en", sidebar: true, listArt: true, dashboardTab: true, currency: "USD", claudeKeySecret: "", claudeModel: "claude-opus-5-5", battleStops: "smart", battleOpponent: "cpu", battleEffects: true };
+export const DEFAULT_SETTINGS: Settings = { textLang: "en", cardLang: "en", sidebar: true, listArt: true, dashboardTab: true, currency: "USD", claudeKeySecret: "", claudeModel: "claude-opus-5-5", battleStops: "smart", battleOpponent: "cpu", battleModel: "claude-sonnet-5-5", battleEffects: true };
 
 // 設定で選んだ名前のキーを、キーチェーンから取る。未設定・見つからないときは null
 export const claudeKey = (app: App, s: Settings): string | null => (s.claudeKeySecret ? app.secretStorage.getSecret(s.claudeKeySecret) : null);
@@ -100,13 +101,25 @@ export class SettingsTab extends PluginSettingTab {
     lang("カードの言語 / Card language", "カード画像とイラスト選択の言語。その言語の版が無いカードは英語になる。新しく取得するカードから反映。", "cardLang");
     new Setting(this.containerEl)
       .setName("対戦の相手 / Battle opponent")
-      .setDesc("雑魚 CPU: 機械的な決まりで動く(マリガン・土地を出す・呪文を唱える。攻撃とブロックは、まだしない)。何もしない: 相手は何もしない(自分の操作の確認用)。開いている対戦の画面を開き直したときと、新しく始める対戦から反映。")
+      .setDesc("雑魚 CPU: 機械的な決まりで動く(マリガン・土地・呪文・攻撃・ブロック)。Claude: 盤面を API で渡して、判断させる(判断のたびに有料の API を呼ぶ。キーが無い・失敗したときは、以降、雑魚 CPU になる)。何もしない: 相手は何もしない(自分の操作の確認用)。開いている対戦の画面を開き直したときと、新しく始める対戦から反映。")
       .addDropdown((d) =>
         d
-          .addOptions({ cpu: "雑魚 CPU", passive: "何もしない" })
+          .addOptions({ cpu: "雑魚 CPU", claude: "Claude の AI", passive: "何もしない" })
           .setValue(this.settings.battleOpponent)
           .onChange(async (v) => {
-            this.settings.battleOpponent = v === "passive" ? "passive" : "cpu";
+            this.settings.battleOpponent = v === "passive" ? "passive" : v === "claude" ? "claude" : "cpu";
+            await this.save();
+          }),
+      );
+    new Setting(this.containerEl)
+      .setName("Claude の相手のモデル / Opponent model")
+      .setDesc("相手を「Claude の AI」にしたときの判断に使うモデル。大きいモデルほど強いが、遅く、高い。API キーは、AI の欄の設定を使う。")
+      .addDropdown((d) =>
+        d
+          .addOptions({ "claude-haiku-5-5": "Haiku 5.5 (速い・安い)", "claude-sonnet-5-5": "Sonnet 5.5", "claude-opus-5-5": "Opus 5.5", "claude-fable-5-1": "Fable 5.1 (強い・高い)" })
+          .setValue(this.settings.battleModel)
+          .onChange(async (v) => {
+            this.settings.battleModel = v;
             await this.save();
           }),
       );

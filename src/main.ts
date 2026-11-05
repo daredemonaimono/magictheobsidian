@@ -94,7 +94,8 @@ export default class MagicTheObsidian extends Plugin {
       claudeKeySecret: d.claudeKeySecret ?? DEFAULT_SETTINGS.claudeKeySecret,
       claudeModel: d.claudeModel ?? DEFAULT_SETTINGS.claudeModel,
       battleStops: d.battleStops === "always" ? "always" : "smart",
-      battleOpponent: d.battleOpponent === "passive" ? "passive" : "cpu",
+      battleOpponent: d.battleOpponent === "passive" ? "passive" : d.battleOpponent === "claude" ? "claude" : "cpu",
+      battleModel: d.battleModel ?? DEFAULT_SETTINGS.battleModel,
       battleEffects: d.battleEffects ?? DEFAULT_SETTINGS.battleEffects,
     };
     priceStore.prices = d.prices ?? {};
@@ -111,7 +112,10 @@ export default class MagicTheObsidian extends Plugin {
       }),
     );
     this.registerView(DECK_VIEW, (leaf) => new DeckView(leaf, this.settings));
-    this.registerView(BATTLE_VIEW, (leaf) => new BattleView(leaf, () => this.battleSession, () => this.settings.battleStops, () => this.settings.battleOpponent === "cpu", () => this.settings.battleEffects));
+    this.registerView(BATTLE_VIEW, (leaf) => new BattleView(leaf, () => this.battleSession, () => this.settings.battleStops, () => this.settings.battleOpponent, () => this.settings.battleEffects, () => {
+      const key = claudeKey(this.app, this.settings);
+      return key ? (system, user) => askClaude({ apiKey: key, model: this.settings.battleModel, system, messages: [{ role: "user", content: user }], http: obsidianHttp }) : undefined;
+    }));
     this.registerView(DASHBOARD_VIEW, (leaf) => new DashboardView(leaf, { collection: () => void this.openOrReveal(COLLECTION_VIEW), deck: () => void this.openOrReveal(DECKLIST_VIEW), cards: () => void this.openOrReveal(CARDS_VIEW) }));
     this.registerView(CARDS_VIEW, (leaf) => new CardsView(leaf, this.settings));
     this.registerView(
@@ -334,7 +338,7 @@ export default class MagicTheObsidian extends Plugin {
 
   private async beginBattle(self: string, opp: string) {
     try {
-      this.battleSession = await startBattle(this.app, self, opp, this.settings.battleOpponent === "cpu");
+      this.battleSession = await startBattle(this.app, self, opp, this.settings.battleOpponent !== "passive");
     } catch (e) {
       new Notice(e instanceof MatchError ? e.message : `始められません: ${(e as Error).message}`);
       return;

@@ -1,6 +1,7 @@
 import { ItemView, WorkspaceLeaf } from "obsidian";
 import { TargetSlot } from "./battle/engine";
 import { InputRequest } from "./battle/input";
+import { AI_SYSTEM, AskAi, aiActPrompt, aiAttackPrompt, aiAttackers, aiBlockPrompt, aiParse } from "./battle/ai";
 import { BattleController, StopMode } from "./battle/play";
 import { BoardModel, CardView, CombatChoice, LandStack, PhaseId, boardModel } from "./battle/boardModel";
 import { CARD_H, CARD_W, GAP, GAUGE_SEC, HAND_H, HAND_W, LAYER_PX, TAP_EXTRA, cardBackUrl, overlapFor, pileLayers, rowNeed } from "./battle/layout";
@@ -78,7 +79,7 @@ export class BattleView extends ItemView {
   private watcher?: ResizeObserver;
 
   // getSession = 対戦の局面 (無ければ、サンプルの局面)。対戦を始め直したときは、begin() で読み直す
-  constructor(leaf: WorkspaceLeaf, private getSession: () => BattleSession | undefined, private getStops: () => StopMode = () => "smart", private getCpu: () => boolean = () => false, private getFx: () => boolean = () => true) {
+  constructor(leaf: WorkspaceLeaf, private getSession: () => BattleSession | undefined, private getStops: () => StopMode = () => "smart", private getOpp: () => "cpu" | "claude" | "passive" = () => "passive", private getFx: () => boolean = () => true, private getAsk: () => AskAi | undefined = () => undefined) {
     super(leaf);
   }
 
@@ -102,7 +103,9 @@ export class BattleView extends ItemView {
     const { game, rules } = session ?? sampleBattle();
     this.game = game;
     this.rules = rules;
-    this.ctl = session ? new BattleController(game, rules, VIEWER, Math.random, this.getCpu() ? this.game.players.find((p) => p !== VIEWER) : undefined) : undefined;
+    const foe = this.game.players.find((p) => p !== VIEWER);
+    const opp = this.getOpp();
+    this.ctl = session ? new BattleController(game, rules, VIEWER, Math.random, opp === "cpu" ? foe : undefined, opp === "claude" ? foe : undefined) : undefined;
     this.tried.clear();
     this.askEl = undefined;
     this.targeting = undefined;
@@ -115,6 +118,7 @@ export class BattleView extends ItemView {
     this.askCancel = undefined;
     this.mullEl = undefined;
     this.checkMulligan();
+    void this.driveAi();
     this.watcher?.disconnect(); // 開き直されても、監視は1つだけ
     this.watcher = new ResizeObserver(() => this.fit());
     this.watcher.observe(this.ui.stage);
@@ -417,6 +421,7 @@ export class BattleView extends ItemView {
 
   // ---- 操作 (ルールはコントローラーにある。ここは、呼んで描き直すだけ)
   private run(f: () => unknown) {
+    if (this.aiBusy) return; // 相手 (Claude) が考えている間は、操作を受けない
     this.closeMenu();
     try {
       f();
@@ -428,6 +433,86 @@ export class BattleView extends ItemView {
     this.paint();
     void this.checkPending();
     this.checkMulligan();
+    void this.driveAi();
+  }
+
+  // ---- Claude の AI の相手 (段階7)。判断が要るところで、盤面と選択肢を API に渡して、返事を実行する。失敗したら、以降は雑魚 CPU (ログに理由)。考えている間は、操作を受けない
+  private aiBusy = false;
+  private thinkEl?: HTMLElement;
+  private async driveAi() {
+    const ctl = this.ctl;
+    if (!ctl?.aiActive || this.aiBusy || this.game.mulligan || ctl.pending) return; // 人への質問が出ている間は、人の番
+    this.aiBusy = true;
+    this.ui.next.disabled = true;
+    try {
+      for (let n = 0; n < 40 && this.ctl === ctl && ctl.aiActive && !ctl.game.over && !ctl.pending; n++) {
+        let w = ctl.aiWaiting();
+        if (!w) {
+          ctl.aiAuto(); // 判断が要らない優先権は、パス
+          w = ctl.aiWaiting();
+          if (!w) break;
+        }
+        const g = ctl.game;
+        const ai = g.players.find((p) => p !== VIEWER)!;
+        const ask = this.getAsk();
+        if (!ask) {
+          ctl.aiFail(w, "API キーが未設定");
+          break;
+        }
+        this.thinkEl ??= this.ui.stage.createDiv({ cls: "mtg-bt-think", text: "相手 (Claude) が考えている…" });
+        const opts = w === "act" ? ctl.aiOptions() : [];
+        let reply: Record<string, unknown> | undefined;
+        try {
+          reply = aiParse(await ask(AI_SYSTEM, w === "act" ? aiActPrompt(g, this.rules, ai, opts) : w === "attack" ? aiAttackPrompt(g, this.rules, ai) : aiBlockPrompt(g, this.rules, ai)));
+        } catch (e) {
+          if (this.ctl === ctl) ctl.aiFail(w, (e as Error).message);
+          break;
+        }
+        if (this.ctl !== ctl) break;
+        if (!reply) {
+          ctl.aiFail(w, "返事を読み取れなかった");
+          break;
+        }
+        const why = typeof reply.why === "string" ? reply.why.trim() : "";
+        let err: string | undefined;
+        if (w === "act") {
+          const o = opts[Number(reply.choice)];
+          if (!o) err = "選択肢の番号が不正";
+          else {
+            if (why) g.log.push(`相手の考え: ${why}`);
+            err = ctl.aiDo(o);
+          }
+        } else if (w === "attack") {
+          const able = new Set(aiAttackers(g, this.rules, ai).map((x) => x.id));
+          const ids = Array.isArray(reply.attackers) ? (reply.attackers as unknown[]).filter((x): x is string => typeof x === "string" && able.has(x)) : undefined;
+          if (!ids) err = "攻撃の指定が不正";
+          else {
+            if (why) g.log.push(`相手の考え: ${why}`);
+            err = ctl.aiAttack(ids);
+          }
+        } else {
+          const pairs = Array.isArray(reply.blocks) ? (reply.blocks as { blocker?: unknown; attacker?: unknown }[]).filter((q) => typeof q?.blocker === "string" && typeof q?.attacker === "string").map((q) => ({ blocker: q.blocker as string, attacker: q.attacker as string })) : undefined;
+          if (!pairs) err = "ブロックの指定が不正";
+          else {
+            if (why) g.log.push(`相手の考え: ${why}`);
+            err = ctl.aiBlock(pairs);
+          }
+        }
+        if (err) {
+          ctl.aiFail(w, err);
+          break;
+        }
+        if (ctl.pending) break; // AI の行動が誘発して、人への質問が出た: 答えると、AI の行動が、最初からやり直される
+        this.paint();
+      }
+    } finally {
+      this.aiBusy = false;
+      this.thinkEl?.remove();
+      this.thinkEl = undefined;
+      this.paint();
+      void this.checkPending();
+      if (this.ctl !== ctl) void this.driveAi(); // 考えている間に、新しい対戦に替わった
+    }
   }
 
   // ---- マリガン (ロンドン): キープ / マリガン。キープしたら、マリガンした回数ぶん、底に置くカードを選ぶ。Esc で、キープ / マリガンの選択に戻る

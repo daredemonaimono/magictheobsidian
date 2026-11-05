@@ -1,6 +1,7 @@
 import { Action, abilityLabels, actionsFor, autoTargets, slotsOf, tryAction } from "./actions";
-import { RuleError, TargetSlot, activateAbility, canAttackWith, castSpell, declareAttackers, declareBlockers, assignDamage, passPriority, playLand } from "./engine";
-import { cpuAct, cpuAttack, cpuBlock } from "./cpu";
+import { RuleError, TargetSlot, activateAbility, attackersAt, canAttackWith, castSpell, declareAttackers, declareBlockers, assignDamage, passPriority, playLand } from "./engine";
+import { AiOption, aiAttackers, aiBlockers, aiOptions } from "./ai";
+import { cpuAct, cpuAttack, cpuBlock, cpuDo } from "./cpu";
 import { Answer, InputRequest, NeedInput, makeDecider } from "./input";
 import { HAND_SIZE, putBottom, redraw } from "./mulligan";
 import { Game, PlayerId, RuleBook } from "./state";
@@ -17,7 +18,104 @@ export class BattleController {
   private redo?: (answers: Answer[]) => string | undefined;
   private answers: Answer[] = [];
 
-  constructor(readonly game: Game, readonly rules: RuleBook, readonly me: PlayerId = "you", private rng: () => number = Math.random, private cpu?: PlayerId) {}
+  constructor(readonly game: Game, readonly rules: RuleBook, readonly me: PlayerId = "you", private rng: () => number = Math.random, private cpu?: PlayerId, private ai?: PlayerId) {}
+
+  // ---- Claude の AI の相手 (段階7)。API を呼ぶのは画面。ここは、「いま AI の判断が要るか」と、判断の実行だけ (API は呼ばない)
+  private aiDone = new Set<string>(); // 攻撃・ブロックを、ターンごとに1回だけ聞く
+  get aiActive(): boolean {
+    return !!this.ai;
+  }
+  // 判断が要るとき、その種類。act = 行動を選ぶ (土地・呪文・能力。選択肢が「何もしない」だけなら、聞かない。相手のターンは、スタックに何かあるか戦闘中だけ聞く) / attack / block
+  aiWaiting(g: Game = this.game): "act" | "attack" | "block" | undefined {
+    const ai = this.ai;
+    if (!ai || g.over || g.mulligan) return undefined; // 人への質問 (pending) は、画面 (driveAi) が見る。ここで見ると、答えを再生している最中に、AI の判断を飛ばしてしまう
+    if (g.step === "combat" && !g.stack.length) {
+      if (g.combatPhase === "attackers" && g.active === ai && g.priority === ai && !g.attackersDeclared && !this.aiDone.has(`${g.turn}:attack`) && aiAttackers(g, this.rules, ai).length) return "attack";
+      if (g.combatPhase === "blockers" && g.active !== ai && !(g.blockersDeclared ?? []).includes(ai) && !this.aiDone.has(`${g.turn}:block`) && attackersAt(g, ai).length && aiBlockers(g, this.rules, ai).length) return "block";
+    }
+    if (g.priority !== ai) return undefined;
+    const own = g.active === ai && (g.step === "main1" || g.step === "main2");
+    if (!g.stack.length && !own && !(g.active !== ai && g.step === "combat")) return undefined;
+    return aiOptions(g, this.rules, ai).length > 1 ? "act" : undefined;
+  }
+  aiOptions(): AiOption[] {
+    return this.ai ? aiOptions(this.game, this.rules, this.ai) : [];
+  }
+  // 選んだ行動を実行する (option.action が無ければ、パス)。唱えた・スタックに積んだあとは、パスして、人に応答させる
+  aiDo(o: AiOption): string | undefined {
+    const ai = this.ai;
+    if (!ai) return undefined;
+    if (!o.action) return this.aiPass();
+    const a = o.action;
+    return this.perform("相手", (x) => {
+      const before = x.stack.length;
+      cpuDo(x, this.rules, ai, a, o.targets);
+      if (x.stack.length > before && x.priority === ai) passPriority(x, ai, this.rules);
+    }, []);
+  }
+  aiPass(): string | undefined {
+    const ai = this.ai;
+    return ai ? this.perform("相手", (x) => void (x.priority === ai && passPriority(x, ai, this.rules)), []) : undefined;
+  }
+  // 判断が要らない優先権は、パスし続ける (人に優先権が渡るか、判断が要るところまで)
+  aiAuto(): void {
+    const ai = this.ai;
+    if (!ai || this.pending) return; // 人への質問が出ている間は、何もしない (質問を消さない)
+    this.perform("相手", (x) => {
+      for (let n = 0; n < MAX_PASSES && !x.over && x.priority === ai; n++) {
+        if (this.aiWaiting(x)) return;
+        if (passPriority(x, ai, this.rules) === "passed") return;
+      }
+    }, []);
+  }
+  // 攻撃クリーチャーを、AI が指定する (攻撃先は、人のプレイヤー)。不正なら理由を返す (局面は変わらない)
+  aiAttack(ids: string[]): string | undefined {
+    const ai = this.ai;
+    const foe = this.game.players.find((p) => p !== ai);
+    if (!ai || foe === undefined) return undefined;
+    this.aiDone.add(`${this.game.turn}:attack`);
+    return this.perform("相手", (x) => {
+      if (ids.length) {
+        declareAttackers(x, ai, ids.map((id) => ({ id, target: foe })), this.rules);
+        x.log.push(`相手が ${ids.map((id) => x.battlefield.find((p) => p.id === id)?.card.name ?? id).join("、")} で攻撃した`);
+      }
+      passPriority(x, ai, this.rules);
+    }, []);
+  }
+  aiBlock(pairs: { blocker: string; attacker: string }[]): string | undefined {
+    const ai = this.ai;
+    if (!ai) return undefined;
+    this.aiDone.add(`${this.game.turn}:block`);
+    const name = (id: string) => this.game.battlefield.find((p) => p.id === id)?.card.name ?? id;
+    return this.perform("相手", (x) => {
+      declareBlockers(x, ai, pairs, this.rules); // 空でも呼ぶ (エンジンが、宣言済みを覚える)
+      if (!pairs.length) return;
+      x.log.push(`相手が ${pairs.map((q) => `${name(q.blocker)} で ${name(q.attacker)} を`).join("、")}ブロックした`);
+    }, []);
+  }
+  // API が使えなかったとき: 以降は雑魚 CPU の決まりで動く。いまの判断も、その決まりで1回ぶん済ませる
+  aiFail(kind: "act" | "attack" | "block", reason: string): void {
+    const ai = this.ai;
+    if (!ai) return;
+    this.game.log.push(`相手 (Claude) は使えない: ${reason}。以降は、雑魚 CPU の決まりで動く`);
+    this.ai = undefined;
+    this.cpu = ai;
+    this.perform("相手", (x) => {
+      if (kind === "block") cpuBlock(x, this.rules, ai);
+      else if (kind === "attack") {
+        cpuAttack(x, this.rules, ai);
+        passPriority(x, ai, this.rules);
+      } else {
+        for (let k = 0; k < 20 && x.priority === ai; k++) {
+          const r = cpuAct(x, this.rules, ai);
+          if (r === "land") continue;
+          passPriority(x, ai, this.rules);
+          if (x.step === "combat" && x.combatPhase === "blockers" && x.active !== ai && attackersAt(x, ai).length) cpuBlock(x, this.rules, ai); // パスで、ブロックの段階に入った
+          return;
+        }
+      }
+    }, []);
+  }
 
   // ---- マリガン (ロンドン)。game.mulligan があるあいだ、操作・「次へ」は受けない
   mulligan(): string | undefined {
@@ -202,6 +300,7 @@ export class BattleController {
         return false;
       };
       for (let n = 0; n < MAX_PASSES && !g.over && g.priority; n++) {
+        if (this.ai && this.aiWaiting(g)) return; // Claude の判断が要る: ここで止まる (画面が、API を呼ぶ)
         if (g.priority === cpu && cpuTurn()) return;
         const r = passPriority(g, g.priority!, this.rules);
         if (r === "passed") continue;
@@ -215,7 +314,8 @@ export class BattleController {
           if (g.combatPhase === "blockers" && g.active !== cpu) cpuBlock(g, this.rules, cpu);
         }
         // 攻撃できるクリーチャーがいなければ、戦闘ステップは飛ばす (戦闘開始・攻撃クリーチャー指定・戦闘終了のあいだも)。CPU は、攻撃の段階で攻撃しなかったら、そのあとも飛ばす
-        if (r === "stepEnded" && g.step === "combat" && !g.attackersDeclared && !g.battlefield.some((x) => x.attacking) && (!canAttackWith(g, g.active, this.rules) || (g.active === cpu && g.combatPhase !== "beginning"))) continue;
+        if (r === "stepEnded" && g.step === "combat" && !g.attackersDeclared && !g.battlefield.some((x) => x.attacking) && (!canAttackWith(g, g.active, this.rules) || (g.active === (cpu ?? this.ai) && g.combatPhase !== "beginning"))) continue;
+        if (this.ai && this.aiWaiting(g)) return;
         if (g.active !== this.me && g.priority !== this.me) {
           if (cpuTurn()) return; // 相手のターンの始まり・解決のあと: CPU が先に動く
           if (g.priority !== this.me) passPriority(g, g.priority!, this.rules); // 動かなければ、パスして、自分に優先権を渡す

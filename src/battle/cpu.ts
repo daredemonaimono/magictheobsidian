@@ -1,4 +1,4 @@
-import { slotsOf, tryAction } from "./actions";
+import { Action, slotsOf, tryAction } from "./actions";
 import { characteristics } from "./continuous";
 import { RuleError, activateAbility, attackersAt, canAttackPerm, castSpell, declareAttackers, declareBlockers, playLand } from "./engine";
 import { HAND_SIZE, putBottom, redraw } from "./mulligan";
@@ -47,7 +47,7 @@ export function cpuMulligan(g: Game, p: PlayerId, rng: () => number): number {
 const who = (g: Game, p: PlayerId) => (g.players.indexOf(p) === 0 ? "あなた" : "相手");
 
 // マナだけの起動型能力で、まだタップしていないものを1つ使う (使えたら真)
-function tapOne(g: Game, p: PlayerId, rules: RuleBook): boolean {
+export function tapOne(g: Game, p: PlayerId, rules: RuleBook): boolean {
   for (const perm of g.battlefield) {
     if (perm.controller !== p || perm.tapped) continue;
     const abs = rules.get(perm.card.name)?.abilities.filter((a) => a.kind === "activated") ?? [];
@@ -81,6 +81,23 @@ function pickTargets(g: Game, rules: RuleBook, p: PlayerId, card: GameCard): Rec
     if (theirs.length) out[slot.as] = theirs.slice(0, Math.max(need, 1)).join(",");
   }
   return out;
+}
+
+// 行動を、必要なぶんだけ土地・マナ能力をタップして、実行する (Claude の AI も使う)。できなければ RuleError
+export function cpuDo(g: Game, rules: RuleBook, p: PlayerId, a: Action, targets?: Record<string, string>): void {
+  while (tryAction(g, rules, p, a, targets) !== undefined && tapOne(g, p, rules));
+  const why = tryAction(g, rules, p, a, targets);
+  if (why !== undefined) throw new RuleError(why);
+  if (a.kind === "land") {
+    g.log.push(`${who(g, p)}が ${g.hands[p].find((x) => x.id === a.card)?.name} を出した`);
+    playLand(g, p, a.card, rules);
+  } else if (a.kind === "cast") {
+    g.log.push(`${who(g, p)}が ${g.hands[p].find((x) => x.id === a.card)?.name} を唱えた`);
+    castSpell(g, p, a.card, targets ?? {}, rules);
+  } else {
+    g.log.push(`${who(g, p)}が ${g.battlefield.find((x) => x.id === a.perm)?.card.name} の能力を起動した`);
+    activateAbility(g, p, a.perm, a.index, targets ?? {}, rules);
+  }
 }
 
 // 優先権を持っているとき、1つだけ動く。"land" = 土地を出した (続けて動ける) / "cast" = 呪文を唱えた (スタックに積まれた。続けて、パスして、相手に応答させる) / "pass" = 何もしない
