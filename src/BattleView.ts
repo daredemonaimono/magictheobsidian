@@ -251,6 +251,8 @@ export class BattleView extends ItemView {
           return;
         }
         if (e.key !== "Escape") return;
+        const look = this.ui?.stage.querySelector(".mtg-bt-handlook");
+        if (look) return look.remove(); // 相手の手札の表示を閉じる
         if (this.askEl) this.cancelAsk();
         else if (this.targeting) this.endTargeting(); // 途中でやめるのは Esc だけ
         else this.closeMenu();
@@ -369,7 +371,7 @@ export class BattleView extends ItemView {
     if (this.targeting) this.paintTargeting();
   }
 
-  // 相手の手札を見たとき (lookHand): 相手の手札のカードを、表向きで、前 (盤面の上) に並べて見せる。3.5秒で消える (クリックの邪魔はしない)
+  // 相手の手札を見たとき (lookHand): 相手の手札のカードを、表向きで、前 (盤面の上) に並べて見せる。クリックか Esc で閉じる (ゆっくり見られる。放っておいても、30秒で消える)
   private lookSeen = 0;
   private paintHandLook() {
     const h = this.game.handLook;
@@ -385,6 +387,8 @@ export class BattleView extends ItemView {
     this.ui.stage.querySelector(".mtg-bt-handlook")?.remove();
     const box = this.ui.stage.createDiv("mtg-bt-handlook");
     box.createDiv({ cls: "mtg-bt-handlook-title", text: `相手の手札 (${cards.length} 枚)` });
+    box.createDiv({ cls: "mtg-bt-handlook-hint", text: "クリックか Esc で閉じる" });
+    box.addEventListener("click", () => box.remove());
     const row = box.createDiv("mtg-bt-handlook-row");
     for (const c of cards) {
       const url = this.urls.get(c.name);
@@ -392,7 +396,7 @@ export class BattleView extends ItemView {
       if (url) el.createEl("img", { attr: { src: url, alt: c.name, draggable: "false" } });
       else el.createDiv({ cls: "mtg-bt-face", text: c.name });
     }
-    window.setTimeout(() => box.remove(), 3500);
+    window.setTimeout(() => box.remove(), 30000);
   }
 
   // ダメージ・ライフの変化の演出: 数字が大きく出て、ふくらんで消える (設定でオフにできる)。クリーチャーのダメージが増えたとき・プレイヤーのライフが変わったとき。

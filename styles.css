@@ -423,10 +423,11 @@ button.mtg-color .mtg-sym { width: 20px; height: 20px; display: block; }
 .mtg-bt-logline strong { color: var(--text-normal); font-weight: 700; }
 
 /* 相手の手札を見たとき: 手札のカードを、盤面の上に、表向きで並べる */
-.mtg-bt-handlook { position: absolute; left: 50%; top: 4%; transform: translateX(-50%); z-index: 55; max-width: 92%; padding: 8px 12px 10px; border-radius: 10px; background: #000d; color: #fff; pointer-events: none; animation: mtg-bt-handlook 3.5s ease-out forwards; }
+.mtg-bt-handlook { position: absolute; left: 50%; top: 4%; transform: translateX(-50%); z-index: 55; max-width: 92%; padding: 8px 12px 10px; border-radius: 10px; background: #000d; color: #fff; cursor: pointer; animation: mtg-bt-handlook 0.25s ease-out both; }
+.mtg-bt-handlook-hint { margin: -2px 0 6px; font-size: 11px; color: #bbb; }
 .mtg-bt-handlook-title { font-weight: 700; margin-bottom: 6px; }
 .mtg-bt-handlook-row { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; }
 .mtg-bt-handlook-card { width: 96px; flex: none; }
 .mtg-bt-handlook-card img { width: 100%; display: block; border-radius: 5px; box-shadow: 0 2px 8px #000a; }
 .mtg-bt-handlook-card .mtg-bt-face { padding: 24px 4px; background: #3a434b; border-radius: 5px; text-align: center; font-size: 11px; font-weight: 700; }
-@keyframes mtg-bt-handlook { 0% { opacity: 0; transform: translate(-50%, -12px); } 8% { opacity: 1; transform: translate(-50%, 0); } 85% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes mtg-bt-handlook { 0% { opacity: 0; transform: translate(-50%, -12px); } 100% { opacity: 1; transform: translate(-50%, 0); } }
