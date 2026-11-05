@@ -68,11 +68,11 @@ export interface Perm {
 export type GameEvent = { type: "cast"; player: PlayerId; card: GameCard } | { type: "enters"; perm: Perm } | { type: "leaves"; perm: Perm } | { type: "step"; step: Step; player: PlayerId } | { type: "attacks"; perm: Perm } | { type: "blocks"; perm: Perm } | { type: "targeted"; perm: Perm; by: StackItem }; // targeted = パーマネントが、呪文・能力の対象になった (護法)
 // 人の判断の差し替え口。無ければ決まった動きになる (shortcut: 判断の入力はまだ無い。入力の仕組みを作るときに置き換える)
 export interface Decider {
-  discard?(g: Game, p: PlayerId, n: number): GameCard[]; // 捨てるカード
-  may?(g: Game, p: PlayerId, what: string): boolean; // 「してもよい」をするか (既定はする)
-  pay?(g: Game, p: PlayerId, n: number): boolean; // 「支払わないかぎり」を払うか
-  choose?(g: Game, p: PlayerId, from: GameCard[], n: number): GameCard[]; // 選ぶカード (look / choose)
-  target?(g: Game, item: StackItem, call: NodeCall, legal: string[]): string[]; // 誘発型能力の対象 (誘発時に選ぶ。既定は合法な対象の先頭から)
+  discard?(g: Game, p: PlayerId, n: number, cleanup?: boolean): GameCard[] | undefined; // 捨てるカード
+  may?(g: Game, p: PlayerId, what: string): boolean | undefined; // 「してもよい」をするか (既定はする)
+  pay?(g: Game, p: PlayerId, n: number): boolean | undefined; // 「支払わないかぎり」を払うか
+  choose?(g: Game, p: PlayerId, from: GameCard[], n: number, atMost?: boolean): GameCard[] | undefined; // 選ぶカード (look / choose)
+  target?(g: Game, item: StackItem, call: NodeCall, legal: string[]): string[] | undefined; // 誘発型能力の対象 (誘発時に選ぶ。既定は合法な対象の先頭から)
 }
 export interface Game {
   players: PlayerId[];
@@ -160,9 +160,9 @@ export function drawCards(g: Game, p: PlayerId, n: number): void {
 }
 
 // 手札を n 枚捨てる (持っている分だけ)。捨てるカードは g.decide.discard で選べる。既定は手札の後ろから (shortcut: 判断の入力を作るときに置き換える)
-export function discardCards(g: Game, p: PlayerId, n: number): void {
+export function discardCards(g: Game, p: PlayerId, n: number, cleanup = false): void { // cleanup = クリンナップ・ステップの、手札の上限による
   const k = Math.min(n, g.hands[p].length);
-  const picked = (g.decide?.discard?.(g, p, k) ?? g.hands[p].slice(g.hands[p].length - k)).filter((c) => g.hands[p].includes(c)).slice(0, k);
+  const picked = (g.decide?.discard?.(g, p, k, cleanup) ?? g.hands[p].slice(g.hands[p].length - k)).filter((c) => g.hands[p].includes(c)).slice(0, k);
   g.hands[p] = g.hands[p].filter((c) => !picked.includes(c));
   g.graveyards[p].push(...picked);
 }

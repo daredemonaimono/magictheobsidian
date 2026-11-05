@@ -4,16 +4,19 @@ import { BattleController } from "../src/battle/play";
 import { Ability, NodeCall } from "../src/battle/node";
 import { registerBuiltinNodes } from "../src/battle/nodes";
 import { resetRegistry } from "../src/battle/registry";
-import { Game, GameCard, RuleBook } from "../src/battle/state";
+import { Game, GameCard, RuleBook, createGame } from "../src/battle/state";
+import { InputRequest, NeedInput, makeDecider } from "../src/battle/input";
 
 resetRegistry();
 registerBuiltinNodes();
+const card = (id: string): GameCard => ({ id, name: id, typeLine: "Instant", mv: 0, owner: "you" });
 
 const call = (node: string, args: NodeCall["args"], extra: Partial<NodeCall> = {}): NodeCall => ({ node, args, ...extra });
 const rulesOf = (m: Record<string, Ability[]>): RuleBook => ({ get: (c) => (m[c] ? { card: c, abilities: m[c] } : undefined) });
 const rules = rulesOf({
   Island: [{ kind: "activated", body: [call("cost", { tap: true }), call("addMana", { amount: 1, color: "U" })] }],
   Bear: [],
+  Think: [{ kind: "spell", body: [{ node: "look", args: { player: "you", count: 3 }, as: "l" }, { node: "choose", args: { from: { ref: "l" }, count: 1 }, as: "c" }, call("move", { cards: { ref: "c" }, to: "hand" })] }],
   Zap: [{ kind: "spell", body: [call("target", { zone: "battlefield", kind: "permanent", type: "creature" }, { as: "t" }), call("damage", { target: { ref: "t" }, amount: 2 })] }],
 });
 const data = (name: string, extra: Partial<CardData> = {}) => ({ key: name, data: { name, typeLine: "Creature — Bear", cmc: 2, manaCost: "{1}{U}", colors: ["U"], power: "2", toughness: "2", ...extra } as CardData });
@@ -21,7 +24,8 @@ const deck = (): DeckData => ({
   format: "standard",
   main: [
     { ...data("Island", { typeLine: "Basic Land — Island", cmc: 0, manaCost: "", power: undefined, toughness: undefined }), n: 30 },
-    { ...data("Bear"), n: 26 },
+    { ...data("Bear"), n: 22 },
+    { ...data("Think", { typeLine: "Instant", power: undefined, toughness: undefined, manaCost: "{U}" }), n: 4 },
     { ...data("Zap", { typeLine: "Instant", power: undefined, toughness: undefined }), n: 4 },
   ],
 });
@@ -129,16 +133,81 @@ const toMain = (c: BattleController) => {
   c.next();
   assert.deepEqual(g.over?.winner, "you");
 }
-// 手札が 9 枚で終了ステップを抜けると 7 枚になり、ログに出る
+// 手札が 9 枚で終了ステップを抜けるとき: 捨てるカードを聞く (答えるまで、局面は変わらない)。答えたら 7 枚になる。取り消せる
 {
   const { g, c } = setup();
   toMain(c);
   g.hands["you"].push(g.libraries["you"].shift()!, g.libraries["you"].shift()!);
   g.step = "end";
   g.priority = "you";
+  assert.equal(c.next(), undefined);
+  assert.equal(c.pending?.request.kind, "discard");
+  assert.equal(g.hands["you"].length, 9, "答えるまで、変わらない");
+  assert.equal(g.step, "end");
+  c.cancel();
+  assert.equal(c.pending, undefined);
+  assert.equal(g.hands["you"].length, 9);
   c.next();
+  const req = c.pending!.request;
+  assert.ok(req.kind === "discard" && req.n === 2 && req.cards.length === 9 && req.cleanup === true, "クリンナップの上限による (残すカードを選ぶ形にする印)");
+  const drop = (req as { cards: { id: string }[] }).cards.slice(0, 2).map((x) => x.id);
+  assert.equal(c.answer(drop), undefined);
+  assert.equal(c.pending, undefined);
   assert.equal(g.hands["you"].length, 7);
-  assert.ok(g.log.some((l) => l.includes("2 枚捨てた")));
+  assert.ok(drop.every((id) => g.graveyards["you"].some((x) => x.id === id)), "選んだカードが捨てられる");
+  assert.equal(g.turn, 3, "そのまま自分の次のターンまで進む");
 }
-void ({} as GameCard);
+// 選ぶ (look + choose): 解決のときに聞く。答えると、そのカードが手札に
+{
+  const { g, c } = setup();
+  const think = hold(g, "Think");
+  toMain(c);
+  g.mana["you"] = 1;
+  g.pool["you"] = { U: 1 };
+  assert.equal(c.use(think.id), undefined);
+  assert.equal(c.pending, undefined);
+  assert.equal(g.stack.length, 1);
+  const top3 = g.libraries["you"].slice(0, 3).map((x) => x.id);
+  c.next();
+  const req = c.pending!.request;
+  assert.ok(req.kind === "choose" && req.min === 1 && req.max === 1 && req.cards.map((x) => x.id).join() === top3.join());
+  assert.equal(g.stack.length, 1, "答えるまで、解決しない");
+  const handBefore = g.hands["you"].length;
+  assert.equal(c.answer([top3[2]]), undefined);
+  assert.equal(c.pending, undefined);
+  assert.equal(g.stack.length, 0);
+  assert.equal(g.hands["you"].length, handBefore + 1);
+  assert.ok(g.hands["you"].some((x) => x.id === top3[2]), "選んだカードが手札に");
+}
+// 質問の種類ごとの判断 (自分への質問は、答えが無ければ入力待ち。相手・自動で決まる場面は聞かない)
+{
+  const g = createGame(["you", "opp"]);
+  g.hands["you"] = [card("a"), card("b"), card("c")];
+  g.hands["opp"] = [card("x"), card("y")];
+  const d = makeDecider("you", []);
+  const ask = (f: () => unknown): InputRequest | undefined => {
+    try {
+      f();
+    } catch (e) {
+      if (e instanceof NeedInput) return e.request;
+      throw e;
+    }
+    return undefined;
+  };
+  assert.deepEqual(ask(() => d.pay!(g, "you", 2)), { kind: "pay", n: 2 });
+  assert.deepEqual(ask(() => d.may!(g, "you", "exile")), { kind: "may", what: "exile" });
+  assert.equal(d.pay!(g, "opp", 2), undefined, "相手は聞かない");
+  assert.equal(d.discard!(g, "opp", 1), undefined);
+  assert.equal(d.discard!(g, "you", 3), undefined, "全部捨てるなら聞かない");
+  assert.equal(ask(() => d.discard!(g, "you", 1))?.kind, "discard");
+  assert.equal(d.choose!(g, "you", g.hands["you"], 3, false), undefined, "全部選ぶなら聞かない");
+  assert.deepEqual(ask(() => d.choose!(g, "you", g.hands["you"], 2, true)), { kind: "choose", min: 0, max: 2, cards: g.hands["you"].map((x) => ({ id: x.id, name: x.name })) });
+  const item = { id: "i", card: card("Spell"), controller: "you", targets: {}, cast: {} };
+  assert.equal(d.target!(g, item, { node: "target", args: { zone: "any", kind: "any" } }, ["only"]), undefined, "候補が必要な数しかなければ、聞かない");
+  assert.equal(ask(() => d.target!(g, item, { node: "target", args: { zone: "any", kind: "any" } }, ["p", "q"]))?.kind, "target");
+  const ans = makeDecider("you", [true, false, ["b"]]);
+  assert.equal(ans.may!(g, "you", "x"), true);
+  assert.equal(ans.pay!(g, "you", 1), false);
+  assert.deepEqual(ans.discard!(g, "you", 1)!.map((x) => x.id), ["b"]);
+}
 console.log("play ok");

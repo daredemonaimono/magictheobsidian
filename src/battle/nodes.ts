@@ -202,7 +202,7 @@ export function registerBuiltinNodes(): void {
       const options = idList(a.from).flatMap((id) => findCard(g, id) ?? []);
       const n = Math.min(Number(a.count), options.length);
       // shortcut: 既定は、ちょうど指定の枚数なら先頭から、atMost なら1枚も選ばない。判断の入力を作るときに置き換える
-      const picked = (g.decide?.choose?.(g, ctx.item.controller, options, n) ?? (a.atMost === true ? [] : options.slice(0, n))).filter((c) => options.includes(c)).slice(0, n);
+      const picked = (g.decide?.choose?.(g, ctx.item.controller, options, n, a.atMost === true) ?? (a.atMost === true ? [] : options.slice(0, n))).filter((c) => options.includes(c)).slice(0, n);
       return { id: picked.map((c) => c.id).join(",") };
     },
   });

@@ -1,5 +1,6 @@
 import { ItemView, WorkspaceLeaf } from "obsidian";
 import { TargetSlot } from "./battle/engine";
+import { InputRequest } from "./battle/input";
 import { BattleController } from "./battle/play";
 import { BoardModel, CardView, LandStack, PhaseId, boardModel } from "./battle/boardModel";
 import { CARD_H, CARD_W, GAP, HAND_H, HAND_W, LAYER_PX, TAP_EXTRA, cardBackUrl, overlapFor, pileLayers, rowNeed } from "./battle/layout";
@@ -57,8 +58,9 @@ export class BattleView extends ItemView {
   private ctl?: BattleController; // 対戦のとき。サンプルの局面では無い (操作できない)
   private menu?: HTMLElement;
   // 対象を選んでいる途中 (Esc で取り消し。局面は変わらない)。slots = 聞くこと、i = いまのスロット、picks = スロットごとの選んだ id
-  private targeting?: { title: string; slots: TargetSlot[]; i: number; picks: string[][]; done: (t: Record<string, string>) => void };
+  private targeting?: { title: string; slots: TargetSlot[]; i: number; picks: string[][]; done: (t: Record<string, string>) => void; cancel?: () => void };
   private tbar?: HTMLElement;
+  private askEl?: HTMLElement; // 質問のダイアログ (捨てる・選ぶ・してもよい・支払う)
   private tried = new Set<string>(); // 画像を探したカード名
   private logSig = "";
   private previewSeq = 0;
@@ -91,6 +93,7 @@ export class BattleView extends ItemView {
     this.rules = rules;
     this.ctl = session ? new BattleController(game, rules) : undefined;
     this.tried.clear();
+    this.askEl = undefined;
     this.targeting = undefined;
     this.tbar = undefined;
     this.menu = undefined;
@@ -105,7 +108,8 @@ export class BattleView extends ItemView {
       this.keysOn = true;
       this.registerDomEvent(document, "keydown", (e) => {
         if (e.key !== "Escape") return;
-        if (this.targeting) this.endTargeting(); // 途中でやめるのは Esc だけ
+        if (this.askEl) this.cancelAsk();
+        else if (this.targeting) this.endTargeting(); // 途中でやめるのは Esc だけ
         else this.closeMenu();
       });
       this.registerDomEvent(this.contentEl, "click", (e) => {
@@ -153,9 +157,9 @@ export class BattleView extends ItemView {
   }
 
   // 画像の URL: カード名でノートを引いて、保存済みの URL を使う (新しい通信はしない)。無いカードは、名前と P/T の代わりの面
-  private async loadImages() {
+  private async loadImages(extra: string[] = []) {
     const g = this.game;
-    const names = new Set<string>([...g.battlefield.map((p) => p.card.name), ...Object.values(g.hands).flat().map((c) => c.name), ...Object.values(g.graveyards).flat().map((c) => c.name), ...g.stack.map((s) => s.card.name)]);
+    const names = new Set<string>([...g.battlefield.map((p) => p.card.name), ...Object.values(g.hands).flat().map((c) => c.name), ...Object.values(g.graveyards).flat().map((c) => c.name), ...g.stack.map((s) => s.card.name), ...extra]);
     await Promise.all(
       [...names].filter((n) => !this.tried.has(n)).map(async (n) => {
         this.tried.add(n);
@@ -221,8 +225,85 @@ export class BattleView extends ItemView {
   // ---- 操作 (ルールはコントローラーにある。ここは、呼んで描き直すだけ)
   private run(f: () => unknown) {
     this.closeMenu();
-    f();
+    try {
+      f();
+    } catch (e) {
+      console.error(e); // 想定外の失敗: 質問は捨てて、画面は止めない
+      this.ctl?.cancel();
+    }
     void this.loadImages().then(() => this.paint());
+    this.paint();
+    void this.checkPending();
+  }
+
+  // ---- 自分への質問 (src/battle/input.ts)。答えたら、コントローラーが最初からやり直す。Esc で取り消し (何も起きなかったことになる)
+  private askSeq = 0;
+  private async checkPending() {
+    const seq = ++this.askSeq;
+    this.askEl?.remove();
+    this.askEl = undefined;
+    this.ui.stage.removeClass("is-asking");
+    const req = this.ctl?.pending?.request;
+    if (!req) return;
+    this.ui.stage.addClass("is-asking"); // 画像を読む間も、後ろの操作を止める
+    if (req.kind === "discard" || req.kind === "choose") await this.loadImages(req.cards.map((c) => c.name));
+    if (req.kind === "target") await this.loadImages(req.choices.map((c) => c.name));
+    if (seq !== this.askSeq) return; // 新しい質問が来た
+    this.showAsk(req);
+  }
+  private showAsk(req: InputRequest) {
+    const box = this.ui.stage.createDiv("mtg-bt-ask");
+    this.askEl = box;
+    this.ui.stage.addClass("is-asking");
+    const reply = (v: string[] | boolean) => this.run(() => this.ctl!.answer(v));
+    const head = box.createDiv("mtg-bt-asktitle");
+    if (req.kind === "may") {
+      head.setText(req.what === "exile" ? "墓地のカードを追放しますか?" : `${req.what} をしますか?`);
+      const row = box.createDiv("mtg-bt-askrow");
+      row.createEl("button", { cls: "mod-cta", text: "はい" }).addEventListener("click", () => reply(true));
+      row.createEl("button", { text: "いいえ" }).addEventListener("click", () => reply(false));
+    } else if (req.kind === "pay") {
+      head.setText(`{${req.n}} を支払いますか? (支払わないと、打ち消される)`);
+      const row = box.createDiv("mtg-bt-askrow");
+      row.createEl("button", { cls: "mod-cta", text: "支払う" }).addEventListener("click", () => reply(true));
+      row.createEl("button", { text: "支払わない" }).addEventListener("click", () => reply(false));
+    } else if (req.kind === "discard" || req.kind === "choose" || req.kind === "target") {
+      const cards = req.kind === "target" ? req.choices : req.cards;
+      const keep = req.kind === "discard" && req.cleanup ? req.cards.length - req.n : undefined; // クリンナップ: 残すカードを選ぶ (選ばなかったものが、墓地へ)
+      const min = keep ?? (req.kind === "discard" ? req.n : req.min);
+      const max = keep ?? (req.kind === "discard" ? req.n : req.max);
+      const picked = new Set<string>();
+      const ok = box.createEl("button", { cls: "mod-cta", text: "確定" });
+      const count = head.createSpan();
+      const sync = () => {
+        count.setText(`${req.kind === "discard" ? (keep !== undefined ? `手札を ${keep} 枚にする: 残すカードを ${keep} 枚選ぶ` : `手札から ${req.n} 枚捨てる`) : req.kind === "target" ? `${req.card}: 対象を選ぶ` : "カードを選ぶ"} (${picked.size} / ${min === max ? max : `${min}〜${max}`})`);
+        ok.disabled = picked.size < min || picked.size > max;
+      };
+      const tiles = box.createDiv("mtg-bt-asktiles");
+      for (const c of cards) {
+        const tile = tiles.createDiv("mtg-bt-asktile");
+        const url = this.urls.get(c.name);
+        if (url) tile.createEl("img", { attr: { src: url, alt: c.name, draggable: "false" } });
+        else tile.createDiv({ cls: "mtg-bt-face", text: c.name });
+        tile.addEventListener("mouseenter", () => void this.showPreview(c.name));
+        tile.addEventListener("click", () => {
+          if (picked.has(c.id)) picked.delete(c.id);
+          else if (picked.size < max) picked.add(c.id);
+          tile.toggleClass("is-picked", picked.has(c.id));
+          sync();
+        });
+      }
+      box.appendChild(ok);
+      ok.addEventListener("click", () => reply(keep !== undefined ? cards.map((c) => c.id).filter((id) => !picked.has(id)) : [...picked]));
+      sync();
+    }
+    box.createEl("div", { cls: "mtg-bt-askhint", text: "Esc で取り消し (何も起きなかったことになる)" });
+  }
+  private cancelAsk() {
+    this.askEl?.remove();
+    this.askEl = undefined;
+    this.ui.stage.removeClass("is-asking");
+    this.ctl?.cancel();
     this.paint();
   }
   private useAbility(permId: string) {
@@ -262,7 +343,9 @@ export class BattleView extends ItemView {
     this.paintTargeting();
   }
   private endTargeting() {
+    const cancel = this.targeting?.cancel;
     this.targeting = undefined;
+    cancel?.();
     this.paintTargeting();
   }
   private clickTarget(e: MouseEvent) {

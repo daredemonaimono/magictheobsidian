@@ -471,7 +471,7 @@ const HAND_LIMIT = 7;
 function advanceStep(g: Game, rules: RuleBook): void {
   if (g.strictTurns) emptyPools(g); // ステップの終わりに、マナが消える
   if (g.step === "end") {
-    if (g.strictTurns && g.hands[g.active].length > HAND_LIMIT) discardCards(g, g.active, g.hands[g.active].length - HAND_LIMIT); // クリンナップ: 手札を 7 枚まで
+    if (g.strictTurns && g.hands[g.active].length > HAND_LIMIT) discardCards(g, g.active, g.hands[g.active].length - HAND_LIMIT, true); // クリンナップ: 手札を 7 枚まで
     for (const p of g.battlefield) if (p.mods) p.mods = p.mods.filter((m) => m.until !== "endOfTurn"); // ターン終了時までの効果が消える
     for (const p of g.battlefield) {
       delete p.damage; // ダメージも消える

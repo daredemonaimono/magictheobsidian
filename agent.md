@@ -13,7 +13,7 @@ Obsidian を Magic: The Gathering 専用のソフトにするプラグイン。�
 - デッキ・コレクション・価格・カード一覧は完成していて、README に使い方がある。
 - **対戦機能は「核」まで**。対戦の画面・Bot・戦闘・ライフ/勝敗は、まだ無い。0.40.0 までの古い実装は捨てて作り直した(旧実装は git タグ `archive/battle-rules-0.40.0`。参照は `git show archive/battle-rules-0.40.0:src/<ファイル>`)。
 - 設計は `docs/superpowers/specs/2026-11-04-battle-core-design.md`。ノードを足す順番は `docs/superpowers/plans/2026-11-05-deck-node-roadmap.md`(デッキ「Gentry Mono U」のカードを組めるかで決める。第1〜11弾まで実装済み。これからの順番はロードマップの末尾 (対戦の画面。エンジンは `startGame` で始め、`declareAttackers` などの入口を呼ぶ。`Game.strictTurns` と `payManaCosts` は、画面の側で真にする))。小さな手順の計画は `docs/superpowers/plans/` の各ファイル。ROADMAP.md は、デッキ側の予定。
-- 対戦の画面は段階3まで: 自分のターンの操作 (`src/battle/actions.ts` = いまできる行動の判定、`src/battle/play.ts` の `BattleController` = 使う・起動する・次へ)。対象を取るカードは、対象を選んで使える (段階4a。`engine.ts` の `targetSlots`)。攻撃とブロックの選択 (段階6)・捨てる/選ぶ/してもよい/支払う入力 (段階4b)・マリガン・優先権の設定 (段階4c) は未対応。相手は何もしない。
+- 対戦の画面は段階4bまで (入力待ち: `src/battle/input.ts` の `makeDecider`/`NeedInput` と `BattleController.pending/answer/cancel`。操作はコピーした局面で実行し、質問が出たら止まり、答えを足して最初からやり直す): 自分のターンの操作 (`src/battle/actions.ts` = いまできる行動の判定、`src/battle/play.ts` の `BattleController` = 使う・起動する・次へ)。対象を取るカードは、対象を選んで使える (段階4a。`engine.ts` の `targetSlots`)。攻撃とブロックの選択 (段階6)・優先権の設定 (段階4c) は未対応。相手は何もしない。
 - 第11弾までの未対応: 先手後手の決め方、追加ターン、マリガン (対戦の画面の段階4で作る)、対戦の画面、多人数戦(「各対戦相手」は1対1の `max=1` で近似)、紋章の常在型能力。
 
 ## 3. 対戦の核の仕組み (`src/battle/`)
