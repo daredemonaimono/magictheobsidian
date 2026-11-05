@@ -101,4 +101,9 @@ export function opponentChoices(self: DeckChoice | undefined, all: DeckChoice[])
 export interface BattleSession {
   game: Game;
   rules: RuleBook;
+  // 履歴の保存・リプレイ用 (サンプルの局面には無い)
+  seed?: number;
+  rng?: () => number;
+  self?: string;
+  opp?: string;
 }

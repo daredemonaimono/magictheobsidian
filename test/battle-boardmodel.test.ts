@@ -312,7 +312,7 @@ const none = () => undefined;
   g.hands["A"].push({ id: "b1", name: "Bear", typeLine: "Creature — Bear", mv: 1, manaCost: "{U}", owner: "A" });
   let m = boardModel(g, book, "A", none);
   // 土地のマナを全部出せるとして、唱えられるカードは光る (前提を変えた: 以前は、先にマナを出していないと光らなかった。いまは、カードを選ぶと、足りないマナを自動で払う)
-  assert.deepEqual([m.self.lands[0].playable, m.self.hand[0].playable, m.canNext, m.nextLabel], [true, true, true, "次へ"]);
+  assert.deepEqual([m.self.lands[0].playable, m.self.hand[0].playable, m.canNext, m.nextLabel], [false, true, true, "次へ"]); // 土地は、手でタップしない (マナは、カードを使うとき、自動で払う) ので、光らない
   g.battlefield[0].tapped = true;
   g.mana["A"] = 1;
   g.pool["A"] = { U: 1 };

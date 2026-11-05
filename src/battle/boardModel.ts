@@ -201,12 +201,10 @@ export function boardModel(g: Game, rules: RuleBook, viewer: PlayerId, imageOf: 
   const oppId = g.players.find((p) => p !== viewer) ?? viewer;
   const side = (p: PlayerId): "self" | "opp" => (p === viewer ? "self" : "opp");
   // 光らせる (操作できる) もの: 土地・マナ能力のマナを全部出せるとして、使える手札のカード・マナ以外の能力 (足りないぶんは、使うとき、自動でタップする) +
-  // いまマナを出す意味のある、マナを出す能力 (使い道が無いときは、光らない)
+  // マナを出す能力 (土地のタップなど) は、光らせない: マナは、カードを使うとき、自動で払う
   const sim = withAllMana(g, rules, viewer);
-  const simActs = actionsFor(sim, rules, viewer);
   const isMana = (a: Action) => a.kind === "activate" && ((x) => !!x && manaOnly(x.body))(rules.get(g.battlefield.find((p) => p.id === a.perm)?.card.name ?? "")?.abilities.filter((y) => y.kind === "activated")[a.index]);
-  const useful = simActs.some((a) => a.kind === "cast" || (a.kind === "activate" && !isMana(a)));
-  const can = new Set([...simActs.filter((a) => !isMana(a)), ...actionsFor(g, rules, viewer).filter((a) => isMana(a) && useful)].map((a) => (a.kind === "activate" ? a.perm : a.card)));
+  const can = new Set(actionsFor(sim, rules, viewer).filter((a) => !isMana(a)).map((a) => (a.kind === "activate" ? a.perm : a.card)));
   let choice: CombatChoice | undefined;
   if (!g.over && !g.mulligan && g.step === "combat" && g.priority === viewer && !g.stack.length) { // スタックが空のとき (戦闘の最初の誘発が解決してから)
     if (g.combatPhase === "attackers" && !g.attackersDeclared && g.active === viewer) {

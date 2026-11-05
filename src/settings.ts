@@ -27,11 +27,12 @@ export interface Settings {
   claudeModel: string; // ノードの組み立てに使うモデル
   battleOpponent: "cpu" | "claude" | "passive"; // 対戦の相手。cpu = 雑魚 CPU (土地を出す・呪文を唱える) / claude = Claude の AI (API を、判断のたびに呼ぶ) / passive = 何もしない
   battleModel: string; // Claude の AI の相手が使うモデル
+  battleHistory: boolean; // 対戦の履歴を Battles/ に保存する (終わったとき・途中でやめたとき)
   battleEffects: boolean; // 対戦の演出 (ダメージ・ライフの数字を大きく出す)
   battleStops: "always" | "smart"; // 対戦の優先権の止まり方。always = 毎回止まる / smart = 使えるものがあるときだけ (メインフェイズでは、必ず止まる)
 }
 
-export const DEFAULT_SETTINGS: Settings = { textLang: "en", cardLang: "en", sidebar: true, listArt: true, dashboardTab: true, currency: "USD", claudeKeySecret: "", claudeModel: "claude-opus-5-5", battleStops: "smart", battleOpponent: "cpu", battleModel: "claude-sonnet-5-5", battleEffects: true };
+export const DEFAULT_SETTINGS: Settings = { textLang: "en", cardLang: "en", sidebar: true, listArt: true, dashboardTab: true, currency: "USD", claudeKeySecret: "", claudeModel: "claude-opus-5-5", battleStops: "smart", battleOpponent: "cpu", battleModel: "claude-sonnet-5-5", battleHistory: true, battleEffects: true };
 
 // 設定で選んだ名前のキーを、キーチェーンから取る。未設定・見つからないときは null
 export const claudeKey = (app: App, s: Settings): string | null => (s.claudeKeySecret ? app.secretStorage.getSecret(s.claudeKeySecret) : null);
@@ -134,6 +135,15 @@ export class SettingsTab extends PluginSettingTab {
             this.settings.battleStops = v === "always" ? "always" : "smart";
             await this.save();
           }),
+      );
+    new Setting(this.containerEl)
+      .setName("対戦の履歴を保存する / Save battle history")
+      .setDesc("対戦が終わったとき(や、途中でやめたとき)、Battles/ に、ログとリプレイ用の記録を、ノートとして保存する。")
+      .addToggle((t) =>
+        t.setValue(this.settings.battleHistory).onChange(async (v) => {
+          this.settings.battleHistory = v;
+          await this.save();
+        }),
       );
     new Setting(this.containerEl)
       .setName("対戦の演出 / Battle effects")

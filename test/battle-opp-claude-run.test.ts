@@ -7,6 +7,8 @@ import { Ability, NodeCall } from "../src/battle/node";
 import { registerBuiltinNodes } from "../src/battle/nodes";
 import { BattleController } from "../src/battle/play";
 import { resetRegistry } from "../src/battle/registry";
+import { replay } from "../src/battle/replay";
+import { seeded } from "../src/battle/rng";
 import { RuleBook } from "../src/battle/state";
 
 resetRegistry();
@@ -35,9 +37,13 @@ let seed = 7;
 const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
 
 // Claude の代わりの、決まった返事の返し方 (選択肢の番号・攻撃・ブロックは、盤面から作る)
-const g = buildMatch(deck(), deck(), rules, () => 0.5);
-g.mulligan = undefined;
-const c = new BattleController(g, rules, "you", () => 0.5, undefined, "opp");
+const rngA = seeded(42);
+const g = buildMatch(deck(), deck(), rules, rngA);
+g.mulligan = { count: 0 };
+const c = new BattleController(g, rules, "you", rngA, undefined, "opp");
+c.mulligan(); // マリガンも記録・再現される
+assert.equal(c.keep(), "bottom");
+c.bottom([g.hands["you"][0].id]);
 let calls = 0;
 const ask: AskAi = async (_s, user) => {
   calls++;
@@ -84,4 +90,23 @@ assert.ok(g.turn >= 8 || g.over, `対戦が進む (ターン ${g.turn})`);
 assert.ok(calls > 5, "API (の代わり) を何度も呼んだ");
 assert.ok(g.log.some((l) => l.startsWith("相手 (Claude) のトークン")), "トークン数がログに残る");
 assert.equal(c.aiTokens.input, calls * 100);
+// ---- 記録の再生: 同じ種・同じデッキから、記録した入口の呼び出しを呼び直すと、同じ局面になる (ログの文面は、失敗した操作のぶん違ってよいので、比べない)
+{
+  const rngB = seeded(42);
+  const g2 = buildMatch(deck(), deck(), rules, rngB);
+  g2.mulligan = { count: 0 };
+  const c2 = new BattleController(g2, rules, "you", rngB, undefined, "opp");
+  const bad = replay(c2, c.record);
+  assert.equal(bad, 0, "記録と食い違った呼び出しは、無い");
+  const strip = (x: typeof g) => JSON.stringify({ ...x, log: undefined, decide: undefined });
+  assert.equal(strip(g2), strip(g), "再生で、同じ局面になる");
+  assert.ok(c.record.length > 50 && c.record.some((e) => e.op === "aiDo") && c.record.some((e) => e.op === "mulligan"));
+  // JSON に保存して読み戻しても、同じ (undefined は null になる)
+  const rngC = seeded(42);
+  const g3 = buildMatch(deck(), deck(), rules, rngC);
+  g3.mulligan = { count: 0 };
+  const c3 = new BattleController(g3, rules, "you", rngC, undefined, "opp");
+  assert.equal(replay(c3, JSON.parse(JSON.stringify(c.record))), 0);
+  assert.equal(strip(g3), strip(g));
+}
 console.log(`opp-claude-run ok (turn ${g.turn}, calls ${calls})`);

@@ -7,6 +7,13 @@ import { HAND_SIZE, putBottom, redraw } from "./mulligan";
 import { CastRecord } from "./node";
 import { Game, PlayerId, RuleBook } from "./state";
 
+// 記録の1件: 入口の呼び出し (op と引数) と、途中の質問への答え
+export interface RecordEntry {
+  op: string;
+  args: unknown[];
+  answers?: Answer[];
+}
+
 export type StopMode = "always" | "smart"; // 優先権の止まり方 (設定)。smart = 何もできないとき、時間ゲージで自動で進む。always = 自分で「次へ」
 
 const MAX_PASSES = 100; // 無限ループ防止
@@ -18,6 +25,13 @@ export class BattleController {
   pending?: { request: InputRequest };
   private redo?: (answers: Answer[]) => string | undefined;
   private answers: Answer[] = [];
+
+  // 対戦の記録 (履歴の保存とリプレイ用): 成功した操作を、入口の呼び出しの並びとして残す。同じ初期状態 (同じ乱数の種) から、この並びを呼び直せば、同じ局面になる
+  record: RecordEntry[] = [];
+  private cur?: { op: string; args: unknown[] };
+  private rec(op: string, args: unknown[]) {
+    this.cur = { op, args };
+  }
 
   constructor(readonly game: Game, readonly rules: RuleBook, readonly me: PlayerId = "you", private rng: () => number = Math.random, private cpu?: PlayerId, private ai?: PlayerId) {}
 
@@ -49,6 +63,7 @@ export class BattleController {
     if (!ai) return undefined;
     if (!o.action) return this.aiPass();
     const a = o.action;
+    this.rec("aiDo", [o]);
     return this.perform("相手", (x) => {
       const before = x.stack.length;
       cpuDo(x, this.rules, ai, a, o.targets);
@@ -57,12 +72,14 @@ export class BattleController {
   }
   aiPass(): string | undefined {
     const ai = this.ai;
+    if (ai) this.rec("aiPass", []);
     return ai ? this.perform("相手", (x) => void (x.priority === ai && passPriority(x, ai, this.rules)), []) : undefined;
   }
   // 判断が要らない優先権は、パスし続ける (人に優先権が渡るか、判断が要るところまで)
   aiAuto(): void {
     const ai = this.ai;
     if (!ai || this.pending) return; // 人への質問が出ている間は、何もしない (質問を消さない)
+    this.rec("aiAuto", []);
     this.perform("相手", (x) => {
       for (let n = 0; n < MAX_PASSES && !x.over && x.priority === ai; n++) {
         if (this.aiWaiting(x)) return;
@@ -76,6 +93,7 @@ export class BattleController {
     const foe = this.game.players.find((p) => p !== ai);
     if (!ai || foe === undefined) return undefined;
     this.aiDone.add(`${this.game.turn}:attack`);
+    this.rec("aiAttack", [ids]);
     return this.perform("相手", (x) => {
       if (ids.length) {
         declareAttackers(x, ai, ids.map((id) => ({ id, target: foe })), this.rules);
@@ -89,6 +107,7 @@ export class BattleController {
     if (!ai) return undefined;
     this.aiDone.add(`${this.game.turn}:block`);
     const name = (id: string) => this.game.battlefield.find((p) => p.id === id)?.card.name ?? id;
+    this.rec("aiBlock", [pairs]);
     return this.perform("相手", (x) => {
       declareBlockers(x, ai, pairs, this.rules); // 空でも呼ぶ (エンジンが、宣言済みを覚える)
       if (!pairs.length) return;
@@ -105,6 +124,7 @@ export class BattleController {
       this.ai = undefined;
       this.cpu = ai;
     } else this.aiDone.add(`${this.game.turn}:${kind}`); // 攻撃・ブロックは、この判断のあと、聞き直さない
+    this.rec("aiFail", [kind, reason, permanent]);
     this.perform("相手", (x) => {
       if (kind === "block") cpuBlock(x, this.rules, ai);
       else if (kind === "attack") {
@@ -130,6 +150,7 @@ export class BattleController {
     g.mulligan.count++;
     redraw(g, this.me, this.rng);
     g.log.push(`あなたはマリガンした (${g.mulligan.count} 回目)`);
+    this.record.push({ op: "mulligan", args: [] });
     return undefined;
   }
   // キープする。マリガンした回数ぶん、底に置くカードが要るなら "bottom" (画面が選ばせて、bottom() を呼ぶ)。要らなければ、すぐ始まる
@@ -139,6 +160,7 @@ export class BattleController {
     if (g.mulligan.count > 0) return "bottom";
     g.mulligan = undefined;
     g.log.push("あなたはキープした");
+    this.record.push({ op: "keep", args: [] });
     return "done";
   }
   // 底に置くカード (マリガンした回数ぶん) を決めて、始める
@@ -149,6 +171,7 @@ export class BattleController {
     if (!putBottom(g, this.me, ids)) return this.fail("マリガン", "手札に無いカードが含まれている");
     g.log.push(`あなたはキープして、${ids.length} 枚を底に置いた`);
     g.mulligan = undefined;
+    this.record.push({ op: "bottom", args: [ids] });
     return undefined;
   }
 
@@ -172,11 +195,14 @@ export class BattleController {
         return undefined;
       }
       this.pending = this.redo = undefined;
+      this.cur = undefined;
       if (e instanceof RuleError) return this.fail(label, e.message);
       throw e;
     }
     copy.decide = undefined;
     this.pending = this.redo = undefined;
+    if (this.cur) this.record.push({ op: this.cur.op, args: this.cur.args, ...(answers.length ? { answers: [...answers] } : {}) });
+    this.cur = undefined;
     for (const k of Object.keys(this.game)) if (!(k in copy)) delete (this.game as unknown as Record<string, unknown>)[k];
     Object.assign(this.game, copy);
     return undefined;
@@ -189,6 +215,7 @@ export class BattleController {
   }
   // 質問を取り消す (何も起きなかったことになる)
   cancel(): void {
+    this.cur = undefined;
     this.pending = this.redo = undefined;
     this.answers = [];
   }
@@ -202,6 +229,7 @@ export class BattleController {
     if (this.game.mulligan) return this.fail("攻撃", "マリガンを終えてください");
     const g = this.game;
     const names = ids.map((id) => g.battlefield.find((p) => p.id === id)?.card.name ?? id);
+    this.rec("declareAttackers", [ids]);
     return this.perform("攻撃", (x) => {
       declareAttackers(x, this.me, ids.map((id) => ({ id })), this.rules);
       if (ids.length) x.log.push(`あなたが ${names.join("、")} で攻撃した`);
@@ -212,6 +240,7 @@ export class BattleController {
     if (this.game.mulligan) return this.fail("ブロック", "マリガンを終えてください");
     const g = this.game;
     const name = (id: string) => g.battlefield.find((p) => p.id === id)?.card.name ?? id;
+    this.rec("declareBlockers", [pairs]);
     return this.perform("ブロック", (x) => {
       declareBlockers(x, this.me, pairs, this.rules);
       if (pairs.length) x.log.push(`あなたが ${pairs.map((q) => `${name(q.blocker)} で ${name(q.attacker)} を`).join("、")}ブロックした`);
@@ -221,6 +250,7 @@ export class BattleController {
 
   // ダメージの割り振り (自分の攻撃クリーチャーごと: ブロッカー id → ダメージ)。割り振らずに「次へ」なら、宣言の順に致死ダメージ
   assign(all: Record<string, Record<string, number>>): string | undefined {
+    this.rec("assign", [all]);
     return this.perform("割り振り", (x) => {
       for (const [a, amounts] of Object.entries(all)) assignDamage(x, this.me, a, amounts, this.rules);
     }, []);
@@ -331,6 +361,7 @@ export class BattleController {
     // 土地・マナ能力のマナを全部出せるとして、払えるか。払えれば、足りないぶんは、唱えるとき、自動でタップする (先にタップしておいたぶんは、そのまま使う)
     const why = tryAction(withAllMana(g, this.rules, this.me), this.rules, this.me, a, t, cast);
     if (why) return this.fail(card.name, why.replace("マナが足りない", "マナが足りません"));
+    this.rec("use", [cardId, targets, cast, tapIds]);
     return this.perform(card.name, (x) => {
       x.log.push(`あなたが ${card.name} を${land ? "出した" : cast?.kicked ? "キッカーを払って唱えた" : cast?.teamwork ? "チームワークで唱えた" : "唱えた"}`);
       if (land) playLand(x, this.me, cardId, this.rules);
@@ -362,6 +393,7 @@ export class BattleController {
     if (why) return this.fail(perm.card.name, why.replace("マナが足りない", "マナが足りません"));
     if (uselessMana(g, this.rules, this.me, act)) return this.fail(perm.card.name, "いまは、このマナの使い道が無い (唱えられる呪文・使える能力が無い)");
     const name = perm.card.name;
+    this.rec("activate", [permId, index, targets, tapIds]);
     return this.perform(name, (x) => {
       x.log.push(manaOnly ? `あなたが ${name} をタップしてマナを出した` : `あなたが ${name} の能力を起動した`);
       if (!manaOnly) {
@@ -376,7 +408,8 @@ export class BattleController {
   abilities(permId: string): { index: number; label: string; usable: boolean }[] {
     const perm = this.game.battlefield.find((p) => p.id === permId && p.controller === this.me);
     if (!perm) return [];
-    return abilityLabels(this.rules, perm.card.name).map((label, index) => ({ index, label, usable: tryAction(this.game, this.rules, this.me, { kind: "activate", perm: permId, index }) === undefined && !uselessMana(this.game, this.rules, this.me, { kind: "activate", perm: permId, index }) }));
+    const defs = this.rules.get(perm.card.name)?.abilities.filter((a) => a.kind === "activated") ?? [];
+    return abilityLabels(this.rules, perm.card.name).map((label, index) => ({ index, label, mana: !!defs[index] && manaOnly(defs[index].body), usable: tryAction(this.game, this.rules, this.me, { kind: "activate", perm: permId, index }) === undefined && !uselessMana(this.game, this.rules, this.me, { kind: "activate", perm: permId, index }) })).filter((a) => !a.mana).map(({ mana: _m, ...rest }) => rest); // マナを出すだけの能力は、手では使わない (カードを使うとき、自動で払う)
   }
 
   // 「次へ」: 次のステップへ進む (次の「できること」までではない)。ただし、攻撃できるクリーチャーがいない戦闘ステップは飛ばす。自分がパスして、相手も自動でパスする。
@@ -386,6 +419,7 @@ export class BattleController {
   next(): string | undefined {
     if (this.game.over) return undefined;
     if (this.game.mulligan) return this.fail("次へ", "マリガンを終えてください");
+    this.rec("next", []);
     return this.perform("次へ", (g) => {
       const cpu = this.cpu;
       // CPU が優先権を持っているとき、動く。呪文を唱えたら、パスして (自分に応答させて)、真を返す

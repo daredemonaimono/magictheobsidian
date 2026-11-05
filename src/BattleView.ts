@@ -2,6 +2,8 @@ import { ItemView, WorkspaceLeaf } from "obsidian";
 import { TargetSlot } from "./battle/engine";
 import { InputRequest } from "./battle/input";
 import { Action } from "./battle/actions";
+import { SavedBattle } from "./battle/saved";
+import { bump, focus } from "./battle/assignMath";
 import { AskAi } from "./battle/ai";
 import { aiStep } from "./battle/aiRun";
 import { BattleController, StopMode } from "./battle/play";
@@ -82,7 +84,7 @@ export class BattleView extends ItemView {
   private watcher?: ResizeObserver;
 
   // getSession = 対戦の局面 (無ければ、サンプルの局面)。対戦を始め直したときは、begin() で読み直す
-  constructor(leaf: WorkspaceLeaf, private getSession: () => BattleSession | undefined, private getStops: () => StopMode = () => "smart", private getOpp: () => "cpu" | "claude" | "passive" = () => "passive", private getFx: () => boolean = () => true, private getAsk: () => AskAi | undefined = () => undefined) {
+  constructor(leaf: WorkspaceLeaf, private getSession: () => BattleSession | undefined, private getStops: () => StopMode = () => "smart", private getOpp: () => "cpu" | "claude" | "passive" = () => "passive", private getFx: () => boolean = () => true, private getAsk: () => AskAi | undefined = () => undefined, private onSave: (b: SavedBattle) => void = () => {}) {
     super(leaf);
   }
 
@@ -100,15 +102,47 @@ export class BattleView extends ItemView {
     await this.begin();
   }
 
+  async onClose() {
+    this.saveHistory(); // 途中でやめたとき
+  }
+
   // 局面を (読み直して) 描き始める
+  // 対戦の履歴を保存する (1つのコントローラーにつき、1回。終わったとき・途中でやめた/新しい対戦に替わったとき)
+  private session?: BattleSession;
+  private savedCtl?: BattleController;
+  private saveHistory(result?: SavedBattle["result"]) {
+    const ctl = this.ctl;
+    const s = this.session;
+    if (!ctl || !s || s.seed === undefined || this.savedCtl === ctl || !ctl.record.length) return;
+    this.savedCtl = ctl;
+    const w = ctl.game.over?.winner;
+    this.onSave({
+      version: 1,
+      self: s.self ?? "",
+      opp: s.opp ?? "",
+      seed: s.seed,
+      mode: this.oppMode,
+      result: result ?? (ctl.game.over ? (w === VIEWER ? "win" : w === undefined ? "draw" : "lose") : "unfinished"),
+      turns: ctl.game.turn,
+      ...(ctl.aiTokens.input || ctl.aiTokens.output ? { tokens: { ...ctl.aiTokens } } : {}),
+      date: new Date().toISOString(),
+      entries: ctl.record,
+      log: [...ctl.game.log],
+    });
+  }
+  private oppMode: "cpu" | "claude" | "passive" = "passive";
+
   async begin() {
+    this.saveHistory(); // 開き直し・新しい対戦に替わる前の対戦を、保存する
     const session = this.getSession();
+    this.session = session;
     const { game, rules } = session ?? sampleBattle();
     this.game = game;
     this.rules = rules;
     const foe = this.game.players.find((p) => p !== VIEWER);
     const opp = this.getOpp();
-    this.ctl = session ? new BattleController(game, rules, VIEWER, Math.random, opp === "cpu" ? foe : undefined, opp === "claude" ? foe : undefined) : undefined;
+    this.oppMode = opp;
+    this.ctl = session ? new BattleController(game, rules, VIEWER, session.rng ?? Math.random, opp === "cpu" ? foe : undefined, opp === "claude" ? foe : undefined) : undefined;
     this.tried.clear();
     this.askEl = undefined;
     this.targeting = undefined;
@@ -139,7 +173,11 @@ export class BattleView extends ItemView {
         if (this.combatSel && this.clickCombat(e)) return;
         if (!(e.target as HTMLElement).closest(".mtg-bt-menu")) this.closeMenu(); // 捕捉の段階で閉じる (そのあと、クリックしたカードが、必要なら開き直す)
       }, true);
-      this.registerDomEvent(this.contentEl, "dblclick", (e) => (this.targeting || (this.combatSel && this.combatTid(e))) && e.stopPropagation(), true);
+      this.registerDomEvent(this.contentEl, "dblclick", (e) => {
+        if (this.combatSel?.kind === "assign") this.assignClick(e, "focus");
+        else if (this.targeting || (this.combatSel && this.combatTid(e))) e.stopPropagation();
+      }, true);
+      this.registerDomEvent(this.contentEl, "contextmenu", (e) => void (this.combatSel?.kind === "assign" && this.assignClick(e, "down")), true); // 右クリック: −1
     }
   }
   private keysOn = false;
@@ -179,6 +217,7 @@ export class BattleView extends ItemView {
       if (!this.ctl || this.targeting) return; // 対象を選んでいる間は、進めない
       const sel = this.combatSel;
       if (sel?.kind === "attack" && sel.picks.size) this.run(() => this.ctl!.declareAttackers([...sel.picks])); // 攻撃するクリーチャーを選んでいれば、「攻撃する」
+      else if (sel?.kind === "assign") this.run(() => this.ctl!.assign(Object.fromEntries(sel.vals))); // ダメージの割り振りを確定
       else if (sel?.kind === "block") this.run(() => this.ctl!.declareBlockers([...sel.pairs].map(([blocker, attacker]) => ({ blocker, attacker })))); // ブロックの指定 (選んでいなければ、空 = ブロックしない)
       else this.run(() => this.ctl!.next()); // 選んでいなければ、「次へ」(攻撃しない)
     });
@@ -228,6 +267,7 @@ export class BattleView extends ItemView {
     this.paintLog(m.log);
     this.paintGauge(m);
     this.paintFx(m);
+    if (m.over) this.saveHistory(); // 勝敗が付いたとき
     this.fit();
     this.syncCombat(m);
     if (this.targeting) this.paintTargeting();
@@ -308,11 +348,26 @@ export class BattleView extends ItemView {
   private combatTid(e: MouseEvent): string | undefined {
     const id = (e.target as HTMLElement).closest<HTMLElement>("[data-tid]")?.dataset.tid;
     const ch = this.choice;
+    if (id && ch?.kind === "assign") return ch.items.some((it) => it.blockers.some((b) => b.id === id)) ? id : undefined; // 割り振り: ブロッカーのカード
     return id && ch && ch.kind !== "assign" && (ch.mine.includes(id) || (ch.kind === "block" && ch.attackers.includes(id))) ? id : undefined;
+  }
+  // ダメージの割り振り: ブロッカーのカードを、クリックで +1 / Shift・右クリックで −1 / ダブルクリックで、そのブロッカーに集中 (攻撃クリーチャーは、ブロッカーから分かる)
+  private assignClick(e: MouseEvent, mode: "up" | "down" | "focus"): boolean {
+    const sel = this.combatSel;
+    const ch = this.choice;
+    const id = this.combatTid(e);
+    if (sel?.kind !== "assign" || ch?.kind !== "assign" || !id) return false;
+    const it = ch.items.find((x) => x.blockers.some((b) => b.id === id))!;
+    const cur = sel.vals.get(it.attacker) ?? it.defaults;
+    sel.vals.set(it.attacker, mode === "focus" ? focus(it, id) : bump(it, cur, id, mode === "up" ? 1 : -1));
+    e.stopPropagation();
+    e.preventDefault();
+    this.paintCombat();
+    return true;
   }
   private clickCombat(e: MouseEvent): boolean {
     const sel = this.combatSel!;
-    if (sel.kind === "assign") return false;
+    if (sel.kind === "assign") return this.assignClick(e, e.shiftKey ? "down" : "up");
     const id = this.combatTid(e);
     if (!id) return false;
     e.stopPropagation();
@@ -336,14 +391,15 @@ export class BattleView extends ItemView {
   // 攻撃するクリーチャー / ブロックの組を選んでいる間は、「次へ」ボタンが「攻撃する」「ブロックする」になる (選びを全部やめたら、「次へ」に戻る。ブロックは、「次へ」で、ブロックしないと宣言する)
   private applyNextLabel() {
     const sel = this.combatSel;
-    this.ui.next.setText(sel?.kind === "attack" && sel.picks.size ? `攻撃する (${sel.picks.size} 体)` : sel?.kind === "block" && sel.pairs.size ? `ブロックする (${sel.pairs.size} 体)` : this.nextLabel);
+    this.ui.next.setText(sel?.kind === "attack" && sel.picks.size ? `攻撃する (${sel.picks.size} 体)` : sel?.kind === "block" && sel.pairs.size ? `ブロックする (${sel.pairs.size} 体)` : sel?.kind === "assign" ? "ダメージを割り振る" : this.nextLabel);
   }
   private paintCombat() {
     this.applyNextLabel();
     const st = this.ui.stage;
-    for (const el of Array.from(st.querySelectorAll(".is-cmb-able, .is-cmb-picked, .is-cmb-target, [data-block-to]"))) {
+    for (const el of Array.from(st.querySelectorAll(".is-cmb-able, .is-cmb-picked, .is-cmb-target, [data-block-to], [data-asgn]"))) {
       el.classList.remove("is-cmb-able", "is-cmb-picked", "is-cmb-target");
       delete (el as HTMLElement).dataset.blockTo;
+      delete (el as HTMLElement).dataset.asgn;
     }
     this.cbar?.remove();
     this.cbar = undefined;
@@ -365,47 +421,25 @@ export class BattleView extends ItemView {
       }
       return; // ブロックの選択は、盤面の光りと「次へ」ボタンだけ (上の帯は出さない)
     }
+    if (sel.kind === "assign" && ch.kind === "assign") {
+      for (const it of ch.items) {
+        const v = sel.vals.get(it.attacker) ?? it.defaults;
+        for (const b of it.blockers) {
+          const el = at(b.id);
+          if (!el) continue;
+          el.classList.add("is-cmb-able");
+          el.dataset.asgn = `ダメージ ${v[b.id] ?? 0} (致死 ${b.lethal})`; // 相手のブロッカーに、自分の攻撃のダメージを何点載せるか
+        }
+        if (it.trample) {
+          const rest = it.power - Object.values(v).reduce((a, n) => a + n, 0);
+          const el = at(it.attacker);
+          if (el) el.dataset.asgn = `相手へ ${rest}`;
+        }
+      }
+      return; // 割り振りは、盤面のカードのクリックと「次へ」ボタンだけ (上の帯は出さない)
+    }
     const bar = st.createDiv("mtg-bt-tbar");
     this.cbar = bar;
-    if (sel.kind === "assign" && ch.kind === "assign") {
-      bar.addClass("is-assign");
-      bar.createSpan({ text: "ダメージを割り振る (「次へ」なら、宣言の順に致死ダメージ)" });
-      const ok = bar.createEl("button", { cls: "mod-cta", text: "確定" });
-      const syncOk = () => {
-        ok.disabled = ch.items.some((it) => {
-          const v = Object.values(sel.vals.get(it.attacker) ?? {}).reduce((a, n) => a + n, 0);
-          return it.trample ? v > it.power : v !== it.power;
-        });
-      };
-      for (const it of ch.items) {
-        const row = bar.createDiv("mtg-bt-assign");
-        const v = sel.vals.get(it.attacker)!;
-        const total = row.createSpan({ cls: "mtg-bt-assign-total" });
-        const showTotal = () => {
-          const sum = Object.values(v).reduce((a, n) => a + n, 0);
-          total.setText(`${it.name} (パワー ${it.power}): ${it.trample ? `残り ${it.power - sum} は相手へ` : `残り ${it.power - sum}`}`);
-          syncOk();
-        };
-        row.prepend(total);
-        for (const b of it.blockers) {
-          const cell = row.createSpan({ cls: "mtg-bt-assign-cell" });
-          cell.createSpan({ text: `${b.name} (致死 ${b.lethal})` });
-          const n = cell.createSpan({ cls: "mtg-bt-assign-n", text: String(v[b.id]) });
-          const step = (d: number) => () => {
-            const sum = Object.values(v).reduce((a, x) => a + x, 0);
-            if (v[b.id] + d < 0 || sum + d > it.power) return;
-            v[b.id] += d;
-            n.setText(String(v[b.id]));
-            showTotal();
-          };
-          cell.createEl("button", { text: "−" }).addEventListener("click", step(-1));
-          cell.createEl("button", { text: "+" }).addEventListener("click", step(1));
-        }
-        showTotal();
-      }
-      ok.addEventListener("click", () => this.run(() => this.ctl!.assign(Object.fromEntries(sel.vals))));
-      return;
-    }
   }
 
   private setText(el: HTMLElement, text: string, life?: number) {
@@ -430,11 +464,9 @@ export class BattleView extends ItemView {
   }
 
   // 同じ名前の土地の山 (src/battle/boardModel.ts の LandStack)。自分の山は、ダブルクリックで、使える土地を1枚タップ
-  private stackItems(stacks: LandStack[], mine: boolean): Item[] {
-    return stacks.map((s) => {
-      const land = () => s.cards.find((c) => c.playable)?.id;
-      return { key: `stack:${s.name}`, data: s, name: s.name, paint: (el) => this.fillStack(el, s), ...(this.ctl && mine ? { use: () => { const id = land(); if (id) this.useAbility(id); }, pick: () => { const id = land(); if (id) this.pickAbility(id); } } : {}) };
-    });
+  // 土地の山: 手でタップする操作は無い (マナは、カードを使うとき、自動で払う)
+  private stackItems(stacks: LandStack[], _mine: boolean): Item[] {
+    return stacks.map((s) => ({ key: `stack:${s.name}`, data: s, name: s.name, paint: (el: HTMLElement) => this.fillStack(el, s) }));
   }
 
   // ---- 操作 (ルールはコントローラーにある。ここは、呼んで描き直すだけ)

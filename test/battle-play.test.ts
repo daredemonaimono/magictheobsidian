@@ -66,14 +66,13 @@ const toMain = (c: BattleController) => {
   // 土地 1 枚では、MV2 の Bear は唱えられない: マナを出しても使い道が無いので、タップできない (進めるとマナが消えるだけ。前提を変えた: 以前は、いつでもタップできた)
   assert.ok(c.activate(land.id, 0), "使い道の無いマナは、出せない: 理由が返る");
   assert.equal(g.mana["you"], 0);
-  assert.equal(c.abilities(land.id)[0].usable, false);
+  assert.deepEqual(c.abilities(land.id), [], "マナを出すだけの能力は、手で使う一覧に出ない (前提を変えた: マナは、カードを使うとき、自動で払う)");
   const l2 = g.hands["you"].find((x) => x.name === "Island")!;
   g.hands["you"] = g.hands["you"].filter((x) => x !== l2);
   g.battlefield.push({ id: l2.id, card: l2, controller: "you" }); // 2枚目の土地 (これで、Bear が唱えられる)
   assert.equal(c.activate(land.id, 0), undefined);
   assert.equal(g.mana["you"], 1);
   assert.ok(g.log.includes("あなたが Island をタップしてマナを出した"));
-  assert.ok(c.abilities(land.id)[0].label.startsWith("1: ") && !c.abilities(land.id)[0].usable, "タップ済みの能力は、使えない表示");
   assert.equal(c.activate(l2.id, 0), undefined); // 2マナ目
   assert.equal(g.mana["you"], 2);
   assert.equal(c.use(bear.id), undefined);

@@ -42,7 +42,9 @@ for (const hand of [[], [bear(2)]]) {
   const g = make([bear(1)]);
   assert.equal(manaUseful(g, rules, "you"), true);
   assert.equal(uselessMana(g, rules, "you", tap), false);
-  assert.ok(boardModel(g, rules, "you", () => undefined).self.landStacks.flatMap((s) => s.cards).some((c) => c.playable));
+  const mm = boardModel(g, rules, "you", () => undefined);
+  assert.equal(mm.self.landStacks.flatMap((s) => s.cards).some((c) => c.playable), false, "土地は、手でタップしないので、光らない (前提を変えた: 以前は、使い道があれば光った)");
+  assert.ok(mm.self.hand[0].playable, "唱えられるカードは、光る");
   const c = new BattleController(g, rules);
   assert.equal(c.activate("Island1", 0), undefined);
   assert.equal(g.mana["you"], 1);

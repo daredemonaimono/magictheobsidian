@@ -1,5 +1,6 @@
 import { App, TFile, normalizePath } from "obsidian";
 import { cpuMulligan } from "./battle/cpu";
+import { seeded } from "./battle/rng";
 import { BattleSession, CardData, DeckChoice, DeckData, MatchError, buildMatch } from "./battle/deckToGame";
 import { parseRule } from "./battle/ruleMd";
 import { CardRule } from "./battle/node";
@@ -65,8 +66,10 @@ export async function loadMatchInputs(app: App, selfName: string, oppName: strin
 
 export async function startBattle(app: App, selfName: string, oppName: string, cpu = true): Promise<BattleSession> {
   const { self, opp, rules } = await loadMatchInputs(app, selfName, oppName);
-  const game = buildMatch(self, opp, rules);
+  const seed = Math.floor(Math.random() * 2 ** 31);
+  const rng = seeded(seed); // 山札の切り直し・マリガンは、この種から決まる (履歴のリプレイで、同じ局面を作るため)
+  const game = buildMatch(self, opp, rules, rng);
   game.mulligan = { count: 0 }; // 開始前に、マリガンを聞く
-  if (cpu) cpuMulligan(game, "opp", Math.random); // 相手 (雑魚 CPU) は、簡単な決まりで、先にマリガンする (何もしない相手は、しない)
-  return { game, rules };
+  if (cpu) cpuMulligan(game, "opp", rng); // 相手 (雑魚 CPU) は、簡単な決まりで、先にマリガンする (何もしない相手は、しない)
+  return { game, rules, seed, rng, self: selfName, opp: oppName };
 }

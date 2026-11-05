@@ -20,6 +20,7 @@ import { CARDLIST_VIEW, CardListView } from "./CardListView";
 import { BATTLE_VIEW, BattleView } from "./BattleView";
 import { BattleStartModal } from "./BattleStartModal";
 import { BattleSession, MatchError } from "./battle/deckToGame";
+import { SavedBattle, battleNote, battleNoteName } from "./battle/saved";
 import { listDecks, startBattle } from "./battleStart";
 import { COLLECTION_VIEW, CollectionView } from "./CollectionView";
 import { CARDS_VIEW, CardsView } from "./CardsView";
@@ -96,6 +97,7 @@ export default class MagicTheObsidian extends Plugin {
       battleStops: d.battleStops === "always" ? "always" : "smart",
       battleOpponent: d.battleOpponent === "passive" ? "passive" : d.battleOpponent === "claude" ? "claude" : "cpu",
       battleModel: d.battleModel ?? DEFAULT_SETTINGS.battleModel,
+      battleHistory: d.battleHistory ?? DEFAULT_SETTINGS.battleHistory,
       battleEffects: d.battleEffects ?? DEFAULT_SETTINGS.battleEffects,
     };
     priceStore.prices = d.prices ?? {};
@@ -121,7 +123,7 @@ export default class MagicTheObsidian extends Plugin {
             return { text, ...(usage ?? {}) };
           }
         : undefined;
-    }));
+    }, (b) => void this.saveBattle(b)));
     this.registerView(DASHBOARD_VIEW, (leaf) => new DashboardView(leaf, { collection: () => void this.openOrReveal(COLLECTION_VIEW), deck: () => void this.openOrReveal(DECKLIST_VIEW), cards: () => void this.openOrReveal(CARDS_VIEW) }));
     this.registerView(CARDS_VIEW, (leaf) => new CardsView(leaf, this.settings));
     this.registerView(
@@ -335,6 +337,21 @@ export default class MagicTheObsidian extends Plugin {
 
   // ---- 対戦: デッキを選んで始める
   private battleSession?: BattleSession;
+
+  // 対戦の履歴を、Battles/ のノートに保存する (設定でオフにできる)。同じ名前があれば、-2, -3 …
+  private async saveBattle(b: SavedBattle) {
+    if (!this.settings.battleHistory) return;
+    try {
+      const dir = "Battles";
+      if (!(await this.app.vault.adapter.exists(dir))) await this.app.vault.createFolder(dir);
+      const base = battleNoteName(b).replace(/\.md$/, "");
+      let path = normalizePath(`${dir}/${base}.md`);
+      for (let n = 2; await this.app.vault.adapter.exists(path); n++) path = normalizePath(`${dir}/${base}-${n}.md`);
+      await this.app.vault.create(path, battleNote(b.mode === "claude" ? { ...b, model: this.settings.battleModel } : b));
+    } catch (e) {
+      new Notice(`対戦の履歴を保存できなかった: ${(e as Error).message}`);
+    }
+  }
 
   private async openBattleStart() {
     const decks = await listDecks(this.app);
