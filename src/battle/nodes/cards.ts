@@ -215,12 +215,26 @@ export function registerCards(): void {
   node({
     id: "exile",
     title: "追放する",
-    summary: "自分の墓地のカードを count 枚、追放する (足りなければ何もしない)。optional=true なら「してもよい」(断れる)。追放できた枚数を n として出力する(0 なら追放していない)。「そうしたなら〜」は、これを as=名前 で受けて、次のノードに if=$名前 を付ける。shortcut: 追放するカードは墓地の古いものから (選べるのは、判断の入力を作るとき)",
-    params: { zone: { type: "string", required: true, choices: ["graveyard"] }, count: { type: "number", required: true, min: 1 }, optional: { type: "boolean" } },
+    summary: "追放する。target=(対象・select の出力) があれば、戦場のそのパーマネントを追放する (トークンは消える)。無ければ、自分の墓地のカードを count 枚(zone=graveyard。足りなければ何もしない)。optional=true なら「してもよい」(断れる)。追放できた枚数を n として出力する(0 なら追放していない)。「そうしたなら〜」は、これを as=名前 で受けて、次のノードに if=$名前 を付ける。「追放して、そのパワーに等しいライフを得る」は、追放の前に statOf・controllerOf で読んでおく。shortcut: 墓地から追放するカードは、古いものから (選べるのは、判断の入力を作るとき)",
+    params: { target: { type: "ref" }, zone: { type: "string", choices: ["graveyard"] }, count: { type: "number", min: 1 }, optional: { type: "boolean" } },
     outputs: { n: "number" },
+    check: (a) => (a.target !== undefined || (a.zone !== undefined && a.count !== undefined) ? null : "target か、(zone と count) の、どちらかが要る"),
     run: (ctx, a): Record<string, Value> => {
       const g = ctx.game;
       const p = ctx.item.controller;
+      if (a.target !== undefined) {
+        let n = 0;
+        for (const id of idList(a.target)) {
+          const perm = g.battlefield.find((x) => x.id === id);
+          if (!perm) continue;
+          g.battlefield = g.battlefield.filter((x) => x !== perm);
+          if (!perm.card.token) g.exile[perm.card.owner].push(perm.card);
+          g.log.push(`${perm.card.name} を追放した`);
+          g.events.push({ type: "leaves", perm });
+          n++;
+        }
+        return { n };
+      }
       const n = Number(a.count);
       if (g.graveyards[p].length < n) return { n: 0 };
       if (a.optional === true && !(g.decide?.may?.(g, p, "exile") ?? true)) return { n: 0 };

@@ -2,7 +2,7 @@
 
 > このファイルは、自動で作られます (`src/battle/nodeDocs.ts`)。直接は書き換えません。ノードを足したら、`npm run docs:nodes` で更新します。ノードは、`src/battle/nodes/` の、カテゴリーごとのファイルにあります。
 
-全 51 個のノード、7 個の条件。
+全 53 個のノード、7 個の条件。
 
 目次: [宣言・コスト・条件](#宣言・コスト・条件) / [対象・数える・絞り込む](#対象・数える・絞り込む) / [カードの移動・ライブラリー・手札](#カードの移動・ライブラリー・手札) / [パーマネント・トークン・カウンター](#パーマネント・トークン・カウンター) / [ダメージ・ライフ・マナ・打ち消し](#ダメージ・ライフ・マナ・打ち消し) / [継続効果](#継続効果)
 
@@ -86,7 +86,7 @@
 - 宣言のノード (エンジンが読む。`if=` は付けられない)
 - 中心のノード (ルールを書かせるとき、いつも AI の指示に入る。ほかは、カードごとに選ぶ)
 
-## 対象・数える・絞り込む (5 個)
+## 対象・数える・絞り込む (7 個)
 
 ### `target` 対象
 
@@ -110,6 +110,20 @@ zone(hand / graveyard / library / battlefield)のカードの枚数を、n と�
 
 - 引数: `zone`(string・必須・hand / graveyard / library / battlefield)、`who`(string・you / opponents)、`type`(string)、`notType`(string)
 - 出力: `n`(number) (`as=名前` で受けて、`$名前` で渡す)
+
+### `statOf` 数値を読む
+
+対象(複数なら、合計)のパワー・タフネス・マナ総量を、n として出力する (stat=power / toughness / mv)。戦場を離れる効果の前に使う: 「そのパワーに等しいライフを得る」(Swords to Plowshares)は、statOf → exile → gainLife amount=$名前
+
+- 引数: `target`(ref・必須)、`stat`(string・必須・power / toughness / mv)
+- 出力: `n`(number) (`as=名前` で受けて、`$名前` で渡す)
+
+### `controllerOf` コントローラーを読む
+
+対象のパーマネント(複数なら、先頭)のコントローラーを、id として出力する。「そのコントローラーは、ライフを得る」は、controllerOf as=名前 → gainLife player=target target=$名前。戦場を離れる効果の前に使う
+
+- 引数: `target`(ref・必須)
+- 出力: `id`(id) (`as=名前` で受けて、`$名前` で渡す)
 
 ### `filter` 絞り込む
 
@@ -194,9 +208,9 @@ cards(look / choose の出力)を、持ち主の to へ動かす。to=hand / gra
 
 ### `exile` 追放する
 
-自分の墓地のカードを count 枚、追放する (足りなければ何もしない)。optional=true なら「してもよい」(断れる)。追放できた枚数を n として出力する(0 なら追放していない)。「そうしたなら〜」は、これを as=名前 で受けて、次のノードに if=$名前 を付ける。shortcut: 追放するカードは墓地の古いものから (選べるのは、判断の入力を作るとき)
+追放する。target=(対象・select の出力) があれば、戦場のそのパーマネントを追放する (トークンは消える)。無ければ、自分の墓地のカードを count 枚(zone=graveyard。足りなければ何もしない)。optional=true なら「してもよい」(断れる)。追放できた枚数を n として出力する(0 なら追放していない)。「そうしたなら〜」は、これを as=名前 で受けて、次のノードに if=$名前 を付ける。「追放して、そのパワーに等しいライフを得る」は、追放の前に statOf・controllerOf で読んでおく。shortcut: 墓地から追放するカードは、古いものから (選べるのは、判断の入力を作るとき)
 
-- 引数: `zone`(string・必須・graveyard)、`count`(number・必須)、`optional`(boolean)
+- 引数: `target`(ref)、`zone`(string・graveyard)、`count`(number)、`optional`(boolean)
 - 出力: `n`(number) (`as=名前` で受けて、`$名前` で渡す)
 
 ## パーマネント・トークン・カウンター (12 個)

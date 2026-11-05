@@ -86,6 +86,39 @@ export function registerTargets(): void {
     },
   });
 
+  // 対象のパーマネントの、パワー・タフネス・マナ総量 (いまの値。複数なら、合計) を、数として出す。「そのパワーに等しいライフ」は、追放・破壊の前に、これで読む (戦場を離れたあとは、読めない)
+  node({
+    id: "statOf",
+    title: "数値を読む",
+    summary: "対象(複数なら、合計)のパワー・タフネス・マナ総量を、n として出力する (stat=power / toughness / mv)。戦場を離れる効果の前に使う: 「そのパワーに等しいライフを得る」(Swords to Plowshares)は、statOf → exile → gainLife amount=$名前",
+    params: { target: { type: "ref", required: true }, stat: { type: "string", required: true, choices: ["power", "toughness", "mv"] } },
+    outputs: { n: "number" },
+    run: (ctx, a): Record<string, Value> => {
+      const g = ctx.game;
+      let n = 0;
+      for (const id of idList(a.target)) {
+        const perm = g.battlefield.find((x) => x.id === id);
+        if (!perm) continue;
+        const now = characteristics(g, perm, ctx.rules);
+        n += a.stat === "mv" ? perm.card.mv : a.stat === "toughness" ? now.toughness ?? 0 : now.power ?? 0;
+      }
+      return { n };
+    },
+  });
+
+  // 対象のパーマネントの、コントローラー。「そのコントローラーは、〜」は、これを player=target の、target に渡す
+  node({
+    id: "controllerOf",
+    title: "コントローラーを読む",
+    summary: "対象のパーマネント(複数なら、先頭)のコントローラーを、id として出力する。「そのコントローラーは、ライフを得る」は、controllerOf as=名前 → gainLife player=target target=$名前。戦場を離れる効果の前に使う",
+    params: { target: { type: "ref", required: true } },
+    outputs: { id: "id" },
+    run: (ctx, a): Record<string, Value> => {
+      const perm = ctx.game.battlefield.find((x) => x.id === idList(a.target)[0]);
+      return perm ? { id: perm.controller } : {};
+    },
+  });
+
   node({
     id: "filter",
     title: "絞り込む",
