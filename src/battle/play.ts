@@ -37,6 +37,7 @@ export class BattleController {
 
   // ---- Claude の AI の相手 (段階7)。API を呼ぶのは画面。ここは、「いま AI の判断が要るか」と、判断の実行だけ (API は呼ばない)
   aiTokens = { input: 0, output: 0 }; // この対戦で、AI が使ったトークン数
+  aiMemo = ""; // 相手のデッキの、持ち主のメモ (AI への指示に足す)
   aiNotes: { n: number; why: string }[] = []; // AI が返した理由 (n = その行動が、記録の何件目になるか)。ログには出さず、履歴の裏側に残す
   private aiDone = new Set<string>(); // 攻撃・ブロックを、ターンごとに1回だけ聞く
   get aiActive(): boolean {

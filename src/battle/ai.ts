@@ -89,6 +89,10 @@ export const AI_SYSTEM = `あなたは、マジック:ザ・ギャザリング�
 - ブロックを選ぶとき: {"blocks": [{"blocker": "id", "attacker": "id"}, ...], "why": "..."} (ブロックしないなら空の配列。1体は1体だけをブロックできる)
 id は、盤面の説明の「(id:〜)」の、〜の部分だけを、そのまま書いてください (カード名ではありません)。「why」で「攻撃する」と書いたなら、その id を attackers に入れてください。`;
 
+// デッキのメモ (持ち主が書いた、そのデッキの動かし方) を、指示に足す。無ければ、そのまま (AI の自己判断)
+export const withMemo = (system: string, memo?: string): string =>
+  memo?.trim() ? `${system}\n\nあなたが使うデッキについて、持ち主が書いたメモです。マリガンの基準・立ち回り・コンボなどが書いてあれば、参考にしてください (書いていないことは、自分で判断してください):\n${memo.trim()}` : system;
+
 export const aiActPrompt = (g: Game, rules: RuleBook, p: PlayerId, opts: AiOption[]): string => `${aiDescribe(g, rules, p)}\n\nあなたはいま優先権を持っています。選べる行動:\n${opts.map((o) => `${o.id}: ${o.label}`).join("\n")}\n\n番号を1つ選んでください。`;
 
 export function aiAttackers(g: Game, rules: RuleBook, p: PlayerId): Perm[] {

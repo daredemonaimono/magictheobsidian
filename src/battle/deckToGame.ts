@@ -106,6 +106,8 @@ export interface BattleSession {
   rng?: () => number;
   self?: string;
   opp?: string;
+  oppMemo?: string; // 相手のデッキの、持ち主のメモ
+  aiMulligan?: { count: number; bottom: string[] }; // AI の相手のマリガンの結果 (リプレイで、同じ手札を作り直す)
   // リプレイ: 記録と、同じ初期状態を作り直す関数 (戻る・ジャンプのたびに、作り直して、記録を呼び直す)
   replay?: import("./saved").SavedBattle;
   rebuild?: () => BattleSession;

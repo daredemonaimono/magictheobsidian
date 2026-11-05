@@ -1,5 +1,8 @@
 import { App, TFile, normalizePath } from "obsidian";
+import { AskAi } from "./battle/ai";
+import { MulliganResult, aiMulligan, applyMulligan } from "./battle/aiMulligan";
 import { cpuMulligan } from "./battle/cpu";
+import { extractMemo } from "./battle/memo";
 import { seeded } from "./battle/rng";
 import { SavedBattle } from "./battle/saved";
 import { BattleSession, CardData, DeckChoice, DeckData, MatchError, buildMatch } from "./battle/deckToGame";
@@ -68,22 +71,39 @@ export async function loadMatchInputs(app: App, selfName: string, oppName: strin
 type Inputs = { self: DeckData; opp: DeckData; rules: RuleBook };
 
 // 同じ種から、いつも同じ初期状態を作る (対戦を始めるときと、履歴のリプレイで、共通)
-export function buildSession(inputs: Inputs, selfName: string, oppName: string, seed: number, cpu: boolean): BattleSession {
+// cpu = 相手 (雑魚 CPU) が、簡単な決まりで、先にマリガンする (何もしない相手は、しない)。aiMulligan = AI の相手のマリガンの記録 (リプレイで、同じ手札を作り直す)
+export function buildSession(inputs: Inputs, selfName: string, oppName: string, seed: number, cpu: boolean, aiMulligan?: MulliganResult): BattleSession {
   const rng = seeded(seed); // 山札の切り直し・マリガンは、この種から決まる (履歴のリプレイで、同じ局面を作るため)
   const game = buildMatch(inputs.self, inputs.opp, inputs.rules, rng);
   game.mulligan = { count: 0 }; // 開始前に、マリガンを聞く
-  if (cpu) cpuMulligan(game, "opp", rng); // 相手 (雑魚 CPU) は、簡単な決まりで、先にマリガンする (何もしない相手は、しない)
-  return { game, rules: inputs.rules, seed, rng, self: selfName, opp: oppName };
+  if (aiMulligan) applyMulligan(game, "opp", rng, aiMulligan);
+  else if (cpu) cpuMulligan(game, "opp", rng);
+  return { game, rules: inputs.rules, seed, rng, self: selfName, opp: oppName, ...(aiMulligan ? { aiMulligan } : {}) };
 }
 
-export async function startBattle(app: App, selfName: string, oppName: string, cpu = true): Promise<BattleSession> {
+// デッキのノートの、メモ (`## メモ`)。無ければ空
+export async function loadDeckMemo(app: App, name: string): Promise<string> {
+  const file = deckFiles(app).find((f) => f.basename === name);
+  return file ? extractMemo(await app.vault.cachedRead(file)) : "";
+}
+
+// ask = AI の相手を呼ぶ関数。あれば (AI の相手のとき)、マリガンも AI が決める (メモに基準があれば、それに沿う。無ければ、自己判断)。失敗したら、雑魚 CPU の決まり
+export async function startBattle(app: App, selfName: string, oppName: string, cpu = true, ask?: AskAi): Promise<BattleSession> {
   const inputs = await loadMatchInputs(app, selfName, oppName);
-  return buildSession(inputs, selfName, oppName, Math.floor(Math.random() * 2 ** 31), cpu);
+  const seed = Math.floor(Math.random() * 2 ** 31);
+  const oppMemo = await loadDeckMemo(app, oppName);
+  if (!ask) return { ...buildSession(inputs, selfName, oppName, seed, cpu), oppMemo };
+  const s = buildSession(inputs, selfName, oppName, seed, false);
+  const aiMulligan = await aiMulliganOf(s, ask, oppMemo);
+  return { ...s, oppMemo, aiMulligan };
+}
+async function aiMulliganOf(s: BattleSession, ask: AskAi, memo: string): Promise<MulliganResult> {
+  return aiMulligan(s.game, "opp", s.rng!, ask, memo);
 }
 
 // 履歴のリプレイ: 記録と同じデッキ・種から初期状態を作る関数を持った、対戦のセッション (いまのデッキ・ルールのノートを読む)
 export async function startReplay(app: App, saved: SavedBattle): Promise<BattleSession> {
   const inputs = await loadMatchInputs(app, saved.self, saved.opp);
-  const make = () => buildSession(inputs, saved.self, saved.opp, saved.seed, saved.mode !== "passive");
+  const make = () => buildSession(inputs, saved.self, saved.opp, saved.seed, saved.mode !== "passive", saved.aiMulligan);
   return { ...make(), replay: saved, rebuild: make };
 }

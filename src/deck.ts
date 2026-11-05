@@ -37,7 +37,7 @@ export function parseDeck(content: string): Deck {
   return deck;
 }
 
-// 見出し以外 (動き方メモなど) は触らず、カード行だけ差し替える
+// 見出し以外 (メモなど) は触らず、カード行だけ差し替える
 export function writeDeck(content: string, deck: Deck): string {
   const lines = content.split("\n");
   for (const board of ["commander", "main", "side", "token"] as Board[]) {

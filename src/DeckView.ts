@@ -1,4 +1,5 @@
-import { App, ItemView, Modal, Notice, Setting, TFile, ViewStateResult, WorkspaceLeaf, moment } from "obsidian";
+import { App, ItemView, Modal, Notice, Setting, TFile, ViewStateResult, WorkspaceLeaf, moment, setIcon } from "obsidian";
+import { editableMemo, setMemo } from "./battle/memo";
 import { addFlip } from "./flip";
 import { CARD_DIR, cardBackImage, cardBackText, cardImage, cardInfo, cardText, oracleEnglish, printingImage, printingOf, readPrintings, refetchCard, setLocalText, updateLegality } from "./cards";
 import { CREATABLE, FORMATS, formatOf, judge } from "./rules";
@@ -206,6 +207,18 @@ export class DeckView extends ItemView {
     el.empty();
     if (art) el.style.setProperty("--mtg-head-art", `url("${art}")`);
     else el.style.removeProperty("--mtg-head-art");
+
+    // ヘッダーにカーソルを合わせると、右上に、メモのアイコン。押すと、AI へのメモ (対戦で、このデッキを AI が使うときに読む) を、自由に書ける
+    const memo = el.createEl("button", { cls: "mtg-dmemo clickable-icon", attr: { "aria-label": "AI へのメモ" } });
+    setIcon(memo, "sticky-note");
+    memo.onclick = async () => {
+      const f = this.file;
+      if (!f) return;
+      const body = editableMemo(await this.app.vault.read(f));
+      new TextModal(this.app, "AI へのメモ", body, async (t) => {
+        await this.app.vault.process(f, (c) => setMemo(c, t));
+      }, "このデッキを、対戦で AI が使うとき、読みます。マリガンの基準・立ち回り・コンボなどを、自由に書いてください (書いていないことは、AI が自分で判断します)。デッキのノートの「## メモ」の欄に保存されます。").open();
+    };
 
     el.createDiv({ text: this.getDisplayText(), cls: "mtg-dtitle" });
     const badges = el.createDiv("mtg-dbadges");
@@ -604,11 +617,12 @@ export class PrintModal extends Modal {
 }
 
 class TextModal extends Modal {
-  constructor(app: App, private title: string, private body: string, private onSave: (text: string) => Promise<void>) {
+  constructor(app: App, private title: string, private body: string, private onSave: (text: string) => Promise<void>, private hint?: string) {
     super(app);
   }
   onOpen() {
     this.setTitle(this.title);
+    if (this.hint) this.contentEl.createEl("p", { text: this.hint, cls: "setting-item-description" });
     const area = this.contentEl.createEl("textarea", { cls: "mtg-textedit" });
     area.value = this.body;
     new Setting(this.contentEl).addButton((b) =>

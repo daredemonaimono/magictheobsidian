@@ -1,4 +1,4 @@
-import { AI_SYSTEM, AskAi, aiActPrompt, aiAttackPrompt, aiAttackers, aiBlockPrompt, aiBlockers, aiParse, matchIds } from "./ai";
+import { AI_SYSTEM, AskAi, aiActPrompt, aiAttackPrompt, aiAttackers, aiBlockPrompt, aiBlockers, aiParse, matchIds, withMemo } from "./ai";
 import { attackersAt } from "./engine";
 import { BattleController } from "./play";
 
@@ -25,7 +25,7 @@ export async function aiStep(ctl: BattleController, ask: AskAi | undefined, ai: 
   for (let attempt = 0; attempt < 2; attempt++) {
     let text: string;
     try {
-      const r = await ask(AI_SYSTEM, attempt === 0 ? prompt : `${prompt}\n\n前の返事は使えませんでした (${problem})。選択肢の番号・id を確かめて、もう一度、JSON だけで答えてください。`);
+      const r = await ask(withMemo(AI_SYSTEM, ctl.aiMemo), attempt === 0 ? prompt : `${prompt}\n\n前の返事は使えませんでした (${problem})。選択肢の番号・id を確かめて、もう一度、JSON だけで答えてください。`);
       text = r.text;
       if (r.input !== undefined || r.output !== undefined) {
         ctl.aiTokens.input += r.input ?? 0;

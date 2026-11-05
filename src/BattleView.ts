@@ -190,6 +190,7 @@ export class BattleView extends ItemView {
       date: new Date().toISOString(),
       entries: ctl.record,
       ...(ctl.aiNotes.length ? { notes: ctl.aiNotes } : {}),
+      ...(s.aiMulligan ? { aiMulligan: s.aiMulligan } : {}),
       log: [...ctl.game.log],
     });
   }
@@ -207,6 +208,7 @@ export class BattleView extends ItemView {
     const opp = this.getOpp();
     this.oppMode = opp;
     this.ctl = session && !session.replay ? new BattleController(game, rules, VIEWER, session.rng ?? Math.random, opp === "cpu" ? foe : undefined, opp === "claude" ? foe : undefined) : undefined; // リプレイのときは、操作できない (this.ctl 無し)・Claude の API も呼ばない
+    if (this.ctl) this.ctl.aiMemo = session?.oppMemo ?? ""; // 相手のデッキのメモ
     this.tried.clear();
     this.askEl = undefined;
     this.targeting = undefined;

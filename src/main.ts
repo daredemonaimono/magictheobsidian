@@ -34,11 +34,11 @@ import { DEFAULT_SETTINGS, Settings, SettingsTab, claudeKey, secretKey } from ".
 import { AskAi } from "./battle/ai";
 import { OPENAI_BASE, askGemini, askOpenAI } from "./battle/providers";
 
-// 「動き方」はカード行の外なので、デッキ画面で枚数を変えても書き換わらない。統率戦だけコマンダー欄があり、サイドは無い
+// 「メモ」はカード行の外なので、デッキ画面で枚数を変えても書き換わらない。統率戦だけコマンダー欄があり、サイドは無い
 const RULES_DIR = "Rules"; // カードの能力をノードで組んだ md (Cards/ と同じ並び。Obsidian の画面で手で直せる)
 
 const deckTemplate = (format: string) =>
-  `---\nmtg: deck\nformat: ${format}\ntags: [mtg/deck]\n---\n\n${format === "commander" ? "## Commander\n\n## Main\n" : "## Main\n\n## Side\n"}\n## 動き方\n\n- 勝ち筋:\n- 序盤:\n- 中盤:\n- 注意点:\n`;
+  `---\nmtg: deck\nformat: ${format}\ntags: [mtg/deck]\n---\n\n${format === "commander" ? "## Commander\n\n## Main\n" : "## Main\n\n## Side\n"}\n## メモ\n`;
 
 class NameModal extends Modal {
   private value = "";
@@ -400,8 +400,9 @@ export default class MagicTheObsidian extends Plugin {
   }
 
   private async beginBattle(self: string, opp: string) {
+    if (this.settings.battleOpponent === "claude" && this.makeAsk()) new Notice("相手 (AI) が、手札を決めています…");
     try {
-      this.battleSession = await startBattle(this.app, self, opp, this.settings.battleOpponent !== "passive");
+      this.battleSession = await startBattle(this.app, self, opp, this.settings.battleOpponent !== "passive", this.settings.battleOpponent === "claude" ? this.makeAsk() : undefined);
     } catch (e) {
       new Notice(e instanceof MatchError ? e.message : `始められません: ${(e as Error).message}`);
       return;
