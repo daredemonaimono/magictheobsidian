@@ -867,7 +867,7 @@ export class BattleView extends ItemView {
     const reply = custom ?? ((v: string[] | boolean) => this.run(() => this.ctl!.answer(v)));
     const head = box.createDiv("mtg-bt-asktitle");
     if (req.kind === "may") {
-      head.setText(req.what === "exile" ? "墓地のカードを追放しますか?" : `${req.what} をしますか?`);
+      head.setText(req.what === "exile" ? "墓地のカードを追放しますか?" : req.what.endsWith("?") ? req.what : `${req.what} をしますか?`);
       const row = box.createDiv("mtg-bt-askrow");
       row.createEl("button", { cls: "mod-cta", text: "はい" }).addEventListener("click", () => reply(true));
       row.createEl("button", { text: "いいえ" }).addEventListener("click", () => reply(false));

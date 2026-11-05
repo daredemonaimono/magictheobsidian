@@ -44,6 +44,15 @@ export interface Mod {
   until: "endOfTurn" | "forever";
 }
 // 戦場のパーマネント
+// 「〜になる」効果 (becomes)。戦場にあるあいだ、いまの姿を上書きする (継続効果のあとに適用)
+export interface Becomes {
+  types?: string;
+  colors?: string[];
+  power?: number;
+  toughness?: number;
+  lose?: boolean; // すべての能力を失う
+  until: "endOfTurn" | "forever";
+}
 export interface Perm {
   id: string;
   card: GameCard;
@@ -51,6 +60,7 @@ export interface Perm {
   tapped?: boolean;
   attacking?: boolean;
   mods?: Mod[];
+  becomes?: Becomes[]; // 「〜になる」効果 (Oko の +1 など)
   attachedTo?: string; // 装備品・オーラが付いているパーマネントの id
   loyaltyUsed?: boolean; // このターンに忠誠度能力を起動した (1ターンに1回)
   emblem?: string; // 紋章のとき、その名前 (createEmblem の name)。紋章は戦場の外 (Game.emblems) にある
@@ -102,6 +112,8 @@ export interface Game {
   rngState?: number; // ゲームの中の乱数の状態 (ライブラリーを切る、など。nextRandom)。対戦を始めるとき、種から決める
   handLook?: { by: PlayerId; of: PlayerId; ids: string[]; n: number }; // 手札を見たとき (lookHand): だれが、だれの手札を、どのカードを見たか。n = 何回目か (画面が、新しい「見た」を見つける)
   restrictedMana: Record<PlayerId, { amount: number; color?: PoolKey; type?: string; notType?: string }[]>; // 使い道に制限のあるマナ (「クリーチャーでない呪文を唱えるためにしか使えない」)
+  extraTurns?: PlayerId[]; // 追加のターン (次のターンの前に、順に取る)
+  drawn?: Record<PlayerId, string[]>; // このターンに引いたカードの id (プレイヤーごと)
   spellsBy?: Record<PlayerId, number>; // このターンに、プレイヤーごとに唱えた呪文の数 (castLimit)
   spellsCast?: number; // このターンに唱えられた呪文の数 (全員。Storm)。ターンが替わると 0
   landsPlayed: number; // このターンに出した土地の数 (1ターンに1枚)
@@ -165,6 +177,7 @@ export function drawCards(g: Game, p: PlayerId, n: number): void {
       return;
     }
     g.hands[p].push(top);
+    ((g.drawn ??= {})[p] ??= []).push(top.id);
   }
 }
 

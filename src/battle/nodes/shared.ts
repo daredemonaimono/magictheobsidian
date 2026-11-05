@@ -31,6 +31,7 @@ export const filterParams = {
   type: { type: "string" as const },
   notType: { type: "string" as const },
   mv: { type: "number" as const },
+  maxPower: { type: "number" as const },
   controller: { type: "string" as const, choices: ["you", "opponents"] },
   attacking: { type: "boolean" as const },
   tapped: { type: "boolean" as const },
@@ -41,6 +42,7 @@ export function matches(ctx: RunCtx, a: Record<string, Value>, hit: { card: Game
   if (typeof a.mv === "number" && hit.card.mv !== a.mv) return false;
   if (typeof a.controller === "string" && (a.controller === "you") !== (hit.controller === ctx.item.controller)) return false;
   const perm = hit as Perm;
+  if (typeof a.maxPower === "number" && ctx.game.battlefield.includes(perm) && (characteristics(ctx.game, perm, ctx.rules).power ?? Infinity) > a.maxPower) return false;
   if (typeof a.attacking === "boolean" && !!perm.attacking !== a.attacking) return false;
   if (typeof a.tapped === "boolean" && !!perm.tapped !== a.tapped) return false;
   return true;

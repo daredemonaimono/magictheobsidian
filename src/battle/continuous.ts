@@ -47,6 +47,7 @@ function affects(s: Perm, aff: NodeCall, p: Perm): boolean {
 
 // 他のパーマネントの継続効果で、すべての能力を失っているか (再帰はしない)
 function losesAll(g: Game, p: Perm, rules: RuleBook): boolean {
+  if (p.becomes?.some((b) => b.lose)) return true;
   return g.battlefield.some((o) => o !== p && continuous(o, rules).some((ab) => affects(o, ab.body[0], p) && ab.body.slice(1).some((c) => c.node === "loseAbilities")));
 }
 
@@ -66,8 +67,10 @@ export function characteristics(g: Game, p: Perm, rules: RuleBook): Chars {
   const effs = effectsOn(g, p, rules);
   const last = (node: string): NodeCall | undefined => effs.filter((e) => e.call.node === node).map((e) => e.call).pop();
   const base = last("setBaseStats");
-  let power: number | null = base ? Number(base.args.power) : p.card.power ?? null;
-  let toughness: number | null = base ? Number(base.args.toughness) : p.card.toughness ?? null;
+  const bec = p.becomes ?? [];
+  const becStats = [...bec].reverse().find((b) => b.power !== undefined && b.toughness !== undefined); // 「〜になる」の基本のパワー・タフネスが、いちばん後
+  let power: number | null = becStats ? becStats.power! : base ? Number(base.args.power) : p.card.power ?? null;
+  let toughness: number | null = becStats ? becStats.toughness! : base ? Number(base.args.toughness) : p.card.toughness ?? null;
   if (power !== null && toughness !== null) {
     const plus = p.counters?.["+1/+1"] ?? 0;
     power += plus + (p.mods ?? []).reduce((a, m) => a + m.power, 0);
@@ -84,8 +87,8 @@ export function characteristics(g: Game, p: Perm, rules: RuleBook): Chars {
   ].map(normKeyword);
   return {
     name: last("setName") ? String(last("setName")!.args.name) : p.card.name,
-    typeLine: last("setTypes") ? String(last("setTypes")!.args.types) : p.card.typeLine,
-    colors: last("setColors") ? String(last("setColors")!.args.colors).split(/[\s,]+/).filter(Boolean) : p.card.colors ?? [],
+    typeLine: [...bec].reverse().find((b) => b.types)?.types ?? (last("setTypes") ? String(last("setTypes")!.args.types) : p.card.typeLine),
+    colors: [...bec].reverse().find((b) => b.colors)?.colors ?? (last("setColors") ? String(last("setColors")!.args.colors).split(/[\s,]+/).filter(Boolean) : p.card.colors ?? []),
     power,
     toughness,
     keywords: [...new Set(kw)],

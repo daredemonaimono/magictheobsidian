@@ -15,12 +15,13 @@ export function registerCards(): void {
   node({
     id: "draw",
     title: "引く",
-    summary: "プレイヤーがカードを count 枚引く。player=you(呪文のコントローラー) / opponents(全相手) / target(target ノードで選んだプレイヤー。target=$名前 を渡す)",
-    params: { player: who, target: targetPlayer, count: { type: "number", required: true, min: 0 } },
-    outputs: {},
+    summary: "プレイヤーがカードを count 枚引く。player=you(呪文のコントローラー) / opponents(全相手) / target(target ノードで選んだプレイヤー。target=$名前 を渡す)。optional=true なら「引いてもよい」(player=you のとき、引くかどうかを選ぶ)。引いた枚数を出力する (「そうしたなら」は if=$名前)",
+    params: { player: who, target: targetPlayer, count: { type: "number", required: true, min: 0 }, optional: { type: "boolean" } },
+    outputs: { n: "number" },
     run: (ctx, a): Record<string, Value> => {
+      if (a.optional === true && !(ctx.game.decide?.may?.(ctx.game, ctx.item.controller, `カードを ${Number(a.count)} 枚、追加で引きますか?`) ?? true)) return { n: 0 };
       for (const p of playersFor(ctx, a)) drawCards(ctx.game, p, Number(a.count));
-      return {};
+      return { n: Number(a.count) };
     },
   });
 
@@ -110,14 +111,15 @@ export function registerCards(): void {
   node({
     id: "move",
     title: "カードを動かす",
-    summary: "cards(look / choose の出力)を、持ち主の to へ動かす。to=hand / graveyard / top(ライブラリーの一番上) / bottom(一番下)。except に渡したカードは動かさない(「残りを底に」)",
-    params: { cards: { type: "ref", required: true }, except: { type: "ref" }, to: { type: "string", required: true, choices: ["hand", "graveyard", "top", "bottom"] } },
+    summary: "cards(look / choose の出力)を、持ち主の to へ動かす。to=hand / graveyard / top(ライブラリーの一番上) / bottom(一番下)。except に渡したカードは動かさない(「残りを底に」)。random=true で、ランダムな順で(「ランダムな順番でライブラリーの一番下に置く」)",
+    params: { cards: { type: "ref", required: true }, except: { type: "ref" }, to: { type: "string", required: true, choices: ["hand", "graveyard", "top", "bottom"] }, random: { type: "boolean" } },
     outputs: {},
     run: (ctx, a): Record<string, Value> => {
       const g = ctx.game;
       const skip = new Set(idList(a.except));
       let list = idList(a.cards).filter((id) => !skip.has(id));
-      if ((a.to === "top" || a.to === "bottom") && list.length > 1) {
+      if (a.random === true) for (let i = list.length - 1; i > 0; i--) { const j = Math.floor(nextRandom(g) * (i + 1)); [list[i], list[j]] = [list[j], list[i]]; } // ランダムな順で
+      else if ((a.to === "top" || a.to === "bottom") && list.length > 1) {
         // 好きな順番で (上から下へ)。入力が無ければ、並んでいる順
         const cards = list.flatMap((id) => findCard(g, id) ?? []);
         const got = g.decide?.order?.(g, ctx.item.controller, cards, a.to)?.map((c) => c.id);
@@ -137,6 +139,63 @@ export function registerCards(): void {
   });
 
   // 手札に戻す。戦場のパーマネントを、持ち主の手札へ。対象が戦場に無ければ何もしない
+  // プレイヤーの墓地・手札のカード (id の並び)
+  node({
+    id: "zoneCards",
+    title: "墓地・手札のカード",
+    summary: "プレイヤーの墓地(zone=graveyard)または手札(zone=hand)のカードすべての id を出力する。player=you / opponents / target(draw と同じ)。move の cards に渡す(「墓地のカードをすべてライブラリーの一番下に置く」は move to=bottom random=true)",
+    params: { zone: { type: "string", required: true, choices: ["graveyard", "hand"] }, player: who, target: targetPlayer },
+    outputs: { id: "id" },
+    run: (ctx, a): Record<string, Value> => {
+      const g = ctx.game;
+      return { id: playersFor(ctx, a).flatMap((p) => (a.zone === "hand" ? g.hands[p] : g.graveyards[p])).map((c) => c.id).join(",") };
+    },
+  });
+
+  // このターンに引いたカード (まだ手札にあるもの)
+  node({
+    id: "drawnCards",
+    title: "このターンに引いたカード",
+    summary: "コントローラーが、このターンに引いて、まだ手札にあるカードすべての id を出力する(choose の from に渡す。Sylvan Library)",
+    params: {},
+    outputs: { id: "id" },
+    run: (ctx): Record<string, Value> => {
+      const g = ctx.game;
+      const p = ctx.item.controller;
+      const drawn = new Set(g.drawn?.[p] ?? []);
+      return { id: g.hands[p].filter((c) => drawn.has(c.id)).map((c) => c.id).join(",") };
+    },
+  });
+
+  // 1枚ずつ、ライフを払うか、ライブラリーに戻すか
+  node({
+    id: "payOrMove",
+    title: "ライフを払うか、動かす",
+    summary: "cards(choose などの出力)の1枚ごとに、コントローラーが life 点のライフを払う(そのカードは手札に残る)か、払わずに、そのカードを to(top / bottom)に置くかを選ぶ。払うか聞かれたら、既定は払わない(Sylvan Library は life=4 to=top)",
+    params: { cards: { type: "ref", required: true }, life: { type: "number", required: true, min: 1 }, to: { type: "string", required: true, choices: ["top", "bottom"] } },
+    outputs: {},
+    run: (ctx, a): Record<string, Value> => {
+      const g = ctx.game;
+      const p = ctx.item.controller;
+      const back: string[] = [];
+      for (const id of idList(a.cards)) {
+        const c = g.hands[p].find((x) => x.id === id);
+        if (!c) continue;
+        const can = g.life[p] >= Number(a.life);
+        if (can && (g.decide?.may?.(g, p, `${c.name}: ${a.life} 点のライフを払って、手札に残しますか? (払わないと、ライブラリーの${a.to === "top" ? "一番上" : "一番下"}に置く)`) ?? false)) {
+          g.life[p] -= Number(a.life);
+          g.log.push(`${a.life} 点のライフを払って、${c.name} を手札に残した`);
+        } else back.push(id);
+      }
+      for (const id of (a.to === "top" ? [...back].reverse() : back)) {
+        const c = takeCard(g, id);
+        if (c) (a.to === "top" ? g.libraries[c.owner].unshift(c) : g.libraries[c.owner].push(c));
+      }
+      if (back.length) g.log.push(`${back.length} 枚を、ライブラリーの${a.to === "top" ? "一番上" : "一番下"}に置いた`);
+      return {};
+    },
+  });
+
   node({
     id: "bounce",
     title: "手札に戻す",

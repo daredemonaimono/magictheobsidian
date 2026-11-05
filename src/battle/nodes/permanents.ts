@@ -47,6 +47,45 @@ export function registerPermanents(): void {
     },
   });
 
+  // 「〜になる」(型・色・基本のパワー・タフネス・能力を失う)。Oko の +1 (Elk になる)
+  node({
+    id: "becomes",
+    title: "〜になる",
+    summary: "対象のパーマネントが、types(型行。例: \"Creature — Elk\")・colors(例: G)・power と toughness(基本のパワー・タフネス)になる。loseAbilities=true なら、すべての能力を失う。duration=forever / endOfTurn。Oko の +1 (target artifact or creature → becomes types=\"Creature — Elk\" colors=G power=3 toughness=3 loseAbilities=true duration=forever)",
+    params: { target: { type: "ref", required: true }, types: { type: "string" }, colors: { type: "string" }, power: { type: "number" }, toughness: { type: "number" }, loseAbilities: { type: "boolean" }, duration, },
+    check: (a) => ((a.power === undefined) === (a.toughness === undefined) ? null : "power と toughness は、いっしょに書く"),
+    outputs: {},
+    run: (ctx, a): Record<string, Value> => {
+      for (const x of idList(a.target)) {
+        const p = ctx.game.battlefield.find((y) => y.id === x);
+        if (!p) continue;
+        (p.becomes ??= []).push({ ...(typeof a.types === "string" ? { types: a.types } : {}), ...(typeof a.colors === "string" ? { colors: a.colors.split(/[\s,]+/).filter(Boolean) } : {}), ...(typeof a.power === "number" ? { power: a.power, toughness: Number(a.toughness) } : {}), ...(a.loseAbilities === true ? { lose: true } : {}), until: a.duration as "endOfTurn" | "forever" });
+        ctx.game.log.push(`${p.card.name} は、${typeof a.types === "string" ? a.types : "別のもの"}になった`);
+      }
+      return {};
+    },
+  });
+
+  // コントロールを交換する (Oko の −5)
+  node({
+    id: "exchangeControl",
+    title: "コントロールを交換する",
+    summary: "a と b(それぞれ target ノードの出力)のパーマネントのコントロールを交換する。どちらかが戦場になければ、何も起きない。交換したパーマネントは、召喚酔いになる(クリーチャーの場合)。Oko の −5",
+    params: { a: { type: "ref", required: true }, b: { type: "ref", required: true } },
+    outputs: {},
+    run: (ctx, a): Record<string, Value> => {
+      const g = ctx.game;
+      const x = g.battlefield.find((p) => p.id === idList(a.a)[0]);
+      const y = g.battlefield.find((p) => p.id === idList(a.b)[0]);
+      if (!x || !y || x === y) return {};
+      [x.controller, y.controller] = [y.controller, x.controller];
+      x.enteredTurn = g.turn;
+      y.enteredTurn = g.turn;
+      g.log.push(`${x.card.name} と ${y.card.name} のコントロールを交換した`);
+      return {};
+    },
+  });
+
   node({
     id: "grant",
     title: "キーワードを得る",

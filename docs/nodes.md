@@ -2,7 +2,7 @@
 
 > このファイルは、自動で作られます (`src/battle/nodeDocs.ts`)。直接は書き換えません。ノードを足したら、`npm run docs:nodes` で更新します。ノードは、`src/battle/nodes/` の、カテゴリーごとのファイルにあります。
 
-全 67 個のノード、9 個の条件。
+全 73 個のノード、9 個の条件。
 
 目次: [宣言・コスト・条件](#宣言・コスト・条件) / [対象・数える・絞り込む](#対象・数える・絞り込む) / [カードの移動・ライブラリー・手札](#カードの移動・ライブラリー・手札) / [パーマネント・トークン・カウンター](#パーマネント・トークン・カウンター) / [ダメージ・ライフ・マナ・打ち消し](#ダメージ・ライフ・マナ・打ち消し) / [継続効果](#継続効果)
 
@@ -167,7 +167,7 @@ from(graveyard / library。graveyard|library のように並べられる)にあ�
 
 対象を決める。zone=stack + kind=spell(スタックの呪文) / zone=battlefield + kind=permanent(戦場のパーマネント) / zone=player + kind=player(プレイヤー。draw や discard の player=target と使う) / zone=any + kind=any(「any target」。プレイヤー・クリーチャー・プレインズウォーカー。damage と使う)。type=型 / notType=その型でない / mv=マナ総量 / controller=you(この呪文のコントローラーのもの)・opponents(それ以外) / attacking=攻撃中か / tapped=タップ状態 で絞る。min / max = 対象の数(既定は1。「1体か2体」は min=1 max=2、「最大1つ」は min=0 max=1)
 
-- 引数: `zone`(string・必須・stack / battlefield / player / any)、`kind`(string・必須・spell / permanent / player / any)、`type`(string)、`notType`(string)、`mv`(number)、`controller`(string・you / opponents)、`attacking`(boolean)、`tapped`(boolean)、`min`(number)、`max`(number)
+- 引数: `zone`(string・必須・stack / battlefield / player / any)、`kind`(string・必須・spell / permanent / player / any)、`type`(string)、`notType`(string)、`mv`(number)、`maxPower`(number)、`controller`(string・you / opponents)、`attacking`(boolean)、`tapped`(boolean)、`min`(number)、`max`(number)
 - 出力: `id`(id) (`as=名前` で受けて、`$名前` で渡す)
 - 中心のノード (ルールを書かせるとき、いつも AI の指示に入る。ほかは、カードごとに選ぶ)
 
@@ -175,7 +175,7 @@ from(graveyard / library。graveyard|library のように並べられる)にあ�
 
 対象を取らずに、条件に合うものすべてを選ぶ(「すべての〜」)。zone=battlefield + kind=permanent / zone=stack + kind=spell。絞り込みは target と同じ(type / notType / mv / controller / attacking / tapped)。bounce や tap などの target に渡せる
 
-- 引数: `zone`(string・必須・stack / battlefield)、`kind`(string・必須・spell / permanent)、`type`(string)、`notType`(string)、`mv`(number)、`controller`(string・you / opponents)、`attacking`(boolean)、`tapped`(boolean)
+- 引数: `zone`(string・必須・stack / battlefield)、`kind`(string・必須・spell / permanent)、`type`(string)、`notType`(string)、`mv`(number)、`maxPower`(number)、`controller`(string・you / opponents)、`attacking`(boolean)、`tapped`(boolean)
 - 出力: `id`(id) (`as=名前` で受けて、`$名前` で渡す)
 - 中心のノード (ルールを書かせるとき、いつも AI の指示に入る。ほかは、カードごとに選ぶ)
 
@@ -238,13 +238,14 @@ a と b を、op (lt = a<b / le = a≤b / eq = a=b / ge = a≥b / gt = a>b) で�
 - 出力: `id`(id) (`as=名前` で受けて、`$名前` で渡す)
 - 中心のノード (ルールを書かせるとき、いつも AI の指示に入る。ほかは、カードごとに選ぶ)
 
-## カードの移動・ライブラリー・手札 (12 個)
+## カードの移動・ライブラリー・手札 (15 個)
 
 ### `draw` 引く
 
-プレイヤーがカードを count 枚引く。player=you(呪文のコントローラー) / opponents(全相手) / target(target ノードで選んだプレイヤー。target=$名前 を渡す)
+プレイヤーがカードを count 枚引く。player=you(呪文のコントローラー) / opponents(全相手) / target(target ノードで選んだプレイヤー。target=$名前 を渡す)。optional=true なら「引いてもよい」(player=you のとき、引くかどうかを選ぶ)。引いた枚数を出力する (「そうしたなら」は if=$名前)
 
-- 引数: `player`(string・必須・you / opponents / target)、`target`(ref)、`count`(number・必須)
+- 引数: `player`(string・必須・you / opponents / target)、`target`(ref)、`count`(number・必須)、`optional`(boolean)
+- 出力: `n`(number) (`as=名前` で受けて、`$名前` で渡す)
 
 ### `discard` 捨てる
 
@@ -281,9 +282,29 @@ from(look などの出力)の中から count 枚を選ぶ。atMost=true なら 0
 
 ### `move` カードを動かす
 
-cards(look / choose の出力)を、持ち主の to へ動かす。to=hand / graveyard / top(ライブラリーの一番上) / bottom(一番下)。except に渡したカードは動かさない(「残りを底に」)
+cards(look / choose の出力)を、持ち主の to へ動かす。to=hand / graveyard / top(ライブラリーの一番上) / bottom(一番下)。except に渡したカードは動かさない(「残りを底に」)。random=true で、ランダムな順で(「ランダムな順番でライブラリーの一番下に置く」)
 
-- 引数: `cards`(ref・必須)、`except`(ref)、`to`(string・必須・hand / graveyard / top / bottom)
+- 引数: `cards`(ref・必須)、`except`(ref)、`to`(string・必須・hand / graveyard / top / bottom)、`random`(boolean)
+
+### `zoneCards` 墓地・手札のカード
+
+プレイヤーの墓地(zone=graveyard)または手札(zone=hand)のカードすべての id を出力する。player=you / opponents / target(draw と同じ)。move の cards に渡す(「墓地のカードをすべてライブラリーの一番下に置く」は move to=bottom random=true)
+
+- 引数: `zone`(string・必須・graveyard / hand)、`player`(string・必須・you / opponents / target)、`target`(ref)
+- 出力: `id`(id) (`as=名前` で受けて、`$名前` で渡す)
+
+### `drawnCards` このターンに引いたカード
+
+コントローラーが、このターンに引いて、まだ手札にあるカードすべての id を出力する(choose の from に渡す。Sylvan Library)
+
+- 引数: なし
+- 出力: `id`(id) (`as=名前` で受けて、`$名前` で渡す)
+
+### `payOrMove` ライフを払うか、動かす
+
+cards(choose などの出力)の1枚ごとに、コントローラーが life 点のライフを払う(そのカードは手札に残る)か、払わずに、そのカードを to(top / bottom)に置くかを選ぶ。払うか聞かれたら、既定は払わない(Sylvan Library は life=4 to=top)
+
+- 引数: `cards`(ref・必須)、`life`(number・必須)、`to`(string・必須・top / bottom)
 
 ### `bounce` 手札に戻す
 
@@ -317,7 +338,7 @@ cards(look / choose の出力)を、持ち主の to へ動かす。to=hand / gra
 - 引数: `target`(ref)、`zone`(string・graveyard)、`count`(number)、`optional`(boolean)
 - 出力: `n`(number) (`as=名前` で受けて、`$名前` で渡す)
 
-## パーマネント・トークン・カウンター (12 個)
+## パーマネント・トークン・カウンター (14 個)
 
 ### `tap` タップする
 
@@ -336,6 +357,18 @@ cards(look / choose の出力)を、持ち主の to へ動かす。to=hand / gra
 対象のクリーチャーが +power/+toughness の修整を受ける。duration=endOfTurn(ターン終了時まで) / forever
 
 - 引数: `target`(ref・必須)、`power`(number・必須)、`toughness`(number・必須)、`duration`(string・必須・endOfTurn / forever)
+
+### `becomes` 〜になる
+
+対象のパーマネントが、types(型行。例: "Creature — Elk")・colors(例: G)・power と toughness(基本のパワー・タフネス)になる。loseAbilities=true なら、すべての能力を失う。duration=forever / endOfTurn。Oko の +1 (target artifact or creature → becomes types="Creature — Elk" colors=G power=3 toughness=3 loseAbilities=true duration=forever)
+
+- 引数: `target`(ref・必須)、`types`(string)、`colors`(string)、`power`(number)、`toughness`(number)、`loseAbilities`(boolean)、`duration`(string・必須・endOfTurn / forever)
+
+### `exchangeControl` コントロールを交換する
+
+a と b(それぞれ target ノードの出力)のパーマネントのコントロールを交換する。どちらかが戦場になければ、何も起きない。交換したパーマネントは、召喚酔いになる(クリーチャーの場合)。Oko の −5
+
+- 引数: `a`(ref・必須)、`b`(ref・必須)
 
 ### `grant` キーワードを得る
 
@@ -398,7 +431,7 @@ cards(look / choose の出力)を、持ち主の to へ動かす。to=hand / gra
 
 - 引数: `target`(ref・必須)、`kind`(string・必須・+1/+1 / stun)、`count`(number・必須)
 
-## ダメージ・ライフ・マナ・打ち消し (6 個)
+## ダメージ・ライフ・マナ・打ち消し (7 個)
 
 ### `gainLife` ライフを得る
 
@@ -423,6 +456,12 @@ cards(look / choose の出力)を、持ち主の to へ動かす。to=hand / gra
 コントローラーがマナを amount 点加える。colors=GWU(その中の好きな1色。「{G}、{W}、{U} のいずれか」)。color=W・U・B・R・G(その色) / C(無色。既定) / any(好きな色。どの色のコストにも使える)。spellType / spellNotType を添えると、そのマナは、その型の呪文(spellNotType ならその型でない呪文)を唱えるためにしか使えない(「クリーチャーでない呪文を唱えるためにしか使えない」は spellNotType=creature)
 
 - 引数: `amount`(number・必須)、`color`(string・W / U / B / R / G / C / any)、`colors`(string)、`spellType`(string)、`spellNotType`(string)
+
+### `extraTurn` 追加のターン
+
+コントローラーが、このターンの次に、追加のターンを count 回(既定は1)得る(Time Walk)
+
+- 引数: `count`(number)
 
 ### `copySpell` 呪文をコピーする
 

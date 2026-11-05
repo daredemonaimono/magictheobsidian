@@ -25,11 +25,13 @@ export function advanceStep(g: Game, rules: RuleBook): void {
       delete p.damage; // ダメージも消える
       delete p.deathtouched;
     }
-    g.active = nextPlayer(g, g.active);
+    g.active = g.extraTurns?.shift() ?? nextPlayer(g, g.active); // 追加のターンがあれば、それが先
     g.turn++;
     g.landsPlayed = 0;
     g.spellsCast = 0;
     g.spellsBy = {};
+    g.drawn = {};
+    for (const p of g.battlefield) if (p.becomes) p.becomes = p.becomes.filter((b) => b.until !== "endOfTurn");
     for (const p of g.battlefield) delete p.loyaltyUsed; // 忠誠度能力は、1ターンに1回
     for (const p of g.battlefield) if (untapsDuring(g, p, g.active, rules)) untapPerm(g, p); // アンタップ・ステップ (優先権が無いので、ここで済ませてアップキープへ)。麻痺カウンターは、アンタップのかわりに取り除く
     g.step = "upkeep";

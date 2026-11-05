@@ -68,6 +68,21 @@ export function registerCombat(): void {
     },
   });
 
+  // 追加のターン (Time Walk)
+  node({
+    id: "extraTurn",
+    title: "追加のターン",
+    summary: "コントローラーが、このターンの次に、追加のターンを count 回(既定は1)得る(Time Walk)",
+    params: { count: { type: "number", min: 1 } },
+    outputs: {},
+    run: (ctx, a): Record<string, Value> => {
+      const g = ctx.game;
+      for (let i = 0; i < (typeof a.count === "number" ? a.count : 1); i++) (g.extraTurns ??= []).push(ctx.item.controller);
+      g.log.push("追加のターンを得た");
+      return {};
+    },
+  });
+
   // 呪文をコピーする (Storm・Fork)。コピーは、スタックの一番上に積まれ、元と同じ対象で、解決しても墓地に行かず消える
   node({
     id: "copySpell",
