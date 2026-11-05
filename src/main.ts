@@ -18,6 +18,7 @@ import { CREATABLE, FORMATS } from "./rules";
 import { ImportModal, resolveDeck } from "./import";
 import { CARDLIST_VIEW, CardListView } from "./CardListView";
 import { BATTLE_VIEW, BattleView } from "./BattleView";
+import { BATTLE_SIDE_VIEW, BattleSideView } from "./BattleSideView";
 import { BattleStartModal } from "./BattleStartModal";
 import { BattleSession, MatchError } from "./battle/deckToGame";
 import { SavedBattle, battleNote, battleNoteName, parseBattleNote } from "./battle/saved";
@@ -123,7 +124,8 @@ export default class MagicTheObsidian extends Plugin {
       }),
     );
     this.registerView(DECK_VIEW, (leaf) => new DeckView(leaf, this.settings));
-    this.registerView(BATTLE_VIEW, (leaf) => new BattleView(leaf, () => this.battleSession, () => this.settings.battleStops, () => this.settings.battleOpponent, () => this.settings.battleEffects, () => this.makeAsk(), (b) => void this.saveBattle(b)));
+    this.registerView(BATTLE_VIEW, (leaf) => new BattleView(leaf, () => this.battleSession, () => this.settings.battleStops, () => this.settings.battleOpponent, () => this.settings.battleEffects, () => this.makeAsk(), (b) => void this.saveBattle(b), () => this.ensureBattleSide()));
+    this.registerView(BATTLE_SIDE_VIEW, (leaf) => new BattleSideView(leaf));
     this.registerView(DASHBOARD_VIEW, (leaf) => new DashboardView(leaf, { collection: () => void this.openOrReveal(COLLECTION_VIEW), deck: () => void this.openOrReveal(DECKLIST_VIEW), cards: () => void this.openOrReveal(CARDS_VIEW) }));
     this.registerView(CARDS_VIEW, (leaf) => new CardsView(leaf, this.settings));
     this.registerView(
@@ -251,21 +253,46 @@ export default class MagicTheObsidian extends Plugin {
 
   // サイドバーを開いて、カード一覧のタブを前に出す。操作中のデッキ画面 (back) には、そのまま戻す
   private async showList(back?: WorkspaceLeaf) {
+    return this.showSide(CARDLIST_VIEW, back);
+  }
+  private async showSide(type: string, back?: WorkspaceLeaf) {
     const ws = this.app.workspace;
-    const list = ws.getLeavesOfType(CARDLIST_VIEW)[0];
+    const list = ws.getLeavesOfType(type)[0];
     if (!list || !this.settings.sidebar) return;
     await ws.revealLeaf(list);
     if (back) ws.setActiveLeaf(back, { focus: true });
   }
 
-  // サイドバーの一覧はデッキ画面と一緒に出入りする: 他のタブに切り替えたら畳み、デッキ画面に戻ったら開き直す
+  // 対戦の画面のサイドバー (プレビューとログ) を、無ければ作って、開く。設定でサイドバーを使わないなら undefined (対戦の画面の中に、出す)。対戦の画面が無くなったら、閉じる (syncSidebar)
+  private async ensureBattleSide(): Promise<{ preview: HTMLElement; log: HTMLElement } | undefined> {
+    if (!this.settings.sidebar) return undefined;
+    const ws = this.app.workspace;
+    let leaf = ws.getLeavesOfType(BATTLE_SIDE_VIEW)[0];
+    if (!leaf) {
+      const fresh = ws.getRightLeaf(false);
+      if (!fresh) return undefined;
+      await fresh.setViewState({ type: BATTLE_SIDE_VIEW, active: false });
+      leaf = fresh;
+    }
+    const view = leaf.view;
+    if (!(view instanceof BattleSideView)) return undefined;
+    const battle = ws.getActiveViewOfType(BattleView)?.leaf ?? ws.getLeavesOfType(BATTLE_VIEW)[0];
+    await this.showSide(BATTLE_SIDE_VIEW, battle);
+    return { preview: view.previewEl, log: view.logEl };
+  }
+
+  // サイドバーの一覧は、デッキ画面 (カード一覧)・対戦の画面 (プレビューとログ) と一緒に出入りする: 他のタブに切り替えたら畳み、戻ったら開き直す
   private tieSidebar(leaf: WorkspaceLeaf | null) {
     const ws = this.app.workspace;
     if (!leaf || leaf.getRoot() !== ws.rootSplit) return; // サイドバー自身や別ウィンドウのタブは触らない
-    if (leaf.view.getViewType() === DECK_VIEW) {
-      if (this.closedByTab) void this.showList(leaf);
+    const pairs: [string, string][] = [[DECK_VIEW, CARDLIST_VIEW], [BATTLE_VIEW, BATTLE_SIDE_VIEW]];
+    const shown = (side: string) => ws.getLeavesOfType(side).some((l) => l.view.containerEl.isShown());
+    const mine = pairs.find(([v]) => v === leaf.view.getViewType());
+    if (mine) {
+      // 自分の側が見えていなくて、(手で畳んだのではなく) タブの切り替えで畳んだとき、または、もう一方の側が見えているとき: 開く
+      if (this.closedByTab || pairs.some(([, s]) => s !== mine[1] && shown(s))) void this.showSide(mine[1], leaf);
       this.closedByTab = false;
-    } else if (ws.getLeavesOfType(CARDLIST_VIEW).some((l) => l.view.containerEl.isShown())) {
+    } else if (pairs.some(([, s]) => shown(s))) {
       ws.rightSplit.collapse();
       this.closedByTab = true;
     }
@@ -312,6 +339,13 @@ export default class MagicTheObsidian extends Plugin {
   // デッキ画面が0→1になったときだけ自動で開く (手で閉じたら、また0になるまで開き直さない)。デッキ画面が無いときは、手で開いても閉じる
   private async syncSidebar() {
     const ws = this.app.workspace;
+    // 対戦の画面が無くなったら、サイドバーのプレビュー・ログも閉じる (開くのは、対戦の画面が、始まるとき)
+    const sides = ws.getLeavesOfType(BATTLE_SIDE_VIEW);
+    if (sides.length && !ws.getLeavesOfType(BATTLE_VIEW).length) {
+      const shown = sides.some((l) => l.view.containerEl.isShown());
+      sides.forEach((l) => l.detach());
+      if (shown) ws.rightSplit.collapse();
+    }
     const count = ws.getLeavesOfType(DECK_VIEW).length;
     const lists = ws.getLeavesOfType(CARDLIST_VIEW);
     if (!this.settings.sidebar || count === 0) {

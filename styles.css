@@ -407,3 +407,7 @@ button.mtg-color .mtg-sym { width: 20px; height: 20px; display: block; }
 /* デッキ画面: ヘッダーにカーソルを合わせると、右上に出るメモのアイコン */
 .mtg-dhead > .mtg-dmemo { position: absolute; top: 8px; right: 12px; z-index: 3; opacity: 0; transition: opacity .15s; color: var(--text-on-accent); background: rgba(0, 0, 0, 0.25); }
 .mtg-dhead:hover > .mtg-dmemo, .mtg-dhead > .mtg-dmemo:focus-visible { opacity: 1; }
+
+/* 対戦のサイドバー (右): 上にプレビュー、下にログ */
+.mtg-bt-sideview { padding: 8px; }
+.mtg-bt-sideview .mtg-bt-side { width: auto; height: 100%; }

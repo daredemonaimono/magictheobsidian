@@ -85,7 +85,7 @@ export class BattleView extends ItemView {
   private watcher?: ResizeObserver;
 
   // getSession = 対戦の局面 (無ければ、サンプルの局面)。対戦を始め直したときは、begin() で読み直す
-  constructor(leaf: WorkspaceLeaf, private getSession: () => BattleSession | undefined, private getStops: () => StopMode = () => "smart", private getOpp: () => "cpu" | "claude" | "passive" = () => "passive", private getFx: () => boolean = () => true, private getAsk: () => AskAi | undefined = () => undefined, private onSave: (b: SavedBattle) => void = () => {}) {
+  constructor(leaf: WorkspaceLeaf, private getSession: () => BattleSession | undefined, private getStops: () => StopMode = () => "smart", private getOpp: () => "cpu" | "claude" | "passive" = () => "passive", private getFx: () => boolean = () => true, private getAsk: () => AskAi | undefined = () => undefined, private onSave: (b: SavedBattle) => void = () => {}, private getSide: () => Promise<{ preview: HTMLElement; log: HTMLElement } | undefined> = async () => undefined) {
     super(leaf);
   }
 
@@ -214,7 +214,7 @@ export class BattleView extends ItemView {
     this.targeting = undefined;
     this.tbar = undefined;
     this.menu = undefined;
-    this.build();
+    this.build(await this.getSide());
     await this.loadImages();
     this.paint();
     this.bottoming = false;
@@ -269,7 +269,7 @@ export class BattleView extends ItemView {
   private keysOn = false;
 
   // ---- 画面の骨組み (作り直すたびに、前の状態を捨てる)
-  private build() {
+  private build(side?: { preview: HTMLElement; log: HTMLElement }) {
     this.els.clear();
     this.logSig = "";
     const root = this.contentEl;
@@ -278,7 +278,7 @@ export class BattleView extends ItemView {
     const stage = root.createDiv("mtg-bt-stage");
     for (const [k, v] of [["--bw", CARD_W], ["--bh", CARD_H], ["--hw", HAND_W], ["--hh", HAND_H], ["--tx", TAP_EXTRA / 2]] as const) stage.style.setProperty(k, `${v}px`); // カードの大きさ (src/battle/layout.ts)
     stage.style.setProperty("--back", `url("${cardBackUrl()}")`); // 山札の裏面の絵 (読めなければ、CSS の代わりの絵)
-    const side = root.createDiv("mtg-bt-side");
+    const inner = side ? undefined : root.createDiv("mtg-bt-side"); // サイドバーを使うなら、プレビューとログは、そちらに出す
     const board = stage.createDiv("mtg-bt-board");
     const rows: Record<string, HTMLElement> = {};
     for (const key of ["opp-lands", "opp-others", "opp-creatures", "self-creatures", "self-others", "self-lands"]) rows[key] = board.createDiv({ cls: `mtg-bt-row mtg-bt-${key}` });
@@ -313,9 +313,12 @@ export class BattleView extends ItemView {
       else this.run(() => this.ctl!.next()); // 選んでいなければ、「次へ」(攻撃しない)
     });
     const stack = stage.createDiv("mtg-bt-stack");
-    const preview = side.createDiv("mtg-bt-preview");
+    const preview = side ? side.preview : inner!.createDiv("mtg-bt-preview");
+    preview.empty();
     preview.createDiv({ cls: "mtg-bt-hint", text: "カードにカーソルを合わせると、ここに画像と効果が出ます" });
-    const log = side.createDiv("mtg-bt-log");
+    const log = side ? side.log : inner!.createDiv("mtg-bt-log");
+    log.empty();
+    delete log.dataset.sig;
     this.ui = { stage, rows, hand, phase, step, turn, gfill, selfLife, oppLife, piles, mana, belt, banner, next, stack, preview, log };
   }
 
