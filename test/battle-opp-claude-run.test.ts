@@ -88,7 +88,7 @@ for (let i = 0; i < 600 && !g.over && !failed; i++) {
 assert.equal(failed, "", `Claude の相手が途中で失敗した: ${failed}`);
 assert.ok(g.turn >= 8 || g.over, `対戦が進む (ターン ${g.turn})`);
 assert.ok(calls > 5, "API (の代わり) を何度も呼んだ");
-assert.ok(g.log.some((l) => l.startsWith("相手 (Claude) のトークン")), "トークン数がログに残る");
+assert.ok(g.log.some((l) => l.startsWith("相手 (AI) のトークン")), "トークン数がログに残る");
 assert.equal(c.aiTokens.input, calls * 100);
 // ---- 記録の再生: 同じ種・同じデッキから、記録した入口の呼び出しを呼び直すと、同じ局面になる (ログの文面は、失敗した操作のぶん違ってよいので、比べない)
 {

@@ -397,3 +397,9 @@ button.mtg-color .mtg-sym { width: 20px; height: 20px; display: block; }
 .mtg-bt-histdate { color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .mtg-bt-histres.is-win { color: var(--color-green); } .mtg-bt-histres.is-lose { color: var(--color-red); }
 .mtg-bt-next.is-hidden { display: none; }
+
+/* 設定の切り替えボタン (トグル式) */
+.mtg-seg { display: inline-flex; border: 1px solid var(--background-modifier-border); border-radius: 8px; overflow: hidden; }
+.mtg-seg button { border: 0; border-radius: 0; background: transparent; box-shadow: none; padding: 4px 12px; }
+.mtg-seg button + button { border-left: 1px solid var(--background-modifier-border); }
+.mtg-seg button.is-on { background: var(--interactive-accent); color: var(--text-on-accent); }

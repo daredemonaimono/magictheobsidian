@@ -30,7 +30,9 @@ import { DECKLIST_VIEW, DeckListView } from "./DeckListView";
 import { DECK_VIEW, DeckView } from "./DeckView";
 import { fetchCard, fileSafe } from "./scryfall";
 import { priceStore, updateCollectionPrices } from "./prices";
-import { DEFAULT_SETTINGS, Settings, SettingsTab, claudeKey } from "./settings";
+import { DEFAULT_SETTINGS, Settings, SettingsTab, claudeKey, secretKey } from "./settings";
+import { AskAi } from "./battle/ai";
+import { OPENAI_BASE, askGemini, askOpenAI } from "./battle/providers";
 
 // 「動き方」はカード行の外なので、デッキ画面で枚数を変えても書き換わらない。統率戦だけコマンダー欄があり、サイドは無い
 const RULES_DIR = "Rules"; // カードの能力をノードで組んだ md (Cards/ と同じ並び。Obsidian の画面で手で直せる)
@@ -98,6 +100,12 @@ export default class MagicTheObsidian extends Plugin {
       battleStops: d.battleStops === "always" ? "always" : "smart",
       battleOpponent: d.battleOpponent === "passive" ? "passive" : d.battleOpponent === "claude" ? "claude" : "cpu",
       battleModel: d.battleModel ?? DEFAULT_SETTINGS.battleModel,
+      battleProvider: d.battleProvider === "openai" ? "openai" : d.battleProvider === "gemini" ? "gemini" : "claude",
+      openaiKeySecret: d.openaiKeySecret ?? "",
+      openaiModel: d.openaiModel ?? DEFAULT_SETTINGS.openaiModel,
+      openaiBaseUrl: d.openaiBaseUrl ?? DEFAULT_SETTINGS.openaiBaseUrl,
+      geminiKeySecret: d.geminiKeySecret ?? "",
+      geminiModel: d.geminiModel ?? DEFAULT_SETTINGS.geminiModel,
       battleHistory: d.battleHistory ?? DEFAULT_SETTINGS.battleHistory,
       battleEffects: d.battleEffects ?? DEFAULT_SETTINGS.battleEffects,
     };
@@ -115,16 +123,7 @@ export default class MagicTheObsidian extends Plugin {
       }),
     );
     this.registerView(DECK_VIEW, (leaf) => new DeckView(leaf, this.settings));
-    this.registerView(BATTLE_VIEW, (leaf) => new BattleView(leaf, () => this.battleSession, () => this.settings.battleStops, () => this.settings.battleOpponent, () => this.settings.battleEffects, () => {
-      const key = claudeKey(this.app, this.settings);
-      return key
-        ? async (system, user) => {
-            let usage: { input: number; output: number } | undefined;
-            const text = await askClaude({ apiKey: key, model: this.settings.battleModel, system, messages: [{ role: "user", content: user }], http: obsidianHttp, onUsage: (u) => (usage = u) });
-            return { text, ...(usage ?? {}) };
-          }
-        : undefined;
-    }, (b) => void this.saveBattle(b)));
+    this.registerView(BATTLE_VIEW, (leaf) => new BattleView(leaf, () => this.battleSession, () => this.settings.battleStops, () => this.settings.battleOpponent, () => this.settings.battleEffects, () => this.makeAsk(), (b) => void this.saveBattle(b)));
     this.registerView(DASHBOARD_VIEW, (leaf) => new DashboardView(leaf, { collection: () => void this.openOrReveal(COLLECTION_VIEW), deck: () => void this.openOrReveal(DECKLIST_VIEW), cards: () => void this.openOrReveal(CARDS_VIEW) }));
     this.registerView(CARDS_VIEW, (leaf) => new CardsView(leaf, this.settings));
     this.registerView(
@@ -340,6 +339,29 @@ export default class MagicTheObsidian extends Plugin {
   // ---- 対戦: デッキを選んで始める
   private battleSession?: BattleSession;
 
+  // 対戦の相手の AI を呼ぶ関数 (設定の種類による)。キーが無い (互換 API の URL を変えていない OpenAI・Gemini・Claude) ときは undefined (相手は、雑魚 CPU になる)
+  private makeAsk(): AskAi | undefined {
+    const s = this.settings;
+    if (s.battleProvider === "openai") {
+      const key = secretKey(this.app, s.openaiKeySecret) ?? "";
+      const own = s.openaiBaseUrl.replace(/\/+$/, "") !== OPENAI_BASE; // 自分のパソコンの AI などは、キー無しでよい
+      if (!key && !own) return undefined;
+      return (system, user) => askOpenAI({ apiKey: key, baseUrl: s.openaiBaseUrl, model: s.openaiModel, system, user, http: obsidianHttp });
+    }
+    if (s.battleProvider === "gemini") {
+      const key = secretKey(this.app, s.geminiKeySecret);
+      return key ? (system, user) => askGemini({ apiKey: key, model: s.geminiModel, system, user, http: obsidianHttp }) : undefined;
+    }
+    const key = claudeKey(this.app, s);
+    return key
+      ? async (system, user) => {
+          let usage: { input: number; output: number } | undefined;
+          const text = await askClaude({ apiKey: key, model: s.battleModel, system, messages: [{ role: "user", content: user }], http: obsidianHttp, onUsage: (u) => (usage = u) });
+          return { text, ...(usage ?? {}) };
+        }
+      : undefined;
+  }
+
   // 対戦の履歴を、Battles/ のノートに保存する (設定でオフにできる)。同じ名前があれば、-2, -3 …
   private async saveBattle(b: SavedBattle) {
     if (!this.settings.battleHistory) return;
@@ -349,7 +371,7 @@ export default class MagicTheObsidian extends Plugin {
       const base = battleNoteName(b).replace(/\.md$/, "");
       let path = normalizePath(`${dir}/${base}.md`);
       for (let n = 2; await this.app.vault.adapter.exists(path); n++) path = normalizePath(`${dir}/${base}-${n}.md`);
-      await this.app.vault.create(path, battleNote(b.mode === "claude" ? { ...b, model: this.settings.battleModel } : b));
+      await this.app.vault.create(path, battleNote(b.mode === "claude" ? { ...b, model: `${this.settings.battleProvider}:${this.settings.battleProvider === "openai" ? this.settings.openaiModel : this.settings.battleProvider === "gemini" ? this.settings.geminiModel : this.settings.battleModel}` } : b));
     } catch (e) {
       new Notice(`対戦の履歴を保存できなかった: ${(e as Error).message}`);
     }

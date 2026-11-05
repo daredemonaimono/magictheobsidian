@@ -581,7 +581,7 @@ export class BattleView extends ItemView {
   }
 
   private run(f: () => unknown) {
-    if (this.aiBusy) return; // 相手 (Claude) が考えている間は、操作を受けない
+    if (this.aiBusy) return; // 相手 (AI) が考えている間は、操作を受けない
     this.closeMenu();
     try {
       const r = f();
@@ -608,7 +608,7 @@ export class BattleView extends ItemView {
     try {
       const ai = ctl.game.players.find((p) => p !== VIEWER)!;
       for (let n = 0; n < 40 && this.ctl === ctl && ctl.aiActive && !ctl.game.over && !ctl.pending; n++) {
-        if (ctl.aiWaiting()) this.thinkEl ??= this.ui.stage.createDiv({ cls: "mtg-bt-think", text: "相手 (Claude) が考えている…" });
+        if (ctl.aiWaiting()) this.thinkEl ??= this.ui.stage.createDiv({ cls: "mtg-bt-think", text: "相手 (AI) が考えている…" });
         const r = await aiStep(ctl, this.getAsk(), ai);
         if (this.ctl !== ctl || r !== "acted" || ctl.pending) break; // 人への質問が出たら、答えると、AI の行動が最初からやり直される
         this.paint();

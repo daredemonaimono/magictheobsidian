@@ -120,7 +120,7 @@ export class BattleController {
   aiFail(kind: "act" | "attack" | "block", reason: string, permanent = true): void {
     const ai = this.ai;
     if (!ai) return;
-    this.game.log.push(`相手 (Claude) は使えない: ${reason}。${permanent ? "以降は、雑魚 CPU の決まりで動く" : "この判断だけ、雑魚 CPU の決まりで動く"}`);
+    this.game.log.push(`相手 (AI) は使えない: ${reason}。${permanent ? "以降は、雑魚 CPU の決まりで動く" : "この判断だけ、雑魚 CPU の決まりで動く"}`);
     if (permanent) {
       this.ai = undefined;
       this.cpu = ai;

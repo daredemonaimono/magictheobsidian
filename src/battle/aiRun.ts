@@ -30,7 +30,7 @@ export async function aiStep(ctl: BattleController, ask: AskAi | undefined, ai: 
       if (r.input !== undefined || r.output !== undefined) {
         ctl.aiTokens.input += r.input ?? 0;
         ctl.aiTokens.output += r.output ?? 0;
-        g.log.push(`相手 (Claude) のトークン: 入力 ${r.input ?? "?"} / 出力 ${r.output ?? "?"} (この対戦の合計 ${ctl.aiTokens.input + ctl.aiTokens.output})`);
+        g.log.push(`相手 (AI) のトークン: 入力 ${r.input ?? "?"} / 出力 ${r.output ?? "?"} (この対戦の合計 ${ctl.aiTokens.input + ctl.aiTokens.output})`);
       }
     } catch (e) {
       ctl.aiFail(w, (e as Error).message); // API そのものの失敗: 以降は、雑魚 CPU
