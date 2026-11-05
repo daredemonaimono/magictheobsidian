@@ -1,6 +1,6 @@
 import { Action, abilityLabels, actionsFor, autoTargets, slotsOf, tryAction } from "./actions";
-import { RuleError, TargetSlot, activateAbility, canAttackWith, castSpell, passPriority, playLand } from "./engine";
-import { cpuAct } from "./cpu";
+import { RuleError, TargetSlot, activateAbility, canAttackWith, castSpell, declareAttackers, declareBlockers, passPriority, playLand } from "./engine";
+import { cpuAct, cpuAttack, cpuBlock } from "./cpu";
 import { Answer, InputRequest, NeedInput, makeDecider } from "./input";
 import { HAND_SIZE, putBottom, redraw } from "./mulligan";
 import { Game, PlayerId, RuleBook } from "./state";
@@ -94,6 +94,28 @@ export class BattleController {
     return actionsFor(this.game, this.rules, this.me);
   }
 
+  // 攻撃クリーチャーを指定する (戦闘ステップの最初の段階。ids = 攻撃するクリーチャー。攻撃先は相手のプレイヤー)
+  declareAttackers(ids: string[]): string | undefined {
+    if (this.game.mulligan) return this.fail("攻撃", "マリガンを終えてください");
+    const g = this.game;
+    const names = ids.map((id) => g.battlefield.find((p) => p.id === id)?.card.name ?? id);
+    return this.perform("攻撃", (x) => {
+      declareAttackers(x, this.me, ids.map((id) => ({ id })), this.rules);
+      if (ids.length) x.log.push(`あなたが ${names.join("、")} で攻撃した`);
+    }, []);
+  }
+  // ブロックを指定する (pairs = [{ blocker, attacker }])。指定したら、(相手のターンなら) 相手がパスして、自分に優先権が戻る
+  declareBlockers(pairs: { blocker: string; attacker: string }[]): string | undefined {
+    if (this.game.mulligan) return this.fail("ブロック", "マリガンを終えてください");
+    const g = this.game;
+    const name = (id: string) => g.battlefield.find((p) => p.id === id)?.card.name ?? id;
+    return this.perform("ブロック", (x) => {
+      declareBlockers(x, this.me, pairs, this.rules);
+      if (pairs.length) x.log.push(`あなたが ${pairs.map((q) => `${name(q.blocker)} で ${name(q.attacker)} を`).join("、")}ブロックした`);
+      if (x.active !== this.me && x.priority !== this.me && x.priority) passPriority(x, x.priority, this.rules); // 相手がパスして、自分に優先権を渡す
+    }, []);
+  }
+
   // 手札のカードを使うとき、選ばせる対象 (対象を取らなければ空)
   needsForCard(cardId: string): TargetSlot[] {
     const c = this.game.hands[this.me].find((x) => x.id === cardId);
@@ -177,8 +199,16 @@ export class BattleController {
         const r = passPriority(g, g.priority!, this.rules);
         if (r === "passed") continue;
         if (g.over) return;
-        // 攻撃できるクリーチャーがいなければ、戦闘ステップは飛ばす (戦闘開始・攻撃クリーチャー指定・戦闘終了のあいだも)。CPU は、段階6まで、攻撃しない
-        if (r === "stepEnded" && g.step === "combat" && !g.battlefield.some((x) => x.attacking) && (g.active === cpu || !canAttackWith(g, g.active, this.rules))) continue;
+        if (r === "stepEnded" && g.step === "combat" && cpu) {
+          // CPU の攻撃: 攻撃クリーチャーの指定の段階で、攻撃するなら宣言して、止まる (自分が応答できる)。CPU のブロック: ブロックの段階で宣言して、止まる
+          if (g.combatPhase === "attackers" && g.active === cpu && !g.attackersDeclared && cpuAttack(g, this.rules, cpu) > 0) {
+            passPriority(g, cpu, this.rules);
+            return;
+          }
+          if (g.combatPhase === "blockers" && g.active !== cpu) cpuBlock(g, this.rules, cpu);
+        }
+        // 攻撃できるクリーチャーがいなければ、戦闘ステップは飛ばす (戦闘開始・攻撃クリーチャー指定・戦闘終了のあいだも)。CPU は、攻撃の段階で攻撃しなかったら、そのあとも飛ばす
+        if (r === "stepEnded" && g.step === "combat" && !g.attackersDeclared && !g.battlefield.some((x) => x.attacking) && (!canAttackWith(g, g.active, this.rules) || (g.active === cpu && g.combatPhase !== "beginning"))) continue;
         if (g.active !== this.me && g.priority !== this.me) {
           if (cpuTurn()) return; // 相手のターンの始まり・解決のあと: CPU が先に動く
           if (g.priority !== this.me) passPriority(g, g.priority!, this.rules); // 動かなければ、パスして、自分に優先権を渡す

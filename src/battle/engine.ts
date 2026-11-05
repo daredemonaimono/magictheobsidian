@@ -255,12 +255,15 @@ export const isSick = (g: Game, p: Perm, rules: RuleBook): boolean => {
 };
 
 // p が、いま攻撃できるクリーチャーを持っているか (アンタップ・召喚酔いでない・防衛でない)。無ければ、対戦の画面は戦闘ステップを飛ばす
-export const canAttackWith = (g: Game, p: PlayerId, rules: RuleBook): boolean =>
-  g.battlefield.some((x) => {
-    if (x.controller !== p || x.tapped || isSick(g, x, rules)) return false;
-    const now = characteristics(g, x, rules);
-    return /\bCreature\b/.test(now.typeLine) && !now.keywords.includes("defender");
-  });
+export const canAttackPerm = (g: Game, x: Perm, rules: RuleBook): boolean => {
+  if (x.tapped || isSick(g, x, rules)) return false;
+  const now = characteristics(g, x, rules);
+  return /\bCreature\b/.test(now.typeLine) && !now.keywords.includes("defender");
+};
+export const canAttackWith = (g: Game, p: PlayerId, rules: RuleBook): boolean => g.battlefield.some((x) => x.controller === p && canAttackPerm(g, x, rules));
+
+// p が、いま攻撃されている (戦闘の最中) ときの、攻撃クリーチャー
+export const attackersAt = (g: Game, p: PlayerId): Perm[] => g.battlefield.filter((a) => a.attacking && defenderOf(g, a) === p);
 
 // コスト (cost / additionalCost のノードから集める)。mana = 汎用の数、manaCost = 色つきのマナコスト ("{1}{U}")
 interface CostSpec {

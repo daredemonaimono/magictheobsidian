@@ -339,3 +339,8 @@ button.mtg-color .mtg-sym { width: 20px; height: 20px; display: block; }
 /* 優先権の時間ゲージ (真ん中の帯の底) */
 .mtg-bt-gauge { position: absolute; left: 0; right: 0; bottom: 0; height: 5px; background: #0007; overflow: hidden; }
 .mtg-bt-gaugefill { height: 100%; background: #ffd24a; transform-origin: left center; transform: scaleX(1); will-change: transform; }
+/* 戦闘の指定 (段階6) */
+.mtg-bt-stage .is-cmb-able { outline: 3px solid #6fa8ff; outline-offset: 1px; cursor: pointer; }
+.mtg-bt-stage .is-cmb-picked { outline: 3px solid #ff5a5a; outline-offset: 1px; box-shadow: 0 0 14px #ff5a5a; cursor: pointer; }
+.mtg-bt-stage .is-cmb-target { outline: 3px dashed #ffd24a; outline-offset: 1px; cursor: crosshair; }
+.mtg-bt-card[data-block-to]::after { content: "→ " attr(data-block-to); position: absolute; left: 0; right: 0; bottom: 0; background: #000b; color: #fff; font-size: 10px; text-align: center; white-space: nowrap; overflow: hidden; }

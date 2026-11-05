@@ -1,7 +1,8 @@
 import { slotsOf, tryAction } from "./actions";
-import { activateAbility, castSpell, playLand } from "./engine";
+import { characteristics } from "./continuous";
+import { RuleError, activateAbility, attackersAt, canAttackPerm, castSpell, declareAttackers, declareBlockers, playLand } from "./engine";
 import { HAND_SIZE, putBottom, redraw } from "./mulligan";
-import { Game, GameCard, PlayerId, RuleBook } from "./state";
+import { Game, GameCard, Perm, PlayerId, RuleBook, statsOf } from "./state";
 
 // 雑魚 CPU。機械的な決まりだけで動く (乱数は、マリガンの切り直しだけ。ターンの中の動きは、同じ局面なら、いつも同じ)。
 // やること: 土地を出す・マナを出して、いちばん重い唱えられる呪文を唱える (自分のメインフェイズ、スタックが空のとき)。やらないこと: 相手の呪文への応答、起動型能力 (マナ以外)、攻撃・ブロック (段階6)
@@ -105,4 +106,64 @@ export function cpuAct(g: Game, rules: RuleBook, p: PlayerId): "land" | "cast" |
     return "cast";
   }
   return "pass";
+}
+
+// ---- 戦闘 (雑魚 CPU)。機械的な決まりだけ。攻撃先は、相手 (人) のプレイヤー (プレインズウォーカーは狙わない)
+
+const creaturesOf = (g: Game, p: PlayerId, rules: RuleBook) => g.battlefield.filter((x) => x.controller === p && /\bCreature\b/.test(characteristics(g, x, rules).typeLine));
+const power = (x: Perm) => statsOf(x)?.power ?? 0;
+const tough = (x: Perm) => statsOf(x)?.toughness ?? 0;
+
+// 攻撃する: 攻撃できるクリーチャーのうち、相手のアンタップのクリーチャーに倒されないもの (どのクリーチャーのパワーも、タフネス未満)。人のライフが、全員の攻撃で 0 以下になるなら、全員で攻撃する。宣言した数を返す
+export function cpuAttack(g: Game, rules: RuleBook, p: PlayerId): number {
+  const foe = g.players.find((x) => x !== p);
+  if (foe === undefined) return 0;
+  const able = creaturesOf(g, p, rules).filter((x) => canAttackPerm(g, x, rules) && power(x) > 0);
+  const blockers = creaturesOf(g, foe, rules).filter((x) => !x.tapped);
+  const topPower = Math.max(0, ...blockers.map(power));
+  const lethal = able.reduce((a, x) => a + power(x), 0) >= g.life[foe];
+  const picks = lethal ? able : able.filter((x) => tough(x) > topPower);
+  if (!picks.length) return 0;
+  try {
+    declareAttackers(g, p, picks.map((x) => ({ id: x.id, target: foe })), rules);
+  } catch (e) {
+    if (!(e instanceof RuleError)) throw e; // 入力待ち (人の誘発の対象) は、そのまま上へ
+    return 0; // 攻撃できなかった: 攻撃しない
+  }
+  g.log.push(`${who(g, p)}が ${picks.map((x) => x.card.name).join("、")} で攻撃した`);
+  return picks.length;
+}
+
+// ブロックする (攻撃されている側)。パワーの大きい攻撃クリーチャーから: 生き残って倒せるブロッカー → 生き残れるブロッカー。攻撃を通すと、ライフが 0 以下になるなら、残りのブロッカーで、チャンプ・ブロック (マナ総量の小さいものから)
+export function cpuBlock(g: Game, rules: RuleBook, p: PlayerId): void {
+  const attackers = attackersAt(g, p).sort((a, b) => power(b) - power(a));
+  const free = creaturesOf(g, p, rules).filter((x) => !x.tapped);
+  const legal = (pairs: { blocker: string; attacker: string }[]): boolean => {
+    try {
+      declareBlockers(structuredClone({ ...g, decide: undefined }) as Game, p, pairs, rules);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  const pairs: { blocker: string; attacker: string }[] = [];
+  const take = (a: Perm, pick: (x: Perm) => boolean) => {
+    const b = free.find((x) => pick(x) && legal([...pairs, { blocker: x.id, attacker: a.id }]));
+    if (!b) return false;
+    free.splice(free.indexOf(b), 1);
+    pairs.push({ blocker: b.id, attacker: a.id });
+    return true;
+  };
+  for (const a of attackers) take(a, (x) => tough(x) > power(a) && power(x) >= tough(a)) || take(a, (x) => tough(x) > power(a));
+  const through = () => attackers.filter((a) => !pairs.some((q) => q.attacker === a.id)).reduce((s, a) => s + power(a), 0);
+  for (const a of attackers) {
+    if (through() < g.life[p]) break;
+    if (pairs.some((q) => q.attacker === a.id)) continue;
+    free.sort((x, y) => x.card.mv - y.card.mv);
+    take(a, () => true);
+  }
+  if (pairs.length) {
+    declareBlockers(g, p, pairs, rules);
+    g.log.push(`${who(g, p)}が ${pairs.map((q) => `${g.battlefield.find((x) => x.id === q.blocker)!.card.name} で ${g.battlefield.find((x) => x.id === q.attacker)!.card.name} を`).join("、")}ブロックした`);
+  }
 }

@@ -333,4 +333,39 @@ const none = () => undefined;
   assert.deepEqual([m.canNext, m.mulligan, m.self.hand.every((c) => !c.playable)], [false, { count: 1 }, true], "マリガンの途中は、進めず、何も使えない");
   assert.equal(boardModel(g, book, "B", none).self.hand.every((c) => !c.playable), true);
 }
+// ---- 戦闘の指定 (choice)
+{
+  const { registerBuiltinNodes } = await import("../src/battle/nodes");
+  const { resetRegistry } = await import("../src/battle/registry");
+  const { createGame } = await import("../src/battle/state");
+  resetRegistry();
+  registerBuiltinNodes();
+  const book = { get: (c: string) => (c === "Bear" ? { card: c, abilities: [] } : undefined) };
+  const g = createGame(["A", "B"]);
+  const cr = (id: string, owner: string) => ({ id, name: "Bear", typeLine: "Creature — Bear", mv: 2, owner, power: 2, toughness: 2 });
+  g.battlefield.push({ id: "a1", card: cr("a1", "A"), controller: "A" }, { id: "a2", card: cr("a2", "A"), controller: "A", enteredTurn: 1 }, { id: "b1", card: cr("b1", "B"), controller: "B" });
+  g.turn = 1;
+  g.step = "combat";
+  g.combatPhase = "attackers";
+  g.priority = "A";
+  let m = boardModel(g, book, "A", none);
+  assert.deepEqual(m.choice, { kind: "attack", mine: ["a1"] }, "召喚酔いの a2 は選べない");
+  assert.equal(m.idle, false, "選ぶときは、自動で進めない");
+  g.attackersDeclared = true;
+  assert.equal(boardModel(g, book, "A", none).choice, undefined);
+  g.attackersDeclared = false;
+  g.battlefield[0].tapped = true;
+  assert.equal(boardModel(g, book, "A", none).choice, undefined, "攻撃できるクリーチャーがいなければ、選ぶものが無い");
+  // ブロック
+  g.battlefield[0].tapped = false;
+  g.battlefield[0].attacking = true;
+  g.battlefield[0].attackTarget = "B";
+  g.combatPhase = "blockers";
+  g.priority = "B";
+  m = boardModel(g, book, "B", none);
+  assert.deepEqual(m.choice, { kind: "block", mine: ["b1"], attackers: ["a1"] });
+  g.blockersDeclared = ["B"];
+  assert.equal(boardModel(g, book, "B", none).choice, undefined);
+  assert.equal(boardModel(g, book, "A", none).choice, undefined, "攻撃側は、ブロックを選ばない");
+}
 console.log("boardmodel ok");

@@ -1,6 +1,6 @@
 import { actionsFor, canRespond } from "./actions";
 import { characteristics } from "./continuous";
-import { isSick } from "./engine";
+import { attackersAt, canAttackPerm, isSick } from "./engine";
 import { Game, GameCard, Perm, PlayerId, RuleBook } from "./state";
 
 // 対戦の画面に出す内容。Game → 画面の内容の変換だけをする純粋な関数 (DOM を持たない。テストで確かめる)。画面は、これを描くだけ
@@ -141,7 +141,11 @@ export interface StackView {
   controller: "self" | "opp";
   ability: boolean;
 }
+// 自分が、いま選ぶ戦闘の指定 (攻撃クリーチャー / ブロック)。mine = 選べる自分のクリーチャー、attackers = ブロックできる攻撃クリーチャー
+export type CombatChoice = { kind: "attack"; mine: string[] } | { kind: "block"; mine: string[]; attackers: string[] };
+
 export interface BoardModel {
+  choice?: CombatChoice;
   self: SideView;
   opp: SideView;
   manaSelf: ManaView;
@@ -169,6 +173,17 @@ export function boardModel(g: Game, rules: RuleBook, viewer: PlayerId, imageOf: 
   const oppId = g.players.find((p) => p !== viewer) ?? viewer;
   const side = (p: PlayerId): "self" | "opp" => (p === viewer ? "self" : "opp");
   const can = new Set(actionsFor(g, rules, viewer).map((a) => (a.kind === "activate" ? a.perm : a.card)));
+  let choice: CombatChoice | undefined;
+  if (!g.over && !g.mulligan && g.step === "combat" && g.priority === viewer && !g.stack.length) { // スタックが空のとき (戦闘の最初の誘発が解決してから)
+    if (g.combatPhase === "attackers" && !g.attackersDeclared && g.active === viewer) {
+      const mine = g.battlefield.filter((p) => p.controller === viewer && canAttackPerm(g, p, rules)).map((p) => p.id);
+      if (mine.length) choice = { kind: "attack", mine };
+    } else if (g.combatPhase === "blockers" && g.active !== viewer && !(g.blockersDeclared ?? []).includes(viewer)) {
+      const attackers = attackersAt(g, viewer).map((p) => p.id);
+      const mine = g.battlefield.filter((p) => p.controller === viewer && !p.tapped && /\bCreature\b/.test(characteristics(g, p, rules).typeLine)).map((p) => p.id);
+      if (attackers.length && mine.length) choice = { kind: "block", mine, attackers };
+    }
+  }
   const pool = g.pool[viewer] ?? {};
   const colored = Object.values(pool).reduce((a, n) => a + (n ?? 0), 0);
   const out: BoardModel = {
@@ -180,7 +195,8 @@ export function boardModel(g: Game, rules: RuleBook, viewer: PlayerId, imageOf: 
     combat: g.step === "combat",
     activeSide: side(g.active),
     turn: g.turn,
-    idle: !g.over && !g.mulligan && g.priority === viewer && !canRespond(g, rules, viewer),
+    ...(choice ? { choice } : {}),
+    idle: !g.over && !g.mulligan && g.priority === viewer && !choice && !canRespond(g, rules, viewer), // 戦闘の指定を選ぶときは、自動で進めない
     canNext: !g.over && !g.mulligan,
     nextLabel: g.stack.length ? "解決する" : "次へ",
     stack: g.stack.map((s) => ({ id: s.id, name: s.card.name, controller: side(s.controller), ability: !!s.ability })),

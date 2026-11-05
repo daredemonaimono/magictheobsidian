@@ -1,5 +1,5 @@
 import assert from "node:assert";
-import { CPU_MAX_MULLIGANS, cpuAct, cpuBottom, cpuKeeps, cpuMulligan } from "../src/battle/cpu";
+import { CPU_MAX_MULLIGANS, cpuAct, cpuAttack, cpuBlock, cpuBottom, cpuKeeps, cpuMulligan } from "../src/battle/cpu";
 import { DeckData, buildMatch } from "../src/battle/deckToGame";
 import { Ability, NodeCall } from "../src/battle/node";
 import { registerBuiltinNodes } from "../src/battle/nodes";
@@ -166,5 +166,139 @@ const turnOf = (extra: (g: Game) => void): Game => {
   c.next();
   assert.equal(g.step, "main1");
   assert.equal(g.battlefield.length, 0, "何もしない");
+}
+// ---- 戦闘: CPU の攻撃 (倒されないクリーチャーだけ。致死なら全員) とブロック
+const fighter = (id: string, owner: string, power: number, toughness: number, extra: Record<string, unknown> = {}) => ({ id, card: { id, name: "Bear", typeLine: "Creature — Bear", mv: power, owner, power, toughness }, controller: owner, ...extra });
+const combatGame = (extra: (g: Game) => void): Game => {
+  const g = turnOf(extra);
+  g.step = "combat";
+  g.combatPhase = "attackers";
+  g.priority = "opp";
+  return g;
+};
+{
+  // 人のアンタップの 2/2 がいる: 3/3 は攻撃し、1/1 は攻撃しない
+  const g = combatGame((x) => {
+    x.battlefield.push(fighter("big", "opp", 3, 3), fighter("small", "opp", 1, 1), fighter("wall", "you", 2, 2));
+  });
+  assert.equal(cpuAttack(g, rules, "opp"), 1);
+  assert.equal(g.battlefield.find((p) => p.id === "big")!.attacking, true);
+  assert.ok(!g.battlefield.find((p) => p.id === "small")!.attacking);
+  assert.ok(g.log.includes("相手が Bear で攻撃した"));
+}
+{
+  // 人のブロッカーがいない: 全員攻撃。召喚酔い・タップ済みは、攻撃しない
+  const g = combatGame((x) => {
+    x.battlefield.push(fighter("a", "opp", 2, 2), fighter("b", "opp", 1, 1), fighter("sick", "opp", 5, 5, { enteredTurn: 2 }), fighter("tapped", "opp", 5, 5, { tapped: true }));
+  });
+  g.turn = 2;
+  assert.equal(cpuAttack(g, rules, "opp"), 2);
+}
+{
+  // 致死なら、倒されるクリーチャーも攻撃する
+  const g = combatGame((x) => {
+    x.battlefield.push(fighter("a", "opp", 2, 2), fighter("b", "opp", 2, 2), fighter("wall", "you", 5, 5));
+    x.life["you"] = 4;
+  });
+  assert.equal(cpuAttack(g, rules, "opp"), 2);
+}
+{
+  // ブロック: 倒せて生き残るブロッカーを優先。ライフに余裕があれば、倒されるブロックはしない
+  const g = combatGame((x) => {
+    x.battlefield.push(fighter("atk", "you", 2, 2, { attacking: true, attackTarget: "opp" }), fighter("good", "opp", 3, 3), fighter("bad", "opp", 1, 1));
+    x.active = "you";
+  });
+  g.combatPhase = "blockers";
+  g.priority = "you";
+  cpuBlock(g, rules, "opp");
+  assert.equal(g.battlefield.find((p) => p.id === "good")!.blocking, "atk");
+  assert.equal(g.battlefield.find((p) => p.id === "bad")!.blocking, undefined);
+  assert.deepEqual(g.blockersDeclared, ["opp"]);
+}
+{
+  const g = combatGame((x) => {
+    x.battlefield.push(fighter("atk", "you", 5, 5, { attacking: true, attackTarget: "opp" }), fighter("cheap", "opp", 1, 1));
+    x.active = "you";
+    x.life["opp"] = 3;
+  });
+  g.combatPhase = "blockers";
+  g.priority = "you";
+  cpuBlock(g, rules, "opp");
+  assert.equal(g.battlefield.find((p) => p.id === "cheap")!.blocking, "atk", "致死のときは、チャンプ・ブロック");
+}
+{
+  const g = combatGame((x) => {
+    x.battlefield.push(fighter("atk", "you", 5, 5, { attacking: true, attackTarget: "opp" }), fighter("cheap", "opp", 1, 1));
+    x.active = "you";
+  });
+  g.combatPhase = "blockers";
+  g.priority = "you";
+  cpuBlock(g, rules, "opp");
+  assert.equal(g.battlefield.find((p) => p.id === "cheap")!.blocking, undefined, "ライフに余裕があれば、ブロックしない");
+}
+// 組み込み: 人が攻撃 → CPU がブロック → ダメージ。CPU が攻撃 → 人がブロックを選ぶ
+{
+  const g = turnOf((x) => {
+    x.battlefield.push(fighter("mine", "you", 3, 3), fighter("blocker", "opp", 4, 4));
+    x.active = "you";
+    x.turn = 3;
+    x.step = "combat";
+    x.combatPhase = "beginning";
+    x.priority = "you";
+  });
+  const c = new BattleController(g, rules, "you", () => 0.5, "opp");
+  c.next(); // 戦闘開始 → 攻撃クリーチャー指定
+  assert.equal(g.combatPhase, "attackers");
+  assert.equal(c.declareAttackers(["mine"]), undefined);
+  assert.equal(g.battlefield.find((p) => p.id === "mine")!.attacking, true);
+  c.next(); // → ブロック (CPU が宣言)
+  assert.equal(g.combatPhase, "blockers");
+  assert.equal(g.battlefield.find((p) => p.id === "blocker")!.blocking, "mine", "4/4 が、3/3 をブロックする");
+  c.next(); // → 戦闘ダメージ
+  assert.equal(g.combatPhase, "damage");
+  assert.ok(!g.battlefield.some((p) => p.id === "mine"), "3/3 は倒された");
+  assert.equal(g.battlefield.find((p) => p.id === "blocker")!.damage, 3);
+}
+{
+  const g = turnOf((x) => {
+    x.battlefield.push(fighter("mine", "you", 2, 2), fighter("hit", "opp", 3, 3));
+    x.active = "opp";
+    x.turn = 4;
+    x.step = "combat";
+    x.combatPhase = "beginning";
+    x.priority = "opp";
+    x.life["you"] = 20;
+  });
+  const c = new BattleController(g, rules, "you", () => 0.5, "opp");
+  c.next(); // → 攻撃クリーチャー指定: CPU が攻撃して、止まる
+  assert.equal(g.combatPhase, "attackers");
+  assert.equal(g.battlefield.find((p) => p.id === "hit")!.attacking, true);
+  assert.equal(g.priority, "you");
+  c.next(); // → ブロック: 人が選ぶ番
+  assert.deepEqual([g.combatPhase, g.priority], ["blockers", "you"]);
+  assert.ok(c.declareBlockers([{ blocker: "mine", attacker: "nope" }]), "不正なブロックは、理由が返って、変わらない");
+  assert.equal(g.battlefield.find((p) => p.id === "mine")!.blocking, undefined);
+  assert.equal(c.declareBlockers([{ blocker: "mine", attacker: "hit" }]), undefined);
+  assert.equal(g.priority, "you", "ブロックしたあと、自分に優先権が戻る");
+  c.next(); // → ダメージ
+  assert.ok(!g.battlefield.some((p) => p.id === "mine"), "2/2 は倒された");
+  assert.equal(g.life["you"], 20, "ブロックしたので、ライフは減らない");
+}
+{
+  // ブロックしなければ、ライフが減る
+  const g = turnOf((x) => {
+    x.battlefield.push(fighter("hit", "opp", 3, 3));
+    x.active = "opp";
+    x.turn = 4;
+    x.step = "combat";
+    x.combatPhase = "beginning";
+    x.priority = "opp";
+  });
+  const c = new BattleController(g, rules, "you", () => 0.5, "opp");
+  c.next();
+  c.next();
+  c.next();
+  c.next();
+  assert.equal(g.life["you"], 17);
 }
 console.log("cpu ok");

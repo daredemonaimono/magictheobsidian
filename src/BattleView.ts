@@ -2,7 +2,7 @@ import { ItemView, WorkspaceLeaf } from "obsidian";
 import { TargetSlot } from "./battle/engine";
 import { InputRequest } from "./battle/input";
 import { BattleController, StopMode } from "./battle/play";
-import { BoardModel, CardView, LandStack, PhaseId, boardModel } from "./battle/boardModel";
+import { BoardModel, CardView, CombatChoice, LandStack, PhaseId, boardModel } from "./battle/boardModel";
 import { CARD_H, CARD_W, GAP, GAUGE_SEC, HAND_H, HAND_W, LAYER_PX, TAP_EXTRA, cardBackUrl, overlapFor, pileLayers, rowNeed } from "./battle/layout";
 import { BattleSession } from "./battle/deckToGame";
 import { sampleBattle } from "./battle/sampleBattle";
@@ -62,6 +62,10 @@ export class BattleView extends ItemView {
   // 対象を選んでいる途中 (Esc で取り消し。局面は変わらない)。slots = 聞くこと、i = いまのスロット、picks = スロットごとの選んだ id
   private targeting?: { title: string; slots: TargetSlot[]; i: number; picks: string[][]; done: (t: Record<string, string>) => void; cancel?: () => void };
   private tbar?: HTMLElement;
+  // 戦闘の指定を選んでいる途中 (攻撃クリーチャー / ブロック)。choice は boardModel の、選べるもの。ブロックは、自分のクリーチャー → 攻撃クリーチャー の順にクリック
+  private combatSel?: { kind: "attack"; picks: Set<string> } | { kind: "block"; pairs: Map<string, string>; cur?: string };
+  private choice?: CombatChoice;
+  private cbar?: HTMLElement;
   private gaugeKey = ""; // いまのゲージが、どの局面のものか
   private gaugeTimer?: number;
   private mullEl?: HTMLElement; // マリガンのダイアログ (手札にカーソルを合わせて見られるよう、後ろの操作は止めない)
@@ -125,9 +129,10 @@ export class BattleView extends ItemView {
       });
       this.registerDomEvent(this.contentEl, "click", (e) => {
         if (this.targeting) return this.clickTarget(e);
+        if (this.combatSel && this.clickCombat(e)) return;
         if (!(e.target as HTMLElement).closest(".mtg-bt-menu")) this.closeMenu(); // 捕捉の段階で閉じる (そのあと、クリックしたカードが、必要なら開き直す)
       }, true);
-      this.registerDomEvent(this.contentEl, "dblclick", (e) => this.targeting && e.stopPropagation(), true);
+      this.registerDomEvent(this.contentEl, "dblclick", (e) => (this.targeting || (this.combatSel && this.combatTid(e))) && e.stopPropagation(), true);
     }
   }
   private keysOn = false;
@@ -209,6 +214,7 @@ export class BattleView extends ItemView {
     this.paintLog(m.log);
     this.paintGauge(m);
     this.fit();
+    this.syncCombat(m);
     if (this.targeting) this.paintTargeting();
   }
 
@@ -232,6 +238,81 @@ export class BattleView extends ItemView {
       if (this.targeting || this.askEl || this.mullEl || this.ctl?.pending || this.game.mulligan) return void (this.gaugeKey = ""); // 操作の途中: 進めない (満タンで待つ)
       this.run(() => this.ctl!.next());
     }, GAUGE_SEC * 1000);
+  }
+
+  // ---- 戦闘の指定。攻撃: 攻撃するクリーチャーをクリックで選び (もう一度で解除)、「確定」。ブロック: ブロックする自分のクリーチャーをクリック → ブロック先の攻撃クリーチャーをクリック (割り当てたものを、もう一度クリックで解除)、「確定」
+  private syncCombat(m: BoardModel) {
+    const ch = this.ctl && !this.targeting && !this.askEl ? m.choice : undefined;
+    this.choice = ch;
+    if (!ch) this.combatSel = undefined;
+    else if (!this.combatSel || this.combatSel.kind !== ch.kind) this.combatSel = ch.kind === "attack" ? { kind: "attack", picks: new Set() } : { kind: "block", pairs: new Map() };
+    const cs = this.combatSel;
+    if (cs && ch) {
+      for (const id of [...(cs.kind === "attack" ? cs.picks : cs.pairs.keys())]) if (!ch.mine.includes(id)) (cs.kind === "attack" ? cs.picks.delete(id) : cs.pairs.delete(id)); // 選んだものが、選べなくなった (倒された・タップした)
+      if (cs.kind === "block") {
+        for (const [b, a] of [...cs.pairs]) if (ch.kind !== "block" || !ch.attackers.includes(a)) cs.pairs.delete(b);
+        if (cs.cur && !ch.mine.includes(cs.cur)) cs.cur = undefined;
+      }
+    }
+    this.paintCombat();
+  }
+  private combatTid(e: MouseEvent): string | undefined {
+    const id = (e.target as HTMLElement).closest<HTMLElement>("[data-tid]")?.dataset.tid;
+    const ch = this.choice;
+    return id && ch && (ch.mine.includes(id) || (ch.kind === "block" && ch.attackers.includes(id))) ? id : undefined;
+  }
+  private clickCombat(e: MouseEvent): boolean {
+    const sel = this.combatSel!;
+    const id = this.combatTid(e);
+    if (!id) return false;
+    e.stopPropagation();
+    e.preventDefault();
+    if (sel.kind === "attack") {
+      if (sel.picks.has(id)) sel.picks.delete(id);
+      else sel.picks.add(id);
+    } else if (this.choice!.mine.includes(id)) {
+      if (sel.pairs.has(id)) {
+        sel.pairs.delete(id);
+        sel.cur = undefined;
+      } else sel.cur = sel.cur === id ? undefined : id;
+    } else if (sel.cur) {
+      sel.pairs.set(sel.cur, id);
+      sel.cur = undefined;
+    }
+    this.paintCombat();
+    return true;
+  }
+  private paintCombat() {
+    const st = this.ui.stage;
+    for (const el of Array.from(st.querySelectorAll(".is-cmb-able, .is-cmb-picked, .is-cmb-target, [data-block-to]"))) {
+      el.classList.remove("is-cmb-able", "is-cmb-picked", "is-cmb-target");
+      delete (el as HTMLElement).dataset.blockTo;
+    }
+    this.cbar?.remove();
+    this.cbar = undefined;
+    const sel = this.combatSel;
+    const ch = this.choice;
+    if (!sel || !ch) return;
+    const at = (id: string) => st.querySelector<HTMLElement>(`[data-tid="${id}"]`);
+    const nameOf = (id: string) => this.game.battlefield.find((p) => p.id === id)?.card.name ?? id;
+    const bar = st.createDiv("mtg-bt-tbar");
+    this.cbar = bar;
+    if (sel.kind === "attack") {
+      for (const id of ch.mine) at(id)?.classList.add(sel.picks.has(id) ? "is-cmb-picked" : "is-cmb-able");
+      bar.createSpan({ text: `攻撃するクリーチャーを選ぶ (${sel.picks.size} 体)` });
+      bar.createEl("button", { cls: "mod-cta", text: sel.picks.size ? `確定 (${sel.picks.size} 体で攻撃)` : "確定" }).addEventListener("click", () => sel.picks.size && this.run(() => this.ctl!.declareAttackers([...sel.picks])));
+      bar.createEl("button", { text: "攻撃しない" }).addEventListener("click", () => this.run(() => this.ctl!.next()));
+    } else if (ch.kind === "block") {
+      for (const id of ch.mine) at(id)?.classList.add(sel.pairs.has(id) ? "is-cmb-picked" : id === sel.cur ? "is-cmb-picked" : "is-cmb-able");
+      if (sel.cur) for (const id of ch.attackers) at(id)?.classList.add("is-cmb-target");
+      for (const [b, a] of sel.pairs) {
+        const el = at(b);
+        if (el) el.dataset.blockTo = nameOf(a);
+      }
+      bar.createSpan({ text: sel.cur ? `${nameOf(sel.cur)} がブロックする相手を選ぶ` : `ブロックするクリーチャーを選ぶ (${sel.pairs.size} 体)` });
+      bar.createEl("button", { cls: "mod-cta", text: sel.pairs.size ? `確定 (${sel.pairs.size} 体でブロック)` : "確定" }).addEventListener("click", () => sel.pairs.size && this.run(() => this.ctl!.declareBlockers([...sel.pairs].map(([blocker, attacker]) => ({ blocker, attacker })))));
+      bar.createEl("button", { text: "ブロックしない" }).addEventListener("click", () => this.run(() => this.ctl!.declareBlockers([])));
+    }
   }
 
   private setText(el: HTMLElement, text: string, life?: number) {
