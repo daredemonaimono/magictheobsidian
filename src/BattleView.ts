@@ -715,7 +715,6 @@ export class BattleView extends ItemView {
       const card = pile.createDiv("mtg-bt-card");
       card.dataset.tid = c.id;
       card.style.left = `${i * 5}px`;
-      card.style.top = `${-i * 2}px`;
       this.face(card, c);
     });
     if (tapped.length) {
