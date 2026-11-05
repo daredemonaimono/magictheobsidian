@@ -1010,6 +1010,10 @@ export class BattleView extends ItemView {
     el.empty();
     for (const c of MANA_COLORS) if (m.manaSelf.colors[c]) el.createSpan({ cls: `mtg-bt-mc is-${c}`, text: `${c === "A" ? "★" : c}${m.manaSelf.colors[c]}` });
     if (m.manaSelf.colorless) el.createSpan({ cls: "mtg-bt-mc is-C", text: `◇${m.manaSelf.colorless}` });
+    // 使い道に制限のあるマナ: 「◇1 (クリーチャー以外)」
+    const T: Record<string, string> = { creature: "クリーチャー", instant: "インスタント", sorcery: "ソーサリー", artifact: "アーティファクト", enchantment: "エンチャント", land: "土地" };
+    const tn = (s: string) => s.split("|").map((x) => T[x.toLowerCase()] ?? x).join("・");
+    for (const r of m.manaSelf.restricted ?? []) el.createSpan({ cls: "mtg-bt-mc is-C", text: `${r.color && r.color !== "A" ? r.color : "◇"}${r.amount} (${r.notType ? `${tn(r.notType)}以外` : r.type ? `${tn(r.type)}用` : ""})` });
   }
 
   private paintPhase(m: BoardModel) {

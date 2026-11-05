@@ -274,7 +274,7 @@ export class BattleController {
     const a: Action = /\bLand\b/.test(card.typeLine) ? { kind: "land", card: cardId } : { kind: "cast", card: cardId };
     const why = tryAction(a.kind === "land" ? g : withAllMana(g, this.rules, this.me), this.rules, this.me, a, autoTargets(slotsOf(g, this.rules, this.me, a))); // 土地を出すのに、マナは要らない: 本物の局面で調べる
     const msg = why?.replace("マナが足りない", "マナが足りません");
-    return msg ? (msg.startsWith(card.name) ? msg : `${card.name}: ${msg}`) : undefined;
+    return msg ? `${msg.startsWith(card.name) ? msg : `${card.name}: ${msg}`}${msg.includes("マナが足りません") ? this.manaHint(card) : ""}` : undefined;
   }
 
   // ---- 払うマナの選択。足りないマナを自動でタップするとき、タップする土地に選べる余地があれば、選ばせる
@@ -327,6 +327,24 @@ export class BattleController {
       const i = p ? this.manaIndexOf(x, p) : -1;
       if (p && i >= 0) activateAbility(x, this.me, id, i, {}, this.rules);
     }
+  }
+
+  // マナが足りないとき: 先に使えば払えるかもしれない、忠誠度でマナを出す能力 (Chandra など) があれば、教える。ルール上、これはマナ能力ではないので、自動では使わない (先に使って、解決してから、唱える)
+  private manaHint(card: { name: string; typeLine: string }): string {
+    const hints: string[] = [];
+    for (const p of this.game.battlefield) {
+      if (p.controller !== this.me) continue;
+      const defs = this.rules.get(p.card.name)?.abilities.filter((a) => a.kind === "activated") ?? [];
+      const labels = abilityLabels(this.rules, p.card.name);
+      defs.forEach((ab, index) => {
+        const mana = ab.body.find((c) => c.node === "addMana");
+        const loyal = ab.body.some((c) => c.node === "cost" && (c.args.loyalty !== undefined || c.args.loyaltyX === true));
+        if (!mana || !loyal || tryAction(this.game, this.rules, this.me, { kind: "activate", perm: p.id, index }) !== undefined) return;
+        const ok = (spec: unknown, want: boolean) => typeof spec !== "string" || spec.split("|").some((t) => new RegExp(`\\b${t}\\b`, "i").test(card.typeLine)) === want;
+        if (ok(mana.args.spellType, true) && ok(mana.args.spellNotType, false)) hints.push(`${p.card.name} の ${labels[index].split(":")[0]} を先に使うと、払えるかもしれません`);
+      });
+    }
+    return hints.length ? ` (${hints.join("、")})` : "";
   }
 
   // 唱えるときに選べる、マナだけの追加コスト (キッカーなど)のうち、いまの (出せるマナを全部使った) マナで払えるもの。払える (=唱えるときに、払うか選べる) ときだけ返す

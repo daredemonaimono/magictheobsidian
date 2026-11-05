@@ -159,4 +159,19 @@ for (const n of [0, 1]) {
   { const g = setup2(["menace"], [creature("B1", "you"), creature("B2", "you")]); assert.equal(m(g).choice?.kind, "block"); }
   { const g = setup2([], []); assert.equal(m(g).choice, undefined, "ブロッカーがいない"); assert.equal(m(g).idle, true); }
 }
+// ---- 忠誠度でマナを出す能力 (Chandra の +1): 一覧の名前・制限つきマナの表示・足りないときの案内
+{
+  const g = make([bear(2)]);
+  g.battlefield.length = 0;
+  g.battlefield.push({ id: "Walker1", card: mk("Walker1", "Legendary Planeswalker — Test", 0, { name: "Walker" }), controller: "you", counters: { loyalty: 3 } });
+  const c = new BattleController(g, rules);
+  assert.deepEqual(c.abilities("Walker1").map((a) => a.label), ["+1: マナを加える"], "忠誠度つきの名前");
+  assert.ok(c.whyNot("Bear1")?.includes("Walker の +1 を先に使うと、払えるかもしれません"), "足りないとき、案内が出る");
+  const g2 = make([mk("Bolt1", "Instant", 1, { name: "Bolt", manaCost: "{1}" })]);
+  g2.battlefield.length = 0;
+  g2.restrictedMana["you"] = [{ amount: 1, notType: "creature" }];
+  const m = boardModel(g2, rules, "you", () => undefined);
+  assert.deepEqual(m.manaSelf.restricted, [{ amount: 1, notType: "creature" }], "制限つきのマナも、表示用のモデルに出る");
+  assert.equal(boardModel(make([]), rules, "you", () => undefined).manaSelf.restricted, undefined, "無ければ、出ない");
+}
 console.log("manauseful ok");

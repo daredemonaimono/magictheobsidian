@@ -155,6 +155,7 @@ export interface ManaView {
   total: number;
   colors: Partial<Record<"W" | "U" | "B" | "R" | "G" | "A", number>>; // A = 好きな色
   colorless: number;
+  restricted?: { amount: number; color?: string; type?: string; notType?: string }[]; // 使い道に制限のあるマナ (「クリーチャー以外の呪文にしか使えない」など)
 }
 export interface StackView {
   id: string;
@@ -250,7 +251,7 @@ export function boardModel(g: Game, rules: RuleBook, viewer: PlayerId, imageOf: 
   const out: BoardModel = {
     self: sideView(g, rules, viewer, imageOf, true, can),
     opp: sideView(g, rules, oppId, imageOf, false),
-    manaSelf: { total: g.mana[viewer] ?? 0, colors: { ...pool }, colorless: Math.max(0, (g.mana[viewer] ?? 0) - colored) },
+    manaSelf: { total: g.mana[viewer] ?? 0, colors: { ...pool }, colorless: Math.max(0, (g.mana[viewer] ?? 0) - colored), ...((g.restrictedMana[viewer] ?? []).some((e) => e.amount > 0) ? { restricted: g.restrictedMana[viewer].filter((e) => e.amount > 0).map((e) => ({ ...e })) } : {}) },
     phase: PHASE_OF[g.step],
     step: g.step === "combat" && g.combatPhase ? COMBAT_LABEL[g.combatPhase] : STEP_LABEL[g.step],
     combat: g.step === "combat",

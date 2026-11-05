@@ -113,6 +113,12 @@ export function uselessMana(g: Game, rules: RuleBook, p: PlayerId, a: Action): b
 }
 
 // 起動型能力ごとの短い表示 ("1: タップ → マナを出す")
+// 忠誠度能力は、先頭に忠誠度 (+1 / −2 / −X) を出し、コストのノードは省く ("+1: マナを加える")。それ以外は、番号 ("1: コスト → ...")
 export function abilityLabels(rules: RuleBook, cardName: string): string[] {
-  return activatedOf(rules, cardName).map((ab, i) => `${i + 1}: ${ab.body.map((c) => getNode(c.node)?.title ?? c.node).join(" → ")}`);
+  return activatedOf(rules, cardName).map((ab, i) => {
+    const cost = ab.body.find((c) => c.node === "cost");
+    const loyalty = cost?.args.loyaltyX === true ? "−X" : cost?.args.loyalty !== undefined && !Number.isNaN(Number(cost.args.loyalty)) ? (Number(cost.args.loyalty) >= 0 ? `+${Number(cost.args.loyalty)}` : `−${-Number(cost.args.loyalty)}`) : undefined;
+    const body = (loyalty ? ab.body.filter((c) => c !== cost) : ab.body).map((c) => getNode(c.node)?.title ?? c.node).join(" → ");
+    return `${loyalty ?? `${i + 1}`}: ${body}`;
+  });
 }
