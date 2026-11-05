@@ -321,6 +321,10 @@ const none = () => undefined;
   assert.equal(boardModel(g, book, "A", none).nextLabel, "解決する");
   g.over = {};
   assert.equal(boardModel(g, book, "A", none).canNext, false);
+  delete g.over;
+  g.mulligan = { count: 1 };
+  m = boardModel(g, book, "A", none);
+  assert.deepEqual([m.canNext, m.mulligan, m.self.hand.every((c) => !c.playable)], [false, { count: 1 }, true], "マリガンの途中は、進めず、何も使えない");
   assert.equal(boardModel(g, book, "B", none).self.hand.every((c) => !c.playable), true);
 }
 console.log("boardmodel ok");

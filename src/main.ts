@@ -93,6 +93,7 @@ export default class MagicTheObsidian extends Plugin {
       currency: d.currency ?? DEFAULT_SETTINGS.currency,
       claudeKeySecret: d.claudeKeySecret ?? DEFAULT_SETTINGS.claudeKeySecret,
       claudeModel: d.claudeModel ?? DEFAULT_SETTINGS.claudeModel,
+      battleStops: d.battleStops === "always" ? "always" : "smart",
     };
     priceStore.prices = d.prices ?? {};
     priceStore.updated = d.pricesUpdated ?? "";
@@ -108,7 +109,7 @@ export default class MagicTheObsidian extends Plugin {
       }),
     );
     this.registerView(DECK_VIEW, (leaf) => new DeckView(leaf, this.settings));
-    this.registerView(BATTLE_VIEW, (leaf) => new BattleView(leaf, () => this.battleSession));
+    this.registerView(BATTLE_VIEW, (leaf) => new BattleView(leaf, () => this.battleSession, () => this.settings.battleStops));
     this.registerView(DASHBOARD_VIEW, (leaf) => new DashboardView(leaf, { collection: () => void this.openOrReveal(COLLECTION_VIEW), deck: () => void this.openOrReveal(DECKLIST_VIEW), cards: () => void this.openOrReveal(CARDS_VIEW) }));
     this.registerView(CARDS_VIEW, (leaf) => new CardsView(leaf, this.settings));
     this.registerView(

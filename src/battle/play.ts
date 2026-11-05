@@ -1,7 +1,10 @@
-import { Action, abilityLabels, actionsFor, autoTargets, slotsOf, tryAction } from "./actions";
+import { Action, abilityLabels, actionsFor, autoTargets, canRespond, slotsOf, tryAction } from "./actions";
 import { RuleError, TargetSlot, activateAbility, castSpell, passPriority, playLand } from "./engine";
 import { Answer, InputRequest, NeedInput, makeDecider } from "./input";
+import { HAND_SIZE, putBottom, redraw } from "./mulligan";
 import { Game, PlayerId, RuleBook } from "./state";
+
+export type StopMode = "always" | "smart"; // 優先権の止まり方 (設定)
 
 const MAX_PASSES = 100; // 無限ループ防止
 
@@ -13,7 +16,37 @@ export class BattleController {
   private redo?: (answers: Answer[]) => string | undefined;
   private answers: Answer[] = [];
 
-  constructor(readonly game: Game, readonly rules: RuleBook, readonly me: PlayerId = "you") {}
+  constructor(readonly game: Game, readonly rules: RuleBook, readonly me: PlayerId = "you", private stops: () => StopMode = () => "smart", private rng: () => number = Math.random) {}
+
+  // ---- マリガン (ロンドン)。game.mulligan があるあいだ、操作・「次へ」は受けない
+  mulligan(): string | undefined {
+    const g = this.game;
+    if (!g.mulligan) return undefined;
+    if (g.mulligan.count >= HAND_SIZE) return this.fail("マリガン", "これ以上は、マリガンできない");
+    g.mulligan.count++;
+    redraw(g, this.me, this.rng);
+    g.log.push(`あなたはマリガンした (${g.mulligan.count} 回目)`);
+    return undefined;
+  }
+  // キープする。マリガンした回数ぶん、底に置くカードが要るなら "bottom" (画面が選ばせて、bottom() を呼ぶ)。要らなければ、すぐ始まる
+  keep(): "bottom" | "done" {
+    const g = this.game;
+    if (!g.mulligan) return "done";
+    if (g.mulligan.count > 0) return "bottom";
+    g.mulligan = undefined;
+    g.log.push("あなたはキープした");
+    return "done";
+  }
+  // 底に置くカード (マリガンした回数ぶん) を決めて、始める
+  bottom(ids: string[]): string | undefined {
+    const g = this.game;
+    if (!g.mulligan) return undefined;
+    if (ids.length !== g.mulligan.count) return this.fail("マリガン", `底に置くカードは ${g.mulligan.count} 枚`);
+    if (!putBottom(g, this.me, ids)) return this.fail("マリガン", "手札に無いカードが含まれている");
+    g.log.push(`あなたはキープして、${ids.length} 枚を底に置いた`);
+    g.mulligan = undefined;
+    return undefined;
+  }
 
   private fail(label: string, why: string): string {
     const msg = `${label}: ${why}`;
@@ -72,6 +105,7 @@ export class BattleController {
   // 手札のカードを使う (土地は出す、それ以外は唱える)。targets = 選んだ対象 (as → id をカンマでつなぐ)
   use(cardId: string, targets?: Record<string, string>): string | undefined {
     const g = this.game;
+    if (g.mulligan) return this.fail("使えない", "マリガンを終えてください");
     const card = g.hands[this.me].find((c) => c.id === cardId);
     if (!card) return this.fail(cardId, "手札に無い");
     const land = /\bLand\b/.test(card.typeLine);
@@ -95,6 +129,7 @@ export class BattleController {
   // 戦場の自分のパーマネントの、index 番目の起動型能力
   activate(permId: string, index: number, targets?: Record<string, string>): string | undefined {
     const g = this.game;
+    if (g.mulligan) return this.fail("使えない", "マリガンを終えてください");
     const { perm, ab } = this.abilityOf(permId, index);
     if (!perm || !ab) return this.fail(permId, "起動できる能力が無い");
     const act: Action = { kind: "activate", perm: permId, index };
@@ -116,16 +151,31 @@ export class BattleController {
     return abilityLabels(this.rules, perm.card.name).map((label, index) => ({ index, label, usable: tryAction(this.game, this.rules, this.me, { kind: "activate", perm: permId, index }) === undefined }));
   }
 
-  // 「次へ」: 自分がパスして、相手も自動でパスする。スタックのものが1つ解決したら止まる。ステップが進んだら、自分のターンのうちは止まる。
-  // 相手のターンは、(相手は何もしないので) 自分のターンになるまで自動で進める。手札が 7 枚を超えて終了するときは、捨てるカードを聞く
+  // 「次へ」: 自分がパスして、相手も自動でパスする。止まるところ (設定 stops):
+  //   always = ステップが進むたび・スタックのものが解決するたび (相手のターンも)
+  //   smart = スタックのものが解決したとき (自分のターン)、自分のメインフェイズ、それ以外は、応答できるもの (canRespond) があるステップだけ
+  // 相手のターンで止まるときは、相手が先にパスして、自分が優先権を持つ (インスタントを唱えられる)。手札が 7 枚を超えて終了するときは、残すカードを聞く
   next(): string | undefined {
     if (this.game.over) return undefined;
+    if (this.game.mulligan) return this.fail("次へ", "マリガンを終えてください");
     return this.perform("次へ", (g) => {
+      const mode = this.stops();
       for (let n = 0; n < MAX_PASSES && !g.over && g.priority; n++) {
         const r = passPriority(g, g.priority, this.rules);
         if (r === "passed") continue;
-        if (g.active === this.me) return;
+        if (g.over) return;
+        if (this.shouldStop(g, mode, r)) {
+          if (g.active !== this.me && g.priority !== this.me) passPriority(g, g.priority!, this.rules); // 相手が先にパスして、自分に優先権を渡す
+          return;
+        }
       }
     }, []);
+  }
+
+  private shouldStop(g: Game, mode: StopMode, r: "resolved" | "stepEnded"): boolean {
+    if (mode === "always") return true;
+    if (r === "resolved" && g.active === this.me) return true;
+    if (r === "stepEnded" && g.active === this.me && (g.step === "main1" || g.step === "main2")) return true;
+    return canRespond(g, this.rules, this.me);
   }
 }

@@ -45,6 +45,7 @@ export function tryAction(g: Game, rules: RuleBook, p: PlayerId, a: Action, targ
 // いまできる行動すべて (手札の使えるカード + 自分のパーマネントの使える起動型能力)
 export function actionsFor(g: Game, rules: RuleBook, p: PlayerId): Action[] {
   const out: Action[] = [];
+  if (g.mulligan) return out; // マリガンが終わるまで、何も使えない
   const add = (a: Action) => {
     if (tryAction(g, rules, p, a) === undefined) out.push(a);
   };
@@ -54,6 +55,32 @@ export function actionsFor(g: Game, rules: RuleBook, p: PlayerId): Action[] {
     activatedOf(rules, perm.card.name).forEach((_, index) => add({ kind: "activate", perm: perm.id, index }));
   }
   return out;
+}
+
+const manaOnly = (body: { node: string }[]): boolean => body.some((c) => c.node === "addMana") && body.every((c) => c.node === "addMana" || c.node === "cost" || c.node === "timing"); // エンジンも、timing を除いて、マナ能力かを決める
+
+// 応答できるか (優先権の止まり方「使えるものがあるときだけ」の判定)。土地などのマナ能力を全部使ったと仮定して、唱えられる呪文・使える (マナ以外の) 能力があるか。g は変えない
+export function canRespond(g: Game, rules: RuleBook, p: PlayerId): boolean {
+  const copy = structuredClone({ ...g, decide: undefined }) as Game;
+  copy.priority = p;
+  for (const perm of copy.battlefield) {
+    if (perm.controller !== p) continue;
+    activatedOf(rules, perm.card.name).forEach((ab, index) => {
+      if (!manaOnly(ab.body)) return;
+      try {
+        activateAbility(copy, p, perm.id, index, {}, rules);
+      } catch {
+        /* 使えないものは、飛ばす */
+      }
+    });
+  }
+  return actionsFor(copy, rules, p).some((a) => {
+    if (a.kind === "cast") return true;
+    if (a.kind !== "activate") return false;
+    const perm = copy.battlefield.find((x) => x.id === a.perm);
+    const ab = perm && activatedOf(rules, perm.card.name)[a.index];
+    return !!ab && !manaOnly(ab.body);
+  });
 }
 
 // 起動型能力ごとの短い表示 ("1: タップ → マナを出す")

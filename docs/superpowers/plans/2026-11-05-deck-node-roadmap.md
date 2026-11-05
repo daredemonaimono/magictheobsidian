@@ -61,3 +61,5 @@
 - シナリオ (`src/battle/samples.ts` の `SCENARIOS`。動いた記録): 無いカードは Chandra, Chill of Compliance / The Theorist, Jace Beleren / Into the Roil / Island / Octopus Form / We Say Thee Nay! (打ち消し3種だけある)。無いと `Battle: rules coverage` で partial になる。
 
 - 対戦の画面のサイドバー統合 (ユーザー依頼 2026-11-05、急がない): カードプレビューと対戦ログを、BattleView 内の右カラムではなく Obsidian のサイドバー機能に載せる。対戦を始めるとサイドバーが開き、対戦用のサイドバーアイコンが追加される。対戦のタブを閉じると、アイコンごと消えてサイドバーも閉じる。デッキ作成画面に同じ動きの実装がある (DeckView 周辺) ので、それと同じ作りにする。
+- 雑魚 CPU のマリガン (ユーザー依頼 2026-11-05、段階5): 手札の土地が N 枚以上、かつ、コストの低いカードがあればキープ。そうでなければマリガン (ロンドン)。基準は設定で変えられる。`BattleController.mulligan/keep/bottom` と同じ入口を CPU も使う。
+- AI 自身のデッキ別「AI ルール」 (ユーザーの構想 2026-11-05、段階7〜8のあと): AI が、リプレイから学習して、デッキごとのマークダウン (動かし方・コンボ・マリガンの基準) を作り、対戦ごとに読んで、書き直して、自己調整する。

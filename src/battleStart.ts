@@ -64,5 +64,7 @@ export async function loadMatchInputs(app: App, selfName: string, oppName: strin
 
 export async function startBattle(app: App, selfName: string, oppName: string): Promise<BattleSession> {
   const { self, opp, rules } = await loadMatchInputs(app, selfName, oppName);
-  return { game: buildMatch(self, opp, rules), rules };
+  const game = buildMatch(self, opp, rules);
+  game.mulligan = { count: 0 }; // 開始前に、マリガンを聞く (相手は常にキープ)
+  return { game, rules };
 }

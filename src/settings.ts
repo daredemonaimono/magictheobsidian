@@ -25,9 +25,10 @@ export interface Settings {
   sidebar: boolean; // カード一覧を右サイドバーに出す。オフなら画面内の検索欄 (従来の表示)
   claudeKeySecret: string; // API キーの、Obsidian のキーチェーン (app.secretStorage) 上の名前。キーそのものは data.json に書かない
   claudeModel: string; // ノードの組み立てに使うモデル
+  battleStops: "always" | "smart"; // 対戦の優先権の止まり方。always = 毎回止まる / smart = 使えるものがあるときだけ (メインフェイズでは、必ず止まる)
 }
 
-export const DEFAULT_SETTINGS: Settings = { textLang: "en", cardLang: "en", sidebar: true, listArt: true, dashboardTab: true, currency: "USD", claudeKeySecret: "", claudeModel: "claude-opus-5-5" };
+export const DEFAULT_SETTINGS: Settings = { textLang: "en", cardLang: "en", sidebar: true, listArt: true, dashboardTab: true, currency: "USD", claudeKeySecret: "", claudeModel: "claude-opus-5-5", battleStops: "smart" };
 
 // 設定で選んだ名前のキーを、キーチェーンから取る。未設定・見つからないときは null
 export const claudeKey = (app: App, s: Settings): string | null => (s.claudeKeySecret ? app.secretStorage.getSecret(s.claudeKeySecret) : null);
@@ -95,6 +96,18 @@ export class SettingsTab extends PluginSettingTab {
       );
     lang("効果テキストの言語 / Text language", "カード名と効果テキスト。無い言語は英語で表示。新しく取得するカードから反映。", "textLang");
     lang("カードの言語 / Card language", "カード画像とイラスト選択の言語。その言語の版が無いカードは英語になる。新しく取得するカードから反映。", "cardLang");
+    new Setting(this.containerEl)
+      .setName("対戦の止まり方 / Battle priority stops")
+      .setDesc("「次へ」で進むとき、どこで止まるか。「使えるものがあるときだけ」は、自分のメインフェイズでは必ず止まり、それ以外は、唱えられる呪文・使える能力があるステップだけで止まる。「毎回止まる」は、相手のターンも含めて、ステップごとに止まる。")
+      .addDropdown((d) =>
+        d
+          .addOptions({ smart: "使えるものがあるときだけ止まる", always: "毎回止まる" })
+          .setValue(this.settings.battleStops)
+          .onChange(async (v) => {
+            this.settings.battleStops = v === "always" ? "always" : "smart";
+            await this.save();
+          }),
+      );
     new Setting(this.containerEl).setName("AI(ノードの組み立て) / AI").setHeading();
     new Setting(this.containerEl)
       .setName("API キー / Claude API key")

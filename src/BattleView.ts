@@ -1,7 +1,7 @@
 import { ItemView, WorkspaceLeaf } from "obsidian";
 import { TargetSlot } from "./battle/engine";
 import { InputRequest } from "./battle/input";
-import { BattleController } from "./battle/play";
+import { BattleController, StopMode } from "./battle/play";
 import { BoardModel, CardView, LandStack, PhaseId, boardModel } from "./battle/boardModel";
 import { CARD_H, CARD_W, GAP, HAND_H, HAND_W, LAYER_PX, TAP_EXTRA, cardBackUrl, overlapFor, pileLayers, rowNeed } from "./battle/layout";
 import { BattleSession } from "./battle/deckToGame";
@@ -60,6 +60,9 @@ export class BattleView extends ItemView {
   // 対象を選んでいる途中 (Esc で取り消し。局面は変わらない)。slots = 聞くこと、i = いまのスロット、picks = スロットごとの選んだ id
   private targeting?: { title: string; slots: TargetSlot[]; i: number; picks: string[][]; done: (t: Record<string, string>) => void; cancel?: () => void };
   private tbar?: HTMLElement;
+  private mullEl?: HTMLElement; // マリガンのダイアログ (手札にカーソルを合わせて見られるよう、後ろの操作は止めない)
+  private bottoming = false; // マリガンのキープのあと、底に置くカードを選んでいる
+  private askCancel?: () => void; // いまの質問を Esc で取り消すときの動き (無ければ、操作の取り消し)
   private askEl?: HTMLElement; // 質問のダイアログ (捨てる・選ぶ・してもよい・支払う)
   private tried = new Set<string>(); // 画像を探したカード名
   private logSig = "";
@@ -67,7 +70,7 @@ export class BattleView extends ItemView {
   private watcher?: ResizeObserver;
 
   // getSession = 対戦の局面 (無ければ、サンプルの局面)。対戦を始め直したときは、begin() で読み直す
-  constructor(leaf: WorkspaceLeaf, private getSession: () => BattleSession | undefined) {
+  constructor(leaf: WorkspaceLeaf, private getSession: () => BattleSession | undefined, private getStops: () => StopMode = () => "smart") {
     super(leaf);
   }
 
@@ -91,7 +94,7 @@ export class BattleView extends ItemView {
     const { game, rules } = session ?? sampleBattle();
     this.game = game;
     this.rules = rules;
-    this.ctl = session ? new BattleController(game, rules) : undefined;
+    this.ctl = session ? new BattleController(game, rules, VIEWER, this.getStops) : undefined;
     this.tried.clear();
     this.askEl = undefined;
     this.targeting = undefined;
@@ -100,6 +103,10 @@ export class BattleView extends ItemView {
     this.build();
     await this.loadImages();
     this.paint();
+    this.bottoming = false;
+    this.askCancel = undefined;
+    this.mullEl = undefined;
+    this.checkMulligan();
     this.watcher?.disconnect(); // 開き直されても、監視は1つだけ
     this.watcher = new ResizeObserver(() => this.fit());
     this.watcher.observe(this.ui.stage);
@@ -234,12 +241,52 @@ export class BattleView extends ItemView {
     void this.loadImages().then(() => this.paint());
     this.paint();
     void this.checkPending();
+    this.checkMulligan();
+  }
+
+  // ---- マリガン (ロンドン): キープ / マリガン。キープしたら、マリガンした回数ぶん、底に置くカードを選ぶ。Esc で、キープ / マリガンの選択に戻る
+  private checkMulligan() {
+    this.mullEl?.remove();
+    this.mullEl = undefined;
+    const m = this.game.mulligan;
+    if (!this.ctl || !m) return;
+    if (this.bottoming) return; // 底に置くカードの選択は、showAsk が出している
+    const box = this.ui.stage.createDiv("mtg-bt-ask is-mull");
+    this.mullEl = box;
+    box.createDiv({ cls: "mtg-bt-asktitle", text: m.count === 0 ? "この手札でキープしますか?" : `マリガン ${m.count} 回目: この手札でキープしますか?` });
+    const row = box.createDiv("mtg-bt-askrow");
+    row.createEl("button", { cls: "mod-cta", text: m.count > 0 ? `キープ (${m.count} 枚を底に置く)` : "キープ" }).addEventListener("click", () => {
+      if (this.ctl!.keep() === "bottom") {
+        this.bottoming = true;
+        this.mullEl?.remove();
+        this.mullEl = undefined;
+        this.showBottom(m.count);
+      } else this.run(() => undefined);
+    });
+    const mull = row.createEl("button", { text: "マリガン" });
+    mull.disabled = m.count >= 7;
+    mull.addEventListener("click", () => this.run(() => this.ctl!.mulligan()));
+  }
+  private async showBottom(count: number) {
+    const cards = this.game.hands[VIEWER].map((c) => ({ id: c.id, name: c.name }));
+    await this.loadImages(cards.map((c) => c.name));
+    if (!this.game.mulligan || !this.bottoming) return; // 待っているあいだに、閉じた・開き直された
+    this.askCancel = () => {
+      this.bottoming = false;
+      this.checkMulligan();
+    };
+    this.showAsk({ kind: "choose", min: count, max: count, cards }, (ids) => {
+      this.bottoming = false;
+      this.askCancel = undefined;
+      this.run(() => this.ctl!.bottom(ids as string[]));
+    }, `ライブラリーの底に置くカードを ${count} 枚選ぶ`);
   }
 
   // ---- 自分への質問 (src/battle/input.ts)。答えたら、コントローラーが最初からやり直す。Esc で取り消し (何も起きなかったことになる)
   private askSeq = 0;
   private async checkPending() {
     const seq = ++this.askSeq;
+    this.askCancel = undefined;
     this.askEl?.remove();
     this.askEl = undefined;
     this.ui.stage.removeClass("is-asking");
@@ -251,11 +298,11 @@ export class BattleView extends ItemView {
     if (seq !== this.askSeq) return; // 新しい質問が来た
     this.showAsk(req);
   }
-  private showAsk(req: InputRequest) {
+  private showAsk(req: InputRequest, custom?: (v: string[] | boolean) => void, title?: string) {
     const box = this.ui.stage.createDiv("mtg-bt-ask");
     this.askEl = box;
     this.ui.stage.addClass("is-asking");
-    const reply = (v: string[] | boolean) => this.run(() => this.ctl!.answer(v));
+    const reply = custom ?? ((v: string[] | boolean) => this.run(() => this.ctl!.answer(v)));
     const head = box.createDiv("mtg-bt-asktitle");
     if (req.kind === "may") {
       head.setText(req.what === "exile" ? "墓地のカードを追放しますか?" : `${req.what} をしますか?`);
@@ -276,7 +323,7 @@ export class BattleView extends ItemView {
       const ok = box.createEl("button", { cls: "mod-cta", text: "確定" });
       const count = head.createSpan();
       const sync = () => {
-        count.setText(`${req.kind === "discard" ? (keep !== undefined ? `手札を ${keep} 枚にする: 残すカードを ${keep} 枚選ぶ` : `手札から ${req.n} 枚捨てる`) : req.kind === "target" ? `${req.card}: 対象を選ぶ` : "カードを選ぶ"} (${picked.size} / ${min === max ? max : `${min}〜${max}`})`);
+        count.setText(title ? `${title} (${picked.size} / ${max})` : `${req.kind === "discard" ? (keep !== undefined ? `手札を ${keep} 枚にする: 残すカードを ${keep} 枚選ぶ` : `手札から ${req.n} 枚捨てる`) : req.kind === "target" ? `${req.card}: 対象を選ぶ` : "カードを選ぶ"} (${picked.size} / ${min === max ? max : `${min}〜${max}`})`);
         ok.disabled = picked.size < min || picked.size > max;
       };
       const tiles = box.createDiv("mtg-bt-asktiles");
@@ -303,6 +350,9 @@ export class BattleView extends ItemView {
     this.askEl?.remove();
     this.askEl = undefined;
     this.ui.stage.removeClass("is-asking");
+    const f = this.askCancel;
+    this.askCancel = undefined;
+    if (f) return f();
     this.ctl?.cancel();
     this.paint();
   }
