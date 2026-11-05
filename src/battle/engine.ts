@@ -594,6 +594,12 @@ export function declareAttackers(g: Game, p: PlayerId, attackers: { id: string; 
   flushEvents(g, rules);
 }
 
+// 飛行は、飛行か到達でしかブロックできない (威嚇は、2体以上の組み合わせの決まりなので、ここでは見ない)
+const evasionAllows = (attackerKw: string[], blockerKw: string[]): boolean => !attackerKw.includes("flying") || blockerKw.includes("flying") || blockerKw.includes("reach");
+
+// この blocker が、この attacker を (単独の決まりで) ブロックできるか。画面が、ブロックの選択が要るかを決めるのに使う (威嚇は、2体以上が要る: 呼び出し側が数える)
+export const canBlock = (g: Game, blocker: Perm, attacker: Perm, rules: RuleBook): boolean => !blocker.tapped && isCreature(g, blocker, rules) && evasionAllows(kwOf(g, attacker, rules), kwOf(g, blocker, rules));
+
 // ブロックを指定する (防御側。ブロックの段階で、1回だけ。ブロックしなくても、空で呼んでよい)。blocks = [{ blocker, attacker }]。
 // 飛行は飛行か到達でしかブロックできず、威嚇は2体以上でないとブロックできない。不正なら RuleError で、何も変えない
 export function declareBlockers(g: Game, p: PlayerId, blocks: { blocker: string; attacker: string }[], rules: RuleBook): void {
@@ -611,7 +617,7 @@ export function declareBlockers(g: Game, p: PlayerId, blocks: { blocker: string;
     used.add(blocker.id);
     const ak = kwOf(g, attacker, rules);
     const bk = kwOf(g, blocker, rules);
-    if (ak.includes("flying") && !bk.includes("flying") && !bk.includes("reach")) throw new RuleError(`飛行はブロックできない: ${blocker.card.name} → ${attacker.card.name}`);
+    if (!evasionAllows(ak, bk)) throw new RuleError(`飛行はブロックできない: ${blocker.card.name} → ${attacker.card.name}`);
     per.set(attacker.id, [...(per.get(attacker.id) ?? []), blocker.id]);
   }
   for (const [aid, bs] of per) if (bs.length === 1 && kwOf(g, g.battlefield.find((q) => q.id === aid)!, rules).includes("menace")) throw new RuleError("威嚇は、2体以上でないとブロックできない");

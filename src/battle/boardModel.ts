@@ -1,6 +1,6 @@
 import { Action, actionsFor, canRespond, manaOnly, withAllMana } from "./actions";
 import { characteristics } from "./continuous";
-import { attackersAt, canAttackPerm, isSick } from "./engine";
+import { attackersAt, canAttackPerm, canBlock, isSick } from "./engine";
 import { getNode } from "./registry";
 import { Game, GameCard, Perm, PlayerId, RuleBook, StackItem } from "./state";
 
@@ -212,9 +212,17 @@ export function boardModel(g: Game, rules: RuleBook, viewer: PlayerId, imageOf: 
       const mine = g.battlefield.filter((p) => p.controller === viewer && canAttackPerm(g, p, rules)).map((p) => p.id);
       if (mine.length) choice = { kind: "attack", mine };
     } else if (g.combatPhase === "blockers" && g.active !== viewer && !(g.blockersDeclared ?? []).includes(viewer)) {
-      const attackers = attackersAt(g, viewer).map((p) => p.id);
-      const mine = g.battlefield.filter((p) => p.controller === viewer && !p.tapped && /\bCreature\b/.test(characteristics(g, p, rules).typeLine)).map((p) => p.id);
-      if (attackers.length && mine.length) choice = { kind: "block", mine, attackers };
+      // 実際にブロックできる組み合わせがあるときだけ、選ばせる (飛行にブロッカーがいない・威嚇に1体しかいない、などは、選べないので、選択を出さない: 時間ゲージが進む)
+      const blockers = g.battlefield.filter((p) => p.controller === viewer && !p.tapped && /\bCreature\b/.test(characteristics(g, p, rules).typeLine));
+      const attackers: string[] = [];
+      const mineSet = new Set<string>();
+      for (const a of attackersAt(g, viewer)) {
+        const cands = blockers.filter((b) => canBlock(g, b, a, rules));
+        if (!cands.length || (characteristics(g, a, rules).keywords.includes("menace") && cands.length < 2)) continue;
+        attackers.push(a.id);
+        cands.forEach((b) => mineSet.add(b.id));
+      }
+      if (attackers.length && mineSet.size) choice = { kind: "block", mine: [...mineSet], attackers };
     }
   }
   if (!g.over && !g.mulligan && g.step === "combat" && g.combatPhase === "blockers" && g.active === viewer && g.priority === viewer && !g.stack.length && g.players.every((p) => p === viewer || (g.blockersDeclared ?? []).includes(p))) {

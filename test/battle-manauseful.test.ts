@@ -138,4 +138,25 @@ for (const n of [0, 1]) {
   assert.equal(c.use("Bear1"), undefined, "Bear は、Island のマナで唱える (Walker の忠誠度能力は、使わない)");
   assert.equal(g.battlefield.find((p) => p.id === "Walker1")?.counters?.loyalty, 3, "忠誠度は変わらない");
 }
+// ---- ブロックの選択は、実際にブロックできる組み合わせがあるときだけ (なければ、選択が出ず、何もできないので、時間ゲージが進む)
+{
+  const creature = (id: string, owner: string, keywords: string[] = []) => ({ id, card: mk(id, "Creature — Test", 0, { owner, power: 2, toughness: 2, keywords }), controller: owner });
+  const setup2 = (atkKw: string[], blockers: ReturnType<typeof creature>[]) => {
+    const g = createGame(["you", "opp"]);
+    g.step = "combat";
+    g.active = "opp";
+    g.priority = "you";
+    g.combatPhase = "blockers";
+    g.blockersDeclared = [];
+    g.battlefield.push({ ...creature("Atk1", "opp", atkKw), attacking: true, attackTarget: "you" } as never, ...(blockers as never[]));
+    return g;
+  };
+  const m = (g: ReturnType<typeof setup2>) => boardModel(g, rules, "you", () => undefined);
+  { const g = setup2(["flying"], [creature("B1", "you")]); assert.equal(m(g).choice, undefined, "飛行は、飛行も到達も無いと、ブロックできない: 選択なし"); assert.equal(m(g).idle, true, "何もできない: ゲージが進む"); }
+  { const g = setup2(["flying"], [creature("B1", "you", ["reach"])]); assert.equal(m(g).choice?.kind, "block"); }
+  { const g = setup2([], [creature("B1", "you")]); assert.equal(m(g).choice?.kind, "block"); assert.equal(m(g).idle, false, "選べるので、ゲージは進めない"); }
+  { const g = setup2(["menace"], [creature("B1", "you")]); assert.equal(m(g).choice, undefined, "威嚇は、1体ではブロックできない"); }
+  { const g = setup2(["menace"], [creature("B1", "you"), creature("B2", "you")]); assert.equal(m(g).choice?.kind, "block"); }
+  { const g = setup2([], []); assert.equal(m(g).choice, undefined, "ブロッカーがいない"); assert.equal(m(g).idle, true); }
+}
 console.log("manauseful ok");
