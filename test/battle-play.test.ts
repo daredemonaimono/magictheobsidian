@@ -105,65 +105,26 @@ const toMain = (c: BattleController) => {
   assert.equal(g.battlefield.find((p) => p.id === bear.id)!.damage, 2);
   assert.ok(g.graveyards["you"].some((x) => x.id === zap.id));
 }
-// 「次へ」(既定 = 使えるものがあるときだけ止まる): 自分のメインで止まり、応答できるものが無いステップは飛ばす。相手のターンも飛ばして、ターン 3 のメインで止まる。マナ・プールは空になる
+// 「次へ」は、次のステップへ進む (次の「できること」までではない)。戦闘は、その中の段階 (戦闘開始 → 攻撃クリーチャー指定 → 戦闘終了) ごと。相手のターンも、ステップごと
 {
   const { g, c } = setup();
   g.mana["you"] = 3;
   g.pool["you"] = { U: 3 };
   const steps: string[] = [];
   let n = 0;
-  while (g.turn < 3 && n++ < 10) {
+  while (g.turn < 3 && n++ < 40) {
     c.next();
-    steps.push(`${g.turn}:${g.step}`);
-  }
-  assert.deepEqual(steps, ["1:main1", "1:main2", "3:main1"]);
-  assert.equal(g.mana["you"], 0);
-  assert.deepEqual(g.pool["you"], {});
-  assert.equal(g.hands["you"].length, 8, "ターン 3 のドローで1枚");
-}
-// 使えるものがあるときだけ: 何もできなければ、メインフェイズも飛ばす (土地も無く、唱えられるものも無い)。カードの能力のマナ (土地以外) も数える
-{
-  const { g, c } = setup();
-  g.hands["you"] = [];
-  const zap = hold(g, "Zap");
-  g.libraries["you"] = g.libraries["you"].filter((x) => x.name === "Bear");
-  void zap;
-  c.next();
-  assert.ok(g.turn >= 3 && !g.over, "ターン 1 のメインを飛ばして、先へ進む (土地が来るか、唱えられるものが来るまで)");
-}
-{
-  const { g, c } = setup();
-  g.hands["you"] = [];
-  const bear = hold(g, "Bear");
-  g.libraries["you"] = g.libraries["you"].filter((x) => x.name === "Bear");
-  const mox = (id: string) => ({ id, card: { id, name: "Mox", typeLine: "Artifact", mv: 0, owner: "you" }, controller: "you" });
-  g.battlefield.push(mox("m1"));
-  c.next();
-  assert.ok(g.turn >= 3, "マナが1しか出ず、唱えられない: 飛ばす");
-  const { g: g2, c: c2 } = setup();
-  g2.hands["you"] = [];
-  hold(g2, "Bear");
-  g2.libraries["you"] = g2.libraries["you"].filter((x) => x.name === "Bear");
-  g2.battlefield.push(mox("m1"), mox("m2"));
-  c2.next();
-  assert.deepEqual([g2.turn, g2.step], [1, "main1"], "土地以外のマナ能力 (Mox 2つ) で唱えられる: 止まる");
-  void bear;
-}
-// 毎回止まる: ステップごとに止まる (相手のターンも)。相手のステップでは、自分が優先権を持つ
-{
-  const { g } = setup();
-  const c = new BattleController(g, rules, "you", () => "always");
-  const steps: string[] = [];
-  let n = 0;
-  while (g.turn < 3 && n++ < 30) {
-    c.next();
-    steps.push(`${g.turn}:${g.step}`);
+    steps.push(`${g.turn}:${g.step}${g.step === "combat" ? `/${g.combatPhase}` : ""}`);
     if (g.active === "opp") assert.equal(g.priority, "you", "相手のステップで止まるとき、自分に優先権がある");
   }
-  assert.ok(steps.includes("1:end") && steps.includes("2:upkeep") && steps.includes("2:main1") && steps.includes("2:end"), steps.join());
-  assert.equal(steps[steps.length - 1], "3:upkeep");
+  assert.deepEqual(steps, ["1:draw", "1:main1", "1:combat/beginning", "1:combat/attackers", "1:combat/end", "1:main2", "1:end", "2:upkeep", "2:draw", "2:main1", "2:combat/beginning", "2:combat/attackers", "2:combat/end", "2:main2", "2:end", "3:upkeep"]);
+  assert.equal(g.mana["you"], 0, "マナ・プールは、ステップで空になる");
+  assert.ok(g.log.includes("ターン 2: 相手のターン") && g.log.includes("相手がカードを引いた") && g.log.includes("ターン 3: あなたのターン"), "ターンの区切りと、相手のドローが、ログに出る");
+  c.next();
+  c.next();
+  assert.equal(g.hands["you"].length, 8, "ターン 3 のドローで1枚");
 }
-// 使えるものがあるときだけ: 相手のターンでも、応答できる (土地 + インスタント) なら止まり、唱えられる
+// 相手のターンのステップでも、自分は応答できる (土地 + インスタント)
 {
   const { g, c } = setup();
   const isl = hold(g, "Island");
@@ -175,7 +136,7 @@ const toMain = (c: BattleController) => {
   toMain(c);
   g.step = "end";
   g.priority = "you";
-  c.next(); // 終了 → 相手のターンのアップキープ (応答できるので、そこで止まる)
+  c.next(); // 終了 → 相手のターンのアップキープ
   assert.deepEqual([g.turn, g.active, g.step, g.priority], [2, "opp", "upkeep", "you"]);
   assert.equal(c.activate(isl.id, 0), undefined);
   assert.equal(c.use(zap.id, { t: foe.id }), undefined);
@@ -185,7 +146,7 @@ const toMain = (c: BattleController) => {
 {
   const { g } = setup();
   const seq = (() => { let x = 7; return () => ((x = (x * 1664525 + 1013904223) % 4294967296) / 4294967296); })();
-  const c = new BattleController(g, rules, "you", () => "smart", seq);
+  const c = new BattleController(g, rules, "you", seq);
   g.mulligan = { count: 0 };
   const total = g.hands["you"].length + g.libraries["you"].length;
   const first = g.hands["you"].map((x) => x.id).join();
@@ -248,9 +209,9 @@ const toMain = (c: BattleController) => {
   const drop = (req as { cards: { id: string }[] }).cards.slice(0, 2).map((x) => x.id);
   assert.equal(c.answer(drop), undefined);
   assert.equal(c.pending, undefined);
-  assert.equal(g.hands["you"].length, 8, "7 枚にして、そのまま自分の次のターン (ターン 3) まで進み、ドローで 8 枚");
+  assert.equal(g.hands["you"].length, 7, "7 枚になる");
   assert.ok(drop.every((id) => g.graveyards["you"].some((x) => x.id === id)), "選んだカードが捨てられる");
-  assert.equal(g.turn, 3, "そのまま自分の次のターンまで進む");
+  assert.equal(g.turn, 2, "続けて、相手のターンの始まりまで進む");
 }
 // 選ぶ (look + choose): 解決のときに聞く。答えると、そのカードが手札に
 {

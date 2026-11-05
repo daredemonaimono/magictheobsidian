@@ -3,7 +3,7 @@ import { TargetSlot } from "./battle/engine";
 import { InputRequest } from "./battle/input";
 import { BattleController, StopMode } from "./battle/play";
 import { BoardModel, CardView, LandStack, PhaseId, boardModel } from "./battle/boardModel";
-import { CARD_H, CARD_W, GAP, HAND_H, HAND_W, LAYER_PX, TAP_EXTRA, cardBackUrl, overlapFor, pileLayers, rowNeed } from "./battle/layout";
+import { CARD_H, CARD_W, GAP, GAUGE_SEC, HAND_H, HAND_W, LAYER_PX, TAP_EXTRA, cardBackUrl, overlapFor, pileLayers, rowNeed } from "./battle/layout";
 import { BattleSession } from "./battle/deckToGame";
 import { sampleBattle } from "./battle/sampleBattle";
 import { Game, RuleBook } from "./battle/state";
@@ -45,6 +45,7 @@ export class BattleView extends ItemView {
     phase: HTMLElement;
     step: HTMLElement;
     turn: HTMLElement;
+    gfill: HTMLElement;
     selfLife: HTMLElement;
     oppLife: HTMLElement;
     piles: Record<string, HTMLElement>;
@@ -61,6 +62,8 @@ export class BattleView extends ItemView {
   // 対象を選んでいる途中 (Esc で取り消し。局面は変わらない)。slots = 聞くこと、i = いまのスロット、picks = スロットごとの選んだ id
   private targeting?: { title: string; slots: TargetSlot[]; i: number; picks: string[][]; done: (t: Record<string, string>) => void; cancel?: () => void };
   private tbar?: HTMLElement;
+  private gaugeKey = ""; // いまのゲージが、どの局面のものか
+  private gaugeTimer?: number;
   private mullEl?: HTMLElement; // マリガンのダイアログ (手札にカーソルを合わせて見られるよう、後ろの操作は止めない)
   private bottoming = false; // マリガンのキープのあと、底に置くカードを選んでいる
   private askCancel?: () => void; // いまの質問を Esc で取り消すときの動き (無ければ、操作の取り消し)
@@ -95,7 +98,7 @@ export class BattleView extends ItemView {
     const { game, rules } = session ?? sampleBattle();
     this.game = game;
     this.rules = rules;
-    this.ctl = session ? new BattleController(game, rules, VIEWER, this.getStops) : undefined;
+    this.ctl = session ? new BattleController(game, rules, VIEWER) : undefined;
     this.tried.clear();
     this.askEl = undefined;
     this.targeting = undefined;
@@ -147,6 +150,8 @@ export class BattleView extends ItemView {
     const turn = belt.createDiv("mtg-bt-turn");
     const phase = belt.createDiv("mtg-bt-phase");
     const step = belt.createDiv("mtg-bt-step");
+    const gauge = belt.createDiv("mtg-bt-gauge");
+    const gfill = gauge.createDiv("mtg-bt-gaugefill");
     const hand = stage.createDiv("mtg-bt-hand");
     stage.createDiv({ cls: "mtg-bt-avatar is-opp" }).dataset.tid = this.game.players.find((p) => p !== VIEWER) ?? "";
     stage.createDiv({ cls: "mtg-bt-avatar is-self" }).dataset.tid = VIEWER;
@@ -162,7 +167,7 @@ export class BattleView extends ItemView {
     const preview = side.createDiv("mtg-bt-preview");
     preview.createDiv({ cls: "mtg-bt-hint", text: "カードにカーソルを合わせると、ここに画像と効果が出ます" });
     const log = side.createDiv("mtg-bt-log");
-    this.ui = { stage, rows, hand, phase, step, turn, selfLife, oppLife, piles, mana, belt, banner, next, stack, preview, log };
+    this.ui = { stage, rows, hand, phase, step, turn, gfill, selfLife, oppLife, piles, mana, belt, banner, next, stack, preview, log };
   }
 
   // 画像の URL: カード名でノートを引いて、保存済みの URL を使う (新しい通信はしない)。無いカードは、名前と P/T の代わりの面
@@ -202,8 +207,31 @@ export class BattleView extends ItemView {
     this.paintBanner(m);
     this.paintStack(m);
     this.paintLog(m.log);
+    this.paintGauge(m);
     this.fit();
     if (this.targeting) this.paintTargeting();
+  }
+
+  // 時間ゲージ (真ん中の帯の底)。「使えるものがあるときだけ止まる」で、何もできないときは、GAUGE_SEC 秒かけて左から右へ進み、終わったら自動で次へ進む (「次へ」で、待たずに進める)。
+  // それ以外 (できることがある・「毎回止まる」・質問の途中) は、上限 (満タン) から動かない
+  private paintGauge(m: BoardModel) {
+    const fill = this.ui.gfill;
+    const auto = !!this.ctl && this.getStops() === "smart" && m.idle && !this.ctl.pending && !this.targeting && !this.askEl;
+    const key = auto ? `${m.turn}|${m.step}|${m.stack.map((s) => s.id).join()}|${this.game.log.length}` : "";
+    if (key === this.gaugeKey) return; // 同じ局面は、そのまま (途中で巻き戻さない)
+    this.gaugeKey = key;
+    window.clearTimeout(this.gaugeTimer);
+    fill.style.transition = "none";
+    fill.style.transform = auto ? "scaleX(0)" : "scaleX(1)";
+    if (!auto) return;
+    void fill.offsetWidth; // 0 から始めるために、一度、描かせる
+    fill.style.transition = `transform ${GAUGE_SEC}s linear`;
+    fill.style.transform = "scaleX(1)";
+    this.gaugeTimer = window.setTimeout(() => {
+      fill.style.transition = "none";
+      if (this.targeting || this.askEl || this.mullEl || this.ctl?.pending || this.game.mulligan) return void (this.gaugeKey = ""); // 操作の途中: 進めない (満タンで待つ)
+      this.run(() => this.ctl!.next());
+    }, GAUGE_SEC * 1000);
   }
 
   private setText(el: HTMLElement, text: string, life?: number) {

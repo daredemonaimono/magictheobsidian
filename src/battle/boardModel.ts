@@ -1,4 +1,4 @@
-import { actionsFor } from "./actions";
+import { actionsFor, canRespond } from "./actions";
 import { characteristics } from "./continuous";
 import { isSick } from "./engine";
 import { Game, GameCard, Perm, PlayerId, RuleBook } from "./state";
@@ -152,6 +152,7 @@ export interface BoardModel {
   turn: number;
   stack: StackView[];
   mulligan?: { count: number }; // マリガンの途中 (回数)
+  idle: boolean; // 自分に優先権があるが、いま何もできない (土地を出す・唱える・能力を使う、が無い)。「使えるものがあるときだけ止まる」のとき、画面の時間ゲージが進んで、自動で進む
   canNext: boolean; // 「次へ」を押せる (ゲームが続いている。相手が優先権を持っていても、押せば自動でパスする)
   nextLabel: string; // スタックに積まれているものがあれば「解決する」
   over?: { winner?: "self" | "opp" }; // 勝者がいなければ引き分け
@@ -179,6 +180,7 @@ export function boardModel(g: Game, rules: RuleBook, viewer: PlayerId, imageOf: 
     combat: g.step === "combat",
     activeSide: side(g.active),
     turn: g.turn,
+    idle: !g.over && !g.mulligan && g.priority === viewer && !canRespond(g, rules, viewer),
     canNext: !g.over && !g.mulligan,
     nextLabel: g.stack.length ? "解決する" : "次へ",
     stack: g.stack.map((s) => ({ id: s.id, name: s.card.name, controller: side(s.controller), ability: !!s.ability })),

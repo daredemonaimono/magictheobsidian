@@ -467,6 +467,7 @@ function emptyPools(g: Game): void {
 }
 
 const HAND_LIMIT = 7;
+const who = (p: PlayerId): string => (p === "you" ? "あなた" : p === "opp" ? "相手" : p); // ログの呼び名
 
 function advanceStep(g: Game, rules: RuleBook): void {
   if (g.strictTurns) emptyPools(g); // ステップの終わりに、マナが消える
@@ -483,6 +484,7 @@ function advanceStep(g: Game, rules: RuleBook): void {
     for (const p of g.battlefield) delete p.loyaltyUsed; // 忠誠度能力は、1ターンに1回
     for (const p of g.battlefield) if (untapsDuring(g, p, g.active, rules)) untapPerm(g, p); // アンタップ・ステップ (優先権が無いので、ここで済ませてアップキープへ)。麻痺カウンターは、アンタップのかわりに取り除く
     g.step = "upkeep";
+    g.log.push(`ターン ${g.turn}: ${who(g.active)}のターン`);
   } else g.step = STEPS[STEPS.indexOf(g.step) + 1];
   endCombat(g); // 戦闘ステップを出るとき、戦闘の状態を片づける (ふつうは、advanceCombat がすでに片づけている)
   if (g.step === "combat") {
@@ -490,7 +492,10 @@ function advanceStep(g: Game, rules: RuleBook): void {
     g.attackersDeclared = false;
     g.blockersDeclared = [];
   }
-  if (g.strictTurns && g.step === "draw" && g.turn > 1) drawCards(g, g.active, 1); // ターンのドロー (ゲームの最初のターンは引かない)。「ドロー・ステップの開始時」の誘発より先
+  if (g.strictTurns && g.step === "draw" && g.turn > 1) {
+    drawCards(g, g.active, 1);
+    g.log.push(`${who(g.active)}がカードを引いた`);
+  } // ターンのドロー (ゲームの最初のターンは引かない)。「ドロー・ステップの開始時」の誘発より先
   g.priority = g.active;
   g.events.push({ type: "step", step: g.step, player: g.active }); // 「ステップの開始時に」の誘発型能力
   flushEvents(g, rules);

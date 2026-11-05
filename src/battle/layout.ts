@@ -22,3 +22,6 @@ export const pileLayers = (count: number): number => (count > 0 ? Math.min(MAX_L
 // カードの裏面の絵。Scryfall の card_back_id (公式のカードの裏) は、普通のカードすべてで同じ。画像は backs.scryfall.io から読む (ブラウザが覚える。読めなければ、CSS の代わりの絵)
 export const CARD_BACK_ID = "0aeebaf5-8c7d-4636-9e82-8c27447861f7";
 export const cardBackUrl = (size: "small" | "normal" | "large" = "small"): string => `https://backs.scryfall.io/${size}/${CARD_BACK_ID[0]}/${CARD_BACK_ID[1]}/${CARD_BACK_ID}.jpg`;
+
+// 優先権の時間ゲージ (真ん中の帯の底)。何もできないとき、この秒数で、左から右へ進んで、自動で次へ進む (設定が「使えるものがあるときだけ止まる」のとき)。「毎回止まる」は、動かない
+export const GAUGE_SEC = 5;

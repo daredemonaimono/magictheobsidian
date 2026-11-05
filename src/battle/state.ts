@@ -166,6 +166,7 @@ export function discardCards(g: Game, p: PlayerId, n: number, cleanup = false): 
   const picked = (g.decide?.discard?.(g, p, k, cleanup) ?? g.hands[p].slice(g.hands[p].length - k)).filter((c) => g.hands[p].includes(c)).slice(0, k);
   g.hands[p] = g.hands[p].filter((c) => !picked.includes(c));
   g.graveyards[p].push(...picked);
+  if (picked.length) g.log.push(`${p === "you" ? "あなた" : p === "opp" ? "相手" : p}が ${picked.map((c) => c.name).join("、")} を捨てた${cleanup ? " (手札の上限)" : ""}`);
 }
 
 // 準備呪文 (kind=prepare の能力) を持つカードか。持たないクリーチャーは、準備済になれない

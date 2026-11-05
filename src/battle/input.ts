@@ -32,9 +32,7 @@ export function makeDecider(me: PlayerId, answers: Answer[]): Decider {
       const hand = g.hands[p];
       if (p !== me || hand.length <= n) return undefined; // 全部捨てるなら、聞かない
       const got = ids(next({ kind: "discard", n, cards: refs(hand), ...(cleanup ? { cleanup: true } : {}) }));
-      const picked = hand.filter((c) => got.includes(c.id));
-      g.log.push(`あなたが ${picked.map((c) => c.name).join("、")} を捨てた`);
-      return picked;
+      return hand.filter((c) => got.includes(c.id));
     },
     choose(g, p, from, n, atMost) {
       if (p !== me || from.length === 0 || (!atMost && from.length <= n)) return undefined;

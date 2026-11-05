@@ -1,10 +1,10 @@
-import { Action, abilityLabels, actionsFor, autoTargets, canRespond, slotsOf, tryAction } from "./actions";
+import { Action, abilityLabels, actionsFor, autoTargets, slotsOf, tryAction } from "./actions";
 import { RuleError, TargetSlot, activateAbility, castSpell, passPriority, playLand } from "./engine";
 import { Answer, InputRequest, NeedInput, makeDecider } from "./input";
 import { HAND_SIZE, putBottom, redraw } from "./mulligan";
 import { Game, PlayerId, RuleBook } from "./state";
 
-export type StopMode = "always" | "smart"; // 優先権の止まり方 (設定)
+export type StopMode = "always" | "smart"; // 優先権の止まり方 (設定)。smart = 何もできないとき、時間ゲージで自動で進む。always = 自分で「次へ」
 
 const MAX_PASSES = 100; // 無限ループ防止
 
@@ -16,7 +16,7 @@ export class BattleController {
   private redo?: (answers: Answer[]) => string | undefined;
   private answers: Answer[] = [];
 
-  constructor(readonly game: Game, readonly rules: RuleBook, readonly me: PlayerId = "you", private stops: () => StopMode = () => "smart", private rng: () => number = Math.random) {}
+  constructor(readonly game: Game, readonly rules: RuleBook, readonly me: PlayerId = "you", private rng: () => number = Math.random) {}
 
   // ---- マリガン (ロンドン)。game.mulligan があるあいだ、操作・「次へ」は受けない
   mulligan(): string | undefined {
@@ -151,30 +151,20 @@ export class BattleController {
     return abilityLabels(this.rules, perm.card.name).map((label, index) => ({ index, label, usable: tryAction(this.game, this.rules, this.me, { kind: "activate", perm: permId, index }) === undefined }));
   }
 
-  // 「次へ」: 自分がパスして、相手も自動でパスする。止まるところ (設定 stops):
-  //   always = ステップが進むたび・スタックのものが解決するたび (相手のターンも)
-  //   smart = スタックのものが解決したとき (自分のターン)、それ以外は、できること (canRespond: 土地を出せる・マナ能力を全部使って唱えられる・使える能力) があるステップだけ。メインフェイズも、何もできなければ飛ばす
-  // 相手のターンで止まるときは、相手が先にパスして、自分が優先権を持つ (インスタントを唱えられる)。手札が 7 枚を超えて終了するときは、残すカードを聞く
+  // 「次へ」: 次のステップへ進む (次の「できること」までではない)。自分がパスして、相手も自動でパスする。ステップ (戦闘は、その中の段階) が進んだとき、または、スタックのものが1つ解決したときに止まる。
+  // 相手のターンで止まるときは、相手が先にパスして、自分が優先権を持つ (インスタントを唱えられる)。手札が 7 枚を超えて終了するときは、残すカードを聞く。
+  // 何もできないときに、時間ゲージで自動で進めるかは、画面の設定 (止まり方) による
   next(): string | undefined {
     if (this.game.over) return undefined;
     if (this.game.mulligan) return this.fail("次へ", "マリガンを終えてください");
     return this.perform("次へ", (g) => {
-      const mode = this.stops();
       for (let n = 0; n < MAX_PASSES && !g.over && g.priority; n++) {
         const r = passPriority(g, g.priority, this.rules);
         if (r === "passed") continue;
         if (g.over) return;
-        if (this.shouldStop(g, mode, r)) {
-          if (g.active !== this.me && g.priority !== this.me) passPriority(g, g.priority!, this.rules); // 相手が先にパスして、自分に優先権を渡す
-          return;
-        }
+        if (g.active !== this.me && g.priority !== this.me) passPriority(g, g.priority!, this.rules); // 相手が先にパスして、自分に優先権を渡す
+        return;
       }
     }, []);
-  }
-
-  private shouldStop(g: Game, mode: StopMode, r: "resolved" | "stepEnded"): boolean {
-    if (mode === "always") return true;
-    if (r === "resolved" && g.active === this.me) return true;
-    return canRespond(g, this.rules, this.me);
   }
 }

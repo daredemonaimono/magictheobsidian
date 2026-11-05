@@ -98,10 +98,10 @@ export class SettingsTab extends PluginSettingTab {
     lang("カードの言語 / Card language", "カード画像とイラスト選択の言語。その言語の版が無いカードは英語になる。新しく取得するカードから反映。", "cardLang");
     new Setting(this.containerEl)
       .setName("対戦の止まり方 / Battle priority stops")
-      .setDesc("「次へ」で進むとき、どこで止まるか。「使えるものがあるときだけ」は、(土地やカードの能力のマナを全部出したとして)土地を出せる・唱えられる呪文・使える能力があるステップだけで止まる(メインフェイズも、何もできなければ飛ばす)。「毎回止まる」は、相手のターンも含めて、ステップごとに止まる。")
+      .setDesc("「次へ」は、次のステップへ進む。何もできないステップ(土地を出せない・唱えられない・使える能力が無い。土地やカードの能力のマナを全部出したと仮定)で、「使えるものがあるときだけ」は、真ん中の帯の時間ゲージ(5秒)が進んで、自動で次へ進む。できることがあるステップは、ゲージが満タンのまま待つ。「毎回止まる」は、ゲージが動かず、自分で「次へ」を押すまで待つ。")
       .addDropdown((d) =>
         d
-          .addOptions({ smart: "使えるものがあるときだけ止まる", always: "毎回止まる" })
+          .addOptions({ smart: "何もできないとき、ゲージで自動で進む", always: "毎回止まる" })
           .setValue(this.settings.battleStops)
           .onChange(async (v) => {
             this.settings.battleStops = v === "always" ? "always" : "smart";

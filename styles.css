@@ -336,3 +336,6 @@ button.mtg-color .mtg-sym { width: 20px; height: 20px; display: block; }
 .mtg-bt-asktile.is-picked { outline: 3px solid #ff5a5a; box-shadow: 0 0 14px #ff5a5a; }
 .mtg-bt-askhint { font-size: 11px; color: #aab; }
 .mtg-bt-stage.is-asking > *:not(.mtg-bt-ask) { pointer-events: none; }
+/* 優先権の時間ゲージ (真ん中の帯の底) */
+.mtg-bt-gauge { position: absolute; left: 0; right: 0; bottom: 0; height: 5px; background: #0007; overflow: hidden; }
+.mtg-bt-gaugefill { height: 100%; background: #ffd24a; transform-origin: left center; transform: scaleX(1); will-change: transform; }
