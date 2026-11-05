@@ -78,7 +78,7 @@ export class BattleView extends ItemView {
   private watcher?: ResizeObserver;
 
   // getSession = 対戦の局面 (無ければ、サンプルの局面)。対戦を始め直したときは、begin() で読み直す
-  constructor(leaf: WorkspaceLeaf, private getSession: () => BattleSession | undefined, private getStops: () => StopMode = () => "smart", private getCpu: () => boolean = () => false) {
+  constructor(leaf: WorkspaceLeaf, private getSession: () => BattleSession | undefined, private getStops: () => StopMode = () => "smart", private getCpu: () => boolean = () => false, private getFx: () => boolean = () => true) {
     super(leaf);
   }
 
@@ -213,9 +213,41 @@ export class BattleView extends ItemView {
     this.paintStack(m);
     this.paintLog(m.log);
     this.paintGauge(m);
+    this.paintFx(m);
     this.fit();
     this.syncCombat(m);
     if (this.targeting) this.paintTargeting();
+  }
+
+  // ダメージ・ライフの変化の演出: 数字が大きく出て、ふくらんで消える (設定でオフにできる)。クリーチャーのダメージが増えたとき・プレイヤーのライフが変わったとき。
+  // 限界: 倒れて戦場から消えたクリーチャーには、出ない (消えた絵が無い)。最初の描画・前の描画と同じ局面では出さない
+  private fxPrev = new Map<string, number>();
+  private fx(host: HTMLElement | null | undefined, text: string, cls: string) {
+    if (!host) return;
+    if (getComputedStyle(host).position === "static") host.addClass("mtg-bt-fxhost"); // 絶対配置の要素は、そのまま基準になる
+    host.addClass("is-fx"); // 枠からはみ出して見せる
+    const el = host.createDiv({ cls: `mtg-bt-fx ${cls}`, text });
+    window.setTimeout(() => {
+      el.remove();
+      if (!host.querySelector(".mtg-bt-fx")) host.removeClass("is-fx");
+    }, 1300);
+  }
+  private paintFx(m: BoardModel) {
+    const now = new Map<string, number>();
+    const st = this.ui.stage;
+    for (const c of [...m.self.creatures, ...m.opp.creatures]) now.set(`d:${c.id}`, c.damage);
+    now.set("l:self", m.self.life);
+    now.set("l:opp", m.opp.life);
+    const prev = this.fxPrev;
+    this.fxPrev = now;
+    if (!prev.size || !this.getFx()) return;
+    for (const [key, n] of now) {
+      const was = prev.get(key);
+      if (was === undefined || was === n) continue;
+      if (key.startsWith("d:")) {
+        if (n > was) this.fx(st.querySelector<HTMLElement>(`[data-tid="${key.slice(2)}"]`), `−${n - was}`, "is-dmg");
+      } else this.fx(key === "l:self" ? this.ui.selfLife : this.ui.oppLife, `${n > was ? "+" : "−"}${Math.abs(n - was)}`, n > was ? "is-heal" : "is-dmg");
+    }
   }
 
   // 時間ゲージ (真ん中の帯の底)。「使えるものがあるときだけ止まる」で、何もできないときは、GAUGE_SEC 秒かけて左から右へ進み、終わったら自動で次へ進む (「次へ」で、待たずに進める)。

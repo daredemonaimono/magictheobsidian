@@ -26,10 +26,11 @@ export interface Settings {
   claudeKeySecret: string; // API キーの、Obsidian のキーチェーン (app.secretStorage) 上の名前。キーそのものは data.json に書かない
   claudeModel: string; // ノードの組み立てに使うモデル
   battleOpponent: "cpu" | "passive"; // 対戦の相手。cpu = 雑魚 CPU (土地を出す・呪文を唱える) / passive = 何もしない
+  battleEffects: boolean; // 対戦の演出 (ダメージ・ライフの数字を大きく出す)
   battleStops: "always" | "smart"; // 対戦の優先権の止まり方。always = 毎回止まる / smart = 使えるものがあるときだけ (メインフェイズでは、必ず止まる)
 }
 
-export const DEFAULT_SETTINGS: Settings = { textLang: "en", cardLang: "en", sidebar: true, listArt: true, dashboardTab: true, currency: "USD", claudeKeySecret: "", claudeModel: "claude-opus-5-5", battleStops: "smart", battleOpponent: "cpu" };
+export const DEFAULT_SETTINGS: Settings = { textLang: "en", cardLang: "en", sidebar: true, listArt: true, dashboardTab: true, currency: "USD", claudeKeySecret: "", claudeModel: "claude-opus-5-5", battleStops: "smart", battleOpponent: "cpu", battleEffects: true };
 
 // 設定で選んだ名前のキーを、キーチェーンから取る。未設定・見つからないときは null
 export const claudeKey = (app: App, s: Settings): string | null => (s.claudeKeySecret ? app.secretStorage.getSecret(s.claudeKeySecret) : null);
@@ -120,6 +121,15 @@ export class SettingsTab extends PluginSettingTab {
             this.settings.battleStops = v === "always" ? "always" : "smart";
             await this.save();
           }),
+      );
+    new Setting(this.containerEl)
+      .setName("対戦の演出 / Battle effects")
+      .setDesc("ダメージやライフが変わったとき、数字を大きく出して、ふくらませて消す。重いと感じたらオフ。")
+      .addToggle((t) =>
+        t.setValue(this.settings.battleEffects).onChange(async (v) => {
+          this.settings.battleEffects = v;
+          await this.save();
+        }),
       );
     new Setting(this.containerEl).setName("AI(ノードの組み立て) / AI").setHeading();
     new Setting(this.containerEl)
