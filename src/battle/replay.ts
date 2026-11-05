@@ -3,9 +3,9 @@ import { BattleController, RecordEntry } from "./play";
 
 // 対戦の記録 (BattleController.record) を、新しいコントローラーに、順に呼び直す。同じ初期状態 (同じ乱数の種のデッキ) から始めれば、同じ局面になる。
 // 失敗した呼び出し (記録と食い違った) の数を返す。upTo = 最初の何件まで再生するか
-export function replay(ctl: BattleController, entries: RecordEntry[], upTo = entries.length): number {
+export function replay(ctl: BattleController, entries: RecordEntry[], upTo = entries.length, from = 0): number {
   let bad = 0;
-  for (const e of entries.slice(0, upTo)) {
+  for (const e of entries.slice(from, upTo)) {
     const a = e.args.map((x) => (x === null ? undefined : x)) as any[];
     let r: unknown;
     switch (e.op) {

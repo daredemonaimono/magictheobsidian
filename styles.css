@@ -388,3 +388,15 @@ button.mtg-color .mtg-sym { width: 20px; height: 20px; display: block; }
 /* 払うマナの選択 */
 .mtg-bt-asktile .mtg-bt-manalabel { position: absolute; right: 4px; bottom: 4px; min-width: 1.6em; padding: 0 4px; border-radius: 10px; background: #000c; color: #fff; font-weight: 700; text-align: center; }
 .mtg-bt-asktile.is-off { opacity: .4; cursor: default; }
+
+/* 対戦の履歴の一覧・リプレイの操作 */
+.mtg-bt-histlist { max-height: 50vh; overflow-y: auto; margin-bottom: 10px; }
+.mtg-bt-histrow { padding: 6px 8px; border-radius: 6px; cursor: pointer; }
+.mtg-bt-histrow:hover { background: var(--background-modifier-hover); }
+.mtg-bt-histrow.is-picked { background: var(--background-modifier-active-hover); outline: 2px solid var(--interactive-accent); }
+.mtg-bt-histdate { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.mtg-bt-histres.is-win { color: var(--color-green); } .mtg-bt-histres.is-lose { color: var(--color-red); }
+.mtg-bt-replay { position: absolute; top: 8px; left: 50%; transform: translateX(-50%); z-index: 45; display: flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 10px; background: #000d; color: #fff; font-size: 12px; white-space: nowrap; }
+.mtg-bt-replay button { padding: 2px 8px; }
+.mtg-bt-replay input[type="range"] { width: 200px; }
+.mtg-bt-replay-hint { color: #bbb; }

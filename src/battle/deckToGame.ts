@@ -106,4 +106,7 @@ export interface BattleSession {
   rng?: () => number;
   self?: string;
   opp?: string;
+  // リプレイ: 記録と、同じ初期状態を作り直す関数 (戻る・ジャンプのたびに、作り直して、記録を呼び直す)
+  replay?: import("./saved").SavedBattle;
+  rebuild?: () => BattleSession;
 }

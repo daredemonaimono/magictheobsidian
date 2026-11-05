@@ -20,8 +20,9 @@ import { CARDLIST_VIEW, CardListView } from "./CardListView";
 import { BATTLE_VIEW, BattleView } from "./BattleView";
 import { BattleStartModal } from "./BattleStartModal";
 import { BattleSession, MatchError } from "./battle/deckToGame";
-import { SavedBattle, battleNote, battleNoteName } from "./battle/saved";
-import { listDecks, startBattle } from "./battleStart";
+import { SavedBattle, battleNote, battleNoteName, parseBattleNote } from "./battle/saved";
+import { listDecks, startBattle, startReplay } from "./battleStart";
+import { BattleHistoryModal } from "./BattleHistoryModal";
 import { COLLECTION_VIEW, CollectionView } from "./CollectionView";
 import { CARDS_VIEW, CardsView } from "./CardsView";
 import { DASHBOARD_VIEW, DashboardView } from "./DashboardView";
@@ -206,6 +207,7 @@ export default class MagicTheObsidian extends Plugin {
     });
     this.addCommand({ id: "battle-open", name: "Battle: open battle screen (sample)", callback: () => { this.battleSession = undefined; void this.app.workspace.getLeaf(true).setViewState({ type: BATTLE_VIEW, active: true }); } });
     this.addCommand({ id: "battle-start", name: "Battle: start battle", callback: () => void this.openBattleStart() });
+    this.addCommand({ id: "battle-replay", name: "Battle: replay", callback: () => new BattleHistoryModal(this.app, (f) => void this.openReplay(f)).open() });
     this.addCommand({ id: "battle-sample-rules", name: "Battle: create sample rules", callback: () => void this.createSampleRules() });
     this.addCommand({ id: "battle-create-glossary", name: "Battle: create glossary note", callback: () => void this.createGlossaryNote() });
     this.addCommand({ id: "battle-build-rules", name: "Battle: build rules with AI", callback: () => void this.openBuildRules() });
@@ -357,6 +359,22 @@ export default class MagicTheObsidian extends Plugin {
     const decks = await listDecks(this.app);
     if (!decks.length) return void new Notice("デッキがありません (Decks/)");
     new BattleStartModal(this.app, decks, (self, opp) => void this.beginBattle(self, opp)).open();
+  }
+
+  // 履歴のリプレイを開く: 記録と同じデッキ・種から作り直して、記録を呼び直す (デッキ・ルールのノートが変わっていると、食い違うことがある)。Claude の API は呼ばない
+  private async openReplay(file: TFile) {
+    const saved = parseBattleNote(await this.app.vault.cachedRead(file));
+    if (!saved) return void new Notice("対戦の記録として読めません");
+    try {
+      this.battleSession = await startReplay(this.app, saved);
+    } catch (e) {
+      return void new Notice(e instanceof MatchError ? e.message : `リプレイを始められません: ${(e as Error).message}`);
+    }
+    const open = this.app.workspace.getLeavesOfType(BATTLE_VIEW)[0];
+    if (open?.view instanceof BattleView) {
+      await open.view.begin();
+      void this.app.workspace.revealLeaf(open);
+    } else await this.app.workspace.getLeaf(true).setViewState({ type: BATTLE_VIEW, active: true });
   }
 
   private async beginBattle(self: string, opp: string) {

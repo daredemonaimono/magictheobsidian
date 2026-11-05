@@ -2,6 +2,7 @@ import { ItemView, WorkspaceLeaf } from "obsidian";
 import { TargetSlot } from "./battle/engine";
 import { InputRequest } from "./battle/input";
 import { Action } from "./battle/actions";
+import { replay } from "./battle/replay";
 import { SavedBattle } from "./battle/saved";
 import { bump, focus } from "./battle/assignMath";
 import { AskAi } from "./battle/ai";
@@ -19,6 +20,7 @@ export const BATTLE_VIEW = "mtg-battle";
 
 const PHASES: [PhaseId, string][] = [["beginning", "開始"], ["main1", "戦闘前メイン"], ["combat", "戦闘"], ["main2", "戦闘後メイン"], ["ending", "最終"]];
 const MANA_COLORS = ["W", "U", "B", "R", "G", "A"] as const;
+const OP_LABEL: Record<string, string> = { mulligan: "マリガン", keep: "キープ", bottom: "底に置く", next: "次へ", use: "カードを使う", activate: "能力を使う", declareAttackers: "攻撃", declareBlockers: "ブロック", assign: "ダメージの割り振り", aiDo: "相手の行動", aiPass: "相手がパス", aiAuto: "相手がパス", aiAttack: "相手の攻撃", aiBlock: "相手のブロック", aiFail: "相手が雑魚 CPU に切り替え" };
 const VIEWER = "you";
 
 interface Entry {
@@ -103,10 +105,86 @@ export class BattleView extends ItemView {
   }
 
   async onClose() {
+    this.stopRp();
     this.saveHistory(); // 途中でやめたとき
   }
 
   // 局面を (読み直して) 描き始める
+  // ---- 履歴のリプレイ。記録 (入口の呼び出しの並び) を、1件ずつ呼び直して、局面を進める。開くと、自動再生。→ / ← キーで、次・前 (自動再生は止まる)、スペースで再生・停止。戻る・ジャンプは、初期状態から作り直して、その件数まで呼び直す。操作は受けない・API は呼ばない
+  private rp?: { saved: SavedBattle; session: BattleSession; ctl: BattleController; pos: number; timer?: number; bad: number; label: HTMLElement; range: HTMLInputElement; play: HTMLButtonElement };
+  private rpBuild(pos: number) {
+    const rp = this.rp;
+    if (!rp) return;
+    const s = rp.session.rebuild!();
+    const foe = s.game.players.find((p) => p !== VIEWER);
+    rp.ctl = new BattleController(s.game, s.rules, VIEWER, s.rng ?? Math.random, rp.saved.mode === "cpu" ? foe : undefined, rp.saved.mode === "claude" ? foe : undefined);
+    rp.bad = replay(rp.ctl, rp.saved.entries, pos);
+    rp.pos = pos;
+    this.rpShow();
+  }
+  private rpStep() {
+    const rp = this.rp;
+    if (!rp || rp.pos >= rp.saved.entries.length) return;
+    rp.bad += replay(rp.ctl, rp.saved.entries, rp.pos + 1, rp.pos);
+    rp.pos++;
+    this.rpShow();
+  }
+  private rpShow() {
+    const rp = this.rp;
+    if (!rp) return;
+    this.game = rp.ctl.game;
+    rp.range.value = String(rp.pos);
+    const e = rp.saved.entries[rp.pos - 1];
+    rp.label.setText(`${rp.pos} / ${rp.saved.entries.length}${e ? ` ${OP_LABEL[e.op] ?? e.op}` : ""}${rp.bad ? ` (記録と食い違い ${rp.bad})` : ""}`);
+    if (rp.pos >= rp.saved.entries.length) this.rpPause();
+    void this.loadImages().then(() => this.paint());
+    this.paint();
+  }
+  private rpPause() {
+    const rp = this.rp;
+    if (!rp || rp.timer === undefined) return;
+    window.clearInterval(rp.timer);
+    rp.timer = undefined;
+    rp.play.setText("▶ 再生");
+  }
+  private rpPlay() {
+    const rp = this.rp;
+    if (!rp || rp.timer !== undefined) return;
+    if (rp.pos >= rp.saved.entries.length) this.rpBuild(0);
+    rp.play.setText("⏸ 止める");
+    rp.timer = window.setInterval(() => this.rpStep(), 700);
+  }
+  private rpPrev() {
+    this.rpPause();
+    this.rpBuild(Math.max(0, (this.rp?.pos ?? 0) - 1));
+  }
+  private rpNext() {
+    this.rpPause();
+    this.rpStep();
+  }
+  private stopRp() {
+    this.rpPause();
+    this.contentEl.querySelector(".mtg-bt-replay")?.remove();
+    this.rp = undefined;
+  }
+  private startRp(session: BattleSession) {
+    const saved = session.replay!;
+    const bar = this.ui.stage.createDiv("mtg-bt-replay");
+    const btn = (text: string, f: () => void) => bar.createEl("button", { text }).addEventListener("click", f);
+    btn("⏮", () => (this.rpPause(), this.rpBuild(0)));
+    btn("◀", () => this.rpPrev());
+    btn("▶", () => this.rpNext());
+    const play = bar.createEl("button", { text: "▶ 再生" });
+    const range = bar.createEl("input", { attr: { type: "range", min: "0", max: String(saved.entries.length), value: "0" } });
+    const label = bar.createSpan({ text: "" });
+    bar.createSpan({ cls: "mtg-bt-replay-hint", text: `${saved.self} vs ${saved.opp} / ← → キーで前・次、スペースで再生・停止` });
+    this.rp = { saved, session, ctl: undefined as unknown as BattleController, pos: 0, bad: 0, label, range, play };
+    play.addEventListener("click", () => (this.rp?.timer !== undefined ? this.rpPause() : this.rpPlay()));
+    range.addEventListener("input", () => (this.rpPause(), this.rpBuild(Number(range.value))));
+    this.rpBuild(0);
+    this.rpPlay(); // 開いたら、自動再生
+  }
+
   // 対戦の履歴を保存する (1つのコントローラーにつき、1回。終わったとき・途中でやめた/新しい対戦に替わったとき)
   private session?: BattleSession;
   private savedCtl?: BattleController;
@@ -134,6 +212,7 @@ export class BattleView extends ItemView {
 
   async begin() {
     this.saveHistory(); // 開き直し・新しい対戦に替わる前の対戦を、保存する
+    this.stopRp();
     const session = this.getSession();
     this.session = session;
     const { game, rules } = session ?? sampleBattle();
@@ -142,7 +221,7 @@ export class BattleView extends ItemView {
     const foe = this.game.players.find((p) => p !== VIEWER);
     const opp = this.getOpp();
     this.oppMode = opp;
-    this.ctl = session ? new BattleController(game, rules, VIEWER, session.rng ?? Math.random, opp === "cpu" ? foe : undefined, opp === "claude" ? foe : undefined) : undefined;
+    this.ctl = session && !session.replay ? new BattleController(game, rules, VIEWER, session.rng ?? Math.random, opp === "cpu" ? foe : undefined, opp === "claude" ? foe : undefined) : undefined; // リプレイのときは、操作できない (this.ctl 無し)・Claude の API も呼ばない
     this.tried.clear();
     this.askEl = undefined;
     this.targeting = undefined;
@@ -156,6 +235,7 @@ export class BattleView extends ItemView {
     this.mullEl = undefined;
     this.checkMulligan();
     void this.driveAi();
+    if (session?.replay && session.rebuild) this.startRp(session);
     this.watcher?.disconnect(); // 開き直されても、監視は1つだけ
     this.watcher = new ResizeObserver(() => this.fit());
     this.watcher.observe(this.ui.stage);
@@ -163,6 +243,17 @@ export class BattleView extends ItemView {
     if (!this.keysOn) {
       this.keysOn = true;
       this.registerDomEvent(document, "keydown", (e) => {
+        if (this.rp && this.app.workspace.getActiveViewOfType(BattleView) === this) {
+          // リプレイ: → 次 / ← 前 / スペース 再生・停止
+          if (e.key === "ArrowRight" || e.key === "ArrowLeft" || e.key === " ") {
+            e.preventDefault();
+            if (e.key === "ArrowRight") this.rpNext();
+            else if (e.key === "ArrowLeft") this.rpPrev();
+            else if (this.rp.timer !== undefined) this.rpPause();
+            else this.rpPlay();
+            return;
+          }
+        }
         if (e.key !== "Escape") return;
         if (this.askEl) this.cancelAsk();
         else if (this.targeting) this.endTargeting(); // 途中でやめるのは Esc だけ
