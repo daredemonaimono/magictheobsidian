@@ -599,7 +599,7 @@ export class BattleView extends ItemView {
       ...(this.ctl && kind === "hand" ? { use: () => {
         const why = this.ctl!.whyNot(c.id); // カードを選んだ時点で、使えない理由 (マナが足りません、など) を出す
         if (why) return this.toast(why);
-        this.askKick(c.name, this.ctl!.kickChoices(c.id), this.ctl!.canCastNormally(c.id), c.id, (cast) => this.ask(c.name, this.ctl!.needsForCard(c.id), (t) => this.askMana(c.name, { kind: "cast", card: c.id }, t, cast, (ids) => this.run(() => this.ctl!.use(c.id, t, cast, ids)))));
+        this.askKick(c.name, this.ctl!.kickChoices(c.id), this.ctl!.canCastNormally(c.id), c.id, (cast0) => this.askOptions(c.id, c.name, cast0, (cast) => this.ask(c.name, this.ctl!.needsForCard(c.id), (t) => this.askMana(c.name, { kind: "cast", card: c.id }, t, cast, (ids) => this.run(() => this.ctl!.use(c.id, t, cast, ids))))));
       } } : {}),
       ...(this.ctl && kind === "perm" ? { use: () => this.useAbility(c.id), pick: () => this.pickAbility(c.id) } : {}),
     }));
@@ -752,6 +752,55 @@ export class BattleView extends ItemView {
     box.createEl("button", { text: "自動で選ぶ" }).addEventListener("click", () => done());
     box.createDiv({ cls: "mtg-bt-askhint", text: "Esc で取り消し (何も起きなかったことになる)" });
     sync();
+  }
+
+  // 唱えるときの、残りの選択: ファイレクシア・マナの払い方 → {X} の値 → Delve で追放する墓地のカード。選べるものだけ聞く。Esc で取り消し
+  private askOptions(cardId: string, name: string, cast0: CastRecord | undefined, then: (cast?: CastRecord) => void) {
+    const ctl = this.ctl!;
+    const steps: ((cast: CastRecord | undefined, next: (c?: CastRecord) => void) => void)[] = [
+      (cast, next) => {
+        if (!ctl.phyChoice(cardId)) return next(cast);
+        this.askButtons(`${name}: ファイレクシア・マナを、どちらで払う?`, [{ text: "マナで払う", cls: "mod-cta", value: false }, { text: "ライフで払う (2 点)", value: true }], (v) => next(v ? { ...cast, phyLife: true } : cast));
+      },
+      (cast, next) => {
+        const max = ctl.xMax(cardId, cast);
+        if (max === undefined) return next(cast);
+        if (max === 0) return next({ ...cast, x: 0 });
+        this.askButtons(`${name}: X はいくつ?`, Array.from({ length: Math.min(max, 12) + 1 }, (_, i) => ({ text: String(i), cls: i === Math.min(max, 12) ? "mod-cta" : undefined, value: i })), (v) => next({ ...cast, x: v as number }));
+      },
+      (cast, next) => {
+        const d = ctl.delveChoices(cardId);
+        if (!d) return next(cast);
+        this.ui.stage.addClass("is-asking");
+        this.askCancel = () => {};
+        void this.loadImages(d.cards.map((x) => x.name)).then(() => this.showAsk({ kind: "choose", min: 0, max: d.max, cards: d.cards }, (ids) => {
+          this.askEl?.remove();
+          this.askEl = undefined;
+          this.askCancel = undefined;
+          this.ui.stage.removeClass("is-asking");
+          next((ids as string[]).length ? { ...cast, delve: ids as string[] } : cast);
+        }, `${name}: Delve で追放する墓地のカードを選ぶ (1 枚で、汎用マナ 1 点ぶん。選ばなくてもよい)`));
+      },
+    ];
+    const run = (i: number, cast: CastRecord | undefined) => (i < steps.length ? steps[i](cast, (c) => run(i + 1, c)) : then(cast));
+    run(0, cast0);
+  }
+  private askButtons(title: string, buttons: { text: string; cls?: string; value: boolean | number }[], then: (v: boolean | number) => void) {
+    const box = this.ui.stage.createDiv("mtg-bt-ask");
+    this.askEl = box;
+    this.ui.stage.addClass("is-asking");
+    this.askCancel = () => {};
+    box.createDiv({ cls: "mtg-bt-asktitle", text: title });
+    const row = box.createDiv("mtg-bt-askrow");
+    for (const b of buttons)
+      row.createEl("button", { ...(b.cls ? { cls: b.cls } : {}), text: b.text }).addEventListener("click", () => {
+        box.remove();
+        this.askEl = undefined;
+        this.askCancel = undefined;
+        this.ui.stage.removeClass("is-asking");
+        then(b.value);
+      });
+    box.createDiv({ cls: "mtg-bt-askhint", text: "Esc で取り消し (何も起きなかったことになる)" });
   }
 
   // 追加コスト (キッカーなど) を払えるマナがあるとき、払うかを選ばせる (そのあとで、対象を選ぶ)。選べなければ (払えない・追加コストが無い)、聞かずに、払わない。Esc で取り消し

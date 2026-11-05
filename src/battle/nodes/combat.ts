@@ -1,5 +1,6 @@
 import { NodeDef, Value } from "../node";
 import { defineNode as define } from "../registry";
+import { spellBody } from "../engine/shared";
 import { dealDamage } from "../damage";
 import { spendGeneric } from "../mana";
 import { idList, playersFor, targetPlayer, who } from "./shared";
@@ -62,6 +63,31 @@ export function registerCombat(): void {
       if (key) {
         g.pool[p] ??= {};
         g.pool[p][key] = (g.pool[p][key] ?? 0) + n;
+      }
+      return {};
+    },
+  });
+
+  // 呪文をコピーする (Storm・Fork)。コピーは、スタックの一番上に積まれ、元と同じ対象で、解決しても墓地に行かず消える
+  node({
+    id: "copySpell",
+    title: "呪文をコピーする",
+    summary: "スタックの呪文(target ノードの出力。zone=stack)を count 回(既定は1)コピーする。コピーは、能力のコントローラーのもので、元と同じ対象を持ち、解決しても墓地に行かず消える。shortcut: 対象は選び直せない",
+    params: { target: { type: "ref" }, spell: { type: "string" }, count: { type: "number", min: 0 } },
+    check: (a) => (a.target !== undefined || a.spell !== undefined ? null : "target (対象の呪文) が要る"),
+    outputs: {},
+    run: (ctx, a): Record<string, Value> => {
+      const g = ctx.game;
+      const ids = a.target !== undefined ? idList(a.target) : [String(a.spell)];
+      for (const id of ids) {
+        const orig = g.stack.find((s) => s.id === id && !s.ability);
+        if (!orig) continue;
+        const n = a.count === undefined ? 1 : Number(a.count);
+        for (let k = 0; k < n; k++) {
+          g.serial++;
+          g.stack.push({ id: `${orig.id}~${g.serial}`, card: orig.card, controller: ctx.item.controller, targets: { ...orig.targets }, cast: { ...orig.cast }, body: orig.body ?? spellBody(ctx.rules, orig.card) ?? [], copy: true, ...(orig.x !== undefined ? { x: orig.x } : {}) });
+        }
+        if (n > 0) g.log.push(`${orig.card.name} を ${n} 回コピーした`);
       }
       return {};
     },

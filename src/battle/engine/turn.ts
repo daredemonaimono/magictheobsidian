@@ -28,6 +28,7 @@ export function advanceStep(g: Game, rules: RuleBook): void {
     g.active = nextPlayer(g, g.active);
     g.turn++;
     g.landsPlayed = 0;
+    g.spellsCast = 0;
     for (const p of g.battlefield) delete p.loyaltyUsed; // 忠誠度能力は、1ターンに1回
     for (const p of g.battlefield) if (untapsDuring(g, p, g.active, rules)) untapPerm(g, p); // アンタップ・ステップ (優先権が無いので、ここで済ませてアップキープへ)。麻痺カウンターは、アンタップのかわりに取り除く
     g.step = "upkeep";

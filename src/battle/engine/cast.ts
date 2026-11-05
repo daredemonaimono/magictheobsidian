@@ -32,6 +32,7 @@ export function castSpell(g: Game, p: PlayerId, cardId: string, targets: Record<
 // 呪文を唱える本体 (手札から・準備呪文のコピーで共通)。条件を確かめ、コストを払い、スタックに積む。afterPay = 払ったあとの、元の場所からの移動。copy = 呪文のコピー
 export function castCore(g: Game, p: PlayerId, card: GameCard, body: NodeCall[], targets: Record<string, string>, rules: RuleBook, cast: CastRecord, afterPay: () => void, copy = false): void {
   const item: StackItem = { id: card.id, card, controller: p, targets, cast, ...(copy ? { body, copy: true } : {}) };
+  const own = ownCost(card);
   checkModes(body, cast, card.name);
   validate(g, item, body, card.name, rules);
   const chosen = (["kicked", "teamwork"] as const).filter((f) => cast[f]);
@@ -45,20 +46,30 @@ export function castCore(g: Game, p: PlayerId, card: GameCard, body: NodeCall[],
   if (alt?.args.notYourTurn === true && g.active === p) throw new RuleError(`${card.name}: 自分のターンには、別のコストで唱えられない`);
   const pitch = alt ? pitchCards(g, p, card, alt, cast) : [];
   const cost = costOf(alt ? [...decls, alt] : decls);
+  if (cast.phyLife) cost.preferLife = true;
+  let delved: GameCard[] = [];
   if (g.payManaCosts && !alt) {
-    // カード自体のマナコスト。コスト軽減は、汎用の分だけ減らす (色は減らない)。manaCost が無いカードは、マナ総量の数だけ (色なし)
-    let own: ManaCost;
-    try {
-      own = card.manaCost !== undefined ? parseManaCost(card.manaCost) : { ...emptyCost(), generic: card.mv };
-    } catch (e) {
-      throw new RuleError(`${card.name}: ${(e as Error).message}`);
+    // カード自体のマナコスト。コスト軽減は、汎用の分だけ減らす (色は減らない)。manaCost が無いカードは、マナ総量の数だけ (色なし)。{X} の分は、選んだ X だけ汎用が増える
+    const generic = Math.max(0, own.generic - costReduction(g, p, card, rules)) + (own.x ?? 0) * Math.max(0, cast.x ?? 0);
+    if (cast.delve) {
+      if (!body.some((c) => c.node === "delve")) throw new RuleError(`${card.name}: Delve が書かれていない`);
+      delved = delveCards(g, p, cast.delve, generic, card);
     }
-    cost.sym = addCosts(cost.sym, { ...own, generic: Math.max(0, own.generic - costReduction(g, p, card, rules)) });
-  }
+    cost.sym = addCosts(cost.sym, { ...own, generic: generic - delved.length });
+  } else if (cast.delve && !alt) throw new RuleError(`${card.name}: Delve を使えない`);
   const why = costProblem(g, p, cost, undefined, cast.tap ?? [], rules, card);
   if (why) throw new RuleError(`${card.name}: ${why}`);
   payCost(g, p, cost, undefined, cast.tap ?? [], card);
   afterPay();
+  for (const c of delved) {
+    g.graveyards[p] = g.graveyards[p].filter((x) => x !== c);
+    g.exile[c.owner].push(c);
+  }
+  if (delved.length) g.log.push(`墓地の ${delved.length} 枚を追放した (Delve)`);
+  if (g.payManaCosts && !alt) item.cast = { ...cast, colors: cost.spent?.colors ?? 0 };
+  if (own.x) item.x = Math.max(0, cast.x ?? 0);
+  const before = g.spellsCast ?? 0; // この呪文より前に唱えられた数 (Storm)
+  g.spellsCast = before + 1;
   for (const c of pitch) {
     g.hands[p] = g.hands[p].filter((x) => x !== c);
     g.exile[c.owner].push(c);
@@ -69,7 +80,31 @@ export function castCore(g: Game, p: PlayerId, card: GameCard, body: NodeCall[],
   g.priority = p;
   g.passes = [];
   g.events.push({ type: "cast", player: p, card });
+  if (body.some((c) => c.node === "storm")) {
+    // Storm: 唱えたとき、その呪文の上に、「それまでに唱えられた数だけ、この呪文をコピーする」誘発型能力が積まれる
+    g.serial++;
+    g.stack.push({ id: `${card.id}#storm${g.serial}`, card, controller: p, targets: {}, cast: {}, body: [{ node: "copySpell", args: { spell: card.id, count: before } }], ability: true, source: card.id });
+  }
   flushEvents(g, rules); // 「呪文を唱えた」ときの誘発型能力は、その呪文の上に積まれる
+}
+
+// 呪文自身のマナコスト (マナコストが無いカードは、マナ総量ぶんの汎用)
+function ownCost(card: GameCard): ManaCost {
+  try {
+    return card.manaCost !== undefined ? parseManaCost(card.manaCost) : { ...emptyCost(), generic: card.mv };
+  } catch (e) {
+    throw new RuleError(`${card.name}: ${(e as Error).message}`);
+  }
+}
+
+// Delve で追放する墓地のカード。true なら、払うのに要るぶん (汎用の数まで) を先頭から。ids なら、それを確かめる (汎用の数を超えられない)
+export function delveCards(g: Game, p: PlayerId, delve: string[] | true, generic: number, spell: GameCard): GameCard[] {
+  const gy = g.graveyards[p] ?? [];
+  if (delve === true) return gy.slice(0, generic);
+  const picked = delve.map((id) => gy.find((c) => c.id === id));
+  if (picked.some((c) => !c) || new Set(picked).size !== picked.length) throw new RuleError(`${spell.name}: 墓地に無いカードを選んでいる`);
+  if (picked.length > generic) throw new RuleError(`${spell.name}: Delve で追放できるのは、汎用マナの数 (${generic}) まで`);
+  return picked as GameCard[];
 }
 
 // 別のコストで追放する手札のカード: cast.exile があればそれを確かめ、無ければ条件に合う先頭から選ぶ。足りなければ RuleError

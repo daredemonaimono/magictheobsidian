@@ -67,7 +67,7 @@
 | A-3 (実装済み 0.105.0) | `exile` を戦場のパーマネントにも (対象)。「そのパワーに等しいライフ」(値の参照: 対象のパワー・マナ総量) | Swords to Plowshares (2+2)・Prismatic Ending (1+2) の一部 | 中 |
 | A-4 (実装済み 0.106.0) | `addMana` で、色の候補を選ぶ (`colors=GWU`)。`when event=attacks` に「1体だけで攻撃」の条件 + `modify` (Exalted) | Noble Hierarch (4) | 中 |
 | B-1 (実装済み 0.107.0) | **別のコストで唱える** (`altCost`: 手札の色つきカードを追放・ライフを払う・自分のターンでないとき)。唱えるときに選ばせる (追加コストの選択と同じ入口) | Force of Will (4)・Force of Negation (1)・Force of Vigor (1+3) | 大 |
-| B-2 | **Delve** (墓地のカードを追放して、コストを払う)・**Phyrexian マナ** ({U/φ}: 2 ライフで払う)・**Storm** (それまでに唱えた呪文の数・呪文のコピー)・**Converge** (マナの色の数) | Dig Through Time (1)・Treasure Cruise (1)・Gitaxian Probe (1)・Flusterstorm (2)・Prismatic Ending (1+2) | 大 |
+| B-2 (実装済み 0.108.0) | **Delve** (墓地のカードを追放して、コストを払う)・**Phyrexian マナ** ({U/φ}: 2 ライフで払う)・**Storm** (それまでに唱えた呪文の数・呪文のコピー)・**Converge** (マナの色の数) | Dig Through Time (1)・Treasure Cruise (1)・Gitaxian Probe (1)・Flusterstorm (2)・Prismatic Ending (1+2) | 大 |
 | C | **「できない」「かわりに」の枠** (制限・置換): 「各プレイヤーは、1ターンに、呪文を2つ以上唱えられない」「戦場に出るとき、タップ状態で」「アーティファクトの起動型能力は、起動できない」「X のマナ総量より大きい呪文は唱えられない」「墓地・ライブラリーから、クリーチャーは戦場に出られない」。`extraTriggers` (すべてに「アップキープに、〜払わなければ、生け贄」) | Archon of Emeria (3)・Collector Ouphe (3)・Lavinia (2)・Grafdigger's Cage (3 サイド)・Energy Flux (2 サイド)・The Tabernacle (2 サイド) | 大 |
 | D | 個別だが、汎用にできるもの: **追加ターン** (Time Walk)・Oko の −5 (コントロールの交換) と Food の能力・Endurance (墓地を、底に、ランダムな順で。召喚者に、追放して唱える代替コスト)・Sylvan Library (ドロー・ステップに、追加で引いて、ライフか上に置く) | Time Walk (1)・Oko (3)・Endurance (3+1)・Sylvan Library (1) | 中〜大 |
 

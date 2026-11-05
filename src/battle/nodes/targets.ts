@@ -135,6 +135,31 @@ export function registerTargets(): void {
     }),
   });
 
+  // この呪文を唱えるために払ったマナの色の数 (収束)
+  node({
+    id: "spentColors",
+    title: "払ったマナの色の数",
+    summary: "この呪文を唱えるために払ったマナの色の数 (W・U・B・R・G のうち、何色か) を出力する。収束 (Converge): Prismatic Ending。色の決まらない好きな色のマナで払った分は、数えない",
+    params: {},
+    outputs: { n: "number" },
+    only: ["spell"],
+    run: (ctx): Record<string, Value> => ({ n: ctx.item.cast.colors ?? 0 }),
+  });
+
+  // 2つの数を比べる
+  node({
+    id: "compare",
+    title: "数を比べる",
+    summary: "a と b を、op (lt = a<b / le = a≤b / eq = a=b / ge = a≥b / gt = a>b) で比べて、成り立てば true、でなければ false を出力する。as= で名前を付けて、if=$名前 で使う(「マナ総量が、払った色の数以下なら」は statOf と spentColors と使う)",
+    params: { a: { type: "number", required: true }, b: { type: "number", required: true }, op: { type: "string", required: true, choices: ["lt", "le", "eq", "ge", "gt"] } },
+    outputs: { ok: "boolean" },
+    run: (_ctx, a): Record<string, Value> => {
+      const x = Number(a.a);
+      const y = Number(a.b);
+      return { ok: a.op === "lt" ? x < y : a.op === "le" ? x <= y : a.op === "eq" ? x === y : a.op === "ge" ? x >= y : x > y };
+    },
+  });
+
   // 誘発の引き金になったパーマネント (「攻撃したクリーチャー」「出てきたクリーチャー」)
   node({
     id: "eventPerm",

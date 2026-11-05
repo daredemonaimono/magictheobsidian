@@ -5,6 +5,7 @@ import { cpuAct, cpuAttack, cpuBlock, cpuDo, tapFor, tapOne } from "./cpu";
 import { Answer, InputRequest, NeedInput, makeDecider } from "./input";
 import { HAND_SIZE, putBottom, redraw } from "./mulligan";
 import { CastRecord } from "./node";
+import { parseManaCost } from "./mana";
 import { Game, PlayerId, RuleBook } from "./state";
 
 // 記録の1件: 入口の呼び出し (op と引数) と、途中の質問への答え
@@ -289,6 +290,7 @@ export class BattleController {
     const t0 = autoTargets(slotsOf(g, this.rules, this.me, a));
     let why = tryWithMana(g, this.rules, this.me, a, t0); // 土地を出すのに、マナは要らない: 本物の局面で調べる
     if (why && this.altOf(cardId) && tryWithMana(g, this.rules, this.me, a, t0, { alt: true }) === undefined) why = undefined; // 別のコストなら唱えられる
+    if (why && this.hasDecl(cardId, "delve") && tryWithMana(g, this.rules, this.me, a, t0, { delve: true }) === undefined) why = undefined; // 墓地を追放すれば唱えられる
     const msg = why?.replace("マナが足りない", "マナが足りません");
     return msg ? `${msg.startsWith(card.name) ? msg : `${card.name}: ${msg}`}${msg.includes("マナが足りません") ? this.manaHint(card) : ""}` : undefined;
   }
@@ -369,6 +371,53 @@ export class BattleController {
   private altOf(cardId: string) {
     const card = this.game.hands[this.me].find((x) => x.id === cardId);
     return card && !/\bLand\b/.test(card.typeLine) ? this.rules.get(card.name)?.abilities.find((a) => a.kind === "spell")?.body.find((c) => c.node === "altCost") : undefined;
+  }
+  private hasDecl(cardId: string, node: string): boolean {
+    const card = this.game.hands[this.me].find((x) => x.id === cardId);
+    return !!card && !/\bLand\b/.test(card.typeLine) && !!this.rules.get(card.name)?.abilities.find((a) => a.kind === "spell")?.body.some((c) => c.node === node);
+  }
+  // Delve: 追放できる墓地のカード (汎用マナの数が上限)。選べるときだけ返す
+  delveChoices(cardId: string): { max: number; cards: { id: string; name: string }[] } | undefined {
+    const card = this.game.hands[this.me].find((x) => x.id === cardId);
+    if (!card || !this.hasDecl(cardId, "delve") || !this.game.payManaCosts) return undefined;
+    let generic = 0;
+    try {
+      generic = card.manaCost !== undefined ? parseManaCost(card.manaCost).generic : card.mv;
+    } catch {
+      return undefined;
+    }
+    const gy = this.game.graveyards[this.me];
+    return gy.length && generic ? { max: Math.min(generic, gy.length), cards: gy.map((c) => ({ id: c.id, name: c.name })) } : undefined;
+  }
+  // {X} を含むマナコストで、選べる X の最大 (出せるマナを全部出して、払える最大)。{X} が無ければ undefined
+  xMax(cardId: string, cast?: CastRecord): number | undefined {
+    const card = this.game.hands[this.me].find((x) => x.id === cardId);
+    if (!card?.manaCost || !this.game.payManaCosts) return undefined;
+    try {
+      if (!parseManaCost(card.manaCost).x) return undefined;
+    } catch {
+      return undefined;
+    }
+    const act: Action = { kind: "cast", card: cardId };
+    const t = autoTargets(slotsOf(this.game, this.rules, this.me, act));
+    const sim = withAllMana(this.game, this.rules, this.me);
+    let best = -1;
+    for (let x = 0; x <= 20; x++) {
+      if (tryAction(sim, this.rules, this.me, act, t, { ...cast, x }) === undefined) best = x;
+      else if (best >= 0) break;
+    }
+    return best >= 0 ? best : undefined;
+  }
+  // ファイレクシア・マナ ({U/P}) があって、マナでもライフでも払えるとき、真 (払い方を選ばせる)
+  phyChoice(cardId: string): boolean {
+    const card = this.game.hands[this.me].find((x) => x.id === cardId);
+    if (!card?.manaCost || !this.game.payManaCosts || !/\/P\}/.test(card.manaCost)) return false;
+    const act: Action = { kind: "cast", card: cardId };
+    const t = autoTargets(slotsOf(this.game, this.rules, this.me, act));
+    const sim = withAllMana(this.game, this.rules, this.me);
+    const byLife = tryAction(sim, this.rules, this.me, act, t, { phyLife: true }) === undefined;
+    sim.life[this.me] = 1; // ライフでは払えない局面にして、マナだけで払えるか
+    return byLife && tryAction(sim, this.rules, this.me, act, t, {}) === undefined;
   }
   // 通常のコストで唱えられるか (マナを全部出せるとして)
   canCastNormally(cardId: string): boolean {

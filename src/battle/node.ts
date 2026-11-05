@@ -59,6 +59,10 @@ export interface CastRecord {
   teamwork?: boolean;
   alt?: boolean; // 別のコスト (altCost) で唱えた
   exile?: string[]; // 別のコストで追放する手札のカードの id (無ければ、条件に合う先頭から)
+  x?: number; // マナコストの {X} に選んだ値
+  delve?: string[] | true; // 変異ではなく Delve: 追放する墓地のカードの id (true = 払うのに要るぶんだけ、先頭から)
+  phyLife?: boolean; // ファイレクシア・マナを、ライフで払う
+  colors?: number; // 払ったマナの色の数 (収束 / spentColors)。唱えたときに、エンジンが書く
   tap?: string[]; // 追加コストでタップするクリーチャー (チームワーク)
   modes?: number[];
   extraCosts?: string[];

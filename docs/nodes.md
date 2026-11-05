@@ -2,11 +2,11 @@
 
 > このファイルは、自動で作られます (`src/battle/nodeDocs.ts`)。直接は書き換えません。ノードを足したら、`npm run docs:nodes` で更新します。ノードは、`src/battle/nodes/` の、カテゴリーごとのファイルにあります。
 
-全 56 個のノード、8 個の条件。
+全 61 個のノード、8 個の条件。
 
 目次: [宣言・コスト・条件](#宣言・コスト・条件) / [対象・数える・絞り込む](#対象・数える・絞り込む) / [カードの移動・ライブラリー・手札](#カードの移動・ライブラリー・手札) / [パーマネント・トークン・カウンター](#パーマネント・トークン・カウンター) / [ダメージ・ライフ・マナ・打ち消し](#ダメージ・ライフ・マナ・打ち消し) / [継続効果](#継続効果)
 
-## 宣言・コスト・条件 (10 個)
+## 宣言・コスト・条件 (12 個)
 
 ### `cost` コスト
 
@@ -31,6 +31,24 @@
 呪文を唱えるとき、マナコストのかわりに払ってもよい別のコスト(Force of Will・召喚者)。払って唱えると、if=alt のノードが実行される。mana=汎用のマナ / manaCost=色つきのマナコスト / life=払うライフ / exile=手札から追放するカードの枚数(exileColor=W・U・B・R・G でその色のカード。唱える呪文自身は数えない) / notYourTurn=true で、自分のターンでないときだけ
 
 - 引数: `mana`(number)、`manaCost`(string)、`life`(number)、`exile`(number)、`exileColor`(string・W / U / B / R / G)、`notYourTurn`(boolean)
+- 書ける能力: spell
+- 宣言のノード (エンジンが読む。`if=` は付けられない)
+- 中心のノード (ルールを書かせるとき、いつも AI の指示に入る。ほかは、カードごとに選ぶ)
+
+### `delve` Delve
+
+Delve の宣言(呪文能力の最初に書く。引数なし)。唱えるとき、墓地のカードを何枚か追放して、その1枚につき汎用マナ {1} を払ったことにできる(Treasure Cruise・Dig Through Time)
+
+- 引数: なし
+- 書ける能力: spell
+- 宣言のノード (エンジンが読む。`if=` は付けられない)
+- 中心のノード (ルールを書かせるとき、いつも AI の指示に入る。ほかは、カードごとに選ぶ)
+
+### `storm` Storm
+
+Storm の宣言(呪文能力の最初に書く。引数なし)。この呪文を唱えたとき、このターンにそれより前に唱えられた呪文(だれのものでも)の数だけ、この呪文をコピーする。コピーの対象は、元と同じ(Flusterstorm)
+
+- 引数: なし
 - 書ける能力: spell
 - 宣言のノード (エンジンが読む。`if=` は付けられない)
 - 中心のノード (ルールを書かせるとき、いつも AI の指示に入る。ほかは、カードごとに選ぶ)
@@ -95,7 +113,7 @@
 - 宣言のノード (エンジンが読む。`if=` は付けられない)
 - 中心のノード (ルールを書かせるとき、いつも AI の指示に入る。ほかは、カードごとに選ぶ)
 
-## 対象・数える・絞り込む (8 個)
+## 対象・数える・絞り込む (10 個)
 
 ### `target` 対象
 
@@ -140,6 +158,21 @@ from(look / choose などの出力)のカードのうち、type(| は または)
 
 - 引数: `from`(ref・必須)、`type`(string)、`notType`(string)
 - 出力: `id`(id) (`as=名前` で受けて、`$名前` で渡す)
+
+### `spentColors` 払ったマナの色の数
+
+この呪文を唱えるために払ったマナの色の数 (W・U・B・R・G のうち、何色か) を出力する。収束 (Converge): Prismatic Ending。色の決まらない好きな色のマナで払った分は、数えない
+
+- 引数: なし
+- 出力: `n`(number) (`as=名前` で受けて、`$名前` で渡す)
+- 書ける能力: spell
+
+### `compare` 数を比べる
+
+a と b を、op (lt = a<b / le = a≤b / eq = a=b / ge = a≥b / gt = a>b) で比べて、成り立てば true、でなければ false を出力する。as= で名前を付けて、if=$名前 で使う(「マナ総量が、払った色の数以下なら」は statOf と spentColors と使う)
+
+- 引数: `a`(number・必須)、`b`(number・必須)、`op`(string・必須・lt / le / eq / ge / gt)
+- 出力: `ok`(boolean) (`as=名前` で受けて、`$名前` で渡す)
 
 ### `eventPerm` 引き金のパーマネント
 
@@ -317,7 +350,7 @@ cards(look / choose の出力)を、持ち主の to へ動かす。to=hand / gra
 
 - 引数: `target`(ref・必須)、`kind`(string・必須・+1/+1 / stun)、`count`(number・必須)
 
-## ダメージ・ライフ・マナ・打ち消し (5 個)
+## ダメージ・ライフ・マナ・打ち消し (6 個)
 
 ### `gainLife` ライフを得る
 
@@ -342,6 +375,12 @@ cards(look / choose の出力)を、持ち主の to へ動かす。to=hand / gra
 コントローラーがマナを amount 点加える。colors=GWU(その中の好きな1色。「{G}、{W}、{U} のいずれか」)。color=W・U・B・R・G(その色) / C(無色。既定) / any(好きな色。どの色のコストにも使える)。spellType / spellNotType を添えると、そのマナは、その型の呪文(spellNotType ならその型でない呪文)を唱えるためにしか使えない(「クリーチャーでない呪文を唱えるためにしか使えない」は spellNotType=creature)
 
 - 引数: `amount`(number・必須)、`color`(string・W / U / B / R / G / C / any)、`colors`(string)、`spellType`(string)、`spellNotType`(string)
+
+### `copySpell` 呪文をコピーする
+
+スタックの呪文(target ノードの出力。zone=stack)を count 回(既定は1)コピーする。コピーは、能力のコントローラーのもので、元と同じ対象を持ち、解決しても墓地に行かず消える。shortcut: 対象は選び直せない
+
+- 引数: `target`(ref)、`spell`(string)、`count`(number)
 
 ### `counter` 打ち消す
 

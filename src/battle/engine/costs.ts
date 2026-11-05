@@ -1,6 +1,6 @@
 import { characteristics } from "../continuous";
 import { NodeCall } from "../node";
-import { addCosts, describeCost, emptyCost, ManaCost, parseManaCost, trySpend } from "../mana";
+import { addCosts, describeCost, emptyCost, ManaCost, parseManaCost, SpendOpts, trySpend } from "../mana";
 import { Game, GameCard, Perm, PlayerId, RuleBook } from "../state";
 import { RuleError, isSick } from "./shared";
 
@@ -16,6 +16,8 @@ export interface CostSpec {
   loyaltyX: boolean; // −X
   isLoyalty: boolean; // 忠誠度能力 (ソーサリーのタイミングで、1ターンに1回)
   life: number; // 払うライフ (フェッチランドの「1点のライフを払う」)
+  preferLife?: boolean; // ファイレクシア・マナを、ライフで払う
+  spent?: { colors: number; life: number }; // 払ったあと、色の数が入る (payCost が書く)
 }
 
 // manaCost の形が違うときは RuleError (保存時の検査を通らなかった rule でも、エンジンが落ちないように)
@@ -40,7 +42,7 @@ export const costOf = (calls: NodeCall[]): CostSpec => ({
 
 // 払えるか。払えなければ理由 (状態は変えない)。tapIds = パワーの合計のためにタップするクリーチャー
 export function costProblem(g: Game, p: PlayerId, cost: CostSpec, source: Perm | undefined, tapIds: string[], rules: RuleBook, spell?: GameCard, x = 0): string | null {
-  if (!trySpend(g, p, cost.sym, spell, false)) return `マナが足りない (${describeCost(cost.sym)} 要る)`;
+  if (!trySpend(g, p, cost.sym, spell, false, { preferLife: cost.preferLife })) return `マナが足りない (${describeCost(cost.sym)} 要る)`;
   if (cost.isLoyalty) {
     const now = source?.counters?.loyalty ?? 0;
     if (!source || source.loyaltyUsed) return "このターンは、もう忠誠度能力を起動した (1ターンに1回)";
@@ -65,7 +67,9 @@ export function costProblem(g: Game, p: PlayerId, cost: CostSpec, source: Perm |
 }
 
 export function payCost(g: Game, p: PlayerId, cost: CostSpec, source: Perm | undefined, tapIds: string[], spell?: GameCard, x = 0): void {
-  if (!trySpend(g, p, cost.sym, spell, true)) throw new Error("マナが払えない (costProblem を通っていない)");
+  const opts: SpendOpts = { preferLife: cost.preferLife, spent: { colors: 0, life: 0 } };
+  if (!trySpend(g, p, cost.sym, spell, true, opts)) throw new Error("マナが払えない (costProblem を通っていない)");
+  cost.spent = opts.spent;
   if (cost.isLoyalty && source) {
     source.counters = { ...source.counters, loyalty: (source.counters?.loyalty ?? 0) + cost.loyalty - (cost.loyaltyX ? x : 0) };
     source.loyaltyUsed = true;

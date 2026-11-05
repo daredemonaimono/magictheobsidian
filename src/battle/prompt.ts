@@ -67,6 +67,7 @@ ${conditionList() || "(まだ無い)"}
 - マナの色: \`addMana color=W|U|B|R|G\`(その色)、無色は color を書かないか \`color=C\`、「好きな色1色」は \`color=any\`。コストの色は \`manaCost="{1}{U}"\` と書く(混成 {W/U} も書ける)。
 - 「{G}、{W}、{U} のどれか1色」は \`addMana amount=1 colors=GWU\`。「単独で攻撃するたび」は \`when event=attacks who=you alone=true\` と、攻撃したクリーチャーを指す \`eventPerm as=c\`(「そのクリーチャーは +1/+1」は \`modify target=$c power=1 toughness=1 duration=endOfTurn\`)。
 - 「マナコストを支払うかわりに、〜してもよい」(Force of Will など)は、\`## 呪文能力\` の最初に \`altCost exile=1 exileColor=U life=1\`(自分のターンでないときだけは \`notYourTurn=true\`)。別のコストで唱えたときだけの効果は \`if=alt\`(召喚者の「出たら生け贄」は \`sacrifice target=$s if=alt\`)。打ち消した呪文を追放するなら \`counter target=$t exile=true\`。
+- Delve は \`## 呪文能力\` の最初に \`delve\`、Storm は \`storm\`(どちらも引数なし)。ファイレクシア・マナ {U/P} と {X} は、カードのマナコストにそのまま書いてあれば、エンジンが扱うので、ノートには書かない。「払ったマナの色の数」は \`spentColors as=n\`、数の比較は \`compare a=$m b=$n op=le as=ok\` と \`if=$ok\`(収束)。スタックの呪文のコピーは \`copySpell target=$t count=1\`。
 - 「このマナは、〜を唱えるためにしか使えない」は \`addMana amount=1 spellNotType=creature\`(spellType はその型だけ)。
 - 瞬速などのキーワード能力は、\`## 常在型能力\` に \`- keyword name=flash\` と書く(瞬速は、インスタントのタイミングで唱えられる)。ほかのキーワードは、戦場に出たときに得る。
 - キッカー・チームワークなど、呪文を唱えるときに払ってもよい追加コストは、\`## 呪文能力\` の最初に \`additionalCost flag=kicked manaCost="{1}{U}"\`(色のないコストなら \`mana=2\`) / \`additionalCost flag=teamwork tapCreatures=2\` と書く。払ったときだけ実行するノードには \`if=kicked\` / \`if=teamwork\` を付ける。

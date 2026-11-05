@@ -58,6 +58,30 @@ export function registerDeclarations(): void {
   });
 
   node({
+    id: "delve",
+    core: true,
+    title: "Delve",
+    summary: "Delve の宣言(呪文能力の最初に書く。引数なし)。唱えるとき、墓地のカードを何枚か追放して、その1枚につき汎用マナ {1} を払ったことにできる(Treasure Cruise・Dig Through Time)",
+    params: {},
+    outputs: {},
+    declaration: true,
+    only: ["spell"],
+    run: (): Record<string, Value> => ({}),
+  });
+
+  node({
+    id: "storm",
+    core: true,
+    title: "Storm",
+    summary: "Storm の宣言(呪文能力の最初に書く。引数なし)。この呪文を唱えたとき、このターンにそれより前に唱えられた呪文(だれのものでも)の数だけ、この呪文をコピーする。コピーの対象は、元と同じ(Flusterstorm)",
+    params: {},
+    outputs: {},
+    declaration: true,
+    only: ["spell"],
+    run: (): Record<string, Value> => ({}),
+  });
+
+  node({
     id: "modes",
     core: true,
     title: "モード",
