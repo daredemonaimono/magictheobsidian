@@ -554,6 +554,7 @@ function endCombat(g: Game): void {
     delete p.attackTarget;
     delete p.blocked;
     delete p.blockedBy;
+    delete p.assign;
     delete p.blocking;
   }
   g.combatPhase = undefined;
@@ -628,6 +629,23 @@ export function declareBlockers(g: Game, p: PlayerId, blocks: { blocker: string;
   flushEvents(g, rules);
 }
 
+// 攻撃クリーチャーのダメージを、ブロッカーに割り振る (攻撃側が、ブロックの指定のあと・ダメージの前に、1回。自由な数)。トランプルなしは、合計がパワーと同じ。トランプルは、パワー以下 (残りは防御側へ)。不正なら RuleError で、何も変えない
+export function assignDamage(g: Game, p: PlayerId, attackerId: string, amounts: Record<string, number>, rules: RuleBook): void {
+  live(g);
+  const a = g.battlefield.find((x) => x.id === attackerId && x.attacking);
+  if (!a || a.controller !== p) throw new RuleError("割り振れるのは、自分の攻撃クリーチャーだけ");
+  if (g.step !== "combat" || g.combatPhase !== "blockers") throw new RuleError("ダメージの割り振りは、ブロックの指定のあと、ダメージの前に");
+  const ids = (a.blockedBy ?? []).filter((id) => g.battlefield.some((x) => x.id === id && x.blocking === a.id));
+  if (Object.keys(amounts).some((id) => !ids.includes(id))) throw new RuleError("ブロックしているクリーチャーにだけ、割り振れる");
+  const full = Object.fromEntries(ids.map((id) => [id, amounts[id] ?? 0]));
+  if (Object.values(full).some((n) => !Number.isInteger(n) || n < 0)) throw new RuleError("割り振る数は、0 以上の整数");
+  const power = characteristics(g, a, rules).power ?? 0;
+  const sum = Object.values(full).reduce((x, n) => x + n, 0);
+  const trample = kwOf(g, a, rules).includes("trample");
+  if (sum > power || (!trample && sum !== power)) throw new RuleError(`割り振りの合計は、パワー (${power}) ${trample ? "以下" : "と同じ"}にする`);
+  a.assign = full;
+}
+
 // 戦闘ダメージ。pass = first (先制攻撃・二段攻撃だけ) / regular (先制攻撃だけのものは除く。二段攻撃は、もう一度)。与えるものを先にすべて決めてから、同時に与える
 function combatDamage(g: Game, rules: RuleBook, pass: "first" | "regular"): void {
   const deals: { src: Perm; target: string; n: number }[] = [];
@@ -642,7 +660,15 @@ function combatDamage(g: Game, rules: RuleBook, pass: "first" | "regular"): void
       const k = kwOf(g, a, rules);
       const blockers = (a.blockedBy ?? []).map((id) => g.battlefield.find((x) => x.id === id && x.blocking === a.id)).filter((x): x is Perm => !!x);
       let rest = powerOf(a);
-      if (blockers.length) {
+      const given = a.assign;
+      if (blockers.length && given && blockers.every((b) => given[b.id] !== undefined)) {
+        for (const b of blockers) {
+          const n = Math.min(rest, given[b.id]);
+          if (n > 0) deals.push({ src: a, target: b.id, n });
+          rest -= n;
+        }
+        if (k.includes("trample") && rest > 0 && target) deals.push({ src: a, target, n: rest });
+      } else if (blockers.length) {
         blockers.forEach((b, i) => {
           const t = characteristics(g, b, rules).toughness ?? 0;
           const lethal = k.includes("deathtouch") ? 1 : Math.max(0, t - (b.damage ?? 0));

@@ -1,5 +1,5 @@
 import { Action, abilityLabels, actionsFor, autoTargets, slotsOf, tryAction } from "./actions";
-import { RuleError, TargetSlot, activateAbility, canAttackWith, castSpell, declareAttackers, declareBlockers, passPriority, playLand } from "./engine";
+import { RuleError, TargetSlot, activateAbility, canAttackWith, castSpell, declareAttackers, declareBlockers, assignDamage, passPriority, playLand } from "./engine";
 import { cpuAct, cpuAttack, cpuBlock } from "./cpu";
 import { Answer, InputRequest, NeedInput, makeDecider } from "./input";
 import { HAND_SIZE, putBottom, redraw } from "./mulligan";
@@ -113,6 +113,13 @@ export class BattleController {
       declareBlockers(x, this.me, pairs, this.rules);
       if (pairs.length) x.log.push(`あなたが ${pairs.map((q) => `${name(q.blocker)} で ${name(q.attacker)} を`).join("、")}ブロックした`);
       if (x.active !== this.me && x.priority !== this.me && x.priority) passPriority(x, x.priority, this.rules); // 相手がパスして、自分に優先権を渡す
+    }, []);
+  }
+
+  // ダメージの割り振り (自分の攻撃クリーチャーごと: ブロッカー id → ダメージ)。割り振らずに「次へ」なら、宣言の順に致死ダメージ
+  assign(all: Record<string, Record<string, number>>): string | undefined {
+    return this.perform("割り振り", (x) => {
+      for (const [a, amounts] of Object.entries(all)) assignDamage(x, this.me, a, amounts, this.rules);
     }, []);
   }
 

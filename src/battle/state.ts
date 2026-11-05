@@ -60,6 +60,7 @@ export interface Perm {
   attackTarget?: string; // 攻撃しているとき、攻撃先 (プレイヤー、またはプレインズウォーカーの id)
   blocked?: boolean; // 攻撃しているとき、ブロックされた (ブロッカーがいなくなっても、ブロックされたまま)
   blockedBy?: string[]; // 攻撃しているとき、ブロッカーの id (宣言の順 = ダメージを割り振る順)
+  assign?: Record<string, number>; // 攻撃しているとき、ブロッカーごとに割り振るダメージ (攻撃側が決める。無ければ、宣言の順に致死ダメージ)
   blocking?: string; // ブロックしているとき、ブロック先の攻撃クリーチャーの id
   counters?: Record<string, number>; // "+1/+1" (パワー・タフネスに足される) / "stun" (麻痺: アンタップのかわりに1つ取り除く)
 }

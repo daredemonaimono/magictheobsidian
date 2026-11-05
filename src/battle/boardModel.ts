@@ -142,7 +142,8 @@ export interface StackView {
   ability: boolean;
 }
 // 自分が、いま選ぶ戦闘の指定 (攻撃クリーチャー / ブロック)。mine = 選べる自分のクリーチャー、attackers = ブロックできる攻撃クリーチャー
-export type CombatChoice = { kind: "attack"; mine: string[] } | { kind: "block"; mine: string[]; attackers: string[] };
+export type AssignItem = { attacker: string; name: string; power: number; trample: boolean; blockers: { id: string; name: string; lethal: number }[]; defaults: Record<string, number> };
+export type CombatChoice = { kind: "attack"; mine: string[] } | { kind: "block"; mine: string[]; attackers: string[] } | { kind: "assign"; mine: string[]; items: AssignItem[] }; // assign = 自分の攻撃クリーチャーが 2 体以上にブロックされたとき、ダメージの割り振り
 
 export interface BoardModel {
   choice?: CombatChoice;
@@ -183,6 +184,26 @@ export function boardModel(g: Game, rules: RuleBook, viewer: PlayerId, imageOf: 
       const mine = g.battlefield.filter((p) => p.controller === viewer && !p.tapped && /\bCreature\b/.test(characteristics(g, p, rules).typeLine)).map((p) => p.id);
       if (attackers.length && mine.length) choice = { kind: "block", mine, attackers };
     }
+  }
+  if (!g.over && !g.mulligan && g.step === "combat" && g.combatPhase === "blockers" && g.active === viewer && g.priority === viewer && !g.stack.length && g.players.every((p) => p === viewer || (g.blockersDeclared ?? []).includes(p))) {
+    const items: AssignItem[] = [];
+    for (const a of g.battlefield) {
+      if (a.controller !== viewer || !a.attacking || a.assign) continue;
+      const bs = (a.blockedBy ?? []).map((id) => g.battlefield.find((x) => x.id === id && x.blocking === a.id)).filter((x): x is Perm => !!x);
+      if (bs.length < 2) continue;
+      const c = characteristics(g, a, rules);
+      const trample = c.keywords.includes("trample");
+      let rest = c.power ?? 0;
+      const blockers = bs.map((b) => ({ id: b.id, name: b.card.name, lethal: c.keywords.includes("deathtouch") ? 1 : Math.max(0, (characteristics(g, b, rules).toughness ?? 0) - (b.damage ?? 0)) }));
+      const defaults: Record<string, number> = {};
+      blockers.forEach((b, i) => {
+        const n = i === blockers.length - 1 && !trample ? rest : Math.min(rest, b.lethal);
+        defaults[b.id] = n;
+        rest -= n;
+      });
+      items.push({ attacker: a.id, name: a.card.name, power: c.power ?? 0, trample, blockers, defaults });
+    }
+    if (items.length) choice = { kind: "assign", mine: [], items };
   }
   const pool = g.pool[viewer] ?? {};
   const colored = Object.values(pool).reduce((a, n) => a + (n ?? 0), 0);

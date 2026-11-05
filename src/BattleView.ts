@@ -63,7 +63,7 @@ export class BattleView extends ItemView {
   private targeting?: { title: string; slots: TargetSlot[]; i: number; picks: string[][]; done: (t: Record<string, string>) => void; cancel?: () => void };
   private tbar?: HTMLElement;
   // 戦闘の指定を選んでいる途中 (攻撃クリーチャー / ブロック)。choice は boardModel の、選べるもの。ブロックは、自分のクリーチャー → 攻撃クリーチャー の順にクリック
-  private combatSel?: { kind: "attack"; picks: Set<string> } | { kind: "block"; pairs: Map<string, string>; cur?: string };
+  private combatSel?: { kind: "attack"; picks: Set<string> } | { kind: "block"; pairs: Map<string, string>; cur?: string } | { kind: "assign"; vals: Map<string, Record<string, number>> };
   private choice?: CombatChoice;
   private cbar?: HTMLElement;
   private gaugeKey = ""; // いまのゲージが、どの局面のものか
@@ -245,9 +245,12 @@ export class BattleView extends ItemView {
     const ch = this.ctl && !this.targeting && !this.askEl ? m.choice : undefined;
     this.choice = ch;
     if (!ch) this.combatSel = undefined;
-    else if (!this.combatSel || this.combatSel.kind !== ch.kind) this.combatSel = ch.kind === "attack" ? { kind: "attack", picks: new Set() } : { kind: "block", pairs: new Map() };
+    else if (!this.combatSel || this.combatSel.kind !== ch.kind) this.combatSel = ch.kind === "attack" ? { kind: "attack", picks: new Set() } : ch.kind === "assign" ? { kind: "assign", vals: new Map() } : { kind: "block", pairs: new Map() };
     const cs = this.combatSel;
-    if (cs && ch) {
+    if (cs?.kind === "assign" && ch?.kind === "assign") {
+      for (const it of ch.items) if (!cs.vals.has(it.attacker)) cs.vals.set(it.attacker, { ...it.defaults });
+      for (const id of [...cs.vals.keys()]) if (!ch.items.some((it) => it.attacker === id)) cs.vals.delete(id);
+    } else if (cs && ch && cs.kind !== "assign") {
       for (const id of [...(cs.kind === "attack" ? cs.picks : cs.pairs.keys())]) if (!ch.mine.includes(id)) (cs.kind === "attack" ? cs.picks.delete(id) : cs.pairs.delete(id)); // 選んだものが、選べなくなった (倒された・タップした)
       if (cs.kind === "block") {
         for (const [b, a] of [...cs.pairs]) if (ch.kind !== "block" || !ch.attackers.includes(a)) cs.pairs.delete(b);
@@ -259,10 +262,11 @@ export class BattleView extends ItemView {
   private combatTid(e: MouseEvent): string | undefined {
     const id = (e.target as HTMLElement).closest<HTMLElement>("[data-tid]")?.dataset.tid;
     const ch = this.choice;
-    return id && ch && (ch.mine.includes(id) || (ch.kind === "block" && ch.attackers.includes(id))) ? id : undefined;
+    return id && ch && ch.kind !== "assign" && (ch.mine.includes(id) || (ch.kind === "block" && ch.attackers.includes(id))) ? id : undefined;
   }
   private clickCombat(e: MouseEvent): boolean {
     const sel = this.combatSel!;
+    if (sel.kind === "assign") return false;
     const id = this.combatTid(e);
     if (!id) return false;
     e.stopPropagation();
@@ -297,12 +301,51 @@ export class BattleView extends ItemView {
     const nameOf = (id: string) => this.game.battlefield.find((p) => p.id === id)?.card.name ?? id;
     const bar = st.createDiv("mtg-bt-tbar");
     this.cbar = bar;
+    if (sel.kind === "assign" && ch.kind === "assign") {
+      bar.addClass("is-assign");
+      bar.createSpan({ text: "ダメージを割り振る (「次へ」なら、宣言の順に致死ダメージ)" });
+      const ok = bar.createEl("button", { cls: "mod-cta", text: "確定" });
+      const syncOk = () => {
+        ok.disabled = ch.items.some((it) => {
+          const v = Object.values(sel.vals.get(it.attacker) ?? {}).reduce((a, n) => a + n, 0);
+          return it.trample ? v > it.power : v !== it.power;
+        });
+      };
+      for (const it of ch.items) {
+        const row = bar.createDiv("mtg-bt-assign");
+        const v = sel.vals.get(it.attacker)!;
+        const total = row.createSpan({ cls: "mtg-bt-assign-total" });
+        const showTotal = () => {
+          const sum = Object.values(v).reduce((a, n) => a + n, 0);
+          total.setText(`${it.name} (パワー ${it.power}): ${it.trample ? `残り ${it.power - sum} は相手へ` : `残り ${it.power - sum}`}`);
+          syncOk();
+        };
+        row.prepend(total);
+        for (const b of it.blockers) {
+          const cell = row.createSpan({ cls: "mtg-bt-assign-cell" });
+          cell.createSpan({ text: `${b.name} (致死 ${b.lethal})` });
+          const n = cell.createSpan({ cls: "mtg-bt-assign-n", text: String(v[b.id]) });
+          const step = (d: number) => () => {
+            const sum = Object.values(v).reduce((a, x) => a + x, 0);
+            if (v[b.id] + d < 0 || sum + d > it.power) return;
+            v[b.id] += d;
+            n.setText(String(v[b.id]));
+            showTotal();
+          };
+          cell.createEl("button", { text: "−" }).addEventListener("click", step(-1));
+          cell.createEl("button", { text: "+" }).addEventListener("click", step(1));
+        }
+        showTotal();
+      }
+      ok.addEventListener("click", () => this.run(() => this.ctl!.assign(Object.fromEntries(sel.vals))));
+      return;
+    }
     if (sel.kind === "attack") {
       for (const id of ch.mine) at(id)?.classList.add(sel.picks.has(id) ? "is-cmb-picked" : "is-cmb-able");
       bar.createSpan({ text: `攻撃するクリーチャーを選ぶ (${sel.picks.size} 体)` });
       bar.createEl("button", { cls: "mod-cta", text: sel.picks.size ? `確定 (${sel.picks.size} 体で攻撃)` : "確定" }).addEventListener("click", () => sel.picks.size && this.run(() => this.ctl!.declareAttackers([...sel.picks])));
       bar.createEl("button", { text: "攻撃しない" }).addEventListener("click", () => this.run(() => this.ctl!.next()));
-    } else if (ch.kind === "block") {
+    } else if (sel.kind === "block" && ch.kind === "block") {
       for (const id of ch.mine) at(id)?.classList.add(sel.pairs.has(id) ? "is-cmb-picked" : id === sel.cur ? "is-cmb-picked" : "is-cmb-able");
       if (sel.cur) for (const id of ch.attackers) at(id)?.classList.add("is-cmb-target");
       for (const [b, a] of sel.pairs) {
