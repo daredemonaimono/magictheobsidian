@@ -207,7 +207,7 @@ export function registerBuiltinNodes(): void {
     },
   });
 
-  // カードを動かす。cards の中から except を除いて、持ち主の手札・墓地・ライブラリーの上/底へ。順番は、並んでいる順 (shortcut: 「好きな順番で」の入力は、まだ無い)
+  // カードを動かす。cards の中から except を除いて、持ち主の手札・墓地・ライブラリーの上/底へ。順番は g.decide.order で選べる (既定は、並んでいる順)
   defineNode({
     id: "move",
     title: "カードを動かす",
@@ -217,7 +217,13 @@ export function registerBuiltinNodes(): void {
     run: (ctx, a): Record<string, Value> => {
       const g = ctx.game;
       const skip = new Set(idList(a.except));
-      const list = idList(a.cards).filter((id) => !skip.has(id));
+      let list = idList(a.cards).filter((id) => !skip.has(id));
+      if ((a.to === "top" || a.to === "bottom") && list.length > 1) {
+        // 好きな順番で (上から下へ)。入力が無ければ、並んでいる順
+        const cards = list.flatMap((id) => findCard(g, id) ?? []);
+        const got = g.decide?.order?.(g, ctx.item.controller, cards, a.to)?.map((c) => c.id);
+        if (got && got.length === list.length && list.every((id) => got.includes(id))) list = got;
+      }
       if (a.to === "top") list.reverse(); // 順番を保ったまま一番上に積む
       for (const id of list) {
         const c = takeCard(g, id);

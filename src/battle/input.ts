@@ -6,6 +6,7 @@ export type CardRef = { id: string; name: string };
 export type InputRequest =
   | { kind: "discard"; n: number; cards: CardRef[]; cleanup?: boolean } // 手札から n 枚捨てる。cleanup = クリンナップの手札の上限 (画面は、「残すカードを選ぶ」形にする)
   | { kind: "choose"; min: number; max: number; cards: CardRef[] } // 見たカードから選ぶ
+  | { kind: "order"; cards: CardRef[]; to: "top" | "bottom" } // ライブラリーの上・底に置く順番 (答えは、上から下へ並べた id)
   | { kind: "may"; what: string } // 「してもよい」
   | { kind: "pay"; n: number } // 「支払わないかぎり」の支払い
   | { kind: "target"; card: string; min: number; max: number; choices: CardRef[] }; // 誘発型能力の対象 (名前つき。画面は、まだ起きていない局面のものを、盤面ではなく、一覧で選ばせる)
@@ -38,6 +39,11 @@ export function makeDecider(me: PlayerId, answers: Answer[]): Decider {
       if (p !== me || from.length === 0 || (!atMost && from.length <= n)) return undefined;
       const got = ids(next({ kind: "choose", min: atMost ? 0 : n, max: n, cards: refs(from) }));
       return from.filter((c) => got.includes(c.id));
+    },
+    order(_g, p, cards, to) {
+      if (p !== me || cards.length < 2) return undefined;
+      const got = ids(next({ kind: "order", cards: refs(cards), to }));
+      return got.flatMap((id) => cards.find((c) => c.id === id) ?? []);
     },
     may(_g, p, what) {
       return p === me ? next({ kind: "may", what }) === true : undefined;

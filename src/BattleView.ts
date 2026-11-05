@@ -447,7 +447,7 @@ export class BattleView extends ItemView {
     const req = this.ctl?.pending?.request;
     if (!req) return;
     this.ui.stage.addClass("is-asking"); // 画像を読む間も、後ろの操作を止める
-    if (req.kind === "discard" || req.kind === "choose") await this.loadImages(req.cards.map((c) => c.name));
+    if (req.kind === "discard" || req.kind === "choose" || req.kind === "order") await this.loadImages(req.cards.map((c) => c.name));
     if (req.kind === "target") await this.loadImages(req.choices.map((c) => c.name));
     if (seq !== this.askSeq) return; // 新しい質問が来た
     this.showAsk(req);
@@ -468,21 +468,30 @@ export class BattleView extends ItemView {
       const row = box.createDiv("mtg-bt-askrow");
       row.createEl("button", { cls: "mod-cta", text: "支払う" }).addEventListener("click", () => reply(true));
       row.createEl("button", { text: "支払わない" }).addEventListener("click", () => reply(false));
-    } else if (req.kind === "discard" || req.kind === "choose" || req.kind === "target") {
+    } else if (req.kind === "discard" || req.kind === "choose" || req.kind === "target" || req.kind === "order") {
       const cards = req.kind === "target" ? req.choices : req.cards;
       const keep = req.kind === "discard" && req.cleanup ? req.cards.length - req.n : undefined; // クリンナップ: 残すカードを選ぶ (選ばなかったものが、墓地へ)
-      const min = keep ?? (req.kind === "discard" ? req.n : req.min);
-      const max = keep ?? (req.kind === "discard" ? req.n : req.max);
+      const min = keep ?? (req.kind === "discard" ? req.n : req.kind === "order" ? cards.length : req.min);
+      const max = keep ?? (req.kind === "discard" ? req.n : req.kind === "order" ? cards.length : req.max);
       const picked = new Set<string>();
       const ok = box.createEl("button", { cls: "mod-cta", text: "確定" });
       const count = head.createSpan();
       const sync = () => {
+        if (req.kind === "order") {
+          count.setText(`ライブラリーの${req.to === "top" ? "上" : "底"}に置く順番: 上にしたいカードから、順にクリック (${picked.size} / ${max})`);
+          [...picked].forEach((id, i) => tileOf.get(id)?.setAttr("data-n", String(i + 1)));
+          for (const [id, t] of tileOf) if (!picked.has(id)) t.removeAttribute("data-n");
+          ok.disabled = picked.size !== max;
+          return;
+        }
         count.setText(title ? `${title} (${picked.size} / ${max})` : `${req.kind === "discard" ? (keep !== undefined ? `手札を ${keep} 枚にする: 残すカードを ${keep} 枚選ぶ` : `手札から ${req.n} 枚捨てる`) : req.kind === "target" ? `${req.card}: 対象を選ぶ` : "カードを選ぶ"} (${picked.size} / ${min === max ? max : `${min}〜${max}`})`);
         ok.disabled = picked.size < min || picked.size > max;
       };
+      const tileOf = new Map<string, HTMLElement>();
       const tiles = box.createDiv("mtg-bt-asktiles");
       for (const c of cards) {
         const tile = tiles.createDiv("mtg-bt-asktile");
+        tileOf.set(c.id, tile);
         const url = this.urls.get(c.name);
         if (url) tile.createEl("img", { attr: { src: url, alt: c.name, draggable: "false" } });
         else tile.createDiv({ cls: "mtg-bt-face", text: c.name });
