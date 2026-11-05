@@ -20,7 +20,6 @@ export const BATTLE_VIEW = "mtg-battle";
 
 const PHASES: [PhaseId, string][] = [["beginning", "開始"], ["main1", "戦闘前メイン"], ["combat", "戦闘"], ["main2", "戦闘後メイン"], ["ending", "最終"]];
 const MANA_COLORS = ["W", "U", "B", "R", "G", "A"] as const;
-const OP_LABEL: Record<string, string> = { mulligan: "マリガン", keep: "キープ", bottom: "底に置く", next: "次へ", use: "カードを使う", activate: "能力を使う", declareAttackers: "攻撃", declareBlockers: "ブロック", assign: "ダメージの割り振り", aiDo: "相手の行動", aiPass: "相手がパス", aiAuto: "相手がパス", aiAttack: "相手の攻撃", aiBlock: "相手のブロック", aiFail: "相手が雑魚 CPU に切り替え" };
 const VIEWER = "you";
 
 interface Entry {
@@ -110,8 +109,8 @@ export class BattleView extends ItemView {
   }
 
   // 局面を (読み直して) 描き始める
-  // ---- 履歴のリプレイ。記録 (入口の呼び出しの並び) を、1件ずつ呼び直して、局面を進める。開くと、自動再生。→ / ← キーで、次・前 (自動再生は止まる)、スペースで再生・停止。戻る・ジャンプは、初期状態から作り直して、その件数まで呼び直す。操作は受けない・API は呼ばない
-  private rp?: { saved: SavedBattle; session: BattleSession; ctl: BattleController; pos: number; timer?: number; bad: number; label: HTMLElement; range: HTMLInputElement; play: HTMLButtonElement };
+  // ---- 履歴のリプレイ。記録 (入口の呼び出しの並び) を、1件ずつ呼び直して、局面を進める。開くと、自動再生。スペースで再生・停止、→ / ← キーで、次・前 (自動再生は止まる)。戻る・ジャンプは、初期状態から作り直して、その件数まで呼び直す。操作は受けない・API は呼ばない
+  private rp?: { saved: SavedBattle; session: BattleSession; ctl: BattleController; pos: number; timer?: number; bad: number };
   private rpBuild(pos: number) {
     const rp = this.rp;
     if (!rp) return;
@@ -133,9 +132,6 @@ export class BattleView extends ItemView {
     const rp = this.rp;
     if (!rp) return;
     this.game = rp.ctl.game;
-    rp.range.value = String(rp.pos);
-    const e = rp.saved.entries[rp.pos - 1];
-    rp.label.setText(`${rp.pos} / ${rp.saved.entries.length}${e ? ` ${OP_LABEL[e.op] ?? e.op}` : ""}${rp.bad ? ` (記録と食い違い ${rp.bad})` : ""}`);
     if (rp.pos >= rp.saved.entries.length) this.rpPause();
     void this.loadImages().then(() => this.paint());
     this.paint();
@@ -145,13 +141,11 @@ export class BattleView extends ItemView {
     if (!rp || rp.timer === undefined) return;
     window.clearInterval(rp.timer);
     rp.timer = undefined;
-    rp.play.setText("▶ 再生");
   }
   private rpPlay() {
     const rp = this.rp;
     if (!rp || rp.timer !== undefined) return;
     if (rp.pos >= rp.saved.entries.length) this.rpBuild(0);
-    rp.play.setText("⏸ 止める");
     rp.timer = window.setInterval(() => this.rpStep(), 700);
   }
   private rpPrev() {
@@ -164,23 +158,13 @@ export class BattleView extends ItemView {
   }
   private stopRp() {
     this.rpPause();
-    this.contentEl.querySelector(".mtg-bt-replay")?.remove();
     this.rp = undefined;
+    this.ui?.next.removeClass("is-hidden");
   }
   private startRp(session: BattleSession) {
-    const saved = session.replay!;
-    const bar = this.ui.stage.createDiv("mtg-bt-replay");
-    const btn = (text: string, f: () => void) => bar.createEl("button", { text }).addEventListener("click", f);
-    btn("⏮", () => (this.rpPause(), this.rpBuild(0)));
-    btn("◀", () => this.rpPrev());
-    btn("▶", () => this.rpNext());
-    const play = bar.createEl("button", { text: "▶ 再生" });
-    const range = bar.createEl("input", { attr: { type: "range", min: "0", max: String(saved.entries.length), value: "0" } });
-    const label = bar.createSpan({ text: "" });
-    bar.createSpan({ cls: "mtg-bt-replay-hint", text: `${saved.self} vs ${saved.opp} / ← → キーで前・次、スペースで再生・停止` });
-    this.rp = { saved, session, ctl: undefined as unknown as BattleController, pos: 0, bad: 0, label, range, play };
-    play.addEventListener("click", () => (this.rp?.timer !== undefined ? this.rpPause() : this.rpPlay()));
-    range.addEventListener("input", () => (this.rpPause(), this.rpBuild(Number(range.value))));
+    // 画面の上のバーも「次へ」ボタンも出さない。操作は、キーだけ (スペース: 再生・停止 / ← →: 前・次)
+    this.ui.next.addClass("is-hidden");
+    this.rp = { saved: session.replay!, session, ctl: undefined as unknown as BattleController, pos: 0, bad: 0 };
     this.rpBuild(0);
     this.rpPlay(); // 開いたら、自動再生
   }

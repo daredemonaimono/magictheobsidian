@@ -396,7 +396,4 @@ button.mtg-color .mtg-sym { width: 20px; height: 20px; display: block; }
 .mtg-bt-histrow.is-picked { background: var(--background-modifier-active-hover); outline: 2px solid var(--interactive-accent); }
 .mtg-bt-histdate { color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .mtg-bt-histres.is-win { color: var(--color-green); } .mtg-bt-histres.is-lose { color: var(--color-red); }
-.mtg-bt-replay { position: absolute; top: 8px; left: 50%; transform: translateX(-50%); z-index: 45; display: flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 10px; background: #000d; color: #fff; font-size: 12px; white-space: nowrap; }
-.mtg-bt-replay button { padding: 2px 8px; }
-.mtg-bt-replay input[type="range"] { width: 200px; }
-.mtg-bt-replay-hint { color: #bbb; }
+.mtg-bt-next.is-hidden { display: none; }
