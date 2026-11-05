@@ -153,7 +153,7 @@ export class BattleController {
 
   // 「次へ」: 自分がパスして、相手も自動でパスする。止まるところ (設定 stops):
   //   always = ステップが進むたび・スタックのものが解決するたび (相手のターンも)
-  //   smart = スタックのものが解決したとき (自分のターン)、自分のメインフェイズ、それ以外は、応答できるもの (canRespond) があるステップだけ
+  //   smart = スタックのものが解決したとき (自分のターン)、それ以外は、できること (canRespond: 土地を出せる・マナ能力を全部使って唱えられる・使える能力) があるステップだけ。メインフェイズも、何もできなければ飛ばす
   // 相手のターンで止まるときは、相手が先にパスして、自分が優先権を持つ (インスタントを唱えられる)。手札が 7 枚を超えて終了するときは、残すカードを聞く
   next(): string | undefined {
     if (this.game.over) return undefined;
@@ -175,7 +175,6 @@ export class BattleController {
   private shouldStop(g: Game, mode: StopMode, r: "resolved" | "stepEnded"): boolean {
     if (mode === "always") return true;
     if (r === "resolved" && g.active === this.me) return true;
-    if (r === "stepEnded" && g.active === this.me && (g.step === "main1" || g.step === "main2")) return true;
     return canRespond(g, this.rules, this.me);
   }
 }

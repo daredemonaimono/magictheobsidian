@@ -16,6 +16,7 @@ const rulesOf = (m: Record<string, Ability[]>): RuleBook => ({ get: (c) => (m[c]
 const rules = rulesOf({
   Island: [{ kind: "activated", body: [call("cost", { tap: true }), call("addMana", { amount: 1, color: "U" })] }],
   Bear: [],
+  Mox: [{ kind: "activated", body: [call("cost", { tap: true }), call("addMana", { amount: 1, color: "U" })] }],
   Think: [{ kind: "spell", body: [{ node: "look", args: { player: "you", count: 3 }, as: "l" }, { node: "choose", args: { from: { ref: "l" }, count: 1 }, as: "c" }, call("move", { cards: { ref: "c" }, to: "hand" })] }],
   Zap: [{ kind: "spell", body: [call("target", { zone: "battlefield", kind: "permanent", type: "creature" }, { as: "t" }), call("damage", { target: { ref: "t" }, amount: 2 })] }],
 });
@@ -119,6 +120,34 @@ const toMain = (c: BattleController) => {
   assert.equal(g.mana["you"], 0);
   assert.deepEqual(g.pool["you"], {});
   assert.equal(g.hands["you"].length, 8, "ターン 3 のドローで1枚");
+}
+// 使えるものがあるときだけ: 何もできなければ、メインフェイズも飛ばす (土地も無く、唱えられるものも無い)。カードの能力のマナ (土地以外) も数える
+{
+  const { g, c } = setup();
+  g.hands["you"] = [];
+  const zap = hold(g, "Zap");
+  g.libraries["you"] = g.libraries["you"].filter((x) => x.name === "Bear");
+  void zap;
+  c.next();
+  assert.ok(g.turn >= 3 && !g.over, "ターン 1 のメインを飛ばして、先へ進む (土地が来るか、唱えられるものが来るまで)");
+}
+{
+  const { g, c } = setup();
+  g.hands["you"] = [];
+  const bear = hold(g, "Bear");
+  g.libraries["you"] = g.libraries["you"].filter((x) => x.name === "Bear");
+  const mox = (id: string) => ({ id, card: { id, name: "Mox", typeLine: "Artifact", mv: 0, owner: "you" }, controller: "you" });
+  g.battlefield.push(mox("m1"));
+  c.next();
+  assert.ok(g.turn >= 3, "マナが1しか出ず、唱えられない: 飛ばす");
+  const { g: g2, c: c2 } = setup();
+  g2.hands["you"] = [];
+  hold(g2, "Bear");
+  g2.libraries["you"] = g2.libraries["you"].filter((x) => x.name === "Bear");
+  g2.battlefield.push(mox("m1"), mox("m2"));
+  c2.next();
+  assert.deepEqual([g2.turn, g2.step], [1, "main1"], "土地以外のマナ能力 (Mox 2つ) で唱えられる: 止まる");
+  void bear;
 }
 // 毎回止まる: ステップごとに止まる (相手のターンも)。相手のステップでは、自分が優先権を持つ
 {
