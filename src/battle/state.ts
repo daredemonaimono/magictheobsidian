@@ -73,7 +73,7 @@ export type GameEvent = { type: "cast"; player: PlayerId; card: GameCard } | { t
 export interface Decider {
   discard?(g: Game, p: PlayerId, n: number, cleanup?: boolean): GameCard[] | undefined; // 捨てるカード
   may?(g: Game, p: PlayerId, what: string): boolean | undefined; // 「してもよい」をするか (既定はする)
-  pay?(g: Game, p: PlayerId, n: number): boolean | undefined; // 「支払わないかぎり」を払うか
+  pay?(g: Game, p: PlayerId, n: number, why?: string): boolean | undefined; // 「支払わないかぎり」を払うか
   choose?(g: Game, p: PlayerId, from: GameCard[], n: number, atMost?: boolean): GameCard[] | undefined; // 選ぶカード (look / choose)
   order?(g: Game, p: PlayerId, cards: GameCard[], to: "top" | "bottom"): GameCard[] | undefined; // ライブラリーの上・底に置く順番 (上から下へ。既定は、並んでいる順)
   target?(g: Game, item: StackItem, call: NodeCall, legal: string[]): string[] | undefined; // 誘発型能力の対象 (誘発時に選ぶ。既定は合法な対象の先頭から)
@@ -102,6 +102,7 @@ export interface Game {
   rngState?: number; // ゲームの中の乱数の状態 (ライブラリーを切る、など。nextRandom)。対戦を始めるとき、種から決める
   handLook?: { by: PlayerId; of: PlayerId; ids: string[]; n: number }; // 手札を見たとき (lookHand): だれが、だれの手札を、どのカードを見たか。n = 何回目か (画面が、新しい「見た」を見つける)
   restrictedMana: Record<PlayerId, { amount: number; color?: PoolKey; type?: string; notType?: string }[]>; // 使い道に制限のあるマナ (「クリーチャーでない呪文を唱えるためにしか使えない」)
+  spellsBy?: Record<PlayerId, number>; // このターンに、プレイヤーごとに唱えた呪文の数 (castLimit)
   spellsCast?: number; // このターンに唱えられた呪文の数 (全員。Storm)。ターンが替わると 0
   landsPlayed: number; // このターンに出した土地の数 (1ターンに1枚)
   life: Record<PlayerId, number>;

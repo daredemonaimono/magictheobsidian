@@ -164,7 +164,7 @@ export function registerTargets(): void {
   node({
     id: "eventPerm",
     title: "引き金のパーマネント",
-    summary: "誘発型能力の引き金になったパーマネント (when の event が enters / leaves / attacks / blocks のときの、そのパーマネント) の id を出力する。as= を付けて target に渡す(「そのクリーチャーは +1/+1」など)",
+    summary: "誘発型能力の引き金になったものの id を出力する(event が enters / leaves / attacks / blocks ならそのパーマネント、cast なら唱えられた呪文)。as= を付けて target に渡す(「そのクリーチャーは +1/+1」「その呪文を打ち消す」など)",
     params: {},
     outputs: { id: "id" },
     only: ["triggered"],

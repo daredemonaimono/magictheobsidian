@@ -3,6 +3,7 @@ import { NodeDef, Value } from "../node";
 import { defineNode as define } from "../registry";
 import { nextRandom } from "../rng";
 import { discardCards, drawCards, Game, Perm, typeIn } from "../state";
+import { enterBlocked, entersTapped } from "../engine/restrict";
 import { findCard, idList, playersFor, takeCard, targetPlayer, who } from "./shared";
 
 // ノード: カードの移動・ライブラリー・手札
@@ -206,7 +207,7 @@ export function registerCards(): void {
     run: (ctx, a): Record<string, Value> => {
       const g = ctx.game;
       const p = ctx.item.controller;
-      const options = g.libraries[p].filter((c) => (typeof a.type !== "string" || typeIn(c.typeLine, a.type)) && (typeof a.name !== "string" || c.name === a.name));
+      const options = g.libraries[p].filter((c) => (typeof a.type !== "string" || typeIn(c.typeLine, a.type)) && (typeof a.name !== "string" || c.name === a.name) && !(a.to === "battlefield" && enterBlocked(g, ctx.rules, c, "library"))); // Grafdigger's Cage
       const n = Math.min(typeof a.count === "number" ? a.count : 1, options.length);
       // 選ぶのは、探す人。入力が無い (相手・自動) ときは、先頭から。断る (0 枚) こともできる
       const picked = (g.decide?.choose?.(g, p, options, n, true) ?? options.slice(0, n)).filter((c) => options.includes(c)).slice(0, n);
@@ -214,7 +215,7 @@ export function registerCards(): void {
         g.libraries[p] = g.libraries[p].filter((x) => x !== c);
         if (a.to === "hand") g.hands[p].push(c);
         else {
-          const perm: Perm = { id: c.id, card: c, controller: p, enteredTurn: g.turn, ...(a.tapped === true ? { tapped: true } : {}), ...(c.loyalty !== undefined ? { counters: { loyalty: c.loyalty } } : {}) };
+          const perm: Perm = { id: c.id, card: c, controller: p, enteredTurn: g.turn, ...(a.tapped === true || entersTapped(g, ctx.rules, c, p) ? { tapped: true } : {}), ...(c.loyalty !== undefined ? { counters: { loyalty: c.loyalty } } : {}) };
           g.battlefield.push(perm);
           g.events.push({ type: "enters", perm });
         }

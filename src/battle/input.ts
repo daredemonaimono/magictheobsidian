@@ -8,7 +8,7 @@ export type InputRequest =
   | { kind: "choose"; min: number; max: number; cards: CardRef[] } // 見たカードから選ぶ
   | { kind: "order"; cards: CardRef[]; to: "top" | "bottom" } // ライブラリーの上・底に置く順番 (答えは、上から下へ並べた id)
   | { kind: "may"; what: string } // 「してもよい」
-  | { kind: "pay"; n: number } // 「支払わないかぎり」の支払い
+  | { kind: "pay"; n: number; why?: string } // 「支払わないかぎり」の支払い
   | { kind: "target"; card: string; min: number; max: number; choices: CardRef[] }; // 誘発型能力の対象 (名前つき。画面は、まだ起きていない局面のものを、盤面ではなく、一覧で選ばせる)
 export type Answer = string[] | boolean; // カード・対象の id の並び / はい・いいえ
 
@@ -48,8 +48,8 @@ export function makeDecider(me: PlayerId, answers: Answer[]): Decider {
     may(_g, p, what) {
       return p === me ? next({ kind: "may", what }) === true : undefined;
     },
-    pay(_g, p, n) {
-      return p === me ? next({ kind: "pay", n }) === true : undefined;
+    pay(_g, p, n, why) {
+      return p === me ? next({ kind: "pay", n, ...(why ? { why } : {}) }) === true : undefined;
     },
     target(g, item, call: NodeCall, legal) {
       const a = call.args as Record<string, unknown>;

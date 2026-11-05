@@ -5,6 +5,7 @@ import { Game, GameCard, GameEvent, Perm, PlayerId, RuleBook, StackItem, typeIn 
 import { spellBody } from "./shared";
 import { stateBased } from "./battlefield";
 import { chooseTargets } from "./targets";
+import { applyUpkeepTaxes } from "./upkeep";
 
 // 誘発型能力 (イベント → スタックに積む)
 
@@ -86,6 +87,7 @@ export function flushEvents(g: Game, rules: RuleBook): void {
       continue;
     }
     if (ev.type === "leaves") for (const o of g.battlefield) if (o.attachedTo === ev.perm.id) delete o.attachedTo; // 付いていた先が離れたら、装備品・オーラは外れる (戻ってきても付き直さない)
+    if (ev.type === "step" && ev.step === "upkeep") applyUpkeepTaxes(g, rules, ev.player); // 維持コスト (Energy Flux・The Tabernacle)
     const sources = [...g.battlefield, ...(ev.type === "leaves" && !g.battlefield.includes(ev.perm) ? [ev.perm] : []), ...g.emblems];
     for (const s of sources) {
       const now = characteristics(g, s, rules);
@@ -96,7 +98,7 @@ export function flushEvents(g: Game, rules: RuleBook): void {
           if (marker ? s.emblem !== marker.args.name : s.emblem !== undefined) continue;
           const at = marker ? 1 : 0;
           const when = ab.body[at];
-          if (ab.kind === "triggered" && when?.node === "when" && matchesEvent(g, s, when, ev)) push(s, ab.body.slice(at + 1), ev.type === "cast" || ev.type === "step" ? undefined : ev.perm.id);
+          if (ab.kind === "triggered" && when?.node === "when" && matchesEvent(g, s, when, ev)) push(s, ab.body.slice(at + 1), ev.type === "step" ? undefined : ev.type === "cast" ? ev.card.id : ev.perm.id);
         }
       }
       if (ev.type === "cast" && !s.emblem && ev.player === s.controller && now.keywords.includes("prowess") && !/\bcreature\b/i.test(ev.card.typeLine)) push(s, PROWESS);

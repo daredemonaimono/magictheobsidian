@@ -13,6 +13,8 @@ export function registerDeclarations(): void {
 
   defineCondition({ id: "alt", title: "別のコストで唱えられた", summary: "この呪文 (出てきたパーマネントの誘発では、そのパーマネント) が、altCost の別のコストで唱えられた (召喚者・Force of Will など)", test: (ctx) => !!ctx.item.cast.alt });
 
+  defineCondition({ id: "noManaSpent", title: "マナを使わずに唱えられた", summary: "引き金になった呪文 (when event=cast の誘発で) が、マナを1点も使わずに唱えられた (別のコスト・0 のコスト)。Lavinia, Azorius Renegade", test: (ctx) => { const s = ctx.game.stack.find((x) => x.id === ctx.item.trigger && !x.ability); return !!s && s.cast.paid === 0; } });
+
   defineCondition({ id: "teamwork", title: "チームワークを用いた", summary: "この呪文がチームワークを用いて唱えられた", test: (ctx) => !!ctx.item.cast.teamwork });
 
   for (let i = 1; i <= 5; i++) defineCondition({ id: `mode${i}`, title: `モード${i}が選ばれた`, summary: `この呪文のモード${i}が選ばれて唱えられた (modes の宣言と使う)`, test: (ctx) => !!ctx.item.cast.modes?.includes(i) });
@@ -133,6 +135,55 @@ export function registerDeclarations(): void {
     title: "コスト軽減",
     summary: "呪文のコストを amount 減らす(マナ総量から引く)。who=you(このパーマネントのコントローラーの呪文。既定) / opponents / all。type・notType で呪文の型を絞る。affect は要らない",
     params: { amount: { type: "number", required: true, min: 1 }, who: { type: "string", choices: ["you", "opponents", "all"] }, type: { type: "string" }, notType: { type: "string" } },
+    ...cont,
+  });
+
+  // 制限・置換の枠 (常在型能力。affect は要らない)。戦場にあるあいだ、エンジンが、そのつど調べる
+  node({
+    id: "castLimit",
+    title: "唱えられる数の制限",
+    summary: "1ターンに唱えられる呪文の数を、プレイヤーごとに amount 以下にする(Archon of Emeria は amount=1)。who=all(全員。既定) / you / opponents。affect は要らない",
+    params: { amount: { type: "number", required: true, min: 0 }, who: { type: "string", choices: ["you", "opponents", "all"] } },
+    ...cont,
+  });
+
+  node({
+    id: "cantCast",
+    title: "唱えられない呪文",
+    summary: "条件に合う呪文を、唱えられなくする。who=opponents(対戦相手が唱える呪文。all 既定 / you)。type・notType で呪文の型を絞る。mvOverLands=true なら、マナ総量が、そのプレイヤーがコントロールする土地の数より大きい呪文だけ(Lavinia は who=opponents notType=creature mvOverLands=true)。affect は要らない",
+    params: { who: { type: "string", choices: ["you", "opponents", "all"] }, type: { type: "string" }, notType: { type: "string" }, mvOverLands: { type: "boolean" } },
+    ...cont,
+  });
+
+  node({
+    id: "cantActivate",
+    title: "起動できない能力",
+    summary: "条件に合うパーマネントの起動型能力(マナ能力も)を、起動できなくする。type・notType でパーマネントの型を絞る(Collector Ouphe は type=artifact)。who で、能力を起動するプレイヤーを絞る(既定は all)。affect は要らない",
+    params: { who: { type: "string", choices: ["you", "opponents", "all"] }, type: { type: "string" }, notType: { type: "string" } },
+    ...cont,
+  });
+
+  node({
+    id: "entersTapped",
+    title: "タップ状態で出る",
+    summary: "条件に合うカードが、タップ状態で戦場に出る(Archon of Emeria の「対戦相手の基本でない土地」は who=opponents type=land notType=Basic)。who は、戦場に出るカードのコントローラー(既定は all)。affect は要らない",
+    params: { who: { type: "string", choices: ["you", "opponents", "all"] }, type: { type: "string" }, notType: { type: "string" } },
+    ...cont,
+  });
+
+  node({
+    id: "cantEnter",
+    title: "戦場に出られない",
+    summary: "from(graveyard / library。graveyard|library のように並べられる)にある、条件に合うカードが、戦場に出られなくする(Grafdigger's Cage は from=graveyard|library type=creature)。探して戦場に出す(search)で効く。affect は要らない",
+    params: { from: { type: "string", required: true }, type: { type: "string" }, notType: { type: "string" } },
+    ...cont,
+  });
+
+  node({
+    id: "upkeepTax",
+    title: "維持コスト",
+    summary: "条件に合うパーマネントは、そのコントローラーのアップキープの開始時に、汎用マナ mana を支払わないかぎり、else=sacrifice(生け贄に捧げる) / destroy(破壊される)(Energy Flux は type=artifact mana=2 else=sacrifice、The Tabernacle at Pendrell Vale は type=creature mana=1 else=destroy)。who は、パーマネントのコントローラー(既定は all)。マナは、払えるなら自動でタップして払い、払うかどうかを聞く。affect は要らない",
+    params: { mana: { type: "number", required: true, min: 1 }, else: { type: "string", required: true, choices: ["sacrifice", "destroy"] }, who: { type: "string", choices: ["you", "opponents", "all"] }, type: { type: "string" }, notType: { type: "string" } },
     ...cont,
   });
 

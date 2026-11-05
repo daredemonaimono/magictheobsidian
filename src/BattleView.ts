@@ -872,7 +872,7 @@ export class BattleView extends ItemView {
       row.createEl("button", { cls: "mod-cta", text: "はい" }).addEventListener("click", () => reply(true));
       row.createEl("button", { text: "いいえ" }).addEventListener("click", () => reply(false));
     } else if (req.kind === "pay") {
-      head.setText(`{${req.n}} を支払いますか? (支払わないと、打ち消される)`);
+      head.setText(`{${req.n}} を支払いますか? (${req.why ?? "支払わないと、打ち消される"})`);
       const row = box.createDiv("mtg-bt-askrow");
       row.createEl("button", { cls: "mod-cta", text: "支払う" }).addEventListener("click", () => reply(true));
       row.createEl("button", { text: "支払わない" }).addEventListener("click", () => reply(false));

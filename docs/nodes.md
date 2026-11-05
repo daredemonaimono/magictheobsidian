@@ -2,11 +2,11 @@
 
 > このファイルは、自動で作られます (`src/battle/nodeDocs.ts`)。直接は書き換えません。ノードを足したら、`npm run docs:nodes` で更新します。ノードは、`src/battle/nodes/` の、カテゴリーごとのファイルにあります。
 
-全 61 個のノード、8 個の条件。
+全 67 個のノード、9 個の条件。
 
 目次: [宣言・コスト・条件](#宣言・コスト・条件) / [対象・数える・絞り込む](#対象・数える・絞り込む) / [カードの移動・ライブラリー・手札](#カードの移動・ライブラリー・手札) / [パーマネント・トークン・カウンター](#パーマネント・トークン・カウンター) / [ダメージ・ライフ・マナ・打ち消し](#ダメージ・ライフ・マナ・打ち消し) / [継続効果](#継続効果)
 
-## 宣言・コスト・条件 (12 個)
+## 宣言・コスト・条件 (18 個)
 
 ### `cost` コスト
 
@@ -85,6 +85,54 @@ Storm の宣言(呪文能力の最初に書く。引数なし)。この呪文を
 呪文のコストを amount 減らす(マナ総量から引く)。who=you(このパーマネントのコントローラーの呪文。既定) / opponents / all。type・notType で呪文の型を絞る。affect は要らない
 
 - 引数: `amount`(number・必須)、`who`(string・you / opponents / all)、`type`(string)、`notType`(string)
+- 書ける能力: static
+- 宣言のノード (エンジンが読む。`if=` は付けられない)
+
+### `castLimit` 唱えられる数の制限
+
+1ターンに唱えられる呪文の数を、プレイヤーごとに amount 以下にする(Archon of Emeria は amount=1)。who=all(全員。既定) / you / opponents。affect は要らない
+
+- 引数: `amount`(number・必須)、`who`(string・you / opponents / all)
+- 書ける能力: static
+- 宣言のノード (エンジンが読む。`if=` は付けられない)
+
+### `cantCast` 唱えられない呪文
+
+条件に合う呪文を、唱えられなくする。who=opponents(対戦相手が唱える呪文。all 既定 / you)。type・notType で呪文の型を絞る。mvOverLands=true なら、マナ総量が、そのプレイヤーがコントロールする土地の数より大きい呪文だけ(Lavinia は who=opponents notType=creature mvOverLands=true)。affect は要らない
+
+- 引数: `who`(string・you / opponents / all)、`type`(string)、`notType`(string)、`mvOverLands`(boolean)
+- 書ける能力: static
+- 宣言のノード (エンジンが読む。`if=` は付けられない)
+
+### `cantActivate` 起動できない能力
+
+条件に合うパーマネントの起動型能力(マナ能力も)を、起動できなくする。type・notType でパーマネントの型を絞る(Collector Ouphe は type=artifact)。who で、能力を起動するプレイヤーを絞る(既定は all)。affect は要らない
+
+- 引数: `who`(string・you / opponents / all)、`type`(string)、`notType`(string)
+- 書ける能力: static
+- 宣言のノード (エンジンが読む。`if=` は付けられない)
+
+### `entersTapped` タップ状態で出る
+
+条件に合うカードが、タップ状態で戦場に出る(Archon of Emeria の「対戦相手の基本でない土地」は who=opponents type=land notType=Basic)。who は、戦場に出るカードのコントローラー(既定は all)。affect は要らない
+
+- 引数: `who`(string・you / opponents / all)、`type`(string)、`notType`(string)
+- 書ける能力: static
+- 宣言のノード (エンジンが読む。`if=` は付けられない)
+
+### `cantEnter` 戦場に出られない
+
+from(graveyard / library。graveyard|library のように並べられる)にある、条件に合うカードが、戦場に出られなくする(Grafdigger's Cage は from=graveyard|library type=creature)。探して戦場に出す(search)で効く。affect は要らない
+
+- 引数: `from`(string・必須)、`type`(string)、`notType`(string)
+- 書ける能力: static
+- 宣言のノード (エンジンが読む。`if=` は付けられない)
+
+### `upkeepTax` 維持コスト
+
+条件に合うパーマネントは、そのコントローラーのアップキープの開始時に、汎用マナ mana を支払わないかぎり、else=sacrifice(生け贄に捧げる) / destroy(破壊される)(Energy Flux は type=artifact mana=2 else=sacrifice、The Tabernacle at Pendrell Vale は type=creature mana=1 else=destroy)。who は、パーマネントのコントローラー(既定は all)。マナは、払えるなら自動でタップして払い、払うかどうかを聞く。affect は要らない
+
+- 引数: `mana`(number・必須)、`else`(string・必須・sacrifice / destroy)、`who`(string・you / opponents / all)、`type`(string)、`notType`(string)
 - 書ける能力: static
 - 宣言のノード (エンジンが読む。`if=` は付けられない)
 
@@ -176,7 +224,7 @@ a と b を、op (lt = a<b / le = a≤b / eq = a=b / ge = a≥b / gt = a>b) で�
 
 ### `eventPerm` 引き金のパーマネント
 
-誘発型能力の引き金になったパーマネント (when の event が enters / leaves / attacks / blocks のときの、そのパーマネント) の id を出力する。as= を付けて target に渡す(「そのクリーチャーは +1/+1」など)
+誘発型能力の引き金になったものの id を出力する(event が enters / leaves / attacks / blocks ならそのパーマネント、cast なら唱えられた呪文)。as= を付けて target に渡す(「そのクリーチャーは +1/+1」「その呪文を打ち消す」など)
 
 - 引数: なし
 - 出力: `id`(id) (`as=名前` で受けて、`$名前` で渡す)
@@ -467,6 +515,7 @@ cards(look / choose の出力)を、持ち主の to へ動かす。to=hand / gra
 
 - `kicked` キッカーされた: この呪文がキッカーされて唱えられた
 - `alt` 別のコストで唱えられた: この呪文 (出てきたパーマネントの誘発では、そのパーマネント) が、altCost の別のコストで唱えられた (召喚者・Force of Will など)
+- `noManaSpent` マナを使わずに唱えられた: 引き金になった呪文 (when event=cast の誘発で) が、マナを1点も使わずに唱えられた (別のコスト・0 のコスト)。Lavinia, Azorius Renegade
 - `teamwork` チームワークを用いた: この呪文がチームワークを用いて唱えられた
 - `mode1` モード1が選ばれた: この呪文のモード1が選ばれて唱えられた (modes の宣言と使う)
 - `mode2` モード2が選ばれた: この呪文のモード2が選ばれて唱えられた (modes の宣言と使う)

@@ -81,7 +81,7 @@ const clone = (l: Ledger): Ledger => ({ pool: { ...l.pool }, colorless: l.colorl
 // 払い方の指定と、払った結果
 export interface SpendOpts {
   preferLife?: boolean; // ファイレクシア・マナは、ライフで払う (払えれば)
-  spent?: { colors: number; life: number }; // commit のとき、払ったマナの色の数・ライフを書き込む
+  spent?: { colors: number; life: number; mana: number }; // commit のとき、払ったマナの色の数・ライフを書き込む
 }
 
 // 払う。commit が偽なら、払えるかだけ調べて、状態は変えない。払えなければ偽 (状態は変えない)
@@ -185,6 +185,7 @@ export function trySpend(g: Game, p: PlayerId, cost: ManaCost, spell: GameCard |
     if (opts.spent) {
       opts.spent.colors = l.colors.size;
       opts.spent.life = l.life;
+      opts.spent.mana = poolSum + colorlessAtStart - poolSumAfter - l.colorless + entries.reduce((a, e, k) => a + e.amount - l.restricted[k], 0);
     }
     entries.forEach((e, k) => (e.amount = l.restricted[k]));
     if (g.restrictedMana[p]) g.restrictedMana[p] = g.restrictedMana[p].filter((e) => e.amount > 0);

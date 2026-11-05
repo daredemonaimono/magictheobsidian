@@ -9,6 +9,7 @@ import { announceTargets, flushEvents } from "./triggers";
 import { checkModes, validate } from "./targets";
 import { costOf, costProblem, payCost } from "./costs";
 import { declareAttackers, declareBlockers } from "./combat";
+import { activationBlocked, castProblem } from "./restrict";
 
 // 呪文を唱える・土地を出す・能力を起動する
 
@@ -33,6 +34,8 @@ export function castSpell(g: Game, p: PlayerId, cardId: string, targets: Record<
 export function castCore(g: Game, p: PlayerId, card: GameCard, body: NodeCall[], targets: Record<string, string>, rules: RuleBook, cast: CastRecord, afterPay: () => void, copy = false): void {
   const item: StackItem = { id: card.id, card, controller: p, targets, cast, ...(copy ? { body, copy: true } : {}) };
   const own = ownCost(card);
+  const banned = castProblem(g, rules, p, card);
+  if (banned) throw new RuleError(banned);
   checkModes(body, cast, card.name);
   validate(g, item, body, card.name, rules);
   const chosen = (["kicked", "teamwork"] as const).filter((f) => cast[f]);
@@ -66,10 +69,11 @@ export function castCore(g: Game, p: PlayerId, card: GameCard, body: NodeCall[],
     g.exile[c.owner].push(c);
   }
   if (delved.length) g.log.push(`墓地の ${delved.length} 枚を追放した (Delve)`);
-  if (g.payManaCosts && !alt) item.cast = { ...cast, colors: cost.spent?.colors ?? 0 };
+  if (g.payManaCosts) item.cast = { ...cast, colors: cost.spent?.colors ?? 0, paid: cost.spent?.mana ?? 0 };
   if (own.x) item.x = Math.max(0, cast.x ?? 0);
   const before = g.spellsCast ?? 0; // この呪文より前に唱えられた数 (Storm)
   g.spellsCast = before + 1;
+  (g.spellsBy ??= {})[p] = (g.spellsBy[p] ?? 0) + 1;
   for (const c of pitch) {
     g.hands[p] = g.hands[p].filter((x) => x !== c);
     g.exile[c.owner].push(c);
@@ -154,6 +158,8 @@ export function activateAbility(g: Game, p: PlayerId, permId: string, index: num
   const effects = ab.body.filter((c) => c.node !== "cost" && c.node !== "timing");
   const item: StackItem = { id: `${perm.id}#${g.serial + 1}`, card: perm.card, controller: p, targets, cast: {}, body: effects, ability: true, source: perm.id, ...(cost.loyaltyX ? { x } : {}) };
   validate(g, item, ab.body, perm.card.name, rules);
+  const blocked = activationBlocked(g, rules, perm, p);
+  if (blocked) throw new RuleError(`${blocked}: ${perm.card.name} の起動型能力は、起動できない`);
   const why = costProblem(g, p, cost, perm, tapIds, rules, undefined, x);
   if (why) throw new RuleError(`${perm.card.name}: ${why}`);
   payCost(g, p, cost, perm, tapIds, undefined, x);

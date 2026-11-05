@@ -17,7 +17,7 @@ export interface CostSpec {
   isLoyalty: boolean; // 忠誠度能力 (ソーサリーのタイミングで、1ターンに1回)
   life: number; // 払うライフ (フェッチランドの「1点のライフを払う」)
   preferLife?: boolean; // ファイレクシア・マナを、ライフで払う
-  spent?: { colors: number; life: number }; // 払ったあと、色の数が入る (payCost が書く)
+  spent?: { colors: number; life: number; mana: number }; // 払ったあと、色の数が入る (payCost が書く)
 }
 
 // manaCost の形が違うときは RuleError (保存時の検査を通らなかった rule でも、エンジンが落ちないように)
@@ -67,7 +67,7 @@ export function costProblem(g: Game, p: PlayerId, cost: CostSpec, source: Perm |
 }
 
 export function payCost(g: Game, p: PlayerId, cost: CostSpec, source: Perm | undefined, tapIds: string[], spell?: GameCard, x = 0): void {
-  const opts: SpendOpts = { preferLife: cost.preferLife, spent: { colors: 0, life: 0 } };
+  const opts: SpendOpts = { preferLife: cost.preferLife, spent: { colors: 0, life: 0, mana: 0 } };
   if (!trySpend(g, p, cost.sym, spell, true, opts)) throw new Error("マナが払えない (costProblem を通っていない)");
   cost.spent = opts.spent;
   if (cost.isLoyalty && source) {

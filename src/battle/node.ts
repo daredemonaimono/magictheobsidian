@@ -62,6 +62,7 @@ export interface CastRecord {
   x?: number; // マナコストの {X} に選んだ値
   delve?: string[] | true; // 変異ではなく Delve: 追放する墓地のカードの id (true = 払うのに要るぶんだけ、先頭から)
   phyLife?: boolean; // ファイレクシア・マナを、ライフで払う
+  paid?: number; // 払ったマナの数 (0 = マナを使わずに唱えた)
   colors?: number; // 払ったマナの色の数 (収束 / spentColors)。唱えたときに、エンジンが書く
   tap?: string[]; // 追加コストでタップするクリーチャー (チームワーク)
   modes?: number[];

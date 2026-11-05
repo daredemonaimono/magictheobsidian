@@ -1,5 +1,6 @@
 import { characteristics } from "../continuous";
 import { CastRecord } from "../node";
+import { entersTapped } from "./restrict";
 import { prepareAbilityOf, Game, GameCard, Perm, PlayerId, RuleBook } from "../state";
 
 // 戦場に出る・離れる・状況起因処理
@@ -10,6 +11,7 @@ export function enterBattlefield(g: Game, card: GameCard, controller: PlayerId, 
   // 「準備済状態で戦場に出る」: 準備呪文を持つクリーチャーだけ
   if (prepareAbilityOf(rules, card.name) && (rules.get(card.name)?.abilities ?? []).some((a) => a.kind === "static" && a.body.some((c) => c.node === "entersPrepared"))) perm.prepared = true;
   if (card.loyalty !== undefined) perm.counters = { loyalty: card.loyalty }; // プレインズウォーカーは、初期忠誠度で戦場に出る
+  if (entersTapped(g, rules, card, controller)) perm.tapped = true; // 「タップ状態で戦場に出る」(Archon of Emeria)
   g.battlefield.push(perm);
   g.events.push({ type: "enters", perm });
 }
