@@ -179,6 +179,7 @@ export class BattleView extends ItemView {
       if (!this.ctl || this.targeting) return; // 対象を選んでいる間は、進めない
       const sel = this.combatSel;
       if (sel?.kind === "attack" && sel.picks.size) this.run(() => this.ctl!.declareAttackers([...sel.picks])); // 攻撃するクリーチャーを選んでいれば、「攻撃する」
+      else if (sel?.kind === "block") this.run(() => this.ctl!.declareBlockers([...sel.pairs].map(([blocker, attacker]) => ({ blocker, attacker })))); // ブロックの指定 (選んでいなければ、空 = ブロックしない)
       else this.run(() => this.ctl!.next()); // 選んでいなければ、「次へ」(攻撃しない)
     });
     const stack = stage.createDiv("mtg-bt-stack");
@@ -332,10 +333,10 @@ export class BattleView extends ItemView {
     return true;
   }
   private nextLabel = "次へ";
-  // 攻撃するクリーチャーを選んでいる間は、「次へ」ボタンが「攻撃する」になる (選びを全部やめたら、「次へ」に戻る)
+  // 攻撃するクリーチャー / ブロックの組を選んでいる間は、「次へ」ボタンが「攻撃する」「ブロックする」になる (選びを全部やめたら、「次へ」に戻る。ブロックは、「次へ」で、ブロックしないと宣言する)
   private applyNextLabel() {
     const sel = this.combatSel;
-    this.ui.next.setText(sel?.kind === "attack" && sel.picks.size ? `攻撃する (${sel.picks.size} 体)` : this.nextLabel);
+    this.ui.next.setText(sel?.kind === "attack" && sel.picks.size ? `攻撃する (${sel.picks.size} 体)` : sel?.kind === "block" && sel.pairs.size ? `ブロックする (${sel.pairs.size} 体)` : this.nextLabel);
   }
   private paintCombat() {
     this.applyNextLabel();
@@ -354,6 +355,15 @@ export class BattleView extends ItemView {
     if (sel.kind === "attack") {
       for (const id of ch.mine) at(id)?.classList.add(sel.picks.has(id) ? "is-cmb-picked" : "is-cmb-able"); // 攻撃の選択は、盤面の光りと「次へ」ボタンだけ (上の帯は出さない)
       return;
+    }
+    if (sel.kind === "block" && ch.kind === "block") {
+      for (const id of ch.mine) at(id)?.classList.add(sel.pairs.has(id) ? "is-cmb-picked" : id === sel.cur ? "is-cmb-picked" : "is-cmb-able");
+      if (sel.cur) for (const id of ch.attackers) at(id)?.classList.add("is-cmb-target"); // ブロックするクリーチャーを選んだら、ブロック先の候補 (攻撃クリーチャー) が光る
+      for (const [b, a] of sel.pairs) {
+        const el = at(b);
+        if (el) el.dataset.blockTo = nameOf(a);
+      }
+      return; // ブロックの選択は、盤面の光りと「次へ」ボタンだけ (上の帯は出さない)
     }
     const bar = st.createDiv("mtg-bt-tbar");
     this.cbar = bar;
@@ -395,17 +405,6 @@ export class BattleView extends ItemView {
       }
       ok.addEventListener("click", () => this.run(() => this.ctl!.assign(Object.fromEntries(sel.vals))));
       return;
-    }
-    if (sel.kind === "block" && ch.kind === "block") {
-      for (const id of ch.mine) at(id)?.classList.add(sel.pairs.has(id) ? "is-cmb-picked" : id === sel.cur ? "is-cmb-picked" : "is-cmb-able");
-      if (sel.cur) for (const id of ch.attackers) at(id)?.classList.add("is-cmb-target");
-      for (const [b, a] of sel.pairs) {
-        const el = at(b);
-        if (el) el.dataset.blockTo = nameOf(a);
-      }
-      bar.createSpan({ text: sel.cur ? `${nameOf(sel.cur)} がブロックする相手を選ぶ` : `ブロックするクリーチャーを選ぶ (${sel.pairs.size} 体)` });
-      bar.createEl("button", { cls: "mod-cta", text: sel.pairs.size ? `確定 (${sel.pairs.size} 体でブロック)` : "確定" }).addEventListener("click", () => sel.pairs.size && this.run(() => this.ctl!.declareBlockers([...sel.pairs].map(([blocker, attacker]) => ({ blocker, attacker })))));
-      bar.createEl("button", { text: "ブロックしない" }).addEventListener("click", () => this.run(() => this.ctl!.declareBlockers([])));
     }
   }
 
