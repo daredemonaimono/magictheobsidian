@@ -1,4 +1,5 @@
 import { App, TFile, normalizePath } from "obsidian";
+import { cpuMulligan } from "./battle/cpu";
 import { BattleSession, CardData, DeckChoice, DeckData, MatchError, buildMatch } from "./battle/deckToGame";
 import { parseRule } from "./battle/ruleMd";
 import { CardRule } from "./battle/node";
@@ -62,9 +63,10 @@ export async function loadMatchInputs(app: App, selfName: string, oppName: strin
   return { self, opp, rules };
 }
 
-export async function startBattle(app: App, selfName: string, oppName: string): Promise<BattleSession> {
+export async function startBattle(app: App, selfName: string, oppName: string, cpu = true): Promise<BattleSession> {
   const { self, opp, rules } = await loadMatchInputs(app, selfName, oppName);
   const game = buildMatch(self, opp, rules);
-  game.mulligan = { count: 0 }; // 開始前に、マリガンを聞く (相手は常にキープ)
+  game.mulligan = { count: 0 }; // 開始前に、マリガンを聞く
+  if (cpu) cpuMulligan(game, "opp", Math.random); // 相手 (雑魚 CPU) は、簡単な決まりで、先にマリガンする (何もしない相手は、しない)
   return { game, rules };
 }

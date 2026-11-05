@@ -74,7 +74,7 @@ export class BattleView extends ItemView {
   private watcher?: ResizeObserver;
 
   // getSession = 対戦の局面 (無ければ、サンプルの局面)。対戦を始め直したときは、begin() で読み直す
-  constructor(leaf: WorkspaceLeaf, private getSession: () => BattleSession | undefined, private getStops: () => StopMode = () => "smart") {
+  constructor(leaf: WorkspaceLeaf, private getSession: () => BattleSession | undefined, private getStops: () => StopMode = () => "smart", private getCpu: () => boolean = () => false) {
     super(leaf);
   }
 
@@ -98,7 +98,7 @@ export class BattleView extends ItemView {
     const { game, rules } = session ?? sampleBattle();
     this.game = game;
     this.rules = rules;
-    this.ctl = session ? new BattleController(game, rules, VIEWER) : undefined;
+    this.ctl = session ? new BattleController(game, rules, VIEWER, Math.random, this.getCpu() ? this.game.players.find((p) => p !== VIEWER) : undefined) : undefined;
     this.tried.clear();
     this.askEl = undefined;
     this.targeting = undefined;

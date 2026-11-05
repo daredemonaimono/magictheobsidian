@@ -1,5 +1,6 @@
 import { Action, abilityLabels, actionsFor, autoTargets, slotsOf, tryAction } from "./actions";
 import { RuleError, TargetSlot, activateAbility, canAttackWith, castSpell, passPriority, playLand } from "./engine";
+import { cpuAct } from "./cpu";
 import { Answer, InputRequest, NeedInput, makeDecider } from "./input";
 import { HAND_SIZE, putBottom, redraw } from "./mulligan";
 import { Game, PlayerId, RuleBook } from "./state";
@@ -16,7 +17,7 @@ export class BattleController {
   private redo?: (answers: Answer[]) => string | undefined;
   private answers: Answer[] = [];
 
-  constructor(readonly game: Game, readonly rules: RuleBook, readonly me: PlayerId = "you", private rng: () => number = Math.random) {}
+  constructor(readonly game: Game, readonly rules: RuleBook, readonly me: PlayerId = "you", private rng: () => number = Math.random, private cpu?: PlayerId) {}
 
   // ---- マリガン (ロンドン)。game.mulligan があるあいだ、操作・「次へ」は受けない
   mulligan(): string | undefined {
@@ -151,19 +152,37 @@ export class BattleController {
     return abilityLabels(this.rules, perm.card.name).map((label, index) => ({ index, label, usable: tryAction(this.game, this.rules, this.me, { kind: "activate", perm: permId, index }) === undefined }));
   }
 
-  // 「次へ」: 次のステップへ進む (次の「できること」までではない)。ただし、攻撃できるクリーチャーがいない戦闘ステップは飛ばす。自分がパスして、相手も自動でパスする。ステップ (戦闘は、その中の段階) が進んだとき、または、スタックのものが1つ解決したときに止まる。
-  // 相手のターンで止まるときは、相手が先にパスして、自分が優先権を持つ (インスタントを唱えられる)。手札が 7 枚を超えて終了するときは、残すカードを聞く。
+  // 「次へ」: 次のステップへ進む (次の「できること」までではない)。ただし、攻撃できるクリーチャーがいない戦闘ステップは飛ばす。自分がパスして、相手も自動でパスする。
+  // ステップ (戦闘は、その中の段階) が進んだとき、または、スタックのものが1つ解決したときに止まる。手札が 7 枚を超えて終了するときは、残すカードを聞く。
+  // 雑魚 CPU (cpu) がいれば、相手のターンのメインフェイズで、優先権を持ったときに動く (土地を出す・呪文を唱える)。呪文を唱えたら、スタックに積んで止まる (自分が応答できる)。
   // 何もできないときに、時間ゲージで自動で進めるかは、画面の設定 (止まり方) による
   next(): string | undefined {
     if (this.game.over) return undefined;
     if (this.game.mulligan) return this.fail("次へ", "マリガンを終えてください");
     return this.perform("次へ", (g) => {
+      const cpu = this.cpu;
+      // CPU が優先権を持っているとき、動く。呪文を唱えたら、パスして (自分に応答させて)、真を返す
+      const cpuTurn = (): boolean => {
+        if (!cpu) return false;
+        for (let k = 0; k < 20 && g.priority === cpu; k++) {
+          const a = cpuAct(g, this.rules, cpu);
+          if (a === "land") continue;
+          if (a === "cast") passPriority(g, cpu, this.rules);
+          return a === "cast";
+        }
+        return false;
+      };
       for (let n = 0; n < MAX_PASSES && !g.over && g.priority; n++) {
-        const r = passPriority(g, g.priority, this.rules);
+        if (g.priority === cpu && cpuTurn()) return;
+        const r = passPriority(g, g.priority!, this.rules);
         if (r === "passed") continue;
         if (g.over) return;
-        if (r === "stepEnded" && g.step === "combat" && !g.battlefield.some((x) => x.attacking) && !canAttackWith(g, g.active, this.rules)) continue; // 攻撃できるクリーチャーがいなければ、戦闘ステップは飛ばす (戦闘開始・攻撃クリーチャー指定・戦闘終了のあいだも)
-        if (g.active !== this.me && g.priority !== this.me) passPriority(g, g.priority!, this.rules); // 相手が先にパスして、自分に優先権を渡す
+        // 攻撃できるクリーチャーがいなければ、戦闘ステップは飛ばす (戦闘開始・攻撃クリーチャー指定・戦闘終了のあいだも)。CPU は、段階6まで、攻撃しない
+        if (r === "stepEnded" && g.step === "combat" && !g.battlefield.some((x) => x.attacking) && (g.active === cpu || !canAttackWith(g, g.active, this.rules))) continue;
+        if (g.active !== this.me && g.priority !== this.me) {
+          if (cpuTurn()) return; // 相手のターンの始まり・解決のあと: CPU が先に動く
+          if (g.priority !== this.me) passPriority(g, g.priority!, this.rules); // 動かなければ、パスして、自分に優先権を渡す
+        }
         return;
       }
     }, []);
