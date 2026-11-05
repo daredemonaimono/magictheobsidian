@@ -45,3 +45,14 @@ await assert.rejects(askOpenAI({ apiKey: "sk-secret", model: "m", system: "S", u
 await assert.rejects(askOpenAI({ apiKey: "k", model: "m", system: "S", user: "U", http: rec(200, { choices: [{ message: { content: "" } }] }).http }), /空の返事/);
 await assert.rejects(askGemini({ apiKey: "k", model: "m", system: "S", user: "U", http: rec(200, { promptFeedback: { blockReason: "SAFETY" } }).http }), /拒否/);
 console.log("providers ok");
+// 会話の続き (messages): OpenAI はそのまま、Gemini は assistant を model に
+{
+  const msgs = [{ role: "user" as const, content: "q" }, { role: "assistant" as const, content: "a" }, { role: "user" as const, content: "q2" }];
+  const o = rec(200, { choices: [{ message: { content: "ok" } }] });
+  await askOpenAI({ apiKey: "k", model: "m", system: "S", user: "", messages: msgs, http: o.http });
+  assert.deepEqual(o.calls[0].body.messages, [{ role: "system", content: "S" }, ...msgs]);
+  const g = rec(200, { candidates: [{ content: { parts: [{ text: "ok" }] } }] });
+  await askGemini({ apiKey: "k", model: "m", system: "S", user: "", messages: msgs, http: g.http });
+  assert.deepEqual(g.calls[0].body.contents.map((c: { role: string }) => c.role), ["user", "model", "user"]);
+}
+console.log("providers multi-turn ok");

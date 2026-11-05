@@ -46,7 +46,7 @@ export class DeckMemoDraftModal extends Modal {
     const sync = () => {
       const ms = chosen();
       const chars = draftPrompt(this.deck, "", ms).length;
-      info.setText(this.ask ? `${ms.length} 試合を送ります(約 ${chars} 字)。` : "AI のキーが未設定です。設定の「対戦の相手」→「AI」で、キーを入れてください。");
+      info.setText(this.ask ? `${ms.length} 試合を送ります(約 ${chars} 字)。` : "AI のキーが未設定です。設定の「AI の接続」でキーを入れ、「AI の使い分け」で「メモの下書き」の AI を選んでください。");
       make.disabled = !this.ask || !ms.length;
     };
     sel.addEventListener("change", () => {

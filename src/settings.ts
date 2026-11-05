@@ -1,4 +1,5 @@
 import { App, Notice, Plugin, PluginSettingTab, SecretComponent, Setting } from "obsidian";
+import { AiSettings, DEFAULT_AI, PROVIDERS, Provider, SCENES, Scene } from "./battle/aiConfig";
 import { CURRENCIES, updateRates } from "./prices";
 
 // Scryfall の言語コード
@@ -22,28 +23,18 @@ export interface Settings {
   listArt: boolean; // サイドバーの一覧に、カードのイラストを薄く出す
   dashboardTab: boolean; // 新しいタブ (空のタブ) をダッシュボードにする
   currency: string; // 資産価格の通貨 (EUR で取れた価格はこれに換算する)
-  sidebar: boolean; // カード一覧を右サイドバーに出す。オフなら画面内の検索欄 (従来の表示)
-  claudeKeySecret: string; // API キーの、Obsidian のキーチェーン (app.secretStorage) 上の名前。キーそのものは data.json に書かない
-  claudeModel: string; // ノードの組み立てに使うモデル
-  battleOpponent: "cpu" | "claude" | "passive"; // 対戦の相手。cpu = 雑魚 CPU (土地を出す・呪文を唱える) / claude = Claude の AI (API を、判断のたびに呼ぶ) / passive = 何もしない
-  battleModel: string; // Claude の AI の相手が使うモデル
-  battleProvider: "claude" | "openai" | "gemini"; // 対戦の相手の AI の種類
-  openaiKeySecret: string; // OpenAI (と互換 API) の API キーの、キーチェーン上の名前
-  openaiModel: string;
-  openaiBaseUrl: string; // 互換 API (Ollama・LM Studio など) なら、その URL。既定は OpenAI
-  geminiKeySecret: string;
-  geminiModel: string;
+  sidebar: boolean; // カード一覧・対戦のプレビューとログを右サイドバーに出す。オフなら画面内 (従来の表示)
+  ai: AiSettings; // AI の接続 (キー) と、場面ごとの使い分け (対戦の相手・ルールを書かせる・メモの下書き)
+  battleOpponent: "cpu" | "claude" | "passive"; // 対戦の相手。cpu = 雑魚 CPU / claude = AI (API を、判断のたびに呼ぶ。種類は、ai の battle) / passive = 何もしない
   battleHistory: boolean; // 対戦の履歴を Battles/ に保存する (終わったとき・途中でやめたとき)
   battleEffects: boolean; // 対戦の演出 (ダメージ・ライフの数字を大きく出す)
   battleStops: "always" | "smart"; // 対戦の優先権の止まり方。always = 毎回止まる / smart = 使えるものがあるときだけ (メインフェイズでは、必ず止まる)
 }
 
-export const DEFAULT_SETTINGS: Settings = { textLang: "en", cardLang: "en", sidebar: true, listArt: true, dashboardTab: true, currency: "USD", claudeKeySecret: "", claudeModel: "claude-opus-5-5", battleStops: "smart", battleOpponent: "cpu", battleModel: "claude-sonnet-5-5", battleProvider: "claude", openaiKeySecret: "", openaiModel: "gpt-4o-mini", openaiBaseUrl: "https://api.openai.com/v1", geminiKeySecret: "", geminiModel: "gemini-2.5-flash", battleHistory: true, battleEffects: true };
+export const DEFAULT_SETTINGS: Settings = { textLang: "en", cardLang: "en", sidebar: true, listArt: true, dashboardTab: true, currency: "USD", ai: DEFAULT_AI, battleStops: "smart", battleOpponent: "cpu", battleHistory: true, battleEffects: true };
 
-// 設定で選んだ名前のキーを、キーチェーンから取る。未設定・見つからないときは null
 // 設定の名前で、キーチェーンから取る (空・見つからないときは null)
 export const secretKey = (app: App, name: string): string | null => (name ? app.secretStorage.getSecret(name) : null);
-export const claudeKey = (app: App, s: Settings): string | null => (s.claudeKeySecret ? app.secretStorage.getSecret(s.claudeKeySecret) : null);
 
 export class SettingsTab extends PluginSettingTab {
   constructor(app: App, plugin: Plugin, private settings: Settings, private save: () => Promise<void>, private onSidebar: () => void) {
@@ -51,6 +42,11 @@ export class SettingsTab extends PluginSettingTab {
   }
   display() {
     this.containerEl.empty();
+    const section = (name: string, desc?: string) => {
+      const st = new Setting(this.containerEl).setName(name).setHeading();
+      if (desc) st.setDesc(desc);
+    };
+    section("一般 / General");
     const lang = (name: string, desc: string, key: "textLang" | "cardLang") =>
       new Setting(this.containerEl)
         .setName(name)
@@ -108,6 +104,7 @@ export class SettingsTab extends PluginSettingTab {
       );
     lang("効果テキストの言語 / Text language", "カード名と効果テキスト。無い言語は英語で表示。新しく取得するカードから反映。", "textLang");
     lang("カードの言語 / Card language", "カード画像とイラスト選択の言語。その言語の版が無いカードは英語になる。新しく取得するカードから反映。", "cardLang");
+    // ---- 対戦: 相手・進み方・履歴・演出
     // 切り替えボタン (トグル式): 1つだけ選べる
     const toggles = <T extends string>(name: string, desc: string, options: [T, string][], current: T, onPick: (v: T) => Promise<void>) => {
       const st = new Setting(this.containerEl).setName(name).setDesc(desc);
@@ -116,13 +113,14 @@ export class SettingsTab extends PluginSettingTab {
         const b = row.createEl("button", { text: label, cls: v === current ? "is-on" : "" });
         b.addEventListener("click", async () => {
           await onPick(v);
-          this.display(); // 選んだものに合わせて、下の設定を出し直す
+          this.display(); // 選んだものに合わせて、画面を出し直す
         });
       }
     };
+    section("対戦 / Battle");
     toggles<"cpu" | "claude" | "passive">(
       "対戦の相手 / Battle opponent",
-      "雑魚 CPU: 機械的な決まりで動く(マリガン・土地・呪文・攻撃・ブロック)。AI: 盤面を API で渡して、判断させる(判断のたびに、有料の API を呼ぶことがある。キーが無い・失敗したときは、以降、雑魚 CPU になる)。何もしない: 相手は何もしない(自分の操作の確認用)。開いている対戦の画面を開き直したときと、新しく始める対戦から反映。",
+      "雑魚 CPU: 機械的な決まりで動く(マリガン・土地・呪文・攻撃・ブロック)。AI: 盤面を API で渡して、判断させる(判断のたびに、有料の API を呼ぶことがある。どの AI かは、下の「AI の使い分け」。キーが無い・失敗したときは、以降、雑魚 CPU になる)。何もしない: 相手は何もしない(自分の操作の確認用)。開いている対戦の画面を開き直したときと、新しく始める対戦から反映。",
       [["cpu", "雑魚 CPU"], ["claude", "AI"], ["passive", "何もしない"]],
       this.settings.battleOpponent,
       async (v) => {
@@ -130,59 +128,6 @@ export class SettingsTab extends PluginSettingTab {
         await this.save();
       },
     );
-    if (this.settings.battleOpponent === "claude") {
-      toggles<"claude" | "openai" | "gemini">(
-        "AI の種類 / AI provider",
-        "対戦の相手に使う AI。Claude・OpenAI・Gemini。OpenAI の欄は、Ollama・LM Studio など、同じ形の互換 API (自分のパソコンで動かす AI) にも使える (URL を変える)。盤面の情報が、選んだ会社のサーバーに送られる。",
-        [["claude", "Claude"], ["openai", "OpenAI"], ["gemini", "Gemini"]],
-        this.settings.battleProvider,
-        async (v) => {
-          this.settings.battleProvider = v;
-          await this.save();
-        },
-      );
-      const key = (name: string, desc: string, field: "openaiKeySecret" | "geminiKeySecret") =>
-        new Setting(this.containerEl)
-          .setName(name)
-          .setDesc(desc)
-          .addComponent((el) =>
-            new SecretComponent(this.app, el).setValue(this.settings[field]).onChange(async (id) => {
-              this.settings[field] = id ?? "";
-              await this.save();
-            }),
-          );
-      const text = (name: string, desc: string, field: "openaiModel" | "openaiBaseUrl" | "geminiModel") =>
-        new Setting(this.containerEl)
-          .setName(name)
-          .setDesc(desc)
-          .addText((t) =>
-            t.setValue(this.settings[field]).onChange(async (v) => {
-              this.settings[field] = v.trim() || DEFAULT_SETTINGS[field];
-              await this.save();
-            }),
-          );
-      if (this.settings.battleProvider === "claude") {
-        new Setting(this.containerEl)
-          .setName("Claude のモデル / Model")
-          .setDesc("大きいモデルほど強いが、遅く、高い。API キーは、下の「AI(ノードの組み立て)」の欄のキーを使う。")
-          .addDropdown((d) =>
-            d
-              .addOptions({ "claude-haiku-5-5": "Haiku 5.5 (速い・安い)", "claude-sonnet-5-5": "Sonnet 5.5", "claude-opus-5-5": "Opus 5.5", "claude-fable-5-1": "Fable 5.1 (強い・高い)" })
-              .setValue(this.settings.battleModel)
-              .onChange(async (v) => {
-                this.settings.battleModel = v;
-                await this.save();
-              }),
-          );
-      } else if (this.settings.battleProvider === "openai") {
-        key("OpenAI の API キー / API key", "Obsidian のキーチェーンに保存される。自分のパソコンの AI (互換 API) で、キーが要らないときは、空のままでよい。", "openaiKeySecret");
-        text("モデル名 / Model", "例: gpt-4o-mini。モデル名は、各社の最新のものを、自分で入れる。", "openaiModel");
-        text("URL (互換 API のとき) / Base URL", "既定は https://api.openai.com/v1。Ollama なら http://localhost:11434/v1 。LM Studio なら http://localhost:1234/v1 。", "openaiBaseUrl");
-      } else {
-        key("Gemini の API キー / API key", "Obsidian のキーチェーンに保存される。", "geminiKeySecret");
-        text("モデル名 / Model", "例: gemini-2.5-flash。モデル名は、各社の最新のものを、自分で入れる。", "geminiModel");
-      }
-    }
     new Setting(this.containerEl)
       .setName("対戦の止まり方 / Battle priority stops")
       .setDesc("「次へ」は、次のステップへ進む。何もできないステップ(土地を出せない・唱えられない・使える能力が無い。土地やカードの能力のマナを全部出したと仮定)で、「使えるものがあるときだけ」は、真ん中の帯の時間ゲージ(3秒)が進んで、自動で次へ進む。できることがあるステップは、ゲージが満タンのまま待つ。「毎回止まる」は、ゲージが動かず、自分で「次へ」を押すまで待つ。")
@@ -206,31 +151,57 @@ export class SettingsTab extends PluginSettingTab {
       );
     new Setting(this.containerEl)
       .setName("対戦の演出 / Battle effects")
-      .setDesc("ダメージやライフが変わったとき、数字を大きく出して、ふくらませて消す。重いと感じたらオフ。")
+      .setDesc("ダメージやライフが変わったとき、数字を大きく出して、ふくらませて消す。相手の手札を見たとき、手札を前に出す。重いと感じたらオフ。")
       .addToggle((t) =>
         t.setValue(this.settings.battleEffects).onChange(async (v) => {
           this.settings.battleEffects = v;
           await this.save();
         }),
       );
-    new Setting(this.containerEl).setName("AI(ノードの組み立て) / AI").setHeading();
+
+    // ---- AI: 接続 (キー) は種類ごとに 1 つ。使い分けは、場面ごと。種類を切り替えても、キーも、各種類のモデルも、残る
+    const ai = this.settings.ai;
+    section("AI の接続 / AI connections", "API キーは、Obsidian のキーチェーンに保存される(設定のファイルには、保存先の名前だけが残る)。使わない種類は、空のままでよい。種類を切り替えても、ここの設定は、消えない。");
+    const keyRow = (p: Provider, name: string, desc: string) =>
+      new Setting(this.containerEl)
+        .setName(name)
+        .setDesc(desc)
+        .addComponent((el) =>
+          new SecretComponent(this.app, el).setValue(ai.keys[p]).onChange(async (id) => {
+            ai.keys[p] = id ?? "";
+            await this.save();
+          }),
+        );
+    keyRow("claude", "Claude の API キー / Claude API key", "Anthropic。");
+    keyRow("openai", "OpenAI の API キー / OpenAI API key", "OpenAI。自分のパソコンで動かす AI (互換 API) で、キーが要らないときは、空のままでよい。");
     new Setting(this.containerEl)
-      .setName("API キー / Claude API key")
-      .setDesc("Obsidian のキーチェーンに保存される。このプラグインの設定(data.json)には、保存先の名前だけが残る。")
-      .addComponent((el) =>
-        new SecretComponent(this.app, el).setValue(this.settings.claudeKeySecret).onChange(async (id) => {
-          this.settings.claudeKeySecret = id ?? "";
-          await this.save();
-        }),
-      );
-    new Setting(this.containerEl)
-      .setName("モデル / Model")
-      .setDesc("安く済ませたいときは claude-sonnet-5-5 など。")
+      .setName("OpenAI の URL (互換 API のとき) / Base URL")
+      .setDesc("既定は https://api.openai.com/v1。Ollama なら http://localhost:11434/v1 。LM Studio なら http://localhost:1234/v1 。URL を変えると、キー無しでも使える。")
       .addText((t) =>
-        t.setValue(this.settings.claudeModel).onChange(async (v) => {
-          this.settings.claudeModel = v.trim() || DEFAULT_SETTINGS.claudeModel;
+        t.setValue(ai.openaiBaseUrl).onChange(async (v) => {
+          ai.openaiBaseUrl = v.trim() || DEFAULT_AI.openaiBaseUrl;
           await this.save();
         }),
       );
+    keyRow("gemini", "Gemini の API キー / Gemini API key", "Google。");
+
+    section("AI の使い分け / AI by task", "場面ごとに、使う AI の種類と、モデルを選ぶ(例: 対戦の相手は、安い Haiku。ルールを書かせるのは、強い Opus)。種類を切り替えても、各種類のモデルは、残る。モデル名は、各社の最新のものを、自分で入れる(初期値は、仮のもの)。盤面・履歴・カードの情報が、選んだ会社のサーバーに送られる。");
+    const hint: Record<Provider, string> = { claude: "例: claude-haiku-5-5(安い)/ claude-sonnet-5-5 / claude-opus-5-5 / claude-fable-5-1(強い・高い)", openai: "例: gpt-4o-mini", gemini: "例: gemini-2.5-flash" };
+    for (const [scene, label, desc] of SCENES) {
+      const sc = ai.scenes[scene as Scene];
+      toggles<Provider>(label, desc, PROVIDERS, sc.provider, async (v) => {
+        sc.provider = v;
+        await this.save();
+      });
+      new Setting(this.containerEl)
+        .setName(`　モデル (${PROVIDERS.find(([id]) => id === sc.provider)![1]})`)
+        .setDesc(hint[sc.provider])
+        .addText((t) =>
+          t.setValue(sc.models[sc.provider]).onChange(async (v) => {
+            sc.models[sc.provider] = v.trim() || DEFAULT_AI.scenes[scene as Scene].models[sc.provider];
+            await this.save();
+          }),
+        );
+    }
   }
 }
