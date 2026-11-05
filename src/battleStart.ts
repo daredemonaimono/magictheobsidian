@@ -100,7 +100,7 @@ export async function startBattle(app: App, selfName: string, oppName: string, c
   return { ...s, oppMemo, aiMulligan };
 }
 async function aiMulliganOf(s: BattleSession, ask: AskAi, memo: string): Promise<MulliganResult> {
-  return aiMulligan(s.game, "opp", s.rng!, ask, memo);
+  return aiMulligan(s.game, "opp", s.rng!, ask, memo, s.self && s.opp ? { mine: s.opp, foe: s.self } : undefined);
 }
 
 // 履歴のリプレイ: 記録と同じデッキ・種から初期状態を作る関数を持った、対戦のセッション (いまのデッキ・ルールのノートを読む)

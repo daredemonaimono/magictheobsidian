@@ -1,5 +1,5 @@
 import assert from "node:assert";
-import { AI_SYSTEM, aiOptions, aiParse, aiTrivial, matchIds } from "../src/battle/ai";
+import { AI_SYSTEM, aiOptions, aiParse, aiTrivial, matchIds, withMemo } from "../src/battle/ai";
 import { aiStep } from "../src/battle/aiRun";
 import { Ability, NodeCall } from "../src/battle/node";
 import { registerBuiltinNodes } from "../src/battle/nodes";
@@ -196,6 +196,11 @@ assert.deepEqual(aiParse('考え中 {メモ} です {"choice": 1, "why": "}"}'),
   assert.equal(await aiStep(c, undefined, "opp"), "failed");
   assert.ok(g.log.some((l) => l.includes("API キーが未設定")));
 }
+// ---- メモの渡し方: デッキ名を添えて、「[[デッキ名]] が相手のときは〜」を、いまの対戦相手に合わせて読ませる。メモが無ければ、そのまま
+assert.equal(withMemo("S", ""), "S");
+assert.ok(withMemo("S", "メモ本文", { mine: "Gentry", foe: "Mono R" }).includes("あなたのデッキ: [[Gentry]]。いまの対戦相手のデッキ: [[Mono R]]。"));
+assert.ok(withMemo("S", "メモ本文", { mine: "Gentry", foe: "Gentry" }).includes("(同じデッキ同士: ミラー)"));
+assert.ok(withMemo("S", "メモ本文").endsWith("メモ本文"));
 // ---- id の読み替え: 接頭辞・大文字小文字・名前 (同じ名前が1つだけのとき) も受ける。直せないものは unknown
 {
   const valid = [{ id: "Bear#3", name: "Bear" }, { id: "Geist#9", name: "Geist" }, { id: "Geist#10", name: "Geist" }];

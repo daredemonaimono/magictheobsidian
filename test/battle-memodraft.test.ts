@@ -20,10 +20,15 @@ assert.ok(c[40].includes("省略") && c[0] === "行 0" && c[150] === "行 299");
 // 下書きの頼み: 勝敗・相手・使った側・AI の理由 (AI が使った試合だけ)・今のメモ
 const p = draftPrompt("Gentry", "土地2枚ならマリガン", [b({ notes: [{ n: 1, why: "土地を先に置く" }] }), b({ self: "Gentry", opp: "Mine", result: "win" })]);
 assert.ok(p.includes("今のメモ:\n土地2枚ならマリガン"));
-assert.ok(p.includes("試合 1: Gentry は 負け (9 ターン)。相手のデッキ: Mine。Gentry を使った側: AI"));
+assert.ok(p.includes("試合 1: Gentry は 負け (9 ターン)。Gentry が相手にしたデッキ: [[Mine]]"));
+assert.ok(p.includes("ログの「あなた」= [[Mine]] (人)、ログの「相手」= [[Gentry]] (AI)"), "ログの あなた・相手 が、どのデッキか");
 assert.ok(p.includes("AI が返した理由 (抜粋): 土地を先に置く"));
-assert.ok(p.includes("試合 2: Gentry は 勝ち") && p.includes("Gentry を使った側: 人"));
+assert.ok(p.includes("試合 2: Gentry は 勝ち") && p.includes("ログの「あなた」= [[Gentry]] (人)、ログの「相手」= [[Mine]] (AI)"));
 assert.equal(p.split("AI が返した理由").length - 1, 1, "人が使った試合には、理由を付けない");
 assert.ok(draftPrompt("Gentry", "", []).includes("今のメモ: (まだ無い)"));
 assert.ok(DRAFT_SYSTEM.includes("記録に根拠のあること"));
+// ミラー (同じデッキ同士): どちらのデッキか分からなくならない・「相手は」と決めつけない指示
+const mirror = draftPrompt("Gentry", "", [b({ self: "Gentry", opp: "Gentry" })]);
+assert.ok(mirror.includes("同じデッキ同士 (ミラー)") && mirror.includes("ログの「あなた」= [[Gentry]] (人)、ログの「相手」= [[Gentry]] (AI)"));
+assert.ok(DRAFT_SYSTEM.includes("「相手は〜」と、書きません") && DRAFT_SYSTEM.includes("[[デッキ名]] が相手のときは"));
 console.log("memodraft ok");
