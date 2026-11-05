@@ -292,6 +292,8 @@ button.mtg-color .mtg-sym { width: 20px; height: 20px; display: block; }
 .mtg-bt-stackcard img { display: block; width: 100%; border-radius: 6%; border: 3px solid #4bb0ff; box-shadow: 0 6px 16px #000a; box-sizing: border-box; }
 .mtg-bt-stackcard.is-opp img { border-color: #e55; }
 .mtg-bt-stackcard .mtg-bt-face { padding: 20px 6px; background: #3a434b; border: 3px solid #4bb0ff; border-radius: 6px; text-align: center; font-weight: 700; }
+.mtg-bt-stacktext { margin-top: 3px; background: #000c; color: #eee; padding: 4px 8px; border-radius: 4px; white-space: pre-wrap; line-height: 1.35; max-height: 34vh; overflow-y: auto; font-size: 11px; }
+.mtg-bt-stacktext:empty { display: none; }
 .mtg-bt-stacklabel { margin-top: 3px; background: #000c; color: #fff; padding: 3px 8px; border-radius: 4px; font-weight: 700; line-height: 1.3; }
 .mtg-bt-stack.is-on { display: flex; }
 .mtg-bt-stackitem { background: #000b; border-left: 4px solid #4bb0ff; padding: 3px 8px; border-radius: 4px; } .mtg-bt-stackitem.is-opp { border-color: #e55; }
@@ -377,3 +379,11 @@ button.mtg-color .mtg-sym { width: 20px; height: 20px; display: block; }
 
 /* Claude の相手が考えている間 */
 .mtg-bt-think { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 40; padding: 4px 14px; border-radius: 14px; background: #000c; color: #fff; font-size: 13px; pointer-events: none; }
+
+/* 使えない理由などのお知らせ */
+.mtg-bt-toast { position: absolute; left: 50%; bottom: 26%; transform: translateX(-50%); z-index: 50; max-width: 70%; padding: 8px 18px; border-radius: 8px; background: #7a1f1f; color: #fff; font-weight: 700; box-shadow: 0 4px 14px #000a; pointer-events: none; animation: mtg-bt-toast 3.2s ease-out forwards; }
+@keyframes mtg-bt-toast { 0% { opacity: 0; transform: translate(-50%, 10px); } 8% { opacity: 1; transform: translate(-50%, 0); } 80% { opacity: 1; } 100% { opacity: 0; } }
+
+/* 払うマナの選択 */
+.mtg-bt-asktile .mtg-bt-manalabel { position: absolute; right: 4px; bottom: 4px; min-width: 1.6em; padding: 0 4px; border-radius: 10px; background: #000c; color: #fff; font-weight: 700; text-align: center; }
+.mtg-bt-asktile.is-off { opacity: .4; cursor: default; }

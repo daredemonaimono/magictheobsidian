@@ -156,7 +156,7 @@ const toMain = (c: BattleController) => {
   toMain(c);
   g.mana["you"] = 1;
   g.pool["you"] = { U: 1 };
-  assert.ok(c.use(bear.id)?.includes("マナが足りない"));
+  assert.ok(c.use(bear.id)?.includes("マナが足りません"), "マナ 1 では、MV2 は唱えられない (出せるマナが、ほかに無い)");
   g.mana["you"] = 2;
   g.pool["you"] = { U: 2 };
   assert.equal(c.use(bear.id), undefined);

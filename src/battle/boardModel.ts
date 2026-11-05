@@ -1,4 +1,4 @@
-import { actionsFor, canRespond, uselessMana } from "./actions";
+import { Action, actionsFor, canRespond, manaOnly, withAllMana } from "./actions";
 import { characteristics } from "./continuous";
 import { attackersAt, canAttackPerm, isSick } from "./engine";
 import { getNode } from "./registry";
@@ -100,6 +100,12 @@ function permView(g: Game, rules: RuleBook, p: Perm, imageOf: ImageOf, playable:
   };
 }
 
+function loyaltyOf(s: StackItem): { loyalty?: number; loyaltyX?: boolean } {
+  const cost = s.ability ? s.body?.find((c) => c.node === "cost") : undefined;
+  if (cost?.args.loyaltyX === true) return { loyaltyX: true };
+  const n = cost?.args.loyalty !== undefined ? Number(cost.args.loyalty) : NaN;
+  return Number.isNaN(n) ? {} : { loyalty: n };
+}
 // スタックの能力の説明: 忠誠度能力なら「+1: 〜」「−2: 〜」、誘発型なら「誘発: 〜」、それ以外は「起動: 〜」。〜は、効果のノードの名前 (コスト・タイミング・対象は除く)
 function abilityLabel(s: StackItem): string | undefined {
   if (!s.ability || !s.body) return undefined;
@@ -155,6 +161,10 @@ export interface StackView {
   name: string;
   controller: "self" | "opp";
   ability: boolean;
+  typeLine?: string;
+  loyalty?: number; // 忠誠度能力の、忠誠度コスト (+1 → 1、−2 → −2)
+  loyaltyX?: boolean;
+  modes?: number[]; // 選んだモード
   label?: string; // 能力のとき、どの能力か ("+1: トークンを作る" / "−2: 手札に戻す" / "誘発: 引く")
   image?: string; // カードの画像 (呪文・能力の発生源)
 }
@@ -190,7 +200,13 @@ const LOG_LINES = 50;
 export function boardModel(g: Game, rules: RuleBook, viewer: PlayerId, imageOf: ImageOf): BoardModel {
   const oppId = g.players.find((p) => p !== viewer) ?? viewer;
   const side = (p: PlayerId): "self" | "opp" => (p === viewer ? "self" : "opp");
-  const can = new Set(actionsFor(g, rules, viewer).filter((a) => !uselessMana(g, rules, viewer, a)).map((a) => (a.kind === "activate" ? a.perm : a.card)));
+  // 光らせる (操作できる) もの: 土地・マナ能力のマナを全部出せるとして、使える手札のカード・マナ以外の能力 (足りないぶんは、使うとき、自動でタップする) +
+  // いまマナを出す意味のある、マナを出す能力 (使い道が無いときは、光らない)
+  const sim = withAllMana(g, rules, viewer);
+  const simActs = actionsFor(sim, rules, viewer);
+  const isMana = (a: Action) => a.kind === "activate" && ((x) => !!x && manaOnly(x.body))(rules.get(g.battlefield.find((p) => p.id === a.perm)?.card.name ?? "")?.abilities.filter((y) => y.kind === "activated")[a.index]);
+  const useful = simActs.some((a) => a.kind === "cast" || (a.kind === "activate" && !isMana(a)));
+  const can = new Set([...simActs.filter((a) => !isMana(a)), ...actionsFor(g, rules, viewer).filter((a) => isMana(a) && useful)].map((a) => (a.kind === "activate" ? a.perm : a.card)));
   let choice: CombatChoice | undefined;
   if (!g.over && !g.mulligan && g.step === "combat" && g.priority === viewer && !g.stack.length) { // スタックが空のとき (戦闘の最初の誘発が解決してから)
     if (g.combatPhase === "attackers" && !g.attackersDeclared && g.active === viewer) {
@@ -237,7 +253,7 @@ export function boardModel(g: Game, rules: RuleBook, viewer: PlayerId, imageOf: 
     idle: !g.over && !g.mulligan && g.priority === viewer && !choice && !canRespond(g, rules, viewer), // 戦闘の指定を選ぶときは、自動で進めない
     canNext: !g.over && !g.mulligan,
     nextLabel: g.stack.length ? "解決する" : "次へ",
-    stack: g.stack.map((s) => ({ id: s.id, name: s.card.name, controller: side(s.controller), ability: !!s.ability, ...(abilityLabel(s) ? { label: abilityLabel(s)! } : {}), ...(imageOf(s.card) !== undefined ? { image: imageOf(s.card)! } : {}) })),
+    stack: g.stack.map((s) => ({ id: s.id, name: s.card.name, controller: side(s.controller), ability: !!s.ability, typeLine: s.card.typeLine, ...(abilityLabel(s) ? { label: abilityLabel(s)! } : {}), ...loyaltyOf(s), ...(s.cast.modes?.length ? { modes: [...s.cast.modes] } : {}), ...(imageOf(s.card) !== undefined ? { image: imageOf(s.card)! } : {}) })),
     log: g.log.slice(-LOG_LINES),
   };
   if (g.mulligan) out.mulligan = { ...g.mulligan };

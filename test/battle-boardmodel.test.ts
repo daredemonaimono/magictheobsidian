@@ -150,8 +150,8 @@ const none = () => undefined;
   g.stack.push({ id: "s1", card: card("Bolt", "Instant"), controller: "B", targets: {}, cast: {} }, { id: "s2", card: card("Relic", "Artifact"), controller: "A", targets: {}, cast: {}, ability: true });
   const m = boardModel(g, noRules, "A", none);
   assert.deepEqual(m.stack, [
-    { id: "s1", name: "Bolt", controller: "opp", ability: false },
-    { id: "s2", name: "Relic", controller: "self", ability: true },
+    { id: "s1", name: "Bolt", controller: "opp", ability: false, typeLine: "Instant" }, // typeLine は、スタックの効果テキストのため (前提を足した)
+    { id: "s2", name: "Relic", controller: "self", ability: true, typeLine: "Artifact" },
   ]);
 }
 
@@ -311,7 +311,8 @@ const none = () => undefined;
   g.battlefield.push({ id: "i1", card: isl, controller: "A" });
   g.hands["A"].push({ id: "b1", name: "Bear", typeLine: "Creature — Bear", mv: 1, manaCost: "{U}", owner: "A" });
   let m = boardModel(g, book, "A", none);
-  assert.deepEqual([m.self.lands[0].playable, m.self.hand[0].playable, m.canNext, m.nextLabel], [true, false, true, "次へ"]);
+  // 土地のマナを全部出せるとして、唱えられるカードは光る (前提を変えた: 以前は、先にマナを出していないと光らなかった。いまは、カードを選ぶと、足りないマナを自動で払う)
+  assert.deepEqual([m.self.lands[0].playable, m.self.hand[0].playable, m.canNext, m.nextLabel], [true, true, true, "次へ"]);
   g.battlefield[0].tapped = true;
   g.mana["A"] = 1;
   g.pool["A"] = { U: 1 };

@@ -1,9 +1,10 @@
-import { Action, abilityLabels, actionsFor, autoTargets, slotsOf, tryAction, uselessMana } from "./actions";
+import { Action, abilityLabels, actionsFor, autoTargets, manaOnly, slotsOf, tryAction, uselessMana, withAllMana } from "./actions";
 import { RuleError, TargetSlot, activateAbility, attackersAt, canAttackWith, castSpell, declareAttackers, declareBlockers, assignDamage, passPriority, playLand } from "./engine";
 import { AiOption, aiAttackers, aiBlockers, aiOptions } from "./ai";
-import { cpuAct, cpuAttack, cpuBlock, cpuDo } from "./cpu";
+import { cpuAct, cpuAttack, cpuBlock, cpuDo, tapFor, tapOne } from "./cpu";
 import { Answer, InputRequest, NeedInput, makeDecider } from "./input";
 import { HAND_SIZE, putBottom, redraw } from "./mulligan";
+import { CastRecord } from "./node";
 import { Game, PlayerId, RuleBook } from "./state";
 
 export type StopMode = "always" | "smart"; // 優先権の止まり方 (設定)。smart = 何もできないとき、時間ゲージで自動で進む。always = 自分で「次へ」
@@ -21,6 +22,7 @@ export class BattleController {
   constructor(readonly game: Game, readonly rules: RuleBook, readonly me: PlayerId = "you", private rng: () => number = Math.random, private cpu?: PlayerId, private ai?: PlayerId) {}
 
   // ---- Claude の AI の相手 (段階7)。API を呼ぶのは画面。ここは、「いま AI の判断が要るか」と、判断の実行だけ (API は呼ばない)
+  aiTokens = { input: 0, output: 0 }; // この対戦で、AI が使ったトークン数
   private aiDone = new Set<string>(); // 攻撃・ブロックを、ターンごとに1回だけ聞く
   get aiActive(): boolean {
     return !!this.ai;
@@ -94,12 +96,15 @@ export class BattleController {
     }, []);
   }
   // API が使えなかったとき: 以降は雑魚 CPU の決まりで動く。いまの判断も、その決まりで1回ぶん済ませる
-  aiFail(kind: "act" | "attack" | "block", reason: string): void {
+  // permanent = API そのものが使えない (キー未設定・通信の失敗): 以降ずっと雑魚 CPU。そうでなければ (返事が使えなかった): この判断だけ、雑魚 CPU の決まりで済ませて、次はまた Claude
+  aiFail(kind: "act" | "attack" | "block", reason: string, permanent = true): void {
     const ai = this.ai;
     if (!ai) return;
-    this.game.log.push(`相手 (Claude) は使えない: ${reason}。以降は、雑魚 CPU の決まりで動く`);
-    this.ai = undefined;
-    this.cpu = ai;
+    this.game.log.push(`相手 (Claude) は使えない: ${reason}。${permanent ? "以降は、雑魚 CPU の決まりで動く" : "この判断だけ、雑魚 CPU の決まりで動く"}`);
+    if (permanent) {
+      this.ai = undefined;
+      this.cpu = ai;
+    } else this.aiDone.add(`${this.game.turn}:${kind}`); // 攻撃・ブロックは、この判断のあと、聞き直さない
     this.perform("相手", (x) => {
       if (kind === "block") cpuBlock(x, this.rules, ai);
       else if (kind === "attack") {
@@ -230,8 +235,92 @@ export class BattleController {
     return slotsOf(this.game, this.rules, this.me, { kind: "activate", perm: permId, index });
   }
 
-  // 手札のカードを使う (土地は出す、それ以外は唱える)。targets = 選んだ対象 (as → id をカンマでつなぐ)
-  use(cardId: string, targets?: Record<string, string>): string | undefined {
+  // 手札のカードを、いま使えない理由 (使えるなら undefined)。カードを選んだときに、画面が見せる (「マナが足りません」など)。土地・マナ能力のマナを全部出せるとして、調べる
+  whyNot(cardId: string): string | undefined {
+    const g = this.game;
+    if (g.mulligan) return "マリガンを終えてください";
+    const card = g.hands[this.me].find((c) => c.id === cardId);
+    if (!card) return "手札に無い";
+    const a: Action = /\bLand\b/.test(card.typeLine) ? { kind: "land", card: cardId } : { kind: "cast", card: cardId };
+    const why = tryAction(withAllMana(g, this.rules, this.me), this.rules, this.me, a, autoTargets(slotsOf(g, this.rules, this.me, a)));
+    const msg = why?.replace("マナが足りない", "マナが足りません");
+    return msg ? (msg.startsWith(card.name) ? msg : `${card.name}: ${msg}`) : undefined;
+  }
+
+  // ---- 払うマナの選択。足りないマナを自動でタップするとき、タップする土地に選べる余地があれば、選ばせる
+  private manaIndexOf(g: Game, perm: { card: { name: string } }): number {
+    return this.rules.get(perm.card.name)?.abilities.filter((a) => a.kind === "activated").findIndex((a) => manaOnly(a.body)) ?? -1;
+  }
+  // マナを出せる自分のパーマネント (タップしていない・いま使える)。label = 出るマナ ("U" など)
+  manaSources(g: Game = this.game): { id: string; name: string; label: string }[] {
+    const out: { id: string; name: string; label: string }[] = [];
+    for (const p of g.battlefield) {
+      if (p.controller !== this.me || p.tapped) continue;
+      const i = this.manaIndexOf(g, p);
+      if (i < 0 || tryAction(g, this.rules, this.me, { kind: "activate", perm: p.id, index: i }) !== undefined) continue;
+      const ab = this.rules.get(p.card.name)!.abilities.filter((a) => a.kind === "activated")[i];
+      const m = ab.body.find((c) => c.node === "addMana");
+      out.push({ id: p.id, name: p.card.name, label: `${Number(m?.args.amount ?? 1) > 1 ? Number(m?.args.amount) : ""}${String(m?.args.color ?? "C")}` });
+    }
+    return out;
+  }
+  // 行動 a を、いまのプールだけでは払えず、足りないぶんを、種類の違うマナ源のどれかから選べるとき、その一覧 (選ぶ余地が無ければ undefined)
+  payChoice(a: Action, targets: Record<string, string> | undefined, cast?: CastRecord): { id: string; name: string; label: string }[] | undefined {
+    const g = this.game;
+    const src = this.manaSources(g);
+    if (src.length < 2 || tryAction(g, this.rules, this.me, a, targets, cast) === undefined) return undefined; // 選べない / もう払える
+    if (new Set(src.map((s) => `${s.name}|${s.label}`)).size < 2) return undefined; // 全部同じ種類 (島だけ、など): どれでも同じ
+    const x = structuredClone({ ...g, decide: undefined }) as Game;
+    let k = 0;
+    while (tryAction(x, this.rules, this.me, a, targets, cast) !== undefined && tapOne(x, this.me, this.rules)) k++;
+    if (tryAction(x, this.rules, this.me, a, targets, cast) !== undefined || k >= src.length) return undefined; // 払えない / 全部タップが要る
+    return src;
+  }
+  // 選んだマナ源 (ids) をタップすれば、払えるか
+  payableWith(a: Action, targets: Record<string, string> | undefined, cast: CastRecord | undefined, ids: string[]): boolean {
+    const x = structuredClone({ ...this.game, decide: undefined }) as Game;
+    for (const id of ids) {
+      const p = x.battlefield.find((q) => q.id === id);
+      const i = p ? this.manaIndexOf(x, p) : -1;
+      if (!p || i < 0) return false;
+      try {
+        activateAbility(x, this.me, id, i, {}, this.rules);
+      } catch {
+        return false;
+      }
+    }
+    return tryAction(x, this.rules, this.me, a, targets, cast) === undefined;
+  }
+  private tapChosen(x: Game, ids: string[] | undefined) {
+    for (const id of ids ?? []) {
+      const p = x.battlefield.find((q) => q.id === id && q.controller === this.me && !q.tapped);
+      const i = p ? this.manaIndexOf(x, p) : -1;
+      if (p && i >= 0) activateAbility(x, this.me, id, i, {}, this.rules);
+    }
+  }
+
+  // 唱えるときに選べる、マナだけの追加コスト (キッカーなど)のうち、いまの (出せるマナを全部使った) マナで払えるもの。払える (=唱えるときに、払うか選べる) ときだけ返す
+  // 払うかどうかを選ぶのは、「総コストを決める」とき (対象を選ぶより前)。マナは、そのあと、払う
+  kickChoices(cardId: string): { flag: "kicked" | "teamwork"; cost: string }[] {
+    const g = this.game;
+    const card = g.hands[this.me].find((x) => x.id === cardId);
+    const body = card && !/\bLand\b/.test(card.typeLine) ? this.rules.get(card.name)?.abilities.find((a) => a.kind === "spell")?.body : undefined;
+    if (!card || !body) return [];
+    const act: Action = { kind: "cast", card: cardId };
+    const t = autoTargets(slotsOf(g, this.rules, this.me, act));
+    const sim = withAllMana(g, this.rules, this.me); // 土地・マナ能力のマナを全部出せるとして、払えるか (足りないマナは、唱えるとき、自動でタップする)
+    if (tryAction(sim, this.rules, this.me, act, t) !== undefined) return []; // 払わずに唱えることも、できなければ、聞かない
+    const out: { flag: "kicked" | "teamwork"; cost: string }[] = [];
+    for (const flag of ["kicked", "teamwork"] as const) {
+      const d = body.filter((c) => c.node === "additionalCost" && c.args.flag === flag);
+      if (!d.length || d.some((c) => c.args.tapCreatures !== undefined)) continue; // クリーチャーをタップする追加コストは、まだ選ばせない
+      if (tryAction(sim, this.rules, this.me, act, t, { [flag]: true }) === undefined) out.push({ flag, cost: d.map((c) => (typeof c.args.manaCost === "string" ? c.args.manaCost : `{${Number(c.args.mana ?? 0)}}`)).join("") });
+    }
+    return out;
+  }
+
+  // 手札のカードを使う (土地は出す、それ以外は唱える)。targets = 選んだ対象 (as → id をカンマでつなぐ)。cast = 払う追加コスト (kicked など)
+  use(cardId: string, targets?: Record<string, string>, cast?: CastRecord, tapIds?: string[]): string | undefined {
     const g = this.game;
     if (g.mulligan) return this.fail("使えない", "マリガンを終えてください");
     const card = g.hands[this.me].find((c) => c.id === cardId);
@@ -239,12 +328,17 @@ export class BattleController {
     const land = /\bLand\b/.test(card.typeLine);
     const a: Action = land ? { kind: "land", card: cardId } : { kind: "cast", card: cardId };
     const t = targets ?? autoTargets(slotsOf(g, this.rules, this.me, a)); // 試し撃ちと本番で、同じ対象を使う
-    const why = tryAction(g, this.rules, this.me, a, t);
-    if (why) return this.fail(card.name, why);
+    // 土地・マナ能力のマナを全部出せるとして、払えるか。払えれば、足りないぶんは、唱えるとき、自動でタップする (先にタップしておいたぶんは、そのまま使う)
+    const why = tryAction(withAllMana(g, this.rules, this.me), this.rules, this.me, a, t, cast);
+    if (why) return this.fail(card.name, why.replace("マナが足りない", "マナが足りません"));
     return this.perform(card.name, (x) => {
-      x.log.push(`あなたが ${card.name} を${land ? "出した" : "唱えた"}`);
+      x.log.push(`あなたが ${card.name} を${land ? "出した" : cast?.kicked ? "キッカーを払って唱えた" : cast?.teamwork ? "チームワークで唱えた" : "唱えた"}`);
       if (land) playLand(x, this.me, cardId, this.rules);
-      else castSpell(x, this.me, cardId, t, this.rules);
+      else {
+        this.tapChosen(x, tapIds); // 選んだ土地を、先にタップ (選ばなければ、自動)
+        tapFor(x, this.rules, this.me, a, t, cast);
+        castSpell(x, this.me, cardId, t, this.rules, cast);
+      }
     }, []);
   }
 
@@ -255,20 +349,25 @@ export class BattleController {
   }
 
   // 戦場の自分のパーマネントの、index 番目の起動型能力
-  activate(permId: string, index: number, targets?: Record<string, string>): string | undefined {
+  activate(permId: string, index: number, targets?: Record<string, string>, tapIds?: string[]): string | undefined {
     const g = this.game;
     if (g.mulligan) return this.fail("使えない", "マリガンを終えてください");
     const { perm, ab } = this.abilityOf(permId, index);
     if (!perm || !ab) return this.fail(permId, "起動できる能力が無い");
     const act: Action = { kind: "activate", perm: permId, index };
     const t = targets ?? autoTargets(slotsOf(g, this.rules, this.me, act));
-    const why = tryAction(g, this.rules, this.me, act, t);
-    if (why) return this.fail(perm.card.name, why);
-    if (uselessMana(g, this.rules, this.me, act)) return this.fail(perm.card.name, "いまは、このマナの使い道が無い (唱えられる呪文・使える能力が無い)");
     const manaOnly = ab.body.some((c) => c.node === "addMana") && ab.body.every((c) => c.node === "addMana" || c.node === "cost");
+    // マナを出す能力はそのまま。マナを払う能力 (装備など) は、出せるマナを全部使えるとして調べ、足りないぶんは、自動でタップする
+    const why = tryAction(manaOnly ? g : withAllMana(g, this.rules, this.me), this.rules, this.me, act, t);
+    if (why) return this.fail(perm.card.name, why.replace("マナが足りない", "マナが足りません"));
+    if (uselessMana(g, this.rules, this.me, act)) return this.fail(perm.card.name, "いまは、このマナの使い道が無い (唱えられる呪文・使える能力が無い)");
     const name = perm.card.name;
     return this.perform(name, (x) => {
       x.log.push(manaOnly ? `あなたが ${name} をタップしてマナを出した` : `あなたが ${name} の能力を起動した`);
+      if (!manaOnly) {
+        this.tapChosen(x, tapIds);
+        tapFor(x, this.rules, this.me, act, t);
+      }
       activateAbility(x, this.me, permId, index, t, this.rules);
     }, []);
   }

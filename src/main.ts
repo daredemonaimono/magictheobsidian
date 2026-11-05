@@ -114,7 +114,13 @@ export default class MagicTheObsidian extends Plugin {
     this.registerView(DECK_VIEW, (leaf) => new DeckView(leaf, this.settings));
     this.registerView(BATTLE_VIEW, (leaf) => new BattleView(leaf, () => this.battleSession, () => this.settings.battleStops, () => this.settings.battleOpponent, () => this.settings.battleEffects, () => {
       const key = claudeKey(this.app, this.settings);
-      return key ? (system, user) => askClaude({ apiKey: key, model: this.settings.battleModel, system, messages: [{ role: "user", content: user }], http: obsidianHttp }) : undefined;
+      return key
+        ? async (system, user) => {
+            let usage: { input: number; output: number } | undefined;
+            const text = await askClaude({ apiKey: key, model: this.settings.battleModel, system, messages: [{ role: "user", content: user }], http: obsidianHttp, onUsage: (u) => (usage = u) });
+            return { text, ...(usage ?? {}) };
+          }
+        : undefined;
     }));
     this.registerView(DASHBOARD_VIEW, (leaf) => new DashboardView(leaf, { collection: () => void this.openOrReveal(COLLECTION_VIEW), deck: () => void this.openOrReveal(DECKLIST_VIEW), cards: () => void this.openOrReveal(CARDS_VIEW) }));
     this.registerView(CARDS_VIEW, (leaf) => new CardsView(leaf, this.settings));

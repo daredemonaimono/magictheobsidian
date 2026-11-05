@@ -4,7 +4,12 @@ import { attackersAt, canAttackPerm } from "./engine";
 import { Game, Perm, PlayerId, RuleBook } from "./state";
 
 // Claude の AI の相手 (段階7)。この中は、API を呼ばない (純粋な関数)。盤面と選択肢を文章にして、返事を読み取るだけ。呼ぶのは画面 (BattleView)、実行はコントローラー (BattleController.ai*)
-export type AskAi = (system: string, user: string) => Promise<string>; // 画面が渡す、API の呼び出し (キーが無ければ、渡さない)
+export interface AiReply {
+  text: string;
+  input?: number; // 使ったトークン数
+  output?: number;
+}
+export type AskAi = (system: string, user: string) => Promise<AiReply>; // 画面が渡す、API の呼び出し (キーが無ければ、渡さない)
 export interface AiOption {
   id: number;
   label: string;
@@ -97,14 +102,28 @@ export function aiBlockers(g: Game, rules: RuleBook, p: PlayerId): Perm[] {
 export const aiBlockPrompt = (g: Game, rules: RuleBook, p: PlayerId): string =>
   `${aiDescribe(g, rules, p)}\n\nブロックを指定する段階です。攻撃されています:\n${attackersAt(g, p).map((x) => permLine(g, x, rules)).join("\n")}\nブロックできる、あなたのクリーチャー:\n${aiBlockers(g, rules, p).map((x) => permLine(g, x, rules)).join("\n")}\n\nブロックの組を選んでください。`;
 
-// 返事から JSON のオブジェクトを読み取る (前後に文章や ``` があってもよい)。読めなければ undefined
+// 返事から、最初の JSON のオブジェクトを読み取る (前後に文章や ``` があってもよい。波かっこの対応で、切り出す)。読めなければ undefined
 export function aiParse(text: string): Record<string, unknown> | undefined {
-  const m = text.match(/\{[\s\S]*\}/);
-  if (!m) return undefined;
-  try {
-    const v = JSON.parse(m[0]);
-    return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : undefined;
-  } catch {
-    return undefined;
+  for (let start = text.indexOf("{"); start >= 0; start = text.indexOf("{", start + 1)) {
+    let depth = 0;
+    let inStr = false;
+    for (let i = start; i < text.length; i++) {
+      const ch = text[i];
+      if (inStr) {
+        if (ch === "\\") i++;
+        else if (ch === '"') inStr = false;
+      } else if (ch === '"') inStr = true;
+      else if (ch === "{") depth++;
+      else if (ch === "}" && --depth === 0) {
+        try {
+          const v = JSON.parse(text.slice(start, i + 1));
+          if (v && typeof v === "object" && !Array.isArray(v)) return v as Record<string, unknown>;
+        } catch {
+          /* 次の { から */
+        }
+        break;
+      }
+    }
   }
+  return undefined;
 }

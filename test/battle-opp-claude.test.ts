@@ -1,5 +1,6 @@
 import assert from "node:assert";
 import { AI_SYSTEM, aiOptions, aiParse, aiTrivial } from "../src/battle/ai";
+import { aiStep } from "../src/battle/aiRun";
 import { Ability, NodeCall } from "../src/battle/node";
 import { registerBuiltinNodes } from "../src/battle/nodes";
 import { BattleController } from "../src/battle/play";
@@ -150,5 +151,46 @@ assert.ok(AI_SYSTEM.includes("choice") && AI_SYSTEM.includes("attackers") && AI_
   assert.equal(c.aiBlock([]), undefined);
   assert.ok((g.blockersDeclared ?? []).includes("opp"));
   assert.equal(c.aiWaiting(), undefined);
+}
+// ---- 返事の読み取り: 前に波かっこを含む文章があっても、最初の完全な JSON を読む
+assert.deepEqual(aiParse('考え中 {メモ} です {"choice": 1, "why": "}"}'), { choice: 1, why: "}" });
+
+// ---- 返事が使えなかったら、1回聞き直す。2回とも使えなければ、この判断だけ雑魚 CPU (次は、また Claude)
+{
+  const { g, c } = setup([land(1), bear(1)], [perm(land(2)), perm(land(3))]);
+  assert.equal(untilWaiting(c), "act");
+  const prompts: string[] = [];
+  const replies = ["番号は2です", '{"choice": 99}', '{"choice": 1, "why": "x"}'];
+  const r = await aiStep(c, async (_s, u) => (prompts.push(u), { text: replies[prompts.length - 1], input: 10, output: 5 }), "opp");
+  assert.equal(r, "acted");
+  assert.equal(prompts.length, 2, "2回で、聞くのをやめる");
+  assert.ok(prompts[1].includes("前の返事は使えませんでした"));
+  assert.equal(c.aiActive, true, "API 自体は壊れていないので、Claude のまま");
+  assert.ok(g.log.some((l) => l.includes("この判断だけ、雑魚 CPU")));
+  assert.equal(c.aiTokens.input, 20);
+}
+// ---- 1回目が使えなくても、2回目が使えれば、そのまま
+{
+  const { g, c } = setup([land(1)], []);
+  assert.equal(untilWaiting(c), "act");
+  let n = 0;
+  const r = await aiStep(c, async () => ({ text: n++ === 0 ? "うーん" : '{"choice": 1, "why": "土地"}' }), "opp");
+  assert.equal(r, "acted");
+  assert.ok(g.battlefield.some((p) => p.id === "Island1"));
+  assert.equal(g.log.some((l) => l.includes("使えない")), false);
+}
+// ---- API 自体の失敗 (例外) は、以降ずっと雑魚 CPU。キー未設定も
+{
+  const { c } = setup([land(1)], []);
+  assert.equal(untilWaiting(c), "act");
+  const r = await aiStep(c, async () => { throw new Error("レート制限"); }, "opp");
+  assert.equal(r, "failed");
+  assert.equal(c.aiActive, false);
+}
+{
+  const { c, g } = setup([land(1)], []);
+  assert.equal(untilWaiting(c), "act");
+  assert.equal(await aiStep(c, undefined, "opp"), "failed");
+  assert.ok(g.log.some((l) => l.includes("API キーが未設定")));
 }
 console.log("battle-opp-claude ok");

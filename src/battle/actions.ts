@@ -1,4 +1,5 @@
 import { RuleError, TargetSlot, activateAbility, castSpell, playLand, targetSlots } from "./engine";
+import { CastRecord } from "./node";
 import { getNode } from "./registry";
 import { Game, PlayerId, RuleBook } from "./state";
 
@@ -27,14 +28,14 @@ export const autoTargets = (slots: TargetSlot[]): Record<string, string> =>
   Object.fromEntries(slots.filter((x) => x.legal.length).map((x) => [x.as, x.legal.slice(0, Math.max(x.min, 1)).join(",")]));
 
 // 行動を試す。できれば undefined、できなければ理由。g は変えない。targets が無ければ、仮の対象で試す
-export function tryAction(g: Game, rules: RuleBook, p: PlayerId, a: Action, targets?: Record<string, string>): string | undefined {
+export function tryAction(g: Game, rules: RuleBook, p: PlayerId, a: Action, targets?: Record<string, string>, cast?: CastRecord): string | undefined {
   const slots = slotsOf(g, rules, p, a);
   if (slots.some((x) => x.legal.length < x.min)) return NO_TARGET;
   const t = targets ?? autoTargets(slots);
   const copy = structuredClone({ ...g, decide: undefined }) as Game;
   try {
     if (a.kind === "land") playLand(copy, p, a.card, rules);
-    else if (a.kind === "cast") castSpell(copy, p, a.card, t, rules);
+    else if (a.kind === "cast") castSpell(copy, p, a.card, t, rules, cast);
     else activateAbility(copy, p, a.perm, a.index, t, rules);
   } catch (e) {
     return e instanceof RuleError ? e.message : `内部エラー: ${(e as Error).message}`; // ルールのノートの不備でも、画面を止めない (使えない扱い)

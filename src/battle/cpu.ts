@@ -1,4 +1,5 @@
 import { Action, slotsOf, tryAction } from "./actions";
+import { CastRecord } from "./node";
 import { characteristics } from "./continuous";
 import { RuleError, activateAbility, attackersAt, canAttackPerm, castSpell, declareAttackers, declareBlockers, playLand } from "./engine";
 import { HAND_SIZE, putBottom, redraw } from "./mulligan";
@@ -84,8 +85,13 @@ function pickTargets(g: Game, rules: RuleBook, p: PlayerId, card: GameCard): Rec
 }
 
 // 行動を、必要なぶんだけ土地・マナ能力をタップして、実行する (Claude の AI も使う)。できなければ RuleError
+// 行動ができるようになるまで、土地・マナ能力を1つずつタップする (足りなければ、できるだけ)。人が「カードを選んでから、足りないマナを自動で払う」ときも使う。shortcut: タップする順番は、並んでいる順 (色は見ない。多色のデッキでは、要らない色を出すことがある)
+export function tapFor(g: Game, rules: RuleBook, p: PlayerId, a: Action, targets?: Record<string, string>, cast?: CastRecord): void {
+  while (tryAction(g, rules, p, a, targets, cast) !== undefined && tapOne(g, p, rules));
+}
+
 export function cpuDo(g: Game, rules: RuleBook, p: PlayerId, a: Action, targets?: Record<string, string>): void {
-  while (tryAction(g, rules, p, a, targets) !== undefined && tapOne(g, p, rules));
+  tapFor(g, rules, p, a, targets);
   const why = tryAction(g, rules, p, a, targets);
   if (why !== undefined) throw new RuleError(why);
   if (a.kind === "land") {

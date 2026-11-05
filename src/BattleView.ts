@@ -1,8 +1,11 @@
 import { ItemView, WorkspaceLeaf } from "obsidian";
 import { TargetSlot } from "./battle/engine";
 import { InputRequest } from "./battle/input";
-import { AI_SYSTEM, AskAi, aiActPrompt, aiAttackPrompt, aiAttackers, aiBlockPrompt, aiParse } from "./battle/ai";
+import { Action } from "./battle/actions";
+import { AskAi } from "./battle/ai";
+import { aiStep } from "./battle/aiRun";
 import { BattleController, StopMode } from "./battle/play";
+import { stackEffectText } from "./battle/stackText";
 import { BoardModel, CardView, CombatChoice, LandStack, PhaseId, boardModel } from "./battle/boardModel";
 import { CARD_H, CARD_W, GAP, GAUGE_SEC, HAND_H, HAND_W, LAYER_PX, TAP_EXTRA, cardBackUrl, overlapFor, pileLayers, rowNeed } from "./battle/layout";
 import { BattleSession } from "./battle/deckToGame";
@@ -418,7 +421,11 @@ export class BattleView extends ItemView {
       data: c,
       name: c.name,
       paint: (el) => this.fill(el, c),
-      ...(this.ctl && kind === "hand" ? { use: () => this.ask(c.name, this.ctl!.needsForCard(c.id), (t) => this.run(() => this.ctl!.use(c.id, t))) } : {}),
+      ...(this.ctl && kind === "hand" ? { use: () => {
+        const why = this.ctl!.whyNot(c.id); // カードを選んだ時点で、使えない理由 (マナが足りません、など) を出す
+        if (why) return this.toast(why);
+        this.askKick(c.name, this.ctl!.kickChoices(c.id), (cast) => this.ask(c.name, this.ctl!.needsForCard(c.id), (t) => this.askMana(c.name, { kind: "cast", card: c.id }, t, cast, (ids) => this.run(() => this.ctl!.use(c.id, t, cast, ids)))));
+      } } : {}),
       ...(this.ctl && kind === "perm" ? { use: () => this.useAbility(c.id), pick: () => this.pickAbility(c.id) } : {}),
     }));
   }
@@ -432,11 +439,21 @@ export class BattleView extends ItemView {
   }
 
   // ---- 操作 (ルールはコントローラーにある。ここは、呼んで描き直すだけ)
+  // 画面の下に、短いお知らせを出す (使えない理由など)
+  private toastEl?: HTMLElement;
+  private toast(text: string) {
+    this.toastEl?.remove();
+    const el = this.ui.stage.createDiv({ cls: "mtg-bt-toast", text });
+    this.toastEl = el;
+    window.setTimeout(() => el.remove(), 3200);
+  }
+
   private run(f: () => unknown) {
     if (this.aiBusy) return; // 相手 (Claude) が考えている間は、操作を受けない
     this.closeMenu();
     try {
-      f();
+      const r = f();
+      if (typeof r === "string" && r) this.toast(r); // 失敗の理由 (コントローラーが返す) も、画面に出す
     } catch (e) {
       console.error(e); // 想定外の失敗: 質問は捨てて、画面は止めない
       this.ctl?.cancel();
@@ -457,64 +474,11 @@ export class BattleView extends ItemView {
     this.aiBusy = true;
     this.ui.next.disabled = true;
     try {
+      const ai = ctl.game.players.find((p) => p !== VIEWER)!;
       for (let n = 0; n < 40 && this.ctl === ctl && ctl.aiActive && !ctl.game.over && !ctl.pending; n++) {
-        let w = ctl.aiWaiting();
-        if (!w) {
-          ctl.aiAuto(); // 判断が要らない優先権は、パス
-          w = ctl.aiWaiting();
-          if (!w) break;
-        }
-        const g = ctl.game;
-        const ai = g.players.find((p) => p !== VIEWER)!;
-        const ask = this.getAsk();
-        if (!ask) {
-          ctl.aiFail(w, "API キーが未設定");
-          break;
-        }
-        this.thinkEl ??= this.ui.stage.createDiv({ cls: "mtg-bt-think", text: "相手 (Claude) が考えている…" });
-        const opts = w === "act" ? ctl.aiOptions() : [];
-        let reply: Record<string, unknown> | undefined;
-        try {
-          reply = aiParse(await ask(AI_SYSTEM, w === "act" ? aiActPrompt(g, this.rules, ai, opts) : w === "attack" ? aiAttackPrompt(g, this.rules, ai) : aiBlockPrompt(g, this.rules, ai)));
-        } catch (e) {
-          if (this.ctl === ctl) ctl.aiFail(w, (e as Error).message);
-          break;
-        }
-        if (this.ctl !== ctl) break;
-        if (!reply) {
-          ctl.aiFail(w, "返事を読み取れなかった");
-          break;
-        }
-        const why = typeof reply.why === "string" ? reply.why.trim() : "";
-        let err: string | undefined;
-        if (w === "act") {
-          const o = opts[Number(reply.choice)];
-          if (!o) err = "選択肢の番号が不正";
-          else {
-            if (why) g.log.push(`相手の考え: ${why}`);
-            err = ctl.aiDo(o);
-          }
-        } else if (w === "attack") {
-          const able = new Set(aiAttackers(g, this.rules, ai).map((x) => x.id));
-          const ids = Array.isArray(reply.attackers) ? (reply.attackers as unknown[]).filter((x): x is string => typeof x === "string" && able.has(x)) : undefined;
-          if (!ids) err = "攻撃の指定が不正";
-          else {
-            if (why) g.log.push(`相手の考え: ${why}`);
-            err = ctl.aiAttack(ids);
-          }
-        } else {
-          const pairs = Array.isArray(reply.blocks) ? (reply.blocks as { blocker?: unknown; attacker?: unknown }[]).filter((q) => typeof q?.blocker === "string" && typeof q?.attacker === "string").map((q) => ({ blocker: q.blocker as string, attacker: q.attacker as string })) : undefined;
-          if (!pairs) err = "ブロックの指定が不正";
-          else {
-            if (why) g.log.push(`相手の考え: ${why}`);
-            err = ctl.aiBlock(pairs);
-          }
-        }
-        if (err) {
-          ctl.aiFail(w, err);
-          break;
-        }
-        if (ctl.pending) break; // AI の行動が誘発して、人への質問が出た: 答えると、AI の行動が、最初からやり直される
+        if (ctl.aiWaiting()) this.thinkEl ??= this.ui.stage.createDiv({ cls: "mtg-bt-think", text: "相手 (Claude) が考えている…" });
+        const r = await aiStep(ctl, this.getAsk(), ai);
+        if (this.ctl !== ctl || r !== "acted" || ctl.pending) break; // 人への質問が出たら、答えると、AI の行動が最初からやり直される
         this.paint();
       }
     } finally {
@@ -563,6 +527,79 @@ export class BattleView extends ItemView {
       this.askCancel = undefined;
       this.run(() => this.ctl!.bottom(ids as string[]));
     }, `ライブラリーの底に置くカードを ${count} 枚選ぶ`);
+  }
+
+  // 払うマナの選択: 足りないマナを自動でタップするとき、種類の違う土地・マナ源から選べる余地があれば、どれをタップするか選ばせる (払えるだけ選ぶと、「確定」が押せる)。「自動」で、並んでいる順。余地が無ければ、聞かない。Esc で取り消し
+  private askMana(title: string, a: Action, t: Record<string, string>, cast: { kicked?: boolean; teamwork?: boolean } | undefined, then: (ids?: string[]) => void) {
+    const ctl = this.ctl!;
+    const src = ctl.payChoice(a, t, cast);
+    if (!src) return then();
+    const box = this.ui.stage.createDiv("mtg-bt-ask");
+    this.askEl = box;
+    this.ui.stage.addClass("is-asking");
+    this.askCancel = () => {}; // 取り消し: 何も起きない
+    const head = box.createDiv("mtg-bt-asktitle");
+    const picked: string[] = [];
+    const ok = box.createEl("button", { cls: "mod-cta", text: "確定" });
+    const tiles = box.createDiv("mtg-bt-asktiles");
+    const tileOf = new Map<string, HTMLElement>();
+    const sync = () => {
+      const payable = ctl.payableWith(a, t, cast, picked);
+      head.setText(`${title}: マナを出す土地を選ぶ (${picked.length} 枚)${payable ? " — 払えます" : ""}`);
+      ok.disabled = !payable;
+      for (const [id, el] of tileOf) {
+        el.toggleClass("is-picked", picked.includes(id));
+        el.toggleClass("is-off", payable && !picked.includes(id)); // もう払えるので、これ以上は選ばせない
+      }
+    };
+    for (const s of src) {
+      const tile = tiles.createDiv("mtg-bt-asktile");
+      tileOf.set(s.id, tile);
+      const url = this.urls.get(s.name);
+      if (url) tile.createEl("img", { attr: { src: url, alt: s.name, draggable: "false" } });
+      else tile.createDiv({ cls: "mtg-bt-face", text: s.name });
+      tile.createDiv({ cls: "mtg-bt-manalabel", text: s.label });
+      tile.addEventListener("mouseenter", () => void this.showPreview(s.name));
+      tile.addEventListener("click", () => {
+        const i = picked.indexOf(s.id);
+        if (i >= 0) picked.splice(i, 1);
+        else if (!ctl.payableWith(a, t, cast, picked)) picked.push(s.id);
+        sync();
+      });
+    }
+    box.appendChild(ok);
+    const done = (ids?: string[]) => {
+      box.remove();
+      this.askEl = undefined;
+      this.askCancel = undefined;
+      this.ui.stage.removeClass("is-asking");
+      then(ids);
+    };
+    ok.addEventListener("click", () => done([...picked]));
+    box.createEl("button", { text: "自動で選ぶ" }).addEventListener("click", () => done());
+    box.createDiv({ cls: "mtg-bt-askhint", text: "Esc で取り消し (何も起きなかったことになる)" });
+    sync();
+  }
+
+  // 追加コスト (キッカーなど) を払えるマナがあるとき、払うかを選ばせる (そのあとで、対象を選ぶ)。選べなければ (払えない・追加コストが無い)、聞かずに、払わない。Esc で取り消し
+  private askKick(name: string, choices: { flag: "kicked" | "teamwork"; cost: string }[], then: (cast?: { kicked?: boolean; teamwork?: boolean }) => void) {
+    if (!choices.length) return then();
+    const box = this.ui.stage.createDiv("mtg-bt-ask");
+    this.askEl = box;
+    this.ui.stage.addClass("is-asking");
+    this.askCancel = () => {}; // 取り消し: 何も起きない
+    box.createDiv({ cls: "mtg-bt-asktitle", text: `${name}: 追加コストを払って唱えますか?` });
+    const row = box.createDiv("mtg-bt-askrow");
+    const go = (cast?: { kicked?: boolean; teamwork?: boolean }) => {
+      box.remove();
+      this.askEl = undefined;
+      this.askCancel = undefined;
+      this.ui.stage.removeClass("is-asking");
+      then(cast);
+    };
+    for (const c of choices) row.createEl("button", { cls: "mod-cta", text: `${c.flag === "kicked" ? "キッカー" : "チームワーク"} ${c.cost} を払って唱える` }).addEventListener("click", () => go({ [c.flag]: true }));
+    row.createEl("button", { text: "払わずに唱える" }).addEventListener("click", () => go());
+    box.createDiv({ cls: "mtg-bt-askhint", text: "Esc で取り消し (何も起きなかったことになる)" });
   }
 
   // ---- 自分への質問 (src/battle/input.ts)。答えたら、コントローラーが最初からやり直す。Esc で取り消し (何も起きなかったことになる)
@@ -673,7 +710,7 @@ export class BattleView extends ItemView {
   private activateWith(permId: string, index: number) {
     const name = this.game.battlefield.find((p) => p.id === permId)?.card.name ?? "";
     this.closeMenu();
-    this.ask(name, this.ctl!.needsForAbility(permId, index), (t) => this.run(() => this.ctl!.activate(permId, index, t)));
+    this.ask(name, this.ctl!.needsForAbility(permId, index), (t) => this.askMana(name, { kind: "activate", perm: permId, index }, t, undefined, (ids) => this.run(() => this.ctl!.activate(permId, index, t, ids))));
   }
 
   // ---- 対象の選択: 合法な対象を光らせ、クリックで選ぶ (解除もクリック)。数が足りたら「確定」。スロットが複数なら順番に
@@ -882,6 +919,7 @@ export class BattleView extends ItemView {
     el.toggleClass("is-on", text !== "");
   }
 
+  private stackTexts = new Map<string, string>();
   private paintStack(m: BoardModel) {
     const el = this.ui.stack;
     const sig = JSON.stringify(m.stack);
@@ -896,6 +934,12 @@ export class BattleView extends ItemView {
         if (s.image) big.createEl("img", { attr: { src: s.image, alt: s.name, draggable: "false" } });
         else big.createDiv({ cls: "mtg-bt-face", text: s.name });
         big.createDiv({ cls: "mtg-bt-stacklabel", text: s.label ? `${s.name} の能力 ${s.label}` : s.ability ? `${s.name} の能力` : `${s.controller === "self" ? "あなた" : "相手"}の呪文` });
+        // 効果テキスト (カードのノートから。忠誠度能力は、使った能力だけ。モードは、選んだモードだけ)
+        const body = big.createDiv("mtg-bt-stacktext");
+        const fill = (text: string) => body.setText(stackEffectText(text, { typeLine: s.typeLine, loyalty: s.loyalty, loyaltyX: s.loyaltyX, modes: s.modes }));
+        const cached = this.stackTexts.get(s.name);
+        if (cached !== undefined) fill(cached);
+        else void cardText(this.app, s.name).catch(() => "").then((t) => { this.stackTexts.set(s.name, t); if (body.isConnected) fill(t); });
         return;
       }
       const row = el.createDiv({ cls: `mtg-bt-stackitem is-${s.controller}`, text: `${s.ability ? "能力: " : ""}${s.name}` });
