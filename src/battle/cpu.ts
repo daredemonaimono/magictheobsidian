@@ -1,4 +1,4 @@
-import { Action, slotsOf, tryAction } from "./actions";
+import { Action, manaOnly, slotsOf, tryAction } from "./actions";
 import { CastRecord } from "./node";
 import { characteristics } from "./continuous";
 import { RuleError, activateAbility, attackersAt, canAttackPerm, castSpell, declareAttackers, declareBlockers, playLand } from "./engine";
@@ -54,7 +54,7 @@ export function tapOne(g: Game, p: PlayerId, rules: RuleBook): boolean {
     const abs = rules.get(perm.card.name)?.abilities.filter((a) => a.kind === "activated") ?? [];
     for (let i = 0; i < abs.length; i++) {
       const body = abs[i].body;
-      if (!body.some((c) => c.node === "addMana") || !body.every((c) => c.node === "addMana" || c.node === "cost" || c.node === "timing")) continue;
+      if (!manaOnly(body)) continue;
       try {
         activateAbility(g, p, perm.id, i, {}, rules);
         return true;

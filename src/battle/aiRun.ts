@@ -1,4 +1,5 @@
-import { AI_SYSTEM, AskAi, aiActPrompt, aiAttackPrompt, aiAttackers, aiBlockPrompt, aiParse } from "./ai";
+import { AI_SYSTEM, AskAi, aiActPrompt, aiAttackPrompt, aiAttackers, aiBlockPrompt, aiBlockers, aiParse, matchIds } from "./ai";
+import { attackersAt } from "./engine";
 import { BattleController } from "./play";
 
 // Claude の AI の、1回ぶんの判断 (画面 BattleView.driveAi と、テストが使う)。判断が要らない優先権はパスして、要る場面では API を呼んで、返事を実行する。
@@ -51,16 +52,26 @@ export async function aiStep(ctl: BattleController, ask: AskAi | undefined, ai: 
         err = ctl.aiDo(o);
       }
     } else if (w === "attack") {
-      const able = new Set(aiAttackers(g, rules, ai).map((x) => x.id));
-      const ids = Array.isArray(reply.attackers) ? (reply.attackers as unknown[]).filter((x): x is string => typeof x === "string" && able.has(x)) : undefined;
-      if (!ids) err = "attackers の配列が無い";
+      const ableList = aiAttackers(g, rules, ai).map((x) => ({ id: x.id, name: x.card.name }));
+      const m = Array.isArray(reply.attackers) ? matchIds(reply.attackers as unknown[], ableList) : undefined;
+      const ids = m?.ids;
+      if (!m || !ids) err = "attackers の配列が無い";
+      else if ((reply.attackers as unknown[]).length > 0 && !ids.length) err = `attackers の id が合わない (${m.unknown.join("、")})。攻撃できるのは: ${ableList.map((x) => `${x.id}`).join("、")}`; // 「攻撃する」と言いながら、無効な id: 黙って攻撃しないのではなく、聞き直す
       else {
         if (why) g.log.push(`相手の考え: ${why}`);
         err = ctl.aiAttack(ids);
       }
     } else {
-      const pairs = Array.isArray(reply.blocks) ? (reply.blocks as { blocker?: unknown; attacker?: unknown }[]).filter((q) => typeof q?.blocker === "string" && typeof q?.attacker === "string").map((q) => ({ blocker: q.blocker as string, attacker: q.attacker as string })) : undefined;
-      if (!pairs) err = "blocks の配列が無い";
+      const rawBlocks = Array.isArray(reply.blocks) ? (reply.blocks as { blocker?: unknown; attacker?: unknown }[]) : undefined;
+      const blockerList = aiBlockers(g, rules, ai).map((x) => ({ id: x.id, name: x.card.name }));
+      const attackerList = attackersAt(g, ai).map((x) => ({ id: x.id, name: x.card.name }));
+      const pairs = rawBlocks?.flatMap((q) => {
+        const b = matchIds([q?.blocker], blockerList).ids[0];
+        const a = matchIds([q?.attacker], attackerList).ids[0];
+        return b && a ? [{ blocker: b, attacker: a }] : [];
+      });
+      if (!rawBlocks || !pairs) err = "blocks の配列が無い";
+      else if (rawBlocks.length > 0 && !pairs.length) err = `blocks の id が合わない。ブロックできるのは: ${blockerList.map((x) => x.id).join("、")} / 攻撃しているのは: ${attackerList.map((x) => x.id).join("、")}`;
       else {
         if (why) g.log.push(`相手の考え: ${why}`);
         err = ctl.aiBlock(pairs);

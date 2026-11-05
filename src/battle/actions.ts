@@ -58,7 +58,9 @@ export function actionsFor(g: Game, rules: RuleBook, p: PlayerId): Action[] {
   return out;
 }
 
-export const manaOnly = (body: { node: string }[]): boolean => body.some((c) => c.node === "addMana") && body.every((c) => c.node === "addMana" || c.node === "cost" || c.node === "timing"); // エンジンも、timing を除いて、マナ能力かを決める
+// マナだけの能力か。忠誠度能力 (cost loyalty / loyaltyX) は、マナを出すだけでも、マナ能力ではない (スタックを使い、1ターンに1回・ソーサリーのタイミング): 自動で払うマナには、使わない
+export const manaOnly = (body: { node: string; args?: Record<string, unknown> }[]): boolean =>
+  body.some((c) => c.node === "addMana") && body.every((c) => c.node === "addMana" || c.node === "cost" || c.node === "timing") && !body.some((c) => c.node === "cost" && (c.args?.loyalty !== undefined || c.args?.loyaltyX === true));
 
 // 何かできるか (優先権の止まり方「使えるものがあるときだけ」の判定)。土地・マナ・アーティファクトなど、カードの能力のマナ (マナだけの起動型能力) を全部使ったと仮定して、土地を出せる・唱えられる呪文・使える (マナ以外の) 能力があるか。g は変えない
 // マナだけの起動型能力を全部使った (と仮定した) コピーの局面。p に優先権がある。g は変えない

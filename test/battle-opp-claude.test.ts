@@ -1,5 +1,5 @@
 import assert from "node:assert";
-import { AI_SYSTEM, aiOptions, aiParse, aiTrivial } from "../src/battle/ai";
+import { AI_SYSTEM, aiOptions, aiParse, aiTrivial, matchIds } from "../src/battle/ai";
 import { aiStep } from "../src/battle/aiRun";
 import { Ability, NodeCall } from "../src/battle/node";
 import { registerBuiltinNodes } from "../src/battle/nodes";
@@ -192,5 +192,44 @@ assert.deepEqual(aiParse('考え中 {メモ} です {"choice": 1, "why": "}"}'),
   assert.equal(untilWaiting(c), "act");
   assert.equal(await aiStep(c, undefined, "opp"), "failed");
   assert.ok(g.log.some((l) => l.includes("API キーが未設定")));
+}
+// ---- id の読み替え: 接頭辞・大文字小文字・名前 (同じ名前が1つだけのとき) も受ける。直せないものは unknown
+{
+  const valid = [{ id: "Bear#3", name: "Bear" }, { id: "Geist#9", name: "Geist" }, { id: "Geist#10", name: "Geist" }];
+  assert.deepEqual(matchIds(["Bear#3"], valid).ids, ["Bear#3"]);
+  assert.deepEqual(matchIds(["id:Bear#3", "(id:Geist#9)"], valid).ids, ["Bear#3", "Geist#9"]);
+  assert.deepEqual(matchIds(["bear#3"], valid).ids, ["Bear#3"]);
+  assert.deepEqual(matchIds(["Bear"], valid).ids, ["Bear#3"], "名前が1つだけなら、受ける");
+  assert.deepEqual(matchIds(["Geist"], valid), { ids: [], unknown: ["Geist"] }, "名前が2つあれば、決められない");
+  assert.deepEqual(matchIds([{ id: "Bear#3" }, "Bear#3"], valid).ids, ["Bear#3"], "オブジェクト・重複");
+}
+// ---- 攻撃: 「攻撃する」と言いながら、無効な id なら、黙って攻撃しないのではなく、聞き直す
+{
+  const mkAttack = () => {
+    const { g, c } = setup([], [perm(bear(1), { enteredTurn: 0 })]);
+    g.turn = 5;
+    assert.equal(untilWaiting(c, 60), "attack");
+    return { g, c };
+  };
+  {
+    const { g, c } = mkAttack(); // 名前で答えても、攻撃する
+    assert.equal(await aiStep(c, async () => ({ text: '{"attackers": ["Bear"], "why": "x"}' }), "opp"), "acted");
+    assert.equal(g.battlefield.find((p) => p.id === "Bear1")?.attacking, true);
+  }
+  {
+    const { g, c } = mkAttack(); // 1回目が無効な id → 理由つきで聞き直し → 2回目で攻撃
+    const prompts: string[] = [];
+    const replies = ['{"attackers": ["zzz"], "why": "攻撃"}', '{"attackers": ["Bear1"], "why": "攻撃"}'];
+    await aiStep(c, async (_s, u) => (prompts.push(u), { text: replies[prompts.length - 1] }), "opp");
+    assert.equal(prompts.length, 2);
+    assert.ok(prompts[1].includes("attackers の id が合わない"));
+    assert.equal(g.battlefield.find((p) => p.id === "Bear1")?.attacking, true, "聞き直して、攻撃した");
+  }
+  {
+    const { g, c } = mkAttack(); // 本当に攻撃しない (空の配列) は、そのまま
+    assert.equal(await aiStep(c, async () => ({ text: '{"attackers": [], "why": "やめる"}' }), "opp"), "acted");
+    assert.ok(!g.battlefield.some((p) => p.attacking));
+    assert.equal(g.log.some((l) => l.includes("使えない")), false);
+  }
 }
 console.log("battle-opp-claude ok");

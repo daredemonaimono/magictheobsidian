@@ -272,7 +272,7 @@ export class BattleController {
     const card = g.hands[this.me].find((c) => c.id === cardId);
     if (!card) return "手札に無い";
     const a: Action = /\bLand\b/.test(card.typeLine) ? { kind: "land", card: cardId } : { kind: "cast", card: cardId };
-    const why = tryAction(withAllMana(g, this.rules, this.me), this.rules, this.me, a, autoTargets(slotsOf(g, this.rules, this.me, a)));
+    const why = tryAction(a.kind === "land" ? g : withAllMana(g, this.rules, this.me), this.rules, this.me, a, autoTargets(slotsOf(g, this.rules, this.me, a))); // 土地を出すのに、マナは要らない: 本物の局面で調べる
     const msg = why?.replace("マナが足りない", "マナが足りません");
     return msg ? (msg.startsWith(card.name) ? msg : `${card.name}: ${msg}`) : undefined;
   }
@@ -359,7 +359,7 @@ export class BattleController {
     const a: Action = land ? { kind: "land", card: cardId } : { kind: "cast", card: cardId };
     const t = targets ?? autoTargets(slotsOf(g, this.rules, this.me, a)); // 試し撃ちと本番で、同じ対象を使う
     // 土地・マナ能力のマナを全部出せるとして、払えるか。払えれば、足りないぶんは、唱えるとき、自動でタップする (先にタップしておいたぶんは、そのまま使う)
-    const why = tryAction(withAllMana(g, this.rules, this.me), this.rules, this.me, a, t, cast);
+    const why = tryAction(land ? g : withAllMana(g, this.rules, this.me), this.rules, this.me, a, t, cast); // 土地を出すのに、マナは要らない
     if (why) return this.fail(card.name, why.replace("マナが足りない", "マナが足りません"));
     this.rec("use", [cardId, targets, cast, tapIds]);
     return this.perform(card.name, (x) => {

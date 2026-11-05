@@ -86,7 +86,8 @@ export const AI_SYSTEM = `あなたは、マジック:ザ・ギャザリング�
 返事は、JSON のオブジェクト1つだけにしてください (前後に文章を書かない)。"why" は、日本語で、1文の短い理由です。
 - 行動を選ぶとき: {"choice": 番号, "why": "..."}
 - 攻撃するクリーチャーを選ぶとき: {"attackers": ["id", ...], "why": "..."} (攻撃しないなら空の配列)
-- ブロックを選ぶとき: {"blocks": [{"blocker": "id", "attacker": "id"}, ...], "why": "..."} (ブロックしないなら空の配列。1体は1体だけをブロックできる)`;
+- ブロックを選ぶとき: {"blocks": [{"blocker": "id", "attacker": "id"}, ...], "why": "..."} (ブロックしないなら空の配列。1体は1体だけをブロックできる)
+id は、盤面の説明の「(id:〜)」の、〜の部分だけを、そのまま書いてください (カード名ではありません)。「why」で「攻撃する」と書いたなら、その id を attackers に入れてください。`;
 
 export const aiActPrompt = (g: Game, rules: RuleBook, p: PlayerId, opts: AiOption[]): string => `${aiDescribe(g, rules, p)}\n\nあなたはいま優先権を持っています。選べる行動:\n${opts.map((o) => `${o.id}: ${o.label}`).join("\n")}\n\n番号を1つ選んでください。`;
 
@@ -101,6 +102,22 @@ export function aiBlockers(g: Game, rules: RuleBook, p: PlayerId): Perm[] {
 }
 export const aiBlockPrompt = (g: Game, rules: RuleBook, p: PlayerId): string =>
   `${aiDescribe(g, rules, p)}\n\nブロックを指定する段階です。攻撃されています:\n${attackersAt(g, p).map((x) => permLine(g, x, rules)).join("\n")}\nブロックできる、あなたのクリーチャー:\n${aiBlockers(g, rules, p).map((x) => permLine(g, x, rules)).join("\n")}\n\nブロックの組を選んでください。`;
+
+// 返事の中の id (文字列) を、有効な id に直す。"id:Bear#3" のような接頭辞・大文字小文字の違い・カード名 (同じ名前が1つだけのとき) も受ける。直せなかったものは unknown
+export function matchIds(raw: unknown[], valid: { id: string; name: string }[]): { ids: string[]; unknown: string[] } {
+  const ids: string[] = [];
+  const unknown: string[] = [];
+  for (const r of raw) {
+    const s = String(typeof r === "object" && r !== null ? (r as { id?: unknown }).id ?? "" : r).trim();
+    const t = s.replace(/^\(?\s*id\s*[:=]\s*/i, "").replace(/\)$/, "").trim();
+    const byId = valid.find((v) => v.id === t) ?? valid.find((v) => v.id.toLowerCase() === t.toLowerCase());
+    const byName = valid.filter((v) => v.name.toLowerCase() === t.toLowerCase());
+    const hit = byId ?? (byName.length === 1 ? byName[0] : undefined);
+    if (hit) ids.includes(hit.id) || ids.push(hit.id);
+    else unknown.push(s);
+  }
+  return { ids, unknown };
+}
 
 // 返事から、最初の JSON のオブジェクトを読み取る (前後に文章や ``` があってもよい。波かっこの対応で、切り出す)。読めなければ undefined
 export function aiParse(text: string): Record<string, unknown> | undefined {

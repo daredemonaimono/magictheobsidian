@@ -10,7 +10,7 @@ import { GameCard, RuleBook, createGame } from "../src/battle/state";
 resetRegistry();
 registerBuiltinNodes();
 const call = (node: string, args: NodeCall["args"]): NodeCall => ({ node, args });
-const rules: RuleBook = { get: (c) => (c === "Swamp" ? { card: c, abilities: [{ kind: "activated", body: [call("cost", { tap: true }), call("addMana", { amount: 1, color: "B" })] }] as Ability[] } : c === "Island" ? { card: c, abilities: [{ kind: "activated", body: [call("cost", { tap: true }), call("addMana", { amount: 1, color: "U" })] }] as Ability[] } : c === "Bear" ? { card: c, abilities: [] } : undefined) };
+const rules: RuleBook = { get: (c) => (c === "Walker" ? { card: c, abilities: [{ kind: "activated", body: [call("cost", { loyalty: 1 }), call("addMana", { amount: 1, color: "C" })] }] as Ability[] } : c === "Swamp" ? { card: c, abilities: [{ kind: "activated", body: [call("cost", { tap: true }), call("addMana", { amount: 1, color: "B" })] }] as Ability[] } : c === "Island" ? { card: c, abilities: [{ kind: "activated", body: [call("cost", { tap: true }), call("addMana", { amount: 1, color: "U" })] }] as Ability[] } : c === "Bear" ? { card: c, abilities: [] } : undefined) };
 const mk = (id: string, typeLine: string, mv: number, extra: Partial<GameCard> = {}): GameCard => ({ id, name: id.replace(/\d+$/, ""), typeLine, mv, owner: "you", ...extra });
 const make = (hand: GameCard[]) => {
   const g = createGame(["you", "opp"]);
@@ -123,5 +123,19 @@ for (const n of [0, 1]) {
     h.battlefield.push(mkLand("Island1", "Island"), mkLand("Swamp1", "Swamp"));
     assert.equal(new BattleController(h, rules).payChoice(a, undefined, undefined), undefined, "2 枚とも要る");
   }
+}
+// ---- 忠誠度能力でマナを出すプレインズウォーカー (Chandra など) がいても、土地は出せる・光る。自動で払うマナには、使わない
+{
+  const g = make([mk("Island9", "Basic Land — Island", 0, { name: "Island" }), bear(1)]);
+  g.battlefield.push({ id: "Walker1", card: mk("Walker1", "Legendary Planeswalker — Test", 0, { name: "Walker" }), controller: "you", counters: { loyalty: 3 } });
+  const c = new BattleController(g, rules);
+  assert.equal(c.whyNot("Island9"), undefined, "土地は出せる");
+  const m = boardModel(g, rules, "you", () => undefined);
+  assert.ok(m.self.hand.find((x) => x.id === "Island9")?.playable, "土地の札が光る");
+  assert.ok(manaUseful(g, rules, "you"), "Island があるので、Bear は唱えられる");
+  assert.equal(c.use("Island9"), undefined);
+  assert.ok(g.battlefield.some((p) => p.id === "Island9"));
+  assert.equal(c.use("Bear1"), undefined, "Bear は、Island のマナで唱える (Walker の忠誠度能力は、使わない)");
+  assert.equal(g.battlefield.find((p) => p.id === "Walker1")?.counters?.loyalty, 3, "忠誠度は変わらない");
 }
 console.log("manauseful ok");
