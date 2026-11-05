@@ -238,6 +238,14 @@ export class BattleView extends ItemView {
             return;
           }
         }
+        // 対戦中: スペースキーで、右下のボタン (「次へ」「解決する」「攻撃する」「ブロックする」「確定」…) を押す。質問の画面が出ている間・入力欄に打っている間は、効かない
+        if (e.key === " " && this.ctl && !this.rp && !this.askEl && !this.mullEl && this.app.workspace.getActiveViewOfType(BattleView) === this) {
+          const t = e.target as HTMLElement | null;
+          if (t && (t.isContentEditable || /^(input|textarea|select|button)$/i.test(t.tagName))) return;
+          e.preventDefault();
+          if (!e.repeat && !this.ui.next.disabled) this.ui.next.click();
+          return;
+        }
         if (e.key !== "Escape") return;
         if (this.askEl) this.cancelAsk();
         else if (this.targeting) this.endTargeting(); // 途中でやめるのは Esc だけ
