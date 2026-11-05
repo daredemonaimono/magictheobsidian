@@ -254,6 +254,14 @@ export const isSick = (g: Game, p: Perm, rules: RuleBook): boolean => {
   return /\bCreature\b/.test(now.typeLine) && !now.keywords.includes("haste");
 };
 
+// p が、いま攻撃できるクリーチャーを持っているか (アンタップ・召喚酔いでない・防衛でない)。無ければ、対戦の画面は戦闘ステップを飛ばす
+export const canAttackWith = (g: Game, p: PlayerId, rules: RuleBook): boolean =>
+  g.battlefield.some((x) => {
+    if (x.controller !== p || x.tapped || isSick(g, x, rules)) return false;
+    const now = characteristics(g, x, rules);
+    return /\bCreature\b/.test(now.typeLine) && !now.keywords.includes("defender");
+  });
+
 // コスト (cost / additionalCost のノードから集める)。mana = 汎用の数、manaCost = 色つきのマナコスト ("{1}{U}")
 interface CostSpec {
   sym: ManaCost; // 払うマナ (mana の汎用も、ここに入る)

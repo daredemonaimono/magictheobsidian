@@ -1,5 +1,5 @@
 import { Action, abilityLabels, actionsFor, autoTargets, slotsOf, tryAction } from "./actions";
-import { RuleError, TargetSlot, activateAbility, castSpell, passPriority, playLand } from "./engine";
+import { RuleError, TargetSlot, activateAbility, canAttackWith, castSpell, passPriority, playLand } from "./engine";
 import { Answer, InputRequest, NeedInput, makeDecider } from "./input";
 import { HAND_SIZE, putBottom, redraw } from "./mulligan";
 import { Game, PlayerId, RuleBook } from "./state";
@@ -151,7 +151,7 @@ export class BattleController {
     return abilityLabels(this.rules, perm.card.name).map((label, index) => ({ index, label, usable: tryAction(this.game, this.rules, this.me, { kind: "activate", perm: permId, index }) === undefined }));
   }
 
-  // 「次へ」: 次のステップへ進む (次の「できること」までではない)。自分がパスして、相手も自動でパスする。ステップ (戦闘は、その中の段階) が進んだとき、または、スタックのものが1つ解決したときに止まる。
+  // 「次へ」: 次のステップへ進む (次の「できること」までではない)。ただし、攻撃できるクリーチャーがいない戦闘ステップは飛ばす。自分がパスして、相手も自動でパスする。ステップ (戦闘は、その中の段階) が進んだとき、または、スタックのものが1つ解決したときに止まる。
   // 相手のターンで止まるときは、相手が先にパスして、自分が優先権を持つ (インスタントを唱えられる)。手札が 7 枚を超えて終了するときは、残すカードを聞く。
   // 何もできないときに、時間ゲージで自動で進めるかは、画面の設定 (止まり方) による
   next(): string | undefined {
@@ -162,6 +162,7 @@ export class BattleController {
         const r = passPriority(g, g.priority, this.rules);
         if (r === "passed") continue;
         if (g.over) return;
+        if (r === "stepEnded" && g.step === "combat" && !g.battlefield.some((x) => x.attacking) && !canAttackWith(g, g.active, this.rules)) continue; // 攻撃できるクリーチャーがいなければ、戦闘ステップは飛ばす (戦闘開始・攻撃クリーチャー指定・戦闘終了のあいだも)
         if (g.active !== this.me && g.priority !== this.me) passPriority(g, g.priority!, this.rules); // 相手が先にパスして、自分に優先権を渡す
         return;
       }

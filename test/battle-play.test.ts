@@ -117,12 +117,44 @@ const toMain = (c: BattleController) => {
     steps.push(`${g.turn}:${g.step}${g.step === "combat" ? `/${g.combatPhase}` : ""}`);
     if (g.active === "opp") assert.equal(g.priority, "you", "相手のステップで止まるとき、自分に優先権がある");
   }
-  assert.deepEqual(steps, ["1:draw", "1:main1", "1:combat/beginning", "1:combat/attackers", "1:combat/end", "1:main2", "1:end", "2:upkeep", "2:draw", "2:main1", "2:combat/beginning", "2:combat/attackers", "2:combat/end", "2:main2", "2:end", "3:upkeep"]);
+  assert.deepEqual(steps, ["1:draw", "1:main1", "1:main2", "1:end", "2:upkeep", "2:draw", "2:main1", "2:main2", "2:end", "3:upkeep"], "攻撃できるクリーチャーがいなければ、戦闘ステップは飛ばす");
   assert.equal(g.mana["you"], 0, "マナ・プールは、ステップで空になる");
   assert.ok(g.log.includes("ターン 2: 相手のターン") && g.log.includes("相手がカードを引いた") && g.log.includes("ターン 3: あなたのターン"), "ターンの区切りと、相手のドローが、ログに出る");
   c.next();
   c.next();
   assert.equal(g.hands["you"].length, 8, "ターン 3 のドローで1枚");
+}
+// 攻撃できるクリーチャーがいれば、戦闘ステップは、段階ごとに止まる。召喚酔い・タップ済みは、いないのと同じ
+{
+  const { g, c } = setup();
+  g.battlefield.push({ id: "b1", card: { id: "b1", name: "Bear", typeLine: "Creature — Bear", mv: 2, owner: "you", power: 2, toughness: 2 }, controller: "you" });
+  const steps: string[] = [];
+  for (let i = 0; i < 8 && g.turn === 1; i++) {
+    c.next();
+    steps.push(`${g.step}${g.step === "combat" ? `/${g.combatPhase}` : ""}`);
+  }
+  assert.deepEqual(steps.slice(0, 6), ["draw", "main1", "combat/beginning", "combat/attackers", "combat/end", "main2"]);
+}
+{
+  const { g, c } = setup();
+  g.battlefield.push({ id: "b1", card: { id: "b1", name: "Bear", typeLine: "Creature — Bear", mv: 2, owner: "you", power: 2, toughness: 2 }, controller: "you", enteredTurn: 1 });
+  c.next();
+  c.next();
+  c.next();
+  assert.equal(g.step, "main2", "召喚酔いのクリーチャーだけなら、戦闘は飛ばす");
+}
+// {1}{U} は、青 1 つでは唱えられない (青 2 つなら、唱えられる)
+{
+  const { g, c } = setup();
+  const bear = hold(g, "Bear");
+  toMain(c);
+  g.mana["you"] = 1;
+  g.pool["you"] = { U: 1 };
+  assert.ok(c.use(bear.id)?.includes("マナが足りない"));
+  g.mana["you"] = 2;
+  g.pool["you"] = { U: 2 };
+  assert.equal(c.use(bear.id), undefined);
+  assert.equal(g.mana["you"], 0);
 }
 // 相手のターンのステップでも、自分は応答できる (土地 + インスタント)
 {
