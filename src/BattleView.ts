@@ -44,6 +44,7 @@ export class BattleView extends ItemView {
     hand: HTMLElement;
     phase: HTMLElement;
     step: HTMLElement;
+    turn: HTMLElement;
     selfLife: HTMLElement;
     oppLife: HTMLElement;
     piles: Record<string, HTMLElement>;
@@ -142,7 +143,10 @@ export class BattleView extends ItemView {
     const board = stage.createDiv("mtg-bt-board");
     const rows: Record<string, HTMLElement> = {};
     for (const key of ["opp-lands", "opp-others", "opp-creatures", "self-creatures", "self-others", "self-lands"]) rows[key] = board.createDiv({ cls: `mtg-bt-row mtg-bt-${key}` });
-    const belt = board.createDiv({ cls: "mtg-bt-belt", text: "戦 闘" });
+    const belt = board.createDiv("mtg-bt-belt"); // 真ん中の帯: だれのターンか・フェイズの進み・ステップ
+    const turn = belt.createDiv("mtg-bt-turn");
+    const phase = belt.createDiv("mtg-bt-phase");
+    const step = belt.createDiv("mtg-bt-step");
     const hand = stage.createDiv("mtg-bt-hand");
     stage.createDiv({ cls: "mtg-bt-avatar is-opp" }).dataset.tid = this.game.players.find((p) => p !== VIEWER) ?? "";
     stage.createDiv({ cls: "mtg-bt-avatar is-self" }).dataset.tid = VIEWER;
@@ -151,8 +155,6 @@ export class BattleView extends ItemView {
     const piles: Record<string, HTMLElement> = {};
     for (const key of ["opp-library", "opp-yard", "self-library", "self-yard"]) piles[key] = board.createDiv({ cls: `mtg-bt-deck is-${key}` }); // 盤面 (3D の面) の上に置く
     const mana = stage.createDiv("mtg-bt-mana");
-    const phase = stage.createDiv("mtg-bt-phase");
-    const step = stage.createDiv("mtg-bt-step");
     const banner = stage.createDiv("mtg-bt-banner");
     const next = stage.createEl("button", { cls: "mtg-bt-next mod-cta", text: "次へ" });
     next.addEventListener("click", () => this.ctl && !this.targeting && this.run(() => this.ctl!.next())); // 対象を選んでいる間は、進めない
@@ -160,7 +162,7 @@ export class BattleView extends ItemView {
     const preview = side.createDiv("mtg-bt-preview");
     preview.createDiv({ cls: "mtg-bt-hint", text: "カードにカーソルを合わせると、ここに画像と効果が出ます" });
     const log = side.createDiv("mtg-bt-log");
-    this.ui = { stage, rows, hand, phase, step, selfLife, oppLife, piles, mana, belt, banner, next, stack, preview, log };
+    this.ui = { stage, rows, hand, phase, step, turn, selfLife, oppLife, piles, mana, belt, banner, next, stack, preview, log };
   }
 
   // 画像の URL: カード名でノートを引いて、保存済みの URL を使う (新しい通信はしない)。無いカードは、名前と P/T の代わりの面
@@ -568,6 +570,12 @@ export class BattleView extends ItemView {
     if (!el.firstChild) for (const [id, label] of PHASES) el.createDiv({ text: label, attr: { "data-phase": id } });
     for (const child of Array.from(el.children) as HTMLElement[]) child.toggleClass("on", child.dataset.phase === m.phase);
     this.setText(this.ui.step, `ターン ${m.turn}・${m.step}`);
+    const mine = m.activeSide === "self";
+    this.setText(this.ui.turn, mine ? "あなたのターン" : "相手のターン");
+    this.ui.turn.toggleClass("is-self", mine);
+    this.ui.turn.toggleClass("is-opp", !mine);
+    this.ui.stage.toggleClass("is-self-turn", mine);
+    this.ui.stage.toggleClass("is-opp-turn", !mine);
     this.ui.next.setText(m.nextLabel);
     this.ui.next.disabled = !this.ctl || !m.canNext;
   }
