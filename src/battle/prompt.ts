@@ -39,6 +39,7 @@ ${conditionList() || "(まだ無い)"}
 - 「以下から選ぶ」は、\`## 呪文能力\` の最初に \`modes count=<モードの数> min=<最少> max=<最多>\`(「1つ」は min=1 max=1、「1つまたは両方」は min=1 max=2)と書き、各モードのノード(\`target\` も)に \`if=mode1\`, \`if=mode2\` … を付ける。
 - 「N体を対象とする」「最大N」は、\`target\` の \`min\` / \`max\`(既定は1)。対象や \`select\` / \`look\` / \`choose\` の出力は、複数の id のリストで、\`tap\` / \`bounce\` / \`move\` などはリスト全部に効く。
 - 「すべての〜」は、対象を取らない \`select\`(絞り込みは \`target\` と同じ。攻撃中は \`attacking=true\`)。
+- 「対戦相手の手札を見て、(クリーチャーでも土地でもない)1枚を選んで、捨てさせる」は、\`lookHand player=opponents as=h\` → \`filter from=$h notType=creature|land as=f\` → \`choose from=$f count=1 as=c\` → \`move cards=$c to=graveyard\`。手札を公開させるだけなら、\`lookHand\` だけ。
 - 「ライブラリーの上からN枚を見て、1枚を手札に、残りを底に」は、\`look\` → \`choose\` → \`move cards=$選んだ to=hand\` と \`move cards=$見た except=$選んだ to=bottom\`。
 
 ## 規則

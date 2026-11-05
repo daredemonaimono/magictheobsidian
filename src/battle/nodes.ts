@@ -190,6 +190,23 @@ export function registerBuiltinNodes(): void {
     run: (ctx, a): Record<string, Value> => ({ id: playersFor(ctx, a).flatMap((p) => ctx.game.libraries[p].slice(0, Number(a.count)).map((c) => c.id)).join(",") }),
   });
 
+  // プレイヤーの手札を見る (動かさない)。見たカードの id を出力する。choose / filter / move と組み合わせる ("手札を見て、1枚選んで、捨てさせる")。画面は、見た手札を、前に出す
+  defineNode({
+    id: "lookHand",
+    title: "手札を見る",
+    summary: "プレイヤーの手札を見る(動かさない。「手札を公開する」「手札を見て、1枚選んで、捨てさせる」)。見たカードの id を出力する: filter(絞る)・choose(選ぶ)・move(to=graveyard など)につなぐ。player=you / opponents / target。画面は、見た手札を、前に出して見せる",
+    params: { player: who, target: targetPlayer },
+    outputs: { id: "id" },
+    run: (ctx, a): Record<string, Value> => {
+      const g = ctx.game;
+      const ps = playersFor(ctx, a);
+      const cards = ps.flatMap((p) => g.hands[p]);
+      if (ps.length) g.handLook = { by: ctx.item.controller, of: ps[0], ids: cards.map((c) => c.id), n: (g.handLook?.n ?? 0) + 1 };
+      g.log.push(`${ps.some((p) => p !== ctx.item.controller) ? "相手の" : "自分の"}手札を見た${cards.length ? `: ${cards.map((c) => c.name).join("、")}` : " (手札が無い)"}`);
+      return { id: cards.map((c) => c.id).join(",") };
+    },
+  });
+
   // 見たカードの中から、count 枚を選ぶ。選ぶのは呪文のコントローラー。g.decide.choose で選べる。既定は先頭から (shortcut: 判断の入力を作るときに置き換える)
   defineNode({
     id: "choose",

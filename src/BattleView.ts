@@ -209,6 +209,7 @@ export class BattleView extends ItemView {
     this.oppMode = opp;
     this.ctl = session && !session.replay ? new BattleController(game, rules, VIEWER, session.rng ?? Math.random, opp === "cpu" ? foe : undefined, opp === "claude" ? foe : undefined) : undefined; // リプレイのときは、操作できない (this.ctl 無し)・Claude の API も呼ばない
     if (this.ctl) this.ctl.aiMemo = session?.oppMemo ?? ""; // 相手のデッキのメモ
+    this.lookSeen = this.game.handLook?.n ?? 0; // 開いたとき、前の「見た」は、出さない
     this.tried.clear();
     this.askEl = undefined;
     this.targeting = undefined;
@@ -361,10 +362,37 @@ export class BattleView extends ItemView {
     this.paintLog(m.log);
     this.paintGauge(m);
     this.paintFx(m);
+    this.paintHandLook();
     if (m.over) this.saveHistory(); // 勝敗が付いたとき
     this.fit();
     this.syncCombat(m);
     if (this.targeting) this.paintTargeting();
+  }
+
+  // 相手の手札を見たとき (lookHand): 相手の手札のカードを、表向きで、前 (盤面の上) に並べて見せる。3.5秒で消える (クリックの邪魔はしない)
+  private lookSeen = 0;
+  private paintHandLook() {
+    const h = this.game.handLook;
+    if (!h || h.n <= this.lookSeen) {
+      this.lookSeen = h?.n ?? 0; // 新しい対戦・戻る操作: 追いつく
+      return;
+    }
+    this.lookSeen = h.n;
+    if (h.of === VIEWER || !this.getFx()) return; // 自分の手札は、もう見えている。演出をオフにしていれば、出さない
+    const g = this.game;
+    const all = [...g.battlefield.map((p) => p.card), ...Object.values(g.hands).flat(), ...Object.values(g.graveyards).flat(), ...Object.values(g.exile).flat(), ...Object.values(g.libraries).flat()];
+    const cards = h.ids.map((id) => all.find((c) => c.id === id)).filter((c): c is NonNullable<typeof c> => !!c);
+    this.ui.stage.querySelector(".mtg-bt-handlook")?.remove();
+    const box = this.ui.stage.createDiv("mtg-bt-handlook");
+    box.createDiv({ cls: "mtg-bt-handlook-title", text: `相手の手札 (${cards.length} 枚)` });
+    const row = box.createDiv("mtg-bt-handlook-row");
+    for (const c of cards) {
+      const url = this.urls.get(c.name);
+      const el = row.createDiv("mtg-bt-handlook-card");
+      if (url) el.createEl("img", { attr: { src: url, alt: c.name, draggable: "false" } });
+      else el.createDiv({ cls: "mtg-bt-face", text: c.name });
+    }
+    window.setTimeout(() => box.remove(), 3500);
   }
 
   // ダメージ・ライフの変化の演出: 数字が大きく出て、ふくらんで消える (設定でオフにできる)。クリーチャーのダメージが増えたとき・プレイヤーのライフが変わったとき。
