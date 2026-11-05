@@ -214,7 +214,12 @@ export class BattleView extends ItemView {
     const banner = stage.createDiv("mtg-bt-banner");
     const next = stage.createEl("button", { cls: "mtg-bt-next mod-cta", text: "次へ" });
     next.addEventListener("click", () => {
-      if (!this.ctl || this.targeting) return; // 対象を選んでいる間は、進めない
+      if (!this.ctl) return;
+      if (this.targeting) {
+        const t = this.targeting;
+        if (t.picks[t.i].length >= t.slots[t.i].min) this.confirmTarget(); // 対象を選んでいる間は、「次へ」ボタンが「確定」になる
+        return;
+      }
       const sel = this.combatSel;
       if (sel?.kind === "attack" && sel.picks.size) this.run(() => this.ctl!.declareAttackers([...sel.picks])); // 攻撃するクリーチャーを選んでいれば、「攻撃する」
       else if (sel?.kind === "assign") this.run(() => this.ctl!.assign(Object.fromEntries(sel.vals))); // ダメージの割り振りを確定
@@ -389,7 +394,19 @@ export class BattleView extends ItemView {
   }
   private nextLabel = "次へ";
   // 攻撃するクリーチャー / ブロックの組を選んでいる間は、「次へ」ボタンが「攻撃する」「ブロックする」になる (選びを全部やめたら、「次へ」に戻る。ブロックは、「次へ」で、ブロックしないと宣言する)
+  private canNext = true;
   private applyNextLabel() {
+    const t = this.targeting;
+    if (t) {
+      // 対象を選んでいる間: 「次へ」ボタンが「確定」になる (足りない間は、押せない)。複数の対象を順に聞くときは、最後まで「次の対象へ」
+      const slot = t.slots[t.i];
+      const picks = t.picks[t.i].length;
+      const range = slot.min === slot.max ? `${slot.max}` : `${slot.min}〜${slot.max}`;
+      this.ui.next.setText(`${t.i < t.slots.length - 1 ? "次の対象へ" : "確定"} (${picks} / ${range})`);
+      this.ui.next.disabled = picks < slot.min;
+      return;
+    }
+    this.ui.next.disabled = !this.ctl || !this.canNext;
     const sel = this.combatSel;
     this.ui.next.setText(sel?.kind === "attack" && sel.picks.size ? `攻撃する (${sel.picks.size} 体)` : sel?.kind === "block" && sel.pairs.size ? `ブロックする (${sel.pairs.size} 体)` : sel?.kind === "assign" ? "ダメージを割り振る" : this.nextLabel);
   }
@@ -790,18 +807,11 @@ export class BattleView extends ItemView {
     this.tbar = undefined;
     st.toggleClass("is-targeting", !!this.targeting);
     const t = this.targeting;
-    if (!t) return;
+    if (!t) return this.applyNextLabel();
     const slot = t.slots[t.i];
     const picks = t.picks[t.i];
     for (const id of slot.legal) st.querySelector(`[data-tid="${id}"]`)?.classList.add(picks.includes(id) ? "is-picked" : "is-target");
-    const bar = st.createDiv("mtg-bt-tbar");
-    const range = slot.min === slot.max ? `${slot.max}` : `${slot.min}〜${slot.max}`;
-    bar.createSpan({ text: `${t.title}: 対象を選ぶ (${picks.length} / ${range})${t.slots.length > 1 ? `  [${t.i + 1}/${t.slots.length}]` : ""}` });
-    const ok = bar.createEl("button", { cls: "mod-cta", text: "確定" });
-    ok.disabled = picks.length < slot.min;
-    ok.addEventListener("click", () => this.confirmTarget());
-    bar.createEl("button", { text: "やめる (Esc)" }).addEventListener("click", () => this.endTargeting());
-    this.tbar = bar;
+    this.applyNextLabel(); // 確定は、右下の「次へ」ボタン (上の帯は出さない)。やめるのは Esc
   }
   private closeMenu() {
     this.menu?.remove();
@@ -939,8 +949,8 @@ export class BattleView extends ItemView {
     this.ui.stage.toggleClass("is-self-turn", mine);
     this.ui.stage.toggleClass("is-opp-turn", !mine);
     this.nextLabel = m.nextLabel;
+    this.canNext = m.canNext;
     this.applyNextLabel();
-    this.ui.next.disabled = !this.ctl || !m.canNext;
   }
 
   private paintBanner(m: BoardModel) {
