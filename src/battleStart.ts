@@ -81,6 +81,8 @@ export function buildSession(inputs: Inputs, selfName: string, oppName: string, 
   return { game, rules: inputs.rules, seed, rng, self: selfName, opp: oppName, ...(aiMulligan ? { aiMulligan } : {}) };
 }
 
+export const findDeckFile = (app: App, name: string): TFile | undefined => deckFiles(app).find((f) => f.basename === name);
+
 // デッキのノートの、メモ (`## メモ`)。無ければ空
 export async function loadDeckMemo(app: App, name: string): Promise<string> {
   const file = deckFiles(app).find((f) => f.basename === name);

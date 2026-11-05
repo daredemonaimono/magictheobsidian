@@ -22,7 +22,9 @@ import { BATTLE_SIDE_VIEW, BattleSideView } from "./BattleSideView";
 import { BattleStartModal } from "./BattleStartModal";
 import { BattleSession, MatchError } from "./battle/deckToGame";
 import { SavedBattle, battleNote, battleNoteName, parseBattleNote } from "./battle/saved";
-import { listDecks, startBattle, startReplay } from "./battleStart";
+import { findDeckFile, listDecks, startBattle, startReplay } from "./battleStart";
+import { DeckMemoDraftModal } from "./DeckMemoDraftModal";
+import { editableMemo, setMemo } from "./battle/memo";
 import { BattleHistoryModal } from "./BattleHistoryModal";
 import { COLLECTION_VIEW, CollectionView } from "./CollectionView";
 import { CARDS_VIEW, CardsView } from "./CardsView";
@@ -208,6 +210,7 @@ export default class MagicTheObsidian extends Plugin {
     });
     this.addCommand({ id: "battle-open", name: "Battle: open battle screen (sample)", callback: () => { this.battleSession = undefined; void this.app.workspace.getLeaf(true).setViewState({ type: BATTLE_VIEW, active: true }); } });
     this.addCommand({ id: "battle-start", name: "Battle: start battle", callback: () => void this.openBattleStart() });
+    this.addCommand({ id: "battle-draft-memo", name: "Battle: draft deck memo", callback: () => void this.openMemoDraft() });
     this.addCommand({ id: "battle-replay", name: "Battle: replay", callback: () => new BattleHistoryModal(this.app, (f) => void this.openReplay(f)).open() });
     this.addCommand({ id: "battle-sample-rules", name: "Battle: create sample rules", callback: () => void this.createSampleRules() });
     this.addCommand({ id: "battle-create-glossary", name: "Battle: create glossary note", callback: () => void this.createGlossaryNote() });
@@ -415,6 +418,37 @@ export default class MagicTheObsidian extends Plugin {
     const decks = await listDecks(this.app);
     if (!decks.length) return void new Notice("デッキがありません (Decks/)");
     new BattleStartModal(this.app, decks, (self, opp) => void this.beginBattle(self, opp)).open();
+  }
+
+  // デッキのメモの下書き: 対戦の履歴から、AI に作らせる。保存は、人が採用したときだけ
+  private async openMemoDraft() {
+    const decks = (await listDecks(this.app)).map((d) => d.name);
+    if (!decks.length) return void new Notice("デッキがありません (Decks/)");
+    const loadHistory = async () => {
+      const files = this.app.vault.getMarkdownFiles().filter((f) => f.path.startsWith("Battles/") && this.app.metadataCache.getFileCache(f)?.frontmatter?.mtg === "battle").sort((a, b) => b.basename.localeCompare(a.basename));
+      const out: SavedBattle[] = [];
+      for (const f of files) {
+        const s = parseBattleNote(await this.app.vault.cachedRead(f));
+        if (s) out.push(s);
+      }
+      return out;
+    };
+    const fileOf = (deck: string) => findDeckFile(this.app, deck);
+    new DeckMemoDraftModal(
+      this.app,
+      decks,
+      loadHistory,
+      async (deck) => {
+        const f = fileOf(deck);
+        return f ? editableMemo(await this.app.vault.read(f)) : "";
+      },
+      this.makeAsk(),
+      async (deck, text, mode) => {
+        const f = fileOf(deck);
+        if (!f) throw new Error(`デッキが見つからない: ${deck}`);
+        await this.app.vault.process(f, (c) => setMemo(c, mode === "append" ? [editableMemo(c), text].filter(Boolean).join("\n\n") : text));
+      },
+    ).open();
   }
 
   // 履歴のリプレイを開く: 記録と同じデッキ・種から作り直して、記録を呼び直す (デッキ・ルールのノートが変わっていると、食い違うことがある)。Claude の API は呼ばない
