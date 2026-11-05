@@ -242,6 +242,8 @@ button.mtg-color .mtg-sym { width: 20px; height: 20px; display: block; }
 .mtg-bt-card.is-sick { opacity: .75; }
 .mtg-bt-card.is-prepared { box-shadow: 0 0 0 2px #ffd34b; }
 .mtg-bt-pt { position: absolute; right: 2px; bottom: 2px; background: #000b; color: #fff; font-size: 10px; font-weight: 700; padding: 0 4px; border-radius: 3px; }
+.mtg-bt-pt .is-up { color: #ffd34b; }
+.mtg-bt-pt .is-down { color: #ff5a5a; }
 .mtg-bt-pt.is-loyalty { background: #1b3a5a; }
 .mtg-bt-dmg { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); font-size: 26px; font-weight: 800; color: #fff; text-shadow: 0 0 8px #e22, 0 0 3px #000; pointer-events: none; }
 .mtg-bt-counters { position: absolute; left: 2px; bottom: 2px; background: #000b; color: #9f9; font-size: 9px; padding: 0 3px; border-radius: 3px; max-width: 70%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }

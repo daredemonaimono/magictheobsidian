@@ -1,4 +1,4 @@
-import { Action, abilityLabels, actionsFor, autoTargets, slotsOf, tryAction } from "./actions";
+import { Action, abilityLabels, actionsFor, autoTargets, slotsOf, tryAction, uselessMana } from "./actions";
 import { RuleError, TargetSlot, activateAbility, attackersAt, canAttackWith, castSpell, declareAttackers, declareBlockers, assignDamage, passPriority, playLand } from "./engine";
 import { AiOption, aiAttackers, aiBlockers, aiOptions } from "./ai";
 import { cpuAct, cpuAttack, cpuBlock, cpuDo } from "./cpu";
@@ -264,6 +264,7 @@ export class BattleController {
     const t = targets ?? autoTargets(slotsOf(g, this.rules, this.me, act));
     const why = tryAction(g, this.rules, this.me, act, t);
     if (why) return this.fail(perm.card.name, why);
+    if (uselessMana(g, this.rules, this.me, act)) return this.fail(perm.card.name, "いまは、このマナの使い道が無い (唱えられる呪文・使える能力が無い)");
     const manaOnly = ab.body.some((c) => c.node === "addMana") && ab.body.every((c) => c.node === "addMana" || c.node === "cost");
     const name = perm.card.name;
     return this.perform(name, (x) => {
@@ -276,7 +277,7 @@ export class BattleController {
   abilities(permId: string): { index: number; label: string; usable: boolean }[] {
     const perm = this.game.battlefield.find((p) => p.id === permId && p.controller === this.me);
     if (!perm) return [];
-    return abilityLabels(this.rules, perm.card.name).map((label, index) => ({ index, label, usable: tryAction(this.game, this.rules, this.me, { kind: "activate", perm: permId, index }) === undefined }));
+    return abilityLabels(this.rules, perm.card.name).map((label, index) => ({ index, label, usable: tryAction(this.game, this.rules, this.me, { kind: "activate", perm: permId, index }) === undefined && !uselessMana(this.game, this.rules, this.me, { kind: "activate", perm: permId, index }) }));
   }
 
   // 「次へ」: 次のステップへ進む (次の「できること」までではない)。ただし、攻撃できるクリーチャーがいない戦闘ステップは飛ばす。自分がパスして、相手も自動でパスする。

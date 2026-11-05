@@ -775,7 +775,12 @@ export class BattleView extends ItemView {
     for (const [on, cls] of [[c.tapped, "is-tapped"], [c.attacking, "is-attacking"], [c.blocking, "is-blocking"], [c.sick, "is-sick"], [c.prepared, "is-prepared"], [c.token, "is-token"], [c.playable && !!this.ctl, "is-playable"]] as const) if (on) el.addClass(cls);
     el.empty();
     this.face(el, c);
-    if (c.power !== null && c.toughness !== null) el.createDiv({ cls: "mtg-bt-pt", text: `${c.power}/${c.toughness}` });
+    if (c.power !== null && c.toughness !== null) {
+      const pt = el.createDiv("mtg-bt-pt");
+      pt.createSpan({ cls: c.powerMod ? `is-${c.powerMod}` : "", text: String(c.power) }); // 修整を受けている数字: 上がったら黄色、下がったら赤
+      pt.appendText("/");
+      pt.createSpan({ cls: c.toughnessMod ? `is-${c.toughnessMod}` : "", text: String(c.toughness) });
+    }
     if (c.loyalty !== undefined) el.createDiv({ cls: "mtg-bt-pt is-loyalty", text: String(c.loyalty) });
     if (c.damage > 0) el.createDiv({ cls: "mtg-bt-dmg", text: String(c.damage) });
     const counters = Object.entries(c.counters).filter(([k, n]) => k !== "loyalty" && n > 0);

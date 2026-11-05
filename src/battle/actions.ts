@@ -89,6 +89,26 @@ export function canRespond(g: Game, rules: RuleBook, p: PlayerId): boolean {
   });
 }
 
+// マナを使う先があるか: 土地・マナ能力を全部使ったとして、唱えられる呪文・使える (マナ以外の) 能力がある。無ければ、いまマナを出しても、進めるとマナが消えるだけ
+export function manaUseful(g: Game, rules: RuleBook, p: PlayerId): boolean {
+  const copy = withAllMana(g, rules, p);
+  return actionsFor(copy, rules, p).some((a) => {
+    if (a.kind === "cast") return true;
+    if (a.kind !== "activate") return false;
+    const perm = copy.battlefield.find((x) => x.id === a.perm);
+    const ab = perm && activatedOf(rules, perm.card.name)[a.index];
+    return !!ab && !manaOnly(ab.body);
+  });
+}
+
+// 人の操作で、使う意味のない「マナを出すだけの能力」か (マナの使い道が無いとき、タップさせない)。CPU・AI は、必要なぶんだけ自分でタップするので、これを使わない
+export function uselessMana(g: Game, rules: RuleBook, p: PlayerId, a: Action): boolean {
+  if (a.kind !== "activate") return false;
+  const perm = g.battlefield.find((x) => x.id === a.perm);
+  const ab = perm && activatedOf(rules, perm.card.name)[a.index];
+  return !!ab && manaOnly(ab.body) && !manaUseful(g, rules, p);
+}
+
 // 起動型能力ごとの短い表示 ("1: タップ → マナを出す")
 export function abilityLabels(rules: RuleBook, cardName: string): string[] {
   return activatedOf(rules, cardName).map((ab, i) => `${i + 1}: ${ab.body.map((c) => getNode(c.node)?.title ?? c.node).join(" → ")}`);

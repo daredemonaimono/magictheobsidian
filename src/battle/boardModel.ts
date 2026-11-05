@@ -1,4 +1,4 @@
-import { actionsFor, canRespond } from "./actions";
+import { actionsFor, canRespond, uselessMana } from "./actions";
 import { characteristics } from "./continuous";
 import { attackersAt, canAttackPerm, isSick } from "./engine";
 import { Game, GameCard, Perm, PlayerId, RuleBook } from "./state";
@@ -12,6 +12,8 @@ export interface CardView {
   manaCost?: string;
   power: number | null;
   toughness: number | null;
+  powerMod?: "up" | "down"; // 戦場で、継続効果・カウンターなどで、もとのパワーより大きい (黄色) / 小さい (赤)
+  toughnessMod?: "up" | "down";
   loyalty?: number;
   damage: number;
   counters: Record<string, number>;
@@ -80,6 +82,8 @@ function permView(g: Game, rules: RuleBook, p: Perm, imageOf: ImageOf, playable:
     ...(p.card.manaCost !== undefined ? { manaCost: p.card.manaCost } : {}),
     power: now.power,
     toughness: now.toughness,
+    ...(p.card.power !== undefined && now.power !== p.card.power ? { powerMod: (now.power ?? 0) > p.card.power ? ("up" as const) : ("down" as const) } : {}),
+    ...(p.card.toughness !== undefined && now.toughness !== p.card.toughness ? { toughnessMod: (now.toughness ?? 0) > p.card.toughness ? ("up" as const) : ("down" as const) } : {}),
     ...(p.counters?.loyalty !== undefined ? { loyalty: p.counters.loyalty } : {}),
     damage: p.damage ?? 0,
     counters: { ...(p.counters ?? {}) },
@@ -173,7 +177,7 @@ const LOG_LINES = 50;
 export function boardModel(g: Game, rules: RuleBook, viewer: PlayerId, imageOf: ImageOf): BoardModel {
   const oppId = g.players.find((p) => p !== viewer) ?? viewer;
   const side = (p: PlayerId): "self" | "opp" => (p === viewer ? "self" : "opp");
-  const can = new Set(actionsFor(g, rules, viewer).map((a) => (a.kind === "activate" ? a.perm : a.card)));
+  const can = new Set(actionsFor(g, rules, viewer).filter((a) => !uselessMana(g, rules, viewer, a)).map((a) => (a.kind === "activate" ? a.perm : a.card)));
   let choice: CombatChoice | undefined;
   if (!g.over && !g.mulligan && g.step === "combat" && g.priority === viewer && !g.stack.length) { // スタックが空のとき (戦闘の最初の誘発が解決してから)
     if (g.combatPhase === "attackers" && !g.attackersDeclared && g.active === viewer) {

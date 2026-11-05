@@ -63,13 +63,19 @@ const toMain = (c: BattleController) => {
   assert.ok(c.use(second.id), "2枚目の土地は出せない: 理由が返る");
   assert.ok(!g.battlefield.some((p) => p.id === second.id), "状態は変わらない");
   assert.ok(c.use(bear.id), "マナが無いと唱えられない (理由が返る)");
+  // 土地 1 枚では、MV2 の Bear は唱えられない: マナを出しても使い道が無いので、タップできない (進めるとマナが消えるだけ。前提を変えた: 以前は、いつでもタップできた)
+  assert.ok(c.activate(land.id, 0), "使い道の無いマナは、出せない: 理由が返る");
+  assert.equal(g.mana["you"], 0);
+  assert.equal(c.abilities(land.id)[0].usable, false);
+  const l2 = g.hands["you"].find((x) => x.name === "Island")!;
+  g.hands["you"] = g.hands["you"].filter((x) => x !== l2);
+  g.battlefield.push({ id: l2.id, card: l2, controller: "you" }); // 2枚目の土地 (これで、Bear が唱えられる)
   assert.equal(c.activate(land.id, 0), undefined);
   assert.equal(g.mana["you"], 1);
   assert.ok(g.log.includes("あなたが Island をタップしてマナを出した"));
   assert.ok(c.abilities(land.id)[0].label.startsWith("1: ") && !c.abilities(land.id)[0].usable, "タップ済みの能力は、使えない表示");
-  // 2マナ目 (ほかの土地は無いので、マナを足して) で唱える
-  g.mana["you"] = 2;
-  g.pool["you"] = { U: 2 };
+  assert.equal(c.activate(l2.id, 0), undefined); // 2マナ目
+  assert.equal(g.mana["you"], 2);
   assert.equal(c.use(bear.id), undefined);
   assert.equal(g.stack.length, 1);
   c.next();
