@@ -41,6 +41,8 @@ export interface NodeDef {
   id: string;
   title: string; // 日本語名 (一覧・AI への指示の元)
   summary: string;
+  core?: boolean; // 毎回、AI への指示に入れる、中心のノード (ほぼ、どのカードでも使うもの)。それ以外は、カードごとに、選んで渡す (prompt.ts の selectPrompt)
+  category: string; // 一覧 (docs/nodes.md) と、AI への指示で、まとめる区分 (src/battle/nodes/ の、どのファイルに書くか)
   params: Record<string, ParamDef>;
   outputs: Record<string, "id" | "number" | "boolean">; // 結果の受け渡し
   isTarget?: boolean; // 唱えるときに対象を選ぶノード

@@ -21,12 +21,12 @@ Obsidian を Magic: The Gathering 専用のソフトにするプラグイン。�
 
 ## 3. 対戦の核の仕組み (`src/battle/`)
 
-- **ノード** (`node.ts` `registry.ts` `nodes.ts`): カード専用の関数は作らない。汎用のノードを組み合わせる。`NodeDef`(id・params・outputs・`only` で書ける能力の種類・`run`)を `registry` に登録する。呼び出しは `NodeCall {node, as?, if?, args}`。参照は `$名前` で、前のノードの `as` を指す。数の引数だけ参照を書ける(`$X` は −X の忠誠度能力の中だけ)。対象を選ぶノードと宣言のノードには参照を書けない。
+- **ノード** (`node.ts` `registry.ts` と、`nodes/` のカテゴリーごとのファイル。共有の部品は `nodes/shared.ts`、一覧は `docs/nodes.md` (npm run docs:nodes で自動)。ノードを足すときは、まず docs/nodes.md で、組み合わせで書けないか確かめる。新しいノードは、`category` を持ち、ほぼ毎回使うものだけ `core: true` にする (それ以外は、ルールを書かせるとき、カードごとに選んで渡す: build.ts の buildRuleTwoStage) (テストが、カテゴリーの一覧・名前の重複・説明の長さを見張る)): カード専用の関数は作らない。汎用のノードを組み合わせる。`NodeDef`(id・params・outputs・`only` で書ける能力の種類・`run`)を `registry` に登録する。呼び出しは `NodeCall {node, as?, if?, args}`。参照は `$名前` で、前のノードの `as` を指す。数の引数だけ参照を書ける(`$X` は −X の忠誠度能力の中だけ)。対象を選ぶノードと宣言のノードには参照を書けない。
 - **能力の種類**: spell / activated / triggered / static。タイミングは、カードタイプに従うので、ノードにしない。誘発型は最初が `when`(紋章は `emblem` のあとに `when`)、継続効果の常在型は最初が `affect`。
 - **条件** (`if=`): kicked / teamwork / mode1..5 / `<場所>:<型>:<数>[+|-]` など。`!` で否定。
 - **md の形式** (`ruleMd.ts`): `Rules/<カード名>.md`。`## 呪文能力` `## 起動型能力` `## 誘発型能力` `## 常在型能力` の見出しの下に `- node as=x key=value` の箇条書き。ノードで表せない部分は `## 未対応`。未対応の見出し(ノードが空)は「未設定」扱い。
 - **検証**: `checkCall`(引数)、`placementProblem`(置いてよい能力か)、`structureProblem`(能力の構造)、`refProblems`(参照・`as` の重複)。ノード設定画面 (`editor.ts`)・AI の返事の検証 (`build.ts`)・状況レポート (`coverage.ts`) が、同じ検査を使う。**検査を足すときは `registry.ts` に1か所だけ足し、3か所とも通ることを確かめる**。
-- **エンジン** (`engine.ts` `state.ts` `continuous.ts`): 呪文を唱える・起動する・土地を出す・解決・誘発・状況起因処理・優先権とステップ。継続効果(レイヤー)は `continuous.ts` の `characteristics` で導く。紋章は継続効果の影響を受けない。
+- **エンジン** (`engine/` の、働きごとのファイル: `shared` 共有の部品・`battlefield` 戦場・`triggers` 誘発・`targets` 対象・`costs` コスト・`cast` 唱える/起動・`stack` 解決・`turn` ステップと優先権・`combat` 戦闘。外からは、`engine/index.ts` (窓口) から import する。ほかに `state.ts` `continuous.ts`): 呪文を唱える・起動する・土地を出す・解決・誘発・状況起因処理・優先権とステップ。継続効果(レイヤー)は `continuous.ts` の `characteristics` で導く。紋章は継続効果の影響を受けない。
 - **AI** (`prompt.ts` `glossary.ts` `build.ts` `claude.ts` `select.ts`): Claude API でカード → md を作る。API キーは Obsidian の SecretStorage(設定で選ぶ)。システムプロンプトは、レジストリのノード一覧と用語集から作る。用語集は英語(`glossary.ts` が既定、ユーザーが `Rules/_glossary.md` で足せる)。検証に通らなければ、問題を渡して1回だけやり直させる。**ノードを足したら、プロンプトに載るか(`only`・summary・params の説明)を確かめる**。
 - **履歴** (`history.ts`): ルールが書き換わる前の内容を `Rules/_backup/<カード名>/<日時>-<種類>.md` に残す。AI が書き直したとき(ユーザーが裁定後のテキストを渡す)と、ノード設定画面で「保存」したときに、システムが保存する。ユーザーに md を手で直させない(保存のタイミングが分からなくなるため)。
 - **画面とコマンド**: ノード設定画面 (`RuleEditorView.ts`)、AI 構築 (`BuildRulesModal.ts`)、復元 (`RestoreRuleModal.ts`)。コマンドは `Battle: create sample rules` / `build rules with AI` / `rules coverage`(`Rules/_coverage.md` を書く)。

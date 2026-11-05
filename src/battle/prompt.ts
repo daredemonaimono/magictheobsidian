@@ -1,3 +1,4 @@
+import { aiParse } from "./ai";
 import { ParamDef } from "./node";
 import { DEFAULT_GLOSSARY } from "./glossary";
 import { allConditions, allNodes } from "./registry";
@@ -6,14 +7,16 @@ import { SAMPLE_RULES } from "./samples";
 // AI への指示文。使えるノードの一覧は、レジストリ (NodeDef) から作る。ノードを足せば、指示文にも出る
 const param = (name: string, p: ParamDef) => `${name}(${p.type}${p.required ? "・必須" : ""}${p.choices ? `・選べる値: ${p.choices.join(" / ")}` : ""})`;
 
-const nodeList = () =>
+const nodeList = (only?: ReadonlySet<string>) =>
   allNodes()
+    .filter((n) => !only || n.core || only.has(n.id))
     .map((n) => `- ${n.id} (${n.title}): ${n.summary}\n  引数: ${Object.entries(n.params).map(([k, p]) => param(k, p)).join(", ") || "なし"}${Object.keys(n.outputs).length ? `\n  as= を付けると、出力 ${Object.keys(n.outputs).join(", ")} を $名前 で後のノードの ref 引数に渡せる` : ""}`)
     .join("\n");
 
 const conditionList = () => allConditions().map((c) => `- ${c.id} (${c.title}): ${c.summary}`).join("\n");
 
-export function buildPrompt(card: string, oracle: string, ruling?: string, glossary?: string): { system: string; user: string } {
+// only = カードごとに選んだノードの id (あれば、中心のノード (core) + これだけを、指示に入れる。無ければ、全部)
+export function buildPrompt(card: string, oracle: string, ruling?: string, glossary?: string, only?: ReadonlySet<string>): { system: string; user: string } {
   const system = `あなたは Magic: The Gathering のカードのテキストを、汎用のノードの組み合わせ (Obsidian のノート) に直す役です。
 
 ## 書式
@@ -25,7 +28,7 @@ export function buildPrompt(card: string, oracle: string, ruling?: string, gloss
 ${glossary?.trim() || DEFAULT_GLOSSARY}
 
 ## 使えるノード (これだけ。ここに無いノードは使わない)
-${nodeList() || "(まだ無い)"}
+${nodeList(only) || "(まだ無い)"}${only ? "\n(カードの効果に関係しそうなノードだけを、選んである。必要なノードが、ここに無いときは、無理に近いノードを使わず、`## 未対応` に書く)" : ""}
 
 ## 条件 (ノードの if=)
 ノードに \`if=<条件>\` を付けると、その条件のときだけ実行される。\`if=!<条件>\` は否定。「〜なら」「代わりに」は、条件と否定のノードを並べて表す
@@ -74,4 +77,33 @@ ${SAMPLE_RULES["Negate"]}\`\`\``;
   const r = ruling?.trim();
   const user = r ? `カード名: ${card}\n\n現在のカードのテキスト:\n${oracle}\n\n裁定後のテキスト(こちらが正しい。これに合わせてノードを組む):\n${r}` : `カード名: ${card}\n\nオラクルテキスト:\n${oracle}`;
   return { system, user };
+}
+
+// ---- ノードを選ぶ (ルールを書かせる前の、1段目)。短い一覧 (id・名前・説明の最初の部分) から、カードの効果に要りそうなノードを選ばせる。中心のノード (core) は、いつも渡すので、一覧に出さない
+const firstClause = (s: string, n = 46) => {
+  const t = s.split(/[。]/)[0];
+  return t.length > n ? t.slice(0, n) + "…" : t;
+};
+export const catalog = (): string =>
+  allNodes()
+    .filter((n) => !n.core)
+    .map((n) => `- ${n.id}: ${n.title} — ${firstClause(n.summary)}`)
+    .join("\n");
+
+// 一覧は、ノードが登録されてから作る (読み込みの時点では、まだ空)
+export const selectSystem = (): string => `あなたは、Magic: The Gathering のカードの効果を、汎用のノードの組み合わせに直す前に、使いそうなノードを選ぶ助手です。
+下の「ノードの一覧」から、このカードの効果を書くのに要りそうなノードの id を選んでください。迷うものは、含めます (足りないより、多いほうがよい)。一覧に無いと、必要な効果 (一覧のノードでは、書けなさそうなもの) は、missing に、短く書きます。
+返事は、JSON のオブジェクト1つだけ: {"nodes": ["id", ...], "missing": ["書けなさそうな効果", ...]}
+
+## ノードの一覧
+${catalog()}`;
+
+export const selectPrompt = (card: string, oracle: string, ruling?: string): string => `カード: ${card}\n\nテキスト:\n${oracle}${ruling ? `\n\n裁定:\n${ruling}` : ""}`;
+
+// 返事から、選ばれたノードの id (レジストリにあるものだけ) と、書けなさそうな効果を読む。JSON として読めなければ undefined (全ノードを渡す)
+export function parseSelection(text: string): { ids: Set<string>; missing: string[] } | undefined {
+  const v = aiParse(text);
+  if (!v || !Array.isArray(v.nodes)) return undefined;
+  const valid = new Set(allNodes().map((n) => n.id));
+  return { ids: new Set((v.nodes as unknown[]).filter((x): x is string => typeof x === "string" && valid.has(x))), missing: Array.isArray(v.missing) ? (v.missing as unknown[]).filter((x): x is string => typeof x === "string") : [] };
 }

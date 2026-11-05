@@ -1,5 +1,5 @@
 import { App, EventRef, Modal, Notice, Plugin, Setting, TFile, WorkspaceLeaf, normalizePath } from "obsidian";
-import { buildRule } from "./battle/build";
+import { buildRuleTwoStage, unsupportedLines } from "./battle/build";
 import { DEFAULT_GLOSSARY, GLOSSARY_NOTE, OLD_GLOSSARY_NOTE } from "./battle/glossary";
 import { Kind, freeName, parseVersion, sortNewestFirst } from "./battle/history";
 import { obsidianHttp } from "./battle/claude";
@@ -39,6 +39,7 @@ import { AskAi } from "./battle/ai";
 
 // 「メモ」はカード行の外なので、デッキ画面で枚数を変えても書き換わらない。統率戦だけコマンダー欄があり、サイドは無い
 const RULES_DIR = "Rules"; // カードの能力をノードで組んだ md (Cards/ と同じ並び。Obsidian の画面で手で直せる)
+const GAPS_NOTE = "_足りないノード.md"; // AI にルールを書かせて、書けなかった効果を、カードごとに残すノート (Rules/ の中。_ で始まる名前は、ルールとして読まない)
 
 const deckTemplate = (format: string) =>
   `---\nmtg: deck\nformat: ${format}\ntags: [mtg/deck]\n---\n\n${format === "commander" ? "## Commander\n\n## Main\n" : "## Main\n\n## Side\n"}\n## メモ\n`;
@@ -534,22 +535,50 @@ export default class MagicTheObsidian extends Plugin {
     if (!ask) return void this.missingKeyNotice("rules");
     await this.ensureRulesDir();
     const glossary = await this.readGlossary();
+    const select = this.askFor("nodes"); // 1段目 (ノードを選ぶ)。キーが無ければ、飛ばして、全ノードを渡す
     let made = 0;
     let over = 0;
     let failed = 0;
+    let fallback = 0;
+    let gaps = 0;
     for (const [i, name] of names.entries()) {
       new Notice(`AI に頼んでいる (${i + 1}/${names.length}): ${name}`);
       try {
         const oracle = await oracleEnglish(this.app, name);
-        const { md } = await buildRule({ card: name, oracle, ruling, glossary, ask: async (system, messages) => (await ask(system, messages)).text });
-        if ((await this.saveRule(name, md, "ai")) === "created") made++;
+        const r = await buildRuleTwoStage({
+          card: name,
+          oracle,
+          ruling,
+          glossary,
+          ask: async (system, messages) => (await ask(system, messages)).text,
+          ...(select ? { askSelect: async (system: string, user: string) => (await select(system, [{ role: "user" as const, content: user }])).text } : {}),
+        });
+        if ((await this.saveRule(name, r.md, "ai")) === "created") made++;
         else over++;
+        if (r.fallback) fallback++;
+        if (await this.recordGaps(name, r.md, r.missing)) gaps++;
       } catch (e) {
         failed++;
         new Notice(`${name}: ${(e as Error).message}`);
       }
     }
-    new Notice(`AI のルール作成: 作った ${made} 枚 / 上書きした ${over} 枚 / 失敗 ${failed} 枚`);
+    new Notice(`AI のルール作成: 作った ${made} 枚 / 上書きした ${over} 枚 / 失敗 ${failed} 枚${fallback ? ` / 全ノードで、やり直した ${fallback} 枚` : ""}${gaps ? ` / 足りない効果あり ${gaps} 枚 (${RULES_DIR}/${GAPS_NOTE})` : ""}`);
+  }
+
+  // 足りない効果 (ルールの「未対応」と、1段目が「書けなさそう」と答えたもの) を、Rules/_足りないノード.md に、カードごとに残す。次に作るノードの手がかり (ノードを足したら、そのカードを、もう一度、書かせる)。無ければ、そのカードの行を消す
+  private async recordGaps(card: string, md: string, missing: string[]): Promise<boolean> {
+    const lines = unsupportedLines(md);
+    const path = normalizePath(`${RULES_DIR}/${GAPS_NOTE}`);
+    const f = this.app.vault.getAbstractFileByPath(path);
+    const old = f instanceof TFile ? await this.app.vault.read(f) : "---\nmtg: gaps\n---\n\n# 足りないノード (ルールの「未対応」)\n\nAI にルールを書かせたとき、書けなかった効果。ノードを足したら、そのカードのルールを、もう一度、書かせる。\n\n";
+    const keep = old.split("\n").filter((l) => !l.startsWith(`- [[${card}]]`));
+    const entry = lines.length || missing.length ? [`- [[${card}]]: ${[...lines, ...missing.map((x) => `(1段目) ${x}`)].join(" / ").replace(/\n/g, " ")}`] : [];
+    const text = [...keep.filter((l, i, a) => !(l === "" && a[i - 1] === "")), ...entry].join("\n").replace(/\n+$/, "\n");
+    if (text !== old) {
+      if (f instanceof TFile) await this.app.vault.modify(f, text);
+      else if (entry.length) await this.app.vault.create(path, text);
+    }
+    return lines.length > 0;
   }
 
   // ---- ルールの履歴: Rules/_backup/<カード名>/<日時>-<種類>.md ----

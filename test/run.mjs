@@ -8,7 +8,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const online = process.argv.includes("--online");
-const files = readdirSync("test").filter((f) => f.endsWith(".test.ts") && f.includes(".online.") === online);
+const only = process.argv.includes("--only") ? process.argv[process.argv.indexOf("--only") + 1] : ""; // 名前に含む文字で、テストを絞る (例: --only nodedocs)
+const files = readdirSync("test").filter((f) => f.endsWith(".test.ts") && f.includes(".online.") === online && f.includes(only));
 const out = mkdtempSync(join(tmpdir(), "mtg-test-"));
 let failed = 0;
 

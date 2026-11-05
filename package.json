@@ -1,11 +1,12 @@
 {
   "name": "magictheobsidian",
-  "version": "0.103.0",
+  "version": "0.104.0",
   "description": "Obsidian plugin: Magic: The Gathering deck building and playtesting inside Obsidian.",
   "main": "main.js",
   "scripts": {
     "build": "tsc --noEmit --skipLibCheck && node esbuild.config.mjs",
     "test": "node test/run.mjs",
+    "docs:nodes": "UPDATE_DOCS=1 node test/run.mjs --only nodedocs",
     "test:online": "node test/run.mjs --online"
   },
   "license": "MIT",

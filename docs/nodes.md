@@ -1,0 +1,400 @@
+# ノードの一覧
+
+> このファイルは、自動で作られます (`src/battle/nodeDocs.ts`)。直接は書き換えません。ノードを足したら、`npm run docs:nodes` で更新します。ノードは、`src/battle/nodes/` の、カテゴリーごとのファイルにあります。
+
+全 51 個のノード、7 個の条件。
+
+目次: [宣言・コスト・条件](#宣言・コスト・条件) / [対象・数える・絞り込む](#対象・数える・絞り込む) / [カードの移動・ライブラリー・手札](#カードの移動・ライブラリー・手札) / [パーマネント・トークン・カウンター](#パーマネント・トークン・カウンター) / [ダメージ・ライフ・マナ・打ち消し](#ダメージ・ライフ・マナ・打ち消し) / [継続効果](#継続効果)
+
+## 宣言・コスト・条件 (9 個)
+
+### `cost` コスト
+
+起動型能力のコスト(能力の最初に書く)。mana=払う汎用マナの数 / manaCost=色つきのマナコスト("{1}{U}") / tap=このパーマネントをタップ / sacrifice=このパーマネントを生け贄に捧げる / life=N点のライフを払う (フェッチランド) / tapCreatures=パワーの合計がこの値以上になるよう、自分のクリーチャーをタップ / loyalty=忠誠度を足す(+1 は loyalty=1、−2 は loyalty=-2。プレインズウォーカーの能力。ソーサリーのタイミングで1ターンに1回) / loyaltyX=true で −X(X は起動時に選び、効果の中で $X として参照する)
+
+- 引数: `mana`(number)、`manaCost`(string)、`tap`(boolean)、`sacrifice`(boolean)、`life`(number)、`tapCreatures`(number)、`loyalty`(number)、`loyaltyX`(boolean)
+- 書ける能力: activated
+- 宣言のノード (エンジンが読む。`if=` は付けられない)
+- 中心のノード (ルールを書かせるとき、いつも AI の指示に入る。ほかは、カードごとに選ぶ)
+
+### `additionalCost` 追加コスト(任意)
+
+呪文を唱えるときに払ってもよい追加コスト(キッカー・チームワーク)。flag=kicked / teamwork。払って唱えると、if=<flag> のノードが実行される。mana=汎用のマナ / manaCost=色つきのマナコスト("{1}{U}") / tapCreatures=パワーの合計がこの値以上になるよう、自分のクリーチャーをタップ
+
+- 引数: `flag`(string・必須・kicked / teamwork)、`mana`(number)、`manaCost`(string)、`tapCreatures`(number)
+- 書ける能力: spell
+- 宣言のノード (エンジンが読む。`if=` は付けられない)
+- 中心のノード (ルールを書かせるとき、いつも AI の指示に入る。ほかは、カードごとに選ぶ)
+
+### `modes` モード
+
+「以下から選ぶ」の宣言(呪文能力の最初に書く)。count=モードの数(最大5) / min・max=選ぶ数(「1つ」は min=1 max=1、「1つまたは両方」は min=1 max=2)。各モードのノードに if=mode1, if=mode2 … を付ける
+
+- 引数: `count`(number・必須)、`min`(number・必須)、`max`(number・必須)
+- 書ける能力: spell
+- 宣言のノード (エンジンが読む。`if=` は付けられない)
+- 中心のノード (ルールを書かせるとき、いつも AI の指示に入る。ほかは、カードごとに選ぶ)
+
+### `when` どうなったら
+
+誘発型能力の最初に書く、誘発のきっかけ。event=cast(呪文を唱えた) / enters(戦場に出た) / leaves(戦場を離れた) / attacks(攻撃した。「攻撃するたび」) / blocks(ブロックした) / step(ステップの開始時。step=upkeep・draw・main1・combat・main2・end を添える)。絞り込み: who=you・opponents(唱えた/コントロールするプレイヤー。attacks / blocks では、そのクリーチャーのコントローラー。step ではそのターンのプレイヤー) / type・notType(その呪文・パーマネントの型) / turn=yours・opponents(だれのターン中か) / self=true(このパーマネント自身のとき。enters / leaves / attacks / blocks)
+
+- 引数: `event`(string・必須・cast / enters / leaves / step / attacks / blocks)、`step`(string・upkeep / draw / main1 / combat / main2 / end)、`who`(string・you / opponents)、`type`(string)、`notType`(string)、`turn`(string・yours / opponents)、`self`(boolean)
+- 書ける能力: triggered
+- 宣言のノード (エンジンが読む。`if=` は付けられない)
+- 中心のノード (ルールを書かせるとき、いつも AI の指示に入る。ほかは、カードごとに選ぶ)
+
+### `keyword` キーワード能力
+
+常在型能力に書く、キーワード能力の宣言。name=flash なら瞬速で唱えられ、それ以外は戦場に出たときにそのキーワードを得る
+
+- 引数: `name`(string・必須・flying / hexproof / flash / haste / vigilance / trample / lifelink / deathtouch / firstStrike / doubleStrike / reach / menace / defender / prowess / indestructible)
+- 書ける能力: static
+- 宣言のノード (エンジンが読む。`if=` は付けられない)
+- 中心のノード (ルールを書かせるとき、いつも AI の指示に入る。ほかは、カードごとに選ぶ)
+
+### `reduceCost` コスト軽減
+
+呪文のコストを amount 減らす(マナ総量から引く)。who=you(このパーマネントのコントローラーの呪文。既定) / opponents / all。type・notType で呪文の型を絞る。affect は要らない
+
+- 引数: `amount`(number・必須)、`who`(string・you / opponents / all)、`type`(string)、`notType`(string)
+- 書ける能力: static
+- 宣言のノード (エンジンが読む。`if=` は付けられない)
+
+### `ward` 護法
+
+護法 {N}(「このパーマネントが、対戦相手がコントロールする呪文や能力の対象になるたび、それを打ち消す。そのプレイヤーが {N} を支払わないかぎり」)。常在型能力に amount=N で書く(affect は要らない。汎用のマナ N 点だけ)
+
+- 引数: `amount`(number・必須)
+- 書ける能力: static
+- 宣言のノード (エンジンが読む。`if=` は付けられない)
+
+### `untapDuring` 他のプレイヤーのアンタップ
+
+このパーマネントを、他のプレイヤーのアンタップ・ステップにもアンタップする(Bender's Waterskin など)。who=opponents(対戦相手のターン) / all。自分のアンタップ・ステップでは、ふつうにアンタップする。affect は要らない
+
+- 引数: `who`(string・必須・opponents / all)
+- 書ける能力: static
+- 宣言のノード (エンジンが読む。`if=` は付けられない)
+
+### `timing` 起動のタイミング
+
+起動型能力の起動のタイミングの制限(能力の最初に書く)。sorcery=true なら、ソーサリーのタイミングだけ(装備など)
+
+- 引数: `sorcery`(boolean・必須)
+- 書ける能力: activated
+- 宣言のノード (エンジンが読む。`if=` は付けられない)
+- 中心のノード (ルールを書かせるとき、いつも AI の指示に入る。ほかは、カードごとに選ぶ)
+
+## 対象・数える・絞り込む (5 個)
+
+### `target` 対象
+
+対象を決める。zone=stack + kind=spell(スタックの呪文) / zone=battlefield + kind=permanent(戦場のパーマネント) / zone=player + kind=player(プレイヤー。draw や discard の player=target と使う) / zone=any + kind=any(「any target」。プレイヤー・クリーチャー・プレインズウォーカー。damage と使う)。type=型 / notType=その型でない / mv=マナ総量 / controller=you(この呪文のコントローラーのもの)・opponents(それ以外) / attacking=攻撃中か / tapped=タップ状態 で絞る。min / max = 対象の数(既定は1。「1体か2体」は min=1 max=2、「最大1つ」は min=0 max=1)
+
+- 引数: `zone`(string・必須・stack / battlefield / player / any)、`kind`(string・必須・spell / permanent / player / any)、`type`(string)、`notType`(string)、`mv`(number)、`controller`(string・you / opponents)、`attacking`(boolean)、`tapped`(boolean)、`min`(number)、`max`(number)
+- 出力: `id`(id) (`as=名前` で受けて、`$名前` で渡す)
+- 中心のノード (ルールを書かせるとき、いつも AI の指示に入る。ほかは、カードごとに選ぶ)
+
+### `select` すべて選ぶ
+
+対象を取らずに、条件に合うものすべてを選ぶ(「すべての〜」)。zone=battlefield + kind=permanent / zone=stack + kind=spell。絞り込みは target と同じ(type / notType / mv / controller / attacking / tapped)。bounce や tap などの target に渡せる
+
+- 引数: `zone`(string・必須・stack / battlefield)、`kind`(string・必須・spell / permanent)、`type`(string)、`notType`(string)、`mv`(number)、`controller`(string・you / opponents)、`attacking`(boolean)、`tapped`(boolean)
+- 出力: `id`(id) (`as=名前` で受けて、`$名前` で渡す)
+- 中心のノード (ルールを書かせるとき、いつも AI の指示に入る。ほかは、カードごとに選ぶ)
+
+### `countCards` 枚数を数える
+
+zone(hand / graveyard / library / battlefield)のカードの枚数を、n として出力する(who=you・opponents。type・notType で絞る)。「手札の枚数に等しい X」は、これを as= で受けて、count=$名前 に渡す
+
+- 引数: `zone`(string・必須・hand / graveyard / library / battlefield)、`who`(string・you / opponents)、`type`(string)、`notType`(string)
+- 出力: `n`(number) (`as=名前` で受けて、`$名前` で渡す)
+
+### `filter` 絞り込む
+
+from(look / choose などの出力)のカードのうち、type(| は または)に合い、notType(| は どれでもない)に合うものだけを、出力する
+
+- 引数: `from`(ref・必須)、`type`(string)、`notType`(string)
+- 出力: `id`(id) (`as=名前` で受けて、`$名前` で渡す)
+
+### `self` このパーマネント
+
+この能力の発生源のパーマネント自身の id を出力する(「このクリーチャーの上に」など。as= を付けて、target に渡す)
+
+- 引数: なし
+- 出力: `id`(id) (`as=名前` で受けて、`$名前` で渡す)
+- 中心のノード (ルールを書かせるとき、いつも AI の指示に入る。ほかは、カードごとに選ぶ)
+
+## カードの移動・ライブラリー・手札 (11 個)
+
+### `draw` 引く
+
+プレイヤーがカードを count 枚引く。player=you(呪文のコントローラー) / opponents(全相手) / target(target ノードで選んだプレイヤー。target=$名前 を渡す)
+
+- 引数: `player`(string・必須・you / opponents / target)、`target`(ref)、`count`(number・必須)
+
+### `discard` 捨てる
+
+プレイヤーが手札を count 枚捨てる。player=you / opponents / target(draw と同じ)
+
+- 引数: `player`(string・必須・you / opponents / target)、`target`(ref)、`count`(number・必須)
+
+### `look` ライブラリーの上を見る
+
+プレイヤーのライブラリーの上から count 枚を見る(動かさない)。出力を choose や move に渡す。player=you / opponents / target
+
+- 引数: `player`(string・必須・you / opponents / target)、`target`(ref)、`count`(number・必須)
+- 出力: `id`(id) (`as=名前` で受けて、`$名前` で渡す)
+
+### `lookHand` 手札を見る
+
+プレイヤーの手札を見る(動かさない。「手札を公開する」「手札を見て、1枚選んで、捨てさせる」)。見たカードの id を出力する: filter(絞る)・choose(選ぶ)・move(to=graveyard / top など)につなぐ。player=you / opponents / target。相手の手札を見ると、画面は、見た手札を、前に出して見せる (自分の手札を、ほかのノードに渡すだけのときは、見せない)
+
+- 引数: `player`(string・必須・you / opponents / target)、`target`(ref)
+- 出力: `id`(id) (`as=名前` で受けて、`$名前` で渡す)
+
+### `shuffle` ライブラリーを切る
+
+プレイヤーのライブラリーを切る。player=you / opponents / target。optional=true なら「してもよい」(断れる。「切ってもよい」)
+
+- 引数: `player`(string・必須・you / opponents / target)、`target`(ref)、`optional`(boolean)
+
+### `choose` 選ぶ
+
+from(look などの出力)の中から count 枚を選ぶ。atMost=true なら 0〜count 枚(「好きな数」「最大N」。諜報など)。選んだカードの id を出力する
+
+- 引数: `from`(ref・必須)、`count`(number・必須)、`atMost`(boolean)
+- 出力: `id`(id) (`as=名前` で受けて、`$名前` で渡す)
+
+### `move` カードを動かす
+
+cards(look / choose の出力)を、持ち主の to へ動かす。to=hand / graveyard / top(ライブラリーの一番上) / bottom(一番下)。except に渡したカードは動かさない(「残りを底に」)
+
+- 引数: `cards`(ref・必須)、`except`(ref)、`to`(string・必須・hand / graveyard / top / bottom)
+
+### `bounce` 手札に戻す
+
+対象(select の出力も可)のパーマネントを持ち主の手札に戻す
+
+- 引数: `target`(ref・必須)
+
+### `destroy` 破壊する
+
+対象(select の出力も可)のパーマネントを破壊する (持ち主の墓地へ。破壊不能は、破壊されない)。「土地を破壊する」(Wasteland・Strip Mine)・「アーティファクトやエンチャントを、最大2つ破壊する」は、target(type=・notType=・min=・max=)と使う
+
+- 引数: `target`(ref・必須)
+
+### `search` ライブラリーから探す
+
+コントローラーのライブラリーから、type(型・サブタイプ。例: Forest|Island)に合うカードを count 枚まで(既定は1)探して、to=battlefield / hand に置く。tapped=true ならタップ状態で戦場に出す。そのあとライブラリーを切る (shuffle=false で切らない)。見つかったカードの id を出力する (「そうしたなら」は if=$名前)。フェッチランド: `cost tap=true sacrifice=true life=1` → `search type=Forest|Island to=battlefield`
+
+- 引数: `type`(string)、`name`(string)、`to`(string・必須・battlefield / hand)、`count`(number)、`tapped`(boolean)、`shuffle`(boolean)
+- 出力: `id`(id) (`as=名前` で受けて、`$名前` で渡す)
+
+### `exile` 追放する
+
+自分の墓地のカードを count 枚、追放する (足りなければ何もしない)。optional=true なら「してもよい」(断れる)。追放できた枚数を n として出力する(0 なら追放していない)。「そうしたなら〜」は、これを as=名前 で受けて、次のノードに if=$名前 を付ける。shortcut: 追放するカードは墓地の古いものから (選べるのは、判断の入力を作るとき)
+
+- 引数: `zone`(string・必須・graveyard)、`count`(number・必須)、`optional`(boolean)
+- 出力: `n`(number) (`as=名前` で受けて、`$名前` で渡す)
+
+## パーマネント・トークン・カウンター (12 個)
+
+### `tap` タップする
+
+対象(複数も可)のパーマネントをタップする
+
+- 引数: `target`(ref・必須)
+
+### `untap` アンタップする
+
+対象(複数も可)のパーマネントをアンタップする
+
+- 引数: `target`(ref・必須)
+
+### `modify` 修整を受ける
+
+対象のクリーチャーが +power/+toughness の修整を受ける。duration=endOfTurn(ターン終了時まで) / forever
+
+- 引数: `target`(ref・必須)、`power`(number・必須)、`toughness`(number・必須)、`duration`(string・必須・endOfTurn / forever)
+
+### `grant` キーワードを得る
+
+対象のクリーチャーがキーワード能力を得る。duration=endOfTurn(ターン終了時まで) / forever
+
+- 引数: `target`(ref・必須)、`keyword`(string・必須・flying / hexproof / flash / haste / vigilance / trample / lifelink / deathtouch / firstStrike / doubleStrike / reach / menace / defender / prowess / indestructible)、`duration`(string・必須・endOfTurn / forever)
+
+### `prepareSpell` 準備呪文
+
+準備呪文 (準備済のクリーチャーの、裏面の呪文) の最初に書く宣言。name=呪文の名前 / type=Instant か Sorcery / manaCost=マナコスト("{U}")。そのあとに、呪文の効果のノードを書く
+
+- 引数: `name`(string・必須)、`type`(string・必須・Instant / Sorcery)、`manaCost`(string)
+- 書ける能力: prepare
+- 宣言のノード (エンジンが読む。`if=` は付けられない)
+
+### `entersPrepared` 準備済で戦場に出る
+
+「このクリーチャーは準備済状態で戦場に出る」。常在型能力に書く(affect は要らない)。準備呪文を持たないクリーチャーは、準備済にならない
+
+- 引数: なし
+- 書ける能力: static
+- 宣言のノード (エンジンが読む。`if=` は付けられない)
+
+### `prepare` 準備済になる
+
+このパーマネント自身が、準備済になる(「このクリーチャーは準備済状態になる」)。すでに準備済なら何も起きない(2つ目のコピーはできない)。準備呪文を持たないものは、なれない
+
+- 引数: なし
+- 書ける能力: spell / activated / triggered
+
+### `attach` 付ける
+
+この能力の発生源(装備品・オーラ)を、対象のパーマネントに付ける。オーラは、戦場に出てから付く
+
+- 引数: `target`(ref・必須)
+
+### `emblem` 紋章の能力
+
+紋章の誘発型能力の最初に書く(そのあとに when)。name は、createEmblem の name と同じ。プレインズウォーカーなどのカードのルールの中に、紋章の能力を書く
+
+- 引数: `name`(string・必須)
+- 書ける能力: triggered
+- 宣言のノード (エンジンが読む。`if=` は付けられない)
+
+### `createEmblem` 紋章を得る
+
+コントローラーが紋章を得る。紋章は戦場の外に残り続け、元のカードのルールの、emblem name=<同じ name> で始まる誘発型能力が働く
+
+- 引数: `name`(string・必須)
+
+### `createToken` トークンを作る
+
+コントローラーが、トークンのクリーチャーなどを count 個(既定は1)作る。name=名前 / types=型行(例: "Creature — Illusion") / power・toughness / colors=色(空白区切り。例: "U")
+
+- 引数: `name`(string・必須)、`types`(string・必須)、`power`(number)、`toughness`(number)、`colors`(string)、`count`(number)
+
+### `addCounter` カウンターを置く
+
+対象のパーマネントの上にカウンターを count 個置く。kind=+1/+1(パワー・タフネスに足される) / stun(麻痺。アンタップするかわりに1つ取り除く)
+
+- 引数: `target`(ref・必須)、`kind`(string・必須・+1/+1 / stun)、`count`(number・必須)
+
+## ダメージ・ライフ・マナ・打ち消し (5 個)
+
+### `gainLife` ライフを得る
+
+プレイヤーが amount 点のライフを得る。player=you / opponents / target(draw と同じ)
+
+- 引数: `player`(string・必須・you / opponents / target)、`target`(ref)、`amount`(number・必須)
+
+### `loseLife` ライフを失う
+
+プレイヤーが amount 点のライフを失う。player=you / opponents / target(draw と同じ)
+
+- 引数: `player`(string・必須・you / opponents / target)、`target`(ref)、`amount`(number・必須)
+
+### `damage` ダメージを与える
+
+対象 (target ノードの出力。zone=any なら、プレイヤー・クリーチャー・プレインズウォーカー) に amount 点のダメージを与える
+
+- 引数: `target`(ref・必須)、`amount`(number・必須)
+
+### `addMana` マナを加える
+
+コントローラーがマナを amount 点加える。color=W・U・B・R・G(その色) / C(無色。既定) / any(好きな色。どの色のコストにも使える)。spellType / spellNotType を添えると、そのマナは、その型の呪文(spellNotType ならその型でない呪文)を唱えるためにしか使えない(「クリーチャーでない呪文を唱えるためにしか使えない」は spellNotType=creature)
+
+- 引数: `amount`(number・必須)、`color`(string・W / U / B / R / G / C / any)、`spellType`(string)、`spellNotType`(string)
+
+### `counter` 打ち消す
+
+対象の呪文を打ち消す (スタックから取り除いて、持ち主の墓地へ)。unlessPay=N を付けると「そのコントローラーが N を支払わないかぎり」
+
+- 引数: `target`(ref・必須)、`unlessPay`(number)
+
+## 継続効果 (9 個)
+
+### `affect` 及ぶ先
+
+継続効果の常在型能力の最初に書く、効果が及ぶ先。who=attached(このパーマネントが付いているもの。装備・オーラ) / self(このパーマネント自身) / yours(自分のパーマネント) / all(すべて)。type・notType で型を絞る
+
+- 引数: `who`(string・必須・attached / self / yours / all)、`type`(string)、`notType`(string)
+- 書ける能力: static
+- 宣言のノード (エンジンが読む。`if=` は付けられない)
+- 中心のノード (ルールを書かせるとき、いつも AI の指示に入る。ほかは、カードごとに選ぶ)
+
+### `staticModify` 修整(継続)
+
+及ぶ先が、+power/+toughness の修整を受ける(レイヤー7)
+
+- 引数: `power`(number・必須)、`toughness`(number・必須)
+- 書ける能力: static
+- 宣言のノード (エンジンが読む。`if=` は付けられない)
+
+### `staticGrant` キーワードを与える(継続)
+
+及ぶ先が、キーワード能力を持つ(レイヤー6)。prowess を与えると、果敢として働く
+
+- 引数: `keyword`(string・必須・flying / hexproof / flash / haste / vigilance / trample / lifelink / deathtouch / firstStrike / doubleStrike / reach / menace / defender / prowess / indestructible)
+- 書ける能力: static
+- 宣言のノード (エンジンが読む。`if=` は付けられない)
+
+### `loseAbilities` すべての能力を失う
+
+及ぶ先が、すべての能力を失う(誘発型・起動型・常在型・キーワード。レイヤー6)
+
+- 引数: なし
+- 書ける能力: static
+- 宣言のノード (エンジンが読む。`if=` は付けられない)
+
+### `setBaseStats` 基本のパワー・タフネス
+
+及ぶ先の基本のパワー・タフネスを power/toughness にする(レイヤー7b。カウンターや修整は、そのあとで足される)
+
+- 引数: `power`(number・必須)、`toughness`(number・必須)
+- 書ける能力: static
+- 宣言のノード (エンジンが読む。`if=` は付けられない)
+
+### `setTypes` 型行を変える
+
+及ぶ先の型行を types にする(例: "Creature — Citizen"。レイヤー4)
+
+- 引数: `types`(string・必須)
+- 書ける能力: static
+- 宣言のノード (エンジンが読む。`if=` は付けられない)
+
+### `setColors` 色を変える
+
+及ぶ先の色を colors にする(空白区切り。例: "G W"。レイヤー5)
+
+- 引数: `colors`(string・必須)
+- 書ける能力: static
+- 宣言のノード (エンジンが読む。`if=` は付けられない)
+
+### `setName` 名前を変える
+
+及ぶ先の名前を name にする(レイヤー4。表示用)
+
+- 引数: `name`(string・必須)
+- 書ける能力: static
+- 宣言のノード (エンジンが読む。`if=` は付けられない)
+
+### `extraTriggers` 誘発の追加
+
+及ぶ先の誘発型能力が、追加で amount 回誘発する
+
+- 引数: `amount`(number・必須)
+- 書ける能力: static
+- 宣言のノード (エンジンが読む。`if=` は付けられない)
+
+## 条件 (`if=`)
+
+- `kicked` キッカーされた: この呪文がキッカーされて唱えられた
+- `teamwork` チームワークを用いた: この呪文がチームワークを用いて唱えられた
+- `mode1` モード1が選ばれた: この呪文のモード1が選ばれて唱えられた (modes の宣言と使う)
+- `mode2` モード2が選ばれた: この呪文のモード2が選ばれて唱えられた (modes の宣言と使う)
+- `mode3` モード3が選ばれた: この呪文のモード3が選ばれて唱えられた (modes の宣言と使う)
+- `mode4` モード4が選ばれた: この呪文のモード4が選ばれて唱えられた (modes の宣言と使う)
+- `mode5` モード5が選ばれた: この呪文のモード5が選ばれて唱えられた (modes の宣言と使う)
+
+数の条件 `graveyard:lesson:3+` (場所:型:数。`+` 以上 / `-` 以下)、`$名前` (前のノードの出力が、0・偽・空でないとき)。否定は `!` を前に付ける。

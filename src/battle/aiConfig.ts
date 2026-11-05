@@ -4,11 +4,12 @@ import { OPENAI_BASE, ProviderReply, askGemini, askOpenAI } from "./providers";
 // AI の設定: 接続 (キー) は、種類ごとに 1 つ。使い分けは、場面ごと (対戦の相手・ルールを書かせる・メモの下書き) に、種類とモデルを選ぶ。
 // 場面で種類を切り替えても、キーも、各種類のモデルも、残る。純粋な関数 (キーの取り出しと通信は、呼ぶ側が渡す)
 export type Provider = "claude" | "openai" | "gemini";
-export type Scene = "battle" | "rules" | "memo";
+export type Scene = "battle" | "rules" | "nodes" | "memo";
 export const PROVIDERS: [Provider, string][] = [["claude", "Claude"], ["openai", "OpenAI"], ["gemini", "Gemini"]];
 export const SCENES: [Scene, string, string][] = [
   ["battle", "対戦の相手", "「対戦の相手」を AI にしたときの判断 (盤面を渡して、行動を選ばせる)。判断のたびに、呼ぶ。"],
   ["rules", "ルールを書かせる", "「Battle: build rules with AI」: カードの効果から、ルール (ノード) を、AI に書かせる。"],
+  ["nodes", "ノードを選ぶ", "「ルールを書かせる」の前に、カードの効果から、使いそうなノードを選ばせる (短い一覧で、安い AI で足りる。使わないときは、全ノードを渡す)。"],
   ["memo", "メモの下書き", "「Battle: draft deck memo」: 対戦の履歴から、デッキのメモの下書きを作らせる。"],
 ];
 
@@ -26,7 +27,7 @@ const models = (claude: string): Record<Provider, string> => ({ claude, openai: 
 export const DEFAULT_AI: AiSettings = {
   keys: { claude: "", openai: "", gemini: "" },
   openaiBaseUrl: OPENAI_BASE,
-  scenes: { battle: { provider: "claude", models: models("claude-sonnet-5-5") }, rules: { provider: "claude", models: models("claude-opus-5-5") }, memo: { provider: "claude", models: models("claude-sonnet-5-5") } },
+  scenes: { battle: { provider: "claude", models: models("claude-sonnet-5-5") }, rules: { provider: "claude", models: models("claude-opus-5-5") }, nodes: { provider: "claude", models: models("claude-haiku-5-5") }, memo: { provider: "claude", models: models("claude-sonnet-5-5") } },
 };
 
 const isProvider = (v: unknown): v is Provider => v === "claude" || v === "openai" || v === "gemini";
