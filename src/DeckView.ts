@@ -1,7 +1,8 @@
 import { App, ItemView, Modal, Notice, Setting, TFile, ViewStateResult, WorkspaceLeaf, moment, setIcon } from "obsidian";
 import { editableMemo, setMemo } from "./battle/memo";
 import { addFlip } from "./flip";
-import { CARD_DIR, cardBackImage, cardBackText, cardImage, cardInfo, cardText, oracleEnglish, printingImage, printingOf, readPrintings, refetchCard, setLocalText, updateLegality } from "./cards";
+import { normLocalName } from "./localName";
+import { CARD_DIR, cardBackImage, cardBackText, cardImage, cardInfo, cardText, oracleEnglish, printingImage, printingOf, readPrintings, refetchCard, setLocalName, setLocalText, updateLegality } from "./cards";
 import { CREATABLE, FORMATS, formatOf, judge } from "./rules";
 import { loadCollection } from "./collection";
 import { formatPrice, priceOf, refreshPrices } from "./prices";
@@ -591,10 +592,26 @@ export class DeckView extends ItemView {
     if (seq !== this.previewSeq) return;
     this.el.preview.empty();
     if (url) this.el.preview.createEl("img", { attr: { src: url, alt: name } });
-    this.el.preview.createDiv({ text: ja && ja !== name ? `${name} (${ja})` : name, cls: "mtg-preview-name" });
+    const nameRow = this.el.preview.createDiv("mtg-preview-namerow");
+    nameRow.createDiv({ text: ja && ja !== name ? `${name} (${ja})` : name, cls: "mtg-preview-name" });
+    const lang = this.settings.textLang;
+    // 設定した言語のカード名 (ローカルネーム) を手で直す。フロントマターの name_local と aliases に書く (効果テキストの欄の上)
+    if (lang !== "en" && cardInfo(this.app, name)) {
+      const pen = nameRow.createEl("button", { text: "✎", cls: "mtg-preview-nameedit", attr: { "aria-label": `カード名 (${lang}) を編集` } });
+      pen.onclick = () =>
+        new TextModal(
+          this.app,
+          `${name} のカード名 (${lang})`,
+          ja && ja !== name ? ja : "",
+          async (t) => {
+            await setLocalName(this.app, name, t);
+            void this.preview(name, image, text, normLocalName(t) && normLocalName(t) !== name ? normLocalName(t) : undefined); // いま書いた名前で出し直す (メタデータの更新を待たない)
+          },
+          "設定した言語のカード名。フロントマターの name_local と aliases に書く。空にすると、ローカルネームを消す。",
+        ).open();
+    }
     const text_ = this.el.preview.createDiv({ text: body, cls: "mtg-preview-text" });
     // 設定した言語のテキストを手で直す (取れなかったとき用)。英語の本文は変えない
-    const lang = this.settings.textLang;
     if (lang !== "en" && cardInfo(this.app, name)) {
       const pen = text_.createEl("button", { text: "✎", cls: "mtg-preview-edit", attr: { "aria-label": `効果テキスト (${lang}) を編集` } });
       pen.onclick = () =>

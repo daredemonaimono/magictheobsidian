@@ -447,3 +447,7 @@ button.mtg-color .mtg-sym { width: 20px; height: 20px; display: block; }
 .mtg-setsec-arrow { width: 1em; color: var(--text-muted); }
 .mtg-setsec-body { padding: 0 12px 6px; border-top: 1px solid var(--background-modifier-border); }
 .mtg-setsec-desc { padding: 8px 0 2px; }
+
+/* デッキ画面のプレビュー: カード名の行 (右にローカルネームを直す ✎) */
+.mtg-preview-namerow { display: flex; align-items: center; justify-content: center; gap: 6px; }
+.mtg-preview-nameedit { padding: 0 6px; }

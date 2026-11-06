@@ -1,5 +1,6 @@
 import { App, TFile, normalizePath, parseYaml } from "obsidian";
 import { backFaceText, backImageOf, backUrl } from "./flip";
+import { applyLocalName } from "./localName";
 import { LEGAL_FORMATS, judge } from "./rules";
 import { Settings } from "./settings";
 import { Printing, ScryfallCard, legalList, restrictedList, printingImageUrl, fetchById, fetchCard, fetchCollection, fetchLocalized, fetchPrintings, fileSafe, toMarkdown } from "./scryfall";
@@ -131,6 +132,13 @@ export async function setLocalText(app: App, key: string, lang: string, text: st
     if (section.test(c)) return c.replace(section, body ? () => `\n## Text (${lang})\n\n${body}\n` : () => "");
     return body ? c.replace("\n[Scryfall]", () => `\n## Text (${lang})\n\n${body}\n\n[Scryfall]`) : c;
   });
+}
+
+// ローカルネーム (設定した言語のカード名) を、フロントマターの name_local と aliases に書く。空にすると消す
+export async function setLocalName(app: App, key: string, name: string) {
+  const f = app.vault.getAbstractFileByPath(`${CARD_DIR}/${key}.md`);
+  if (!(f instanceof TFile)) return;
+  await app.fileManager.processFrontMatter(f, (fm) => applyLocalName(fm, name));
 }
 
 export async function printingOf(app: App, key: string, print: string): Promise<Printing | undefined> {
