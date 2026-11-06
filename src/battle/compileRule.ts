@@ -12,6 +12,7 @@ export interface CompileResult {
   md?: string;
   reason?: string; // md が無いときの理由 (LLM に回す)
   jev?: { questions: number; input: number; output: number; ms: number };
+  answers?: Record<string, JevAnswer>; // 確かさが足りなかったときの、Jev の返事 (診断用)
 }
 
 const EFFECT_JA: Record<string, string> = { draw: "カードを引く", discard: "カードを捨てる", gainLife: "ライフを得る", loseLife: "ライフを失う", damage: "ダメージを与える", counter: "呪文を打ち消す", destroy: "破壊する", exile: "追放する", bounce: "手札に戻す", extraTurn: "追加のターンを得る" };
@@ -103,7 +104,9 @@ function plan(c: Clause, i: number): Plan | string {
 function questions(plans: Plan[]): Record<string, JevQuestion> {
   const q: Record<string, JevQuestion> = {};
   for (const p of plans) {
-    q[p.verify] = { type: "noul", instructions: `次の文は、「${EFFECT_JA[p.effect]}」という 1 つの動作だけを表していますか (条件・選択・ほかの動作を含まない)。文: ${p.clause.text}` };
+    // 肯定の問い (v) と、「ほかがあるか」の問い (x) の 2 問。否定を混ぜた 1 問にしない (Jev は、否定・二重否定が苦手)
+    q[p.verify] = { type: "noul", instructions: `次の文は、「${EFFECT_JA[p.effect]}」ことを述べていますか。文: ${p.clause.text}` };
+    q[`x${p.verify.slice(1)}`] = { type: "noul", instructions: `次の文には、「${EFFECT_JA[p.effect]}」以外の動作、または、条件・選択が、含まれていますか。文: ${p.clause.text}` };
     if (p.whoKey) q[p.whoKey] = { type: "choice", instructions: `次の文で、「${EFFECT_JA[p.effect]}」のは、だれですか。文: ${p.clause.text}`, criteria: { target: "対象に取ったプレイヤー", you: "この呪文のコントローラー (あなた)", opponents: "対戦相手" } };
     if (p.amountKey && p.amountChoices) q[p.amountKey] = { type: "choice", instructions: `次の文で、「${EFFECT_JA[p.effect]}」数量 (枚数・点数) は、どれですか。文: ${p.clause.text}`, criteria: Object.fromEntries(p.amountChoices.map((n, k) => [`n${k}`, String(n)])) };
   }
@@ -176,11 +179,13 @@ export async function compileRule(o: { card: string; oracle: string; ask: JevAsk
   const t = { n: 0 };
   for (const p of plans) {
     const v = answers[p.verify]?.noul;
-    if (v === undefined || v < min) return { reason: `${p.effect}: Jev の確かさが足りない (${v === undefined ? "答え無し" : v.toFixed(2)})`, jev };
+    const x = answers[`x${p.verify.slice(1)}`]?.noul;
+    if (v === undefined || v < min) return { reason: `${p.effect}: Jev の確かさが足りない (その動作か: ${v === undefined ? "答え無し" : v.toFixed(2)})`, jev, answers };
+    if (x === undefined || x > 1 - min) return { reason: `${p.effect}: Jev が、ほかの動作・条件があると見ている (${x === undefined ? "答え無し" : x.toFixed(2)})`, jev, answers };
     let who = p.who;
     if (p.whoKey) {
       const a = answers[p.whoKey];
-      if (!a?.choice || (a.confidence ?? 0) < min) return { reason: `${p.effect}: 「だれが」の自信が足りない`, jev };
+      if (!a?.choice || (a.confidence ?? 0) < min) return { reason: `${p.effect}: 「だれが」の自信が足りない`, jev, answers };
       who = a.choice as Who;
       if (who === "target" && !p.target) {
         const ta = targetArgs(p.clause) ?? (p.clause.targets.includes("player") ? "zone=player kind=player" : undefined);
@@ -192,7 +197,7 @@ export async function compileRule(o: { card: string; oracle: string; ask: JevAsk
     if (p.amountKey && p.amountChoices) {
       const a = answers[p.amountKey];
       const k = Number(a?.choice?.replace(/^n/, ""));
-      if (!a || Number.isNaN(k) || (a.confidence ?? 0) < min) return { reason: `${p.effect}: 数量の自信が足りない`, jev };
+      if (!a || Number.isNaN(k) || (a.confidence ?? 0) < min) return { reason: `${p.effect}: 数量の自信が足りない`, jev, answers };
       amount = p.amountChoices[k];
     }
     body.push(...lines(p, who, amount, t));

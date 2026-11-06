@@ -186,6 +186,20 @@ export default class MagicTheObsidian extends Plugin {
       void this.syncSidebar();
       window.setTimeout(() => void this.preloadImages(false), 8000); // 「先に保存」のときだけ。起動の直後を避けて、あとから、静かに
     });
+    // Jev の接続の確認: Ancestral Recall を、コードと Jev で組んでみて、結果 (または、組めなかった理由と、Jev の返事) を、通知に出す
+    this.addCommand({
+      id: "jev-check",
+      name: "Jev: test connection (compile Ancestral Recall)",
+      callback: async () => {
+        const key = secretKey(this.app, this.settings.ai.keys.jev);
+        if (!key) return void new Notice("設定の「AI → 接続」で、Jev の API キーを選んでください");
+        const model = this.settings.ai.scenes.nodes.models.jev;
+        new Notice(`Jev に聞いています… (モデル: ${model})`);
+        const r = await compileRule({ card: "Ancestral Recall", oracle: "Instant\n\nTarget player draws three cards.", ask: (state, questions) => askJev({ apiKey: key, model, state, questions, http: obsidianHttp }) });
+        const stat = r.jev ? `${r.jev.ms}ms・質問 ${r.jev.questions} 個・入力 ${r.jev.input} トークン` : "";
+        new Notice(r.md ? `Jev で組めた (${stat})\n${r.md.split("## 呪文能力")[1].trim()}` : `組めなかった: ${r.reason}\n${stat}\n返事: ${JSON.stringify(r.answers ?? {}).slice(0, 300)}`, 20000);
+      },
+    });
     this.addCommand({ id: "cache-images", name: "Save card images (local cache, per settings)", callback: () => void this.preloadImages(true) });
 
     this.addCommand({
@@ -598,6 +612,7 @@ export default class MagicTheObsidian extends Plugin {
     let fallback = 0;
     let gaps = 0;
     let compiled = 0; // コードと Jev で組めた (LLM を呼ばなかった) 枚数
+    const passed: string[] = []; // LLM に回した理由 (通知に出す)
     // まず、コードと Jev で組む (設定。Jev のキーが要る)。組めなければ、理由を控えて、LLM に回す
     const compileKey = this.settings.ai.jev.compile ? secretKey(this.app, this.settings.ai.keys.jev) : null;
     const jevAsk: JevAsk | undefined = compileKey ? (state, questions) => askJev({ apiKey: compileKey, model: this.settings.ai.scenes.nodes.models.jev, state, questions, http: obsidianHttp }) : undefined;
@@ -614,7 +629,9 @@ export default class MagicTheObsidian extends Plugin {
             console.debug(`[jev] コードと Jev で組んだ: ${name} (${c.jev?.ms}ms・入力 ${c.jev?.input} トークン)`);
             continue;
           }
-          console.debug(`[jev] LLM に回す: ${name}: ${c.reason ?? "裁定後のテキストがある"}`);
+          const why = c.reason ?? "裁定後のテキストがある";
+          passed.push(`${name}: ${why}`);
+          console.debug(`[jev] LLM に回す: ${name}: ${why}`, c.answers);
         }
         const r = await buildRuleTwoStage({
           card: name,
@@ -644,7 +661,7 @@ export default class MagicTheObsidian extends Plugin {
         new Notice(`${name}: ${(e as Error).message}`);
       }
     }
-    new Notice(`AI のルール作成: 作った ${made} 枚 / 上書きした ${over} 枚 / 失敗 ${failed} 枚${compiled ? ` / コードと Jev で組んだ ${compiled} 枚 (AI を呼ばなかった)` : ""}${fallback ? ` / 全ノードで、やり直した ${fallback} 枚` : ""}${gaps ? ` / 足りない効果あり ${gaps} 枚 (${RULES_DIR}/${GAPS_NOTE})` : ""}`);
+    new Notice(`AI のルール作成: 作った ${made} 枚 / 上書きした ${over} 枚 / 失敗 ${failed} 枚${compiled ? ` / コードと Jev で組んだ ${compiled} 枚 (AI を呼ばなかった)` : ""}${passed.length ? ` / Jev で組めず、AI に回した ${passed.length} 枚 (${passed.slice(0, 3).join(" | ")})` : ""}${fallback ? ` / 全ノードで、やり直した ${fallback} 枚` : ""}${gaps ? ` / 足りない効果あり ${gaps} 枚 (${RULES_DIR}/${GAPS_NOTE})` : ""}`);
   }
 
   // 足りない効果 (ルールの「未対応」と、1段目が「書けなさそう」と答えたもの) を、Rules/_足りないノード.md に、カードごとに残す。次に作るノードの手がかり (ノードを足したら、そのカードを、もう一度、書かせる)。無ければ、そのカードの行を消す

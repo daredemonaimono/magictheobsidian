@@ -16,7 +16,7 @@ const fake = (overrides: Record<string, unknown> = {}): { ask: JevAsk; seen: Rec
     const answers: Record<string, any> = {};
     for (const [k, q] of Object.entries(questions)) {
       if (k in overrides) answers[k] = overrides[k];
-      else if (q.type === "noul") answers[k] = { type: "noul", noul: 0.95 };
+      else if (q.type === "noul") answers[k] = { type: "noul", noul: k.startsWith("x") ? 0.05 : 0.95 }; // v = その動作か (高い) / x = ほかがあるか (低い)
       else {
         const first = Object.keys(q.criteria)[0];
         answers[k] = { type: "choice", choice: first, confidence: 0.95, probabilities: { [first]: 0.95 } };
@@ -34,7 +34,7 @@ const fake = (overrides: Record<string, unknown> = {}): { ask: JevAsk; seen: Rec
     const r = await compileRule({ card: "Ancestral Recall", oracle: "Instant\n\nTarget player draws three cards.", ask: f.ask });
     assert.ok(r.md, r.reason);
     assert.ok(r.md!.includes("- target as=t zone=player kind=player\n- draw player=target target=$t count=3\n"));
-    assert.deepEqual(Object.keys(f.seen[0]), ["v0"], "決まるものは、コードが決める。Jev には、確かめる 1 問だけ");
+    assert.deepEqual(Object.keys(f.seen[0]), ["v0", "x0"], "決まるものは、コードが決める。Jev には、確かめる 2 問 (その動作か / ほかがあるか) だけ");
     assert.equal(r.jev!.ms, 80);
   }
   // 打ち消し (unlessPay)・ダメージ・ライフ・追加のターン
@@ -57,12 +57,15 @@ const fake = (overrides: Record<string, unknown> = {}): { ask: JevAsk; seen: Rec
     const r = await compileRule({ card: "Odd", oracle: "Sorcery\n\nYou draw two cards, 3 total.", ask: f.ask });
     assert.ok(r.md, r.reason);
     assert.ok(r.md!.includes("count=3"), "Jev が選んだ 2 番目の数");
-    assert.deepEqual(Object.keys(f.seen[0]).sort(), ["n0", "v0"]);
+    assert.deepEqual(Object.keys(f.seen[0]).sort(), ["n0", "v0", "x0"]);
   }
   // 自信が足りない・Jev の失敗・呪文能力でない・型が無い → md を返さず、理由 (LLM に回す)
   {
     const low = await compileRule({ card: "Ancestral Recall", oracle: "Target player draws three cards.", ask: fake({ v0: { type: "noul", noul: 0.4 } }).ask });
     assert.ok(!low.md && /確かさが足りない/.test(low.reason!));
+    const other = await compileRule({ card: "Ancestral Recall", oracle: "Target player draws three cards.", ask: fake({ x0: { type: "noul", noul: 0.7 } }).ask });
+    assert.ok(!other.md && /ほかの動作・条件があると見ている/.test(other.reason!), "ほかの動作・条件があると答えたら、組まない");
+    assert.ok(other.answers, "診断用に、Jev の返事を返す");
     const boom = await compileRule({ card: "X", oracle: "Draw three cards.", ask: async () => { throw new Error("Jev の API キーが無効"); } });
     assert.ok(!boom.md && /Jev が使えない/.test(boom.reason!));
     const kw = await compileRule({ card: "Bear", oracle: "Flying", ask: fake().ask });
