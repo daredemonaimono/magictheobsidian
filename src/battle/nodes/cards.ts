@@ -23,7 +23,7 @@ export function registerCards(): void {
     run: (ctx, a): Record<string, Value> => {
       if (a.optional === true && !(ctx.game.decide?.may?.(ctx.game, ctx.item.controller, `カードを ${Number(a.count)} 枚、追加で引きますか?`) ?? true)) return { n: 0 };
       for (const p of playersFor(ctx, a)) {
-        drawCards(ctx.game, p, Number(a.count));
+        drawCards(ctx.game, p, Number(a.count), ctx.rules);
         if (Number(a.count) > 0) ctx.game.log.push(`${logWho(p)}がカードを ${a.count} 枚引いた`);
       }
       return { n: Number(a.count) };

@@ -910,7 +910,7 @@ export class BattleView extends ItemView {
           ok.disabled = picked.size !== max;
           return;
         }
-        count.setText(title ? `${title} (${picked.size} / ${max})` : `${req.kind === "discard" ? (keep !== undefined ? `手札を ${keep} 枚にする: 残すカードを ${keep} 枚選ぶ` : `手札から ${req.n} 枚捨てる`) : req.kind === "target" ? `${req.card}: 対象を選ぶ` : "カードを選ぶ"} (${picked.size} / ${min === max ? max : `${min}〜${max}`})`);
+        count.setText(title ? `${title} (${picked.size} / ${max})` : req.kind === "choose" && req.label ? `${req.label} (${picked.size} / ${max})` : `${req.kind === "discard" ? (keep !== undefined ? `手札を ${keep} 枚にする: 残すカードを ${keep} 枚選ぶ` : `手札から ${req.n} 枚捨てる`) : req.kind === "target" ? `${req.card}: 対象を選ぶ` : "カードを選ぶ"} (${picked.size} / ${min === max ? max : `${min}〜${max}`})`);
         ok.disabled = picked.size < min || picked.size > max;
       };
       const tileOf = new Map<string, HTMLElement>();

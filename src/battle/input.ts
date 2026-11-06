@@ -5,7 +5,7 @@ import { NodeCall } from "./node";
 export type CardRef = { id: string; name: string };
 export type InputRequest =
   | { kind: "discard"; n: number; cards: CardRef[]; cleanup?: boolean } // 手札から n 枚捨てる。cleanup = クリンナップの手札の上限 (画面は、「残すカードを選ぶ」形にする)
-  | { kind: "choose"; min: number; max: number; cards: CardRef[] } // 見たカードから選ぶ
+  | { kind: "choose"; min: number; max: number; cards: CardRef[]; label?: string } // 見たカードから選ぶ。label = 画面に出す説明 (Dredge など)
   | { kind: "order"; cards: CardRef[]; to: "top" | "bottom" } // ライブラリーの上・底に置く順番 (答えは、上から下へ並べた id)
   | { kind: "may"; what: string } // 「してもよい」
   | { kind: "pay"; n: number; why?: string } // 「支払わないかぎり」の支払い
@@ -39,6 +39,12 @@ export function makeDecider(me: PlayerId, answers: Answer[]): Decider {
       if (p !== me || from.length === 0 || (!atMost && from.length <= n)) return undefined;
       const got = ids(next({ kind: "choose", min: atMost ? 0 : n, max: n, cards: refs(from) }));
       return from.filter((c) => got.includes(c.id));
+    },
+    dredge(_g, p, options) {
+      if (p !== me) return undefined;
+      const label = `引くかわりに Dredge する? ${options.map((o) => `${o.card.name} (Dredge ${o.n})`).join("・")}: 手札に戻すカードを選ぶ (選ばなければ、ふつうに引く)`;
+      const got = ids(next({ kind: "choose", min: 0, max: 1, cards: refs(options.map((o) => o.card)), label }));
+      return options.find((o) => got.includes(o.card.id))?.card;
     },
     order(_g, p, cards, to) {
       if (p !== me || cards.length < 2) return undefined;

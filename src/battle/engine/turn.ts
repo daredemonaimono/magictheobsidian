@@ -44,7 +44,7 @@ export function advanceStep(g: Game, rules: RuleBook): void {
     g.blockersDeclared = [];
   }
   if (g.strictTurns && g.step === "draw" && g.turn > 1) {
-    drawCards(g, g.active, 1);
+    drawCards(g, g.active, 1, rules);
     g.log.push(`${who(g.active)}がカードを引いた`);
   } // ターンのドロー (ゲームの最初のターンは引かない)。「ドロー・ステップの開始時」の誘発より先
   g.priority = g.active;

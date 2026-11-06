@@ -96,6 +96,7 @@ export interface Decider {
   pay?(g: Game, p: PlayerId, n: number, why?: string): boolean | undefined; // 「支払わないかぎり」を払うか
   choose?(g: Game, p: PlayerId, from: GameCard[], n: number, atMost?: boolean): GameCard[] | undefined; // 選ぶカード (look / choose)
   order?(g: Game, p: PlayerId, cards: GameCard[], to: "top" | "bottom"): GameCard[] | undefined; // ライブラリーの上・底に置く順番 (上から下へ。既定は、並んでいる順)
+  dredge?(g: Game, p: PlayerId, options: { card: GameCard; n: number }[]): GameCard | undefined; // 引くかわりに Dredge するカード (しないなら undefined)
   target?(g: Game, item: StackItem, call: NodeCall, legal: string[]): string[] | undefined; // 誘発型能力の対象 (誘発時に選ぶ。既定は合法な対象の先頭から)
 }
 export interface Game {
@@ -180,9 +181,31 @@ export const splitIds = (s: string): string[] => (s === "" ? [] : s.split(/,(?! 
 
 export const typeIn = (typeLine: string, spec: string): boolean => spec.split("|").some((t) => typeLine.toLowerCase().includes(t.trim().toLowerCase()));
 
-// カードを n 枚引く。ライブラリーが空で引けなかったら、次の状況起因処理で負ける
-export function drawCards(g: Game, p: PlayerId, n: number): void {
+// Dredge できるカード: p の墓地にある、常在型能力 dredge amount=N を持つカードのうち、ライブラリーが N 枚以上のもの
+export function dredgeOptions(g: Game, p: PlayerId, rules: RuleBook): { card: GameCard; n: number }[] {
+  const out: { card: GameCard; n: number }[] = [];
+  for (const card of g.graveyards[p]) {
+    const call = rules.get(card.name)?.abilities.filter((a) => a.kind === "static").flatMap((a) => a.body).find((c) => c.node === "dredge");
+    const n = Number(call?.args.amount);
+    if (call && n >= 1 && g.libraries[p].length >= n) out.push({ card, n });
+  }
+  return out;
+}
+
+// カードを n 枚引く。ライブラリーが空で引けなかったら、次の状況起因処理で負ける。
+// rules を渡すと、引くたびに、Dredge できるカードがあれば、g.decide.dredge で選ばせる (選ばれたら、引くかわりに、上から N 枚を墓地に置いて、そのカードを手札へ)。ゲーム開始時の手札など、rules を渡さない引きは、Dredge しない
+export function drawCards(g: Game, p: PlayerId, n: number, rules?: RuleBook): void {
   for (let i = 0; i < n; i++) {
+    const options = rules ? dredgeOptions(g, p, rules) : [];
+    const chosen = options.length ? g.decide?.dredge?.(g, p, options) : undefined;
+    const pick = options.find((o) => o.card === chosen);
+    if (pick) {
+      for (const c of g.libraries[p].splice(0, pick.n)) putInGraveyard(g, c, "library");
+      g.graveyards[p] = g.graveyards[p].filter((c) => c !== pick.card);
+      g.hands[p].push(pick.card);
+      g.log.push(`${p === "you" ? "あなた" : p === "opp" ? "相手" : p}は、引くかわりに Dredge ${pick.n}: ${pick.card.name} を手札に戻した`);
+      continue;
+    }
     const top = g.libraries[p].shift();
     if (!top) {
       g.log.push(`${p}: ライブラリーが空で引けなかった`);

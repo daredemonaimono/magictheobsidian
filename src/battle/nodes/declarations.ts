@@ -72,6 +72,18 @@ export function registerDeclarations(): void {
   });
 
   node({
+    id: "dredge",
+    core: true,
+    title: "Dredge",
+    summary: "Dredge の宣言(常在型能力。amount=N)。このカードが墓地にあるとき、カードを引くかわりに、ライブラリーの上から N 枚を墓地に置いて、このカードを手札に戻してもよい(ライブラリーが N 枚以上のとき)。Stinkweed Imp・Golgari Thug・Shambling Shell・Golgari Grave-Troll",
+    params: { amount: { type: "number", required: true, min: 1 } },
+    outputs: {},
+    declaration: true,
+    only: ["static"],
+    run: (): Record<string, Value> => ({}),
+  });
+
+  node({
     id: "storm",
     core: true,
     title: "Storm",
