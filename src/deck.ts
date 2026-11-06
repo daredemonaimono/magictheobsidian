@@ -83,3 +83,11 @@ export function foldCommander(deck: Deck): Deck {
   deck.commander.clear();
   return deck;
 }
+
+// デッキのサムネイル (カバー写真) にするカード。frontmatter の thumbnail (デッキに入っているカード名) があればそれ、無ければ (入っていなくても) メインの先頭 (統率戦はコマンダーが先頭)。
+// デッキ一覧とデッキ画面のヘッダーが、同じ決め方を使う
+export function thumbnailKey(thumb: unknown, deck: Deck): string | undefined {
+  const keys = [...deck.commander.keys(), ...deck.main.keys()];
+  const all = [...keys, ...deck.side.keys()];
+  return typeof thumb === "string" && all.includes(thumb) ? thumb : keys[0];
+}

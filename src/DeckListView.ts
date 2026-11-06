@@ -1,6 +1,6 @@
 import { App, ItemView, Modal, Notice, Setting, TAbstractFile, TFile, WorkspaceLeaf, debounce } from "obsidian";
 import { cardInfo, printingOf } from "./cards";
-import { DECK_DIR, parseDeck } from "./deck";
+import { DECK_DIR, parseDeck, thumbnailKey } from "./deck";
 import { DECK_VIEW } from "./DeckView";
 import { FORMATS, LEGAL_FORMATS } from "./rules";
 import { artCropUrl } from "./scryfall";
@@ -99,7 +99,7 @@ export class DeckListView extends ItemView {
       const colors = new Set(mainKeys.flatMap((k) => cardInfo(this.app, k)?.colors ?? []));
 
       // サムネイル: frontmatter の thumbnail (デッキ内のカード名)。無ければメインの先頭。選んだ版があればその版のイラスト
-      const thumb = keys.includes(fm.thumbnail) ? fm.thumbnail : mainKeys[0];
+      const thumb = thumbnailKey(fm.thumbnail, deck);
       let art: string | undefined;
       if (thumb) {
         const print = (deck.commander.get(thumb) ?? deck.main.get(thumb) ?? deck.side.get(thumb))?.print;

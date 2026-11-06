@@ -1,5 +1,5 @@
 import { App, Modal } from "obsidian";
-import { DeckChoice, buildMatch, opponentChoices, unruledCards } from "./battle/deckToGame";
+import { DeckChoice, buildMatch, opponentChoices, pickRandomOpponent, unruledCards } from "./battle/deckToGame";
 import { loadMatchInputs } from "./battleStart";
 
 const RANDOM = "__random__";
@@ -16,14 +16,14 @@ export class BattleStartModal extends Modal {
   private startBtn!: HTMLButtonElement;
   private seq = 0;
 
-  constructor(app: App, private decks: DeckChoice[], private onStart: (self: string, opp: string) => void) {
+  constructor(app: App, private decks: DeckChoice[], private onStart: (self: string, opp: string) => void, private noMirror = false) {
     super(app);
   }
 
   onOpen() {
     this.setTitle("対戦を始める");
     const { contentEl } = this;
-    contentEl.createEl("p", { text: "自分のデッキを選ぶと、同じフォーマットで使えるデッキから、相手を選べる(ランダムも選べる)。統率戦のデッキは、まだ対戦に使えない。", cls: "setting-item-description" });
+    contentEl.createEl("p", { text: "自分のデッキを選ぶと、同じフォーマット(デッキに設定したもの)のデッキから、相手を選べる(ランダムも選べる)。統率戦のデッキは、まだ対戦に使えない。", cls: "setting-item-description" });
 
     contentEl.createEl("div", { text: "自分のデッキ", cls: "setting-item-name" });
     const mineSel = contentEl.createEl("select");
@@ -76,8 +76,7 @@ export class BattleStartModal extends Modal {
   }
 
   private roll() {
-    const list = this.candidates();
-    this.rolled = list.length ? list[Math.floor(Math.random() * list.length)].name : "";
+    this.rolled = pickRandomOpponent(this.candidates(), this.mine, this.noMirror);
   }
 
   // 決まったデッキの組で、ルールが設定されていないカードの一覧を出す
@@ -87,7 +86,7 @@ export class BattleStartModal extends Modal {
     this.listEl.empty();
     this.startBtn.disabled = true;
     if (!this.mine) return void this.noteEl.setText("自分のデッキを選んでください");
-    if (!opp) return void this.noteEl.setText("相手にできるデッキがありません(同じフォーマットで使えるデッキが無い。判定が未取得のデッキは、デッキ画面の「情報取得」で判定できる)");
+    if (!opp) return void this.noteEl.setText("相手にできるデッキがありません(同じフォーマットのデッキが無い。フォーマットは、デッキ画面で変えられる)");
     this.noteEl.setText(this.opp === RANDOM ? `相手(ランダム): ${opp}` : `相手: ${opp}`);
     try {
       const { self, opp: o, rules } = await loadMatchInputs(this.app, this.mine, opp);

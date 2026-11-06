@@ -36,3 +36,14 @@ const cm = parseMoxfield("COMMANDER:\n1 Atraxa, Praetors' Voice (C16) 28\n\n1 So
 assert.equal(cm.commander.size, 1);
 assert.equal(cm.main.size, 1);
 assert.equal(foldCommander(cm).main.size, 2, "コマンダー欄が無いフォーマットではメインに入れる");
+
+// カバー写真 (サムネイル): デッキ一覧とデッキ画面で、同じ決め方
+{
+  const { thumbnailKey, parseDeck } = await import("../src/deck");
+  const deck = parseDeck("## Main\n\n4 [[Island]]\n4 [[Opt]]\n\n## Side\n\n2 [[Negate]]\n");
+  assert.equal(thumbnailKey("Opt", deck), "Opt", "設定したカード");
+  assert.equal(thumbnailKey("Negate", deck), "Negate", "サイドのカードも、選べる");
+  assert.equal(thumbnailKey(undefined, deck), "Island", "無ければ、メインの先頭");
+  assert.equal(thumbnailKey("Gone", deck), "Island", "デッキから抜けたカードを指していたら、メインの先頭");
+  assert.equal(thumbnailKey("Opt", parseDeck("")), undefined, "空のデッキは、なし");
+}

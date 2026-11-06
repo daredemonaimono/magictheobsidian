@@ -104,6 +104,7 @@ export default class MagicTheObsidian extends Plugin {
       battleOpponent: d.battleOpponent === "passive" ? "passive" : d.battleOpponent === "claude" ? "claude" : "cpu",
       keyRemove: MOD_KEYS.includes(d.keyRemove) ? d.keyRemove : DEFAULT_SETTINGS.keyRemove,
       keyMove: MOD_KEYS.includes(d.keyMove) ? d.keyMove : DEFAULT_SETTINGS.keyMove,
+      battleNoMirror: d.battleNoMirror ?? DEFAULT_SETTINGS.battleNoMirror,
       battleHistory: d.battleHistory ?? DEFAULT_SETTINGS.battleHistory,
       battleEffects: d.battleEffects ?? DEFAULT_SETTINGS.battleEffects,
     };
@@ -404,7 +405,7 @@ export default class MagicTheObsidian extends Plugin {
   private async openBattleStart() {
     const decks = await listDecks(this.app);
     if (!decks.length) return void new Notice("デッキがありません (Decks/)");
-    new BattleStartModal(this.app, decks, (self, opp) => void this.beginBattle(self, opp)).open();
+    new BattleStartModal(this.app, decks, (self, opp) => void this.beginBattle(self, opp), this.settings.battleNoMirror).open();
   }
 
   // デッキのメモの下書き: 対戦の履歴から、AI に作らせる。保存は、人が採用したときだけ

@@ -37,10 +37,11 @@ export interface Settings {
   battleEffects: boolean; // 対戦の演出 (ダメージ・ライフの数字を大きく出す)
   keyRemove: ModKey; // デッキの一覧で、このキーを押しながらクリック = 1枚減らす (初期値 Shift)
   keyMove: ModKey; // デッキの一覧で、このキーを押しながらクリック = メインとサイドを入れ替える (初期値 ⌘ / Ctrl)
+  battleNoMirror: boolean; // 対戦の相手を「ランダム」にしたとき、自分と同じデッキ (ミラー) を選ばない
   battleStops: "always" | "smart"; // 対戦の優先権の止まり方。always = 毎回止まる / smart = 使えるものがあるときだけ (メインフェイズでは、必ず止まる)
 }
 
-export const DEFAULT_SETTINGS: Settings = { textLang: "en", cardLang: "en", sidebar: true, listArt: true, dashboardTab: true, currency: "USD", ai: DEFAULT_AI, keyRemove: "shift", keyMove: "mod", battleStops: "smart", battleOpponent: "cpu", battleHistory: true, battleEffects: true };
+export const DEFAULT_SETTINGS: Settings = { textLang: "en", cardLang: "en", sidebar: true, listArt: true, dashboardTab: true, currency: "USD", ai: DEFAULT_AI, keyRemove: "shift", keyMove: "mod", battleNoMirror: false, battleStops: "smart", battleOpponent: "cpu", battleHistory: true, battleEffects: true };
 
 // 設定の名前で、キーチェーンから取る (空・見つからないときは null)
 // 設定画面の部品: 大項目 (タブ) → 中項目 (折りたたみ) → 小項目 (1つの設定を描く関数)
@@ -86,7 +87,7 @@ export class SettingsTab extends PluginSettingTab {
               await this.save();
             }),
         );
-    const toggle = (c: Ctx, name: string, desc: string, key: "dashboardTab" | "sidebar" | "listArt" | "battleHistory" | "battleEffects", after?: () => void) =>
+    const toggle = (c: Ctx, name: string, desc: string, key: "dashboardTab" | "sidebar" | "listArt" | "battleHistory" | "battleEffects" | "battleNoMirror", after?: () => void) =>
       new Setting(el(c))
         .setName(name)
         .setDesc(desc)
@@ -217,6 +218,7 @@ export class SettingsTab extends PluginSettingTab {
                     await this.save();
                   },
                 ),
+              (c) => toggle(c, "ランダムでミラーを選ばない / No mirror on random", "対戦を始めるとき、相手のデッキを「ランダム」にした場合、自分と同じデッキ(ミラー)を選ばない。同じフォーマットのデッキが、自分のデッキだけのときは、ミラーになる。相手を自分で選んだときは、ミラーも選べる。", "battleNoMirror"),
             ],
           },
           {

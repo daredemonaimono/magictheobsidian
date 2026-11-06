@@ -6,9 +6,9 @@ import { CARD_DIR, cardBackImage, cardBackText, cardImage, cardInfo, cardText, o
 import { CREATABLE, FORMATS, formatOf, judge } from "./rules";
 import { loadCollection } from "./collection";
 import { formatPrice, priceOf, refreshPrices } from "./prices";
-import { deckArtUrl } from "./ThumbnailModal";
+import { ThumbnailModal, deckArtUrl } from "./ThumbnailModal";
 import { Settings } from "./settings";
-import { Board, Deck, emptyDeck, parseDeck, writeDeck } from "./deck";
+import { Board, Deck, emptyDeck, parseDeck, thumbnailKey, writeDeck } from "./deck";
 import { Printing, printingImageUrl } from "./scryfall";
 import { COLUMNS, groupOf, groupRank, isToken } from "./layout";
 import { Filters, Meta, Result, buildFilterBar, emptyFilters, isEmpty, searchAll } from "./search";
@@ -202,7 +202,7 @@ export class DeckView extends ItemView {
     if (!file || !el) return;
     const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
     const seq = ++this.headSeq;
-    const key: string | undefined = fm?.thumbnail; // デッキ一覧のサムネイルと同じ
+    const key = thumbnailKey(fm?.thumbnail, this.deck); // デッキ一覧のサムネイルと同じ決め方 (一覧で選んでも、ここで選んでも、両方に反映される)
     const art = key ? await deckArtUrl(this.app, this.deck, key) : undefined;
     if (seq !== this.headSeq) return;
     el.empty();
@@ -210,6 +210,10 @@ export class DeckView extends ItemView {
     else el.style.removeProperty("--mtg-head-art");
 
     // ヘッダーにカーソルを合わせると、右上に、メモのアイコン。押すと、AI へのメモ (対戦で、このデッキを AI が使うときに読む) を、自由に書ける
+    // 隣の画像のアイコンで、カバー写真 (デッキ一覧のサムネイルと同じもの) を選べる
+    const cover = el.createEl("button", { cls: "mtg-dcover clickable-icon", attr: { "aria-label": "カバー写真を選ぶ" } });
+    setIcon(cover, "image");
+    cover.onclick = () => new ThumbnailModal(this.app, file, "カバー写真にするカードアート", (k) => void this.app.fileManager.processFrontMatter(file, (f) => (f.thumbnail = k))).open();
     const memo = el.createEl("button", { cls: "mtg-dmemo clickable-icon", attr: { "aria-label": "AI へのメモ" } });
     setIcon(memo, "sticky-note");
     memo.onclick = async () => {

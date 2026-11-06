@@ -1,5 +1,5 @@
 import assert from "node:assert";
-import { CardData, DeckChoice, DeckData, MatchError, buildMatch, opponentChoices, toGameCard, unruledCards } from "../src/battle/deckToGame";
+import { CardData, DeckChoice, DeckData, MatchError, buildMatch, opponentChoices, pickRandomOpponent, toGameCard, unruledCards } from "../src/battle/deckToGame";
 import { boardModel } from "../src/battle/boardModel";
 import { Ability, CardRule } from "../src/battle/node";
 import { RuleBook } from "../src/battle/state";
@@ -84,16 +84,26 @@ assert.throws(() => buildMatch(sixty(), sixty("commander"), none), MatchError);
   assert.equal(new Set(unruledCards([sixty(), sixty()], rules)).size, unruledCards([sixty(), sixty()], rules).length);
 }
 
-// ---- 相手のデッキの候補: 自分のフォーマットで使えるもの。統率戦は除く。自分のフォーマットが決まっていなければ、統率戦以外の全部
+// ---- 相手のデッキの候補: 自分と、デッキに設定したフォーマットが同じもの。統率戦は除く。自分が決まっていなければ、統率戦以外の全部
 {
   const d = (name: string, format: string, legal: DeckChoice["legal"] = {}): DeckChoice => ({ name, format, commander: format === "commander", legal });
   const mine = d("Mine", "modern", { modern: "ok" });
-  const all = [mine, d("A", "modern", { modern: "ok", legacy: "ok" }), d("B", "standard", { modern: "ng" }), d("C", "legacy", { modern: "unknown" }), d("Cmd", "commander", { modern: "ok" })];
-  assert.deepEqual(opponentChoices(mine, all).map((x) => x.name), ["Mine", "A"], "自分のフォーマット (modern) で使える (ok) ものだけ。自分のデッキ自身も候補");
+  // A は modern。B・C は、全カードが modern で使えても、設定したフォーマットが違う (使えるかどうかではなく、設定で決まる)
+  const all = [mine, d("A", "modern", { modern: "ok", legacy: "ok" }), d("B", "standard", { modern: "ok" }), d("C", "legacy", { modern: "ok" }), d("Cmd", "commander", { modern: "ok" }), d("Free1", ""), d("Free2", "constructed")];
+  assert.deepEqual(opponentChoices(mine, all).map((x) => x.name), ["Mine", "A"], "設定したフォーマットが同じものだけ。自分のデッキ自身も候補");
+  assert.deepEqual(opponentChoices(d("Me2", "standard"), all).map((x) => x.name), ["B"]);
   const free = d("Free", "", {});
-  assert.deepEqual(opponentChoices(free, all).map((x) => x.name), ["Mine", "A", "B", "C"], "フォーマットが決まっていなければ、統率戦以外の全部");
-  assert.deepEqual(opponentChoices(undefined, all).map((x) => x.name), ["Mine", "A", "B", "C"]);
+  assert.deepEqual(opponentChoices(free, all).map((x) => x.name), ["Free1", "Free2"], "フォーマットが無い (制限なし) デッキは、制限なしどうし (constructed と書いてあっても同じ)");
+  assert.deepEqual(opponentChoices(undefined, all).map((x) => x.name), ["Mine", "A", "B", "C", "Free1", "Free2"], "自分が決まっていなければ、統率戦以外の全部");
   assert.deepEqual(opponentChoices(d("Cmd2", "commander"), all), [], "自分が統率戦なら、候補なし (始められない)");
+
+  // ランダム: ミラーを選ばない設定
+  const cands = opponentChoices(mine, all);
+  assert.equal(pickRandomOpponent(cands, "Mine", true, () => 0), "A", "ミラーを選ばない: 自分のデッキは、除く");
+  assert.equal(pickRandomOpponent(cands, "Mine", true, () => 0.99), "A");
+  assert.deepEqual([pickRandomOpponent(cands, "Mine", false, () => 0), pickRandomOpponent(cands, "Mine", false, () => 0.99)], ["Mine", "A"], "設定が無ければ、自分のデッキも引く");
+  assert.equal(pickRandomOpponent([mine], "Mine", true, () => 0), "Mine", "ほかに候補が無いときだけ、ミラーになる");
+  assert.equal(pickRandomOpponent([], "Mine", true), "");
 }
 
 // ---- 組み立てた局面を、画面に出す内容に変換できる (手札 7 枚・相手の手札は枚数だけ・ターン 1 のアップキープ)

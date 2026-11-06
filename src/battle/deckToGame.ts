@@ -91,10 +91,19 @@ export interface DeckChoice {
   legal: Record<string, "ok" | "ng" | "unknown">;
 }
 
-// 相手のデッキの候補: 自分のフォーマットで使える (ok) もの。統率戦は除く (自分のデッキ自身も候補)。自分のフォーマットが決まっていなければ、統率戦以外の全部。自分が統率戦なら、候補なし
+// 相手のデッキの候補: 自分と、デッキに設定したフォーマット (frontmatter の format:) が同じもの。統率戦は除く (自分のデッキ自身も候補)。
+// フォーマットが無い (制限なし) デッキは、制限なしどうし。自分が決まっていなければ、統率戦以外の全部。自分が統率戦なら、候補なし
+const formatKey = (f: string) => (f && f !== "constructed" ? f : "");
 export function opponentChoices(self: DeckChoice | undefined, all: DeckChoice[]): DeckChoice[] {
   if (self?.commander) return [];
-  return all.filter((d) => !d.commander && (!self || !self.format || d.legal[self.format] === "ok"));
+  return all.filter((d) => !d.commander && (!self || formatKey(d.format) === formatKey(self.format)));
+}
+
+// 「ランダム」で相手を引く。noMirror (ミラーは選ばない) なら、自分と同じデッキを除く。ほかに候補が無いときだけ、ミラーを引く (始められなくならないように)。引けなければ空
+export function pickRandomOpponent(candidates: DeckChoice[], mine: string, noMirror: boolean, rnd: () => number = Math.random): string {
+  const others = candidates.filter((d) => d.name !== mine);
+  const pool = noMirror && others.length ? others : candidates;
+  return pool.length ? pool[Math.min(pool.length - 1, Math.floor(rnd() * pool.length))].name : "";
 }
 
 // 画面に渡す、対戦の局面とルール
