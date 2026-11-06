@@ -1,6 +1,7 @@
-import { App, Notice, Plugin, PluginSettingTab, SecretComponent, Setting } from "obsidian";
+import { App, Notice, Platform, Plugin, PluginSettingTab, SecretComponent, Setting } from "obsidian";
 import { AiSettings, DEFAULT_AI, PROVIDERS, Provider, SCENES, Scene } from "./battle/aiConfig";
 import { CURRENCIES, updateRates } from "./prices";
+
 
 // Scryfall の言語コード
 export const LANGS: Record<string, string> = {
@@ -17,6 +18,12 @@ export const LANGS: Record<string, string> = {
   ru: "Русский",
 };
 
+// クリックに組み合わせる修飾キー (shift / mod = Mac は ⌘・それ以外は Ctrl / alt = Option・Alt / ctrl)
+export type ModKey = "shift" | "mod" | "alt" | "ctrl";
+export const MOD_KEYS: ModKey[] = ["shift", "mod", "alt", "ctrl"];
+export const modLabel = (k: ModKey): string => (k === "shift" ? "Shift" : k === "mod" ? (Platform.isMacOS ? "⌘ Command" : "Ctrl") : k === "alt" ? (Platform.isMacOS ? "⌥ Option" : "Alt") : "Ctrl");
+export const hasMod = (e: { shiftKey: boolean; metaKey: boolean; ctrlKey: boolean; altKey: boolean }, k: ModKey): boolean => (k === "shift" ? e.shiftKey : k === "alt" ? e.altKey : k === "ctrl" ? e.ctrlKey : Platform.isMacOS ? e.metaKey : e.ctrlKey);
+
 export interface Settings {
   textLang: string; // カード名・効果テキスト
   cardLang: string; // カード画像 (収録一覧)
@@ -28,10 +35,12 @@ export interface Settings {
   battleOpponent: "cpu" | "claude" | "passive"; // 対戦の相手。cpu = 雑魚 CPU / claude = AI (API を、判断のたびに呼ぶ。種類は、ai の battle) / passive = 何もしない
   battleHistory: boolean; // 対戦の履歴を Battles/ に保存する (終わったとき・途中でやめたとき)
   battleEffects: boolean; // 対戦の演出 (ダメージ・ライフの数字を大きく出す)
+  keyRemove: ModKey; // デッキの一覧で、このキーを押しながらクリック = 1枚減らす (初期値 Shift)
+  keyMove: ModKey; // デッキの一覧で、このキーを押しながらクリック = メインとサイドを入れ替える (初期値 ⌘ / Ctrl)
   battleStops: "always" | "smart"; // 対戦の優先権の止まり方。always = 毎回止まる / smart = 使えるものがあるときだけ (メインフェイズでは、必ず止まる)
 }
 
-export const DEFAULT_SETTINGS: Settings = { textLang: "en", cardLang: "en", sidebar: true, listArt: true, dashboardTab: true, currency: "USD", ai: DEFAULT_AI, battleStops: "smart", battleOpponent: "cpu", battleHistory: true, battleEffects: true };
+export const DEFAULT_SETTINGS: Settings = { textLang: "en", cardLang: "en", sidebar: true, listArt: true, dashboardTab: true, currency: "USD", ai: DEFAULT_AI, keyRemove: "shift", keyMove: "mod", battleStops: "smart", battleOpponent: "cpu", battleHistory: true, battleEffects: true };
 
 // 設定の名前で、キーチェーンから取る (空・見つからないときは null)
 export const secretKey = (app: App, name: string): string | null => (name ? app.secretStorage.getSecret(name) : null);
@@ -71,7 +80,7 @@ export class SettingsTab extends PluginSettingTab {
       );
     new Setting(this.containerEl)
       .setName("サイドバーを使う / Use sidebar (デッキ画面のカード一覧・対戦のプレビューとログ)")
-      .setDesc("デッキ画面を開いている間だけ右サイドバーが出る。条件が空のときはデッキ内のカード、検索・フィルターすると追加できる(クリックで追加、Shift+クリックで削除)。オフにすると、画面内の検索欄(従来の表示)に戻る。")
+      .setDesc("デッキ画面を開いている間だけ右サイドバーが出る。条件が空のときはデッキ内のカード、検索・フィルターすると追加できる(クリックで追加。削除・メインとサイドの入れ替えは、下のショートカットで変えられる)。オフにすると、画面内の検索欄(従来の表示)に戻る。")
       .addToggle((t) =>
         t.setValue(this.settings.sidebar).onChange(async (v) => {
           this.settings.sidebar = v;
@@ -79,6 +88,21 @@ export class SettingsTab extends PluginSettingTab {
           this.onSidebar();
         }),
       );
+    const keyPick = (name: string, desc: string, key: "keyRemove" | "keyMove") =>
+      new Setting(this.containerEl)
+        .setName(name)
+        .setDesc(desc)
+        .addDropdown((d) => {
+          for (const k of MOD_KEYS) d.addOption(k, `${modLabel(k)}+クリック`);
+          d.setValue(this.settings[key]).onChange(async (v) => {
+            const other = key === "keyRemove" ? "keyMove" : "keyRemove";
+            this.settings[key] = v as ModKey;
+            if (this.settings[other] === v) new Notice("削除と入れ替えに、同じキーが選ばれている。削除が優先される");
+            await this.save();
+          });
+        });
+    keyPick("ショートカット: 1枚削除 / Shortcut: remove one", "デッキ画面のサイドバーの一覧で、このキーを押しながらクリックすると、そのカードを1枚減らす(初期値 Shift)。", "keyRemove");
+    keyPick("ショートカット: メイン ⇄ サイド / Shortcut: move main ⇄ side", "デッキ内の一覧で、このキーを押しながらクリックすると、そのカードを1枚、メインからサイドへ(サイドを表示しているときはメインへ)移す(初期値 ⌘ / Ctrl)。", "keyMove");
     new Setting(this.containerEl)
       .setName("一覧にイラストを出す / Art in card list")
       .setDesc("サイドバーの一覧に、カードのイラストを薄く出す。重いと感じたらオフ。見えている行の分だけ読み込む。")

@@ -33,7 +33,7 @@ import { DECKLIST_VIEW, DeckListView } from "./DeckListView";
 import { DECK_VIEW, DeckView } from "./DeckView";
 import { fetchCard, fileSafe } from "./scryfall";
 import { priceStore, updateCollectionPrices } from "./prices";
-import { DEFAULT_SETTINGS, Settings, SettingsTab, secretKey } from "./settings";
+import { DEFAULT_SETTINGS, MOD_KEYS, Settings, SettingsTab, secretKey } from "./settings";
 import { Scene, aiLabel, aiReady, migrateAi, providerName, runAi } from "./battle/aiConfig";
 import { AskAi } from "./battle/ai";
 
@@ -102,6 +102,8 @@ export default class MagicTheObsidian extends Plugin {
       ai: migrateAi(d), // 昔の設定 (claudeKeySecret・battleModel など) も、ここで新しい形に移す
       battleStops: d.battleStops === "always" ? "always" : "smart",
       battleOpponent: d.battleOpponent === "passive" ? "passive" : d.battleOpponent === "claude" ? "claude" : "cpu",
+      keyRemove: MOD_KEYS.includes(d.keyRemove) ? d.keyRemove : DEFAULT_SETTINGS.keyRemove,
+      keyMove: MOD_KEYS.includes(d.keyMove) ? d.keyMove : DEFAULT_SETTINGS.keyMove,
       battleHistory: d.battleHistory ?? DEFAULT_SETTINGS.battleHistory,
       battleEffects: d.battleEffects ?? DEFAULT_SETTINGS.battleEffects,
     };

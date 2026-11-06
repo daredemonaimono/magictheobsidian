@@ -383,6 +383,24 @@ export class DeckView extends ItemView {
     }
   }
 
+  // メインの1枚をサイドへ、サイドの1枚をメインへ移す。移した先で入れられるか (枚数の上限・フォーマット) も見る。だめなら、そのまま
+  async moveCard(key: string, from: Board) {
+    if (from !== "main" && from !== "side") return;
+    const to: Board = from === "main" ? "side" : "main";
+    if (!this.rules().boards.includes(to)) return void new Notice("このフォーマットには、サイドボードが無い");
+    const src = this.deck[from].get(key);
+    if (!src) return;
+    src.n > 1 ? this.deck[from].set(key, { ...src, n: src.n - 1 }) : this.deck[from].delete(key);
+    const why = await this.violation(key, to); // 移す1枚を外した状態で、移した先に入れられるか
+    if (why) {
+      this.deck[from].set(key, src);
+      return void new Notice(why);
+    }
+    const dst = this.deck[to].get(key);
+    this.deck[to].set(key, { ...dst, n: (dst?.n ?? 0) + 1, print: dst?.print ?? src.print });
+    await this.save();
+  }
+
   // サイドバーのメイン/サイド切り替え。追加先の欄も同じになる
   get onSide() {
     return this.board === "side";

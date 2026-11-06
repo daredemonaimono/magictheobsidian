@@ -4,7 +4,7 @@ import { Board } from "./deck";
 import { DeckView } from "./DeckView";
 import { groupOf, groupRank } from "./layout";
 import { Filters, Result, buildFilterBar, emptyFilters, localResult, searchAll } from "./search";
-import { Settings } from "./settings";
+import { Settings, hasMod, modLabel } from "./settings";
 import { manaCost } from "./symbols";
 
 export const CARDLIST_VIEW = "mtg-cardlist";
@@ -65,7 +65,7 @@ class SearchModal extends Modal {
 
 // 右サイドバー。デッキ画面を開いている間だけ出る。
 // 普段: いまデッキに入っているカード。「新しく追加」で検索すると、結果 (Cards/ + Scryfall) に切り替わる。
-// どちらも、クリックで1枚追加 / Shift+クリックで1枚削除 (デッキ内の一覧では、そのカードがいる欄の枚数が増減する)
+// どちらも、クリックで1枚追加 / 削除のキー (設定。初期値 Shift)+クリックで1枚削除 / 移動のキー (初期値 ⌘)+クリックでメイン ⇄ サイド (デッキ内の一覧では、そのカードがいる欄の枚数が増減する)
 export class CardListView extends ItemView {
   private f = emptyFilters();
   private searching = false; // true = 検索結果を出している
@@ -204,7 +204,7 @@ export class CardListView extends ItemView {
       cell.toggleClass("is-banned", banned);
       if (banned) cell.setAttr("aria-label", `${r.ja ?? r.name} (このフォーマットでは使えない)`);
       cell.toggleClass("is-illegal", !!illegal);
-      if (illegal) cell.setAttr("aria-label", `${r.ja ?? r.name} (このフォーマットでは使えない。Shift+クリックで外す)`);
+      if (illegal) cell.setAttr("aria-label", `${r.ja ?? r.name} (このフォーマットでは使えない。${modLabel(this.settings.keyRemove)}+クリックで外す)`);
       // 見えている行の分だけ読み込む (loading=lazy)。設定でオフにできる
       if (this.settings.listArt && r.art) cell.createEl("img", { cls: "mtg-lart", attr: { src: r.art, loading: "lazy", alt: "" } });
       manaCost(cell, r.manaCost).addClass("mtg-lcost");
@@ -218,12 +218,16 @@ export class CardListView extends ItemView {
         if (!t) return void new Notice("追加先のデッキ画面が見つからない。デッキ画面を開いてから、もう一度");
         try {
           if (deckMode) {
-            if (r.localKey && board) await t.adjustCard(r.localKey, e.shiftKey ? -1 : 1, board);
+            if (!r.localKey || !board) return;
+            if (hasMod(e, this.settings.keyRemove)) await t.adjustCard(r.localKey, -1, board);
+            else if (hasMod(e, this.settings.keyMove)) await t.moveCard(r.localKey, board); // メイン ⇄ サイド
+            else await t.adjustCard(r.localKey, 1, board);
             return;
           }
-          if (!e.shiftKey && !t.allows(r)) return void new Notice(`${r.name} はこのフォーマットでは使えない`);
+          const remove = hasMod(e, this.settings.keyRemove);
+          if (!remove && !t.allows(r)) return void new Notice(`${r.name} はこのフォーマットでは使えない`);
           cell.addClass("is-busy"); // Cards/ に無いカードは取得に数秒かかる
-          await (e.shiftKey ? t.removeCard(r) : t.addCard(r));
+          await (remove ? t.removeCard(r) : t.addCard(r));
         } catch (err) {
           console.error(err);
           new Notice(`追加できない: ${(err as Error).message}`);
