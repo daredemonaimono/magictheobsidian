@@ -202,8 +202,10 @@ export class SettingsTab extends PluginSettingTab {
                 }
               },
               (c) => {
-                const st = new Setting(c.el).setName("保存した画像 / Saved images").setDesc("調べています…");
-                void cacheInfo().then(({ files, bytes }) => st.setDesc(`${files} 枚 · ${(bytes / 1024 / 1024).toFixed(1)} MB。消しても、次に見るときに、また保存される。`)).catch(() => st.setDesc("保存先を読めない"));
+                const st = new Setting(c.el).setName("保存した画像 / Saved images").setDesc("保存した画像の数と大きさ。消しても、次に見るときに、また保存される。");
+                // 説明文 (setDesc) を、あとから非同期で書き換えない: Obsidian 1.15 の設定画面が、固まるため。大きさは、別の要素に出す
+                const info = st.controlEl.createSpan({ cls: "mtg-cacheinfo", text: "調べています…" });
+                void cacheInfo().then(({ files, bytes }) => info.setText(`${files} 枚 · ${(bytes / 1024 / 1024).toFixed(1)} MB`)).catch(() => info.setText("保存先を読めない"));
                 st.addButton((b) =>
                   b.setButtonText("すべて消す").onClick(async () => {
                     const n = await clearImageCache();

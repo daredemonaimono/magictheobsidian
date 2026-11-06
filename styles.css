@@ -472,3 +472,5 @@ button.mtg-color .mtg-sym { width: 20px; height: 20px; display: block; }
 .mtg-dhead:hover > .mtg-drefresh, .mtg-dhead > .mtg-drefresh:focus-visible, .mtg-dhead > .mtg-drefresh.is-busy { opacity: 1; }
 .mtg-drefresh.is-busy svg { animation: mtg-spin 1s linear infinite; }
 @keyframes mtg-spin { to { transform: rotate(360deg); } }
+
+.mtg-cacheinfo { margin-right: 10px; color: var(--text-muted); font-size: var(--font-ui-smaller); }
