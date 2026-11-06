@@ -1,5 +1,4 @@
 import { aiParse } from "./ai";
-import { hintsFor } from "./hints";
 import { ParamDef } from "./node";
 import { DEFAULT_GLOSSARY } from "./glossary";
 import { allConditions, allNodes } from "./registry";
@@ -17,7 +16,7 @@ const nodeList = (only?: ReadonlySet<string>) =>
 const conditionList = () => allConditions().map((c) => `- ${c.id} (${c.title}): ${c.summary}`).join("\n");
 
 // only = カードごとに選んだノードの id (あれば、中心のノード (core) + これだけを、指示に入れる。無ければ、全部)
-export function buildPrompt(card: string, oracle: string, ruling?: string, glossary?: string, only?: ReadonlySet<string>, hints = true): { system: string; user: string } {
+export function buildPrompt(card: string, oracle: string, ruling?: string, glossary?: string, only?: ReadonlySet<string>): { system: string; user: string } {
   const system = `あなたは Magic: The Gathering のカードのテキストを、汎用のノードの組み合わせ (Obsidian のノート) に直す役です。
 
 ## 書式
@@ -82,7 +81,7 @@ ${conditionList() || "(まだ無い)"}
 ${SAMPLE_RULES["Negate"]}\`\`\``;
   const r = ruling?.trim();
   const user = r ? `カード名: ${card}\n\n現在のカードのテキスト:\n${oracle}\n\n裁定後のテキスト(こちらが正しい。これに合わせてノードを組む):\n${r}` : `カード名: ${card}\n\nオラクルテキスト:\n${oracle}`;
-  return { system, user: hints ? user + hintsFor(r || oracle) : user }; // 切った結果 (参考) を添える。裁定後のテキストがあれば、そちらを切る
+  return { system, user };
 }
 
 // ---- ノードを選ぶ (ルールを書かせる前の、1段目)。短い一覧 (id・名前・説明の最初の部分) から、カードの効果に要りそうなノードを選ばせる。中心のノード (core) は、いつも渡すので、一覧に出さない

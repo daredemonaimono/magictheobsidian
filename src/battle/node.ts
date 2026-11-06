@@ -42,7 +42,6 @@ export interface NodeDef {
   title: string; // 日本語名 (一覧・AI への指示の元)
   summary: string;
   keys?: string[]; // 日本語の言い方 (概念のキー。「謝罪」のように、同じ意味の言い方をまとめる)。Jev・AI への質問と、docs/nodes.md に出る (src/battle/nodes/keys.ts)
-  patterns?: string[]; // 英語の効果テキストの言い回し (正規表現。小文字の節に当てる)。splitText が、ノードの候補を出すのに使う
   core?: boolean; // 毎回、AI への指示に入れる、中心のノード (ほぼ、どのカードでも使うもの)。それ以外は、カードごとに、選んで渡す (prompt.ts の selectPrompt)
   category: string; // 一覧 (docs/nodes.md) と、AI への指示で、まとめる区分 (src/battle/nodes/ の、どのファイルに書くか)
   params: Record<string, ParamDef>;

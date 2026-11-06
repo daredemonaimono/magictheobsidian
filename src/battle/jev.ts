@@ -47,32 +47,6 @@ export async function askJev(o: { apiKey: string; model: string; state: string; 
   }
 }
 
-// ---- ノードを選ぶ (1段目): ノードごとに「このカードの効果を書くのに要るか」を、はい/いいえの確率で聞く。確率が recall 以上のノードを選ぶ (見落とさないよう、低めに)。
-// 1回の依頼に、全ノードの質問を入れる (並列に評価される)。返事は、parseSelection が読む JSON の文字列 (missing は、Jev には出せないので空)
-export interface NodeBrief {
-  id: string;
-  title: string;
-  summary: string;
-  keys?: string[]; // 日本語の言い方 (同義語)。literal に読む Jev に、言い方の幅を渡す
-}
-const first = (s: string, n = 70) => {
-  const t = s.split("。")[0];
-  return t.length > n ? `${t.slice(0, n)}…` : t;
-};
-export function nodeQuestions(nodes: NodeBrief[]): Record<string, JevQuestion> {
-  const out: Record<string, JevQuestion> = {};
-  for (const n of nodes) out[n.id] = { type: "noul", instructions: `このカードの効果を、汎用のノードの組み合わせで書くとき、「${n.title}」(${first(n.summary)}${n.keys?.length ? `。言い方: ${n.keys.join("・")}` : ""}) の部品が要りますか` };
-  return out;
-}
-export function pickNodes(answers: Record<string, JevAnswer>, recall: number): string[] {
-  return Object.entries(answers).filter(([, a]) => (a.noul ?? 0) >= recall).map(([id]) => id);
-}
-export async function jevSelectNodes(o: { apiKey: string; model: string; http: Http; card: string; oracle: string; ruling?: string; nodes: NodeBrief[]; recall: number }): Promise<{ text: string; input: number; output: number; ms: number }> {
-  const state = `カード: ${o.card}\n\nテキスト:\n${o.oracle}${o.ruling ? `\n\n裁定:\n${o.ruling}` : ""}`;
-  const r = await askJev({ apiKey: o.apiKey, model: o.model, state, questions: nodeQuestions(o.nodes), http: o.http });
-  return { text: JSON.stringify({ nodes: pickNodes(r.answers, o.recall), missing: [] }), input: r.input, output: r.output, ms: r.ms };
-}
-
 // ---- 対戦の判断 ----
 export interface JevDecision {
   reply: Record<string, unknown>; // aiRun が読む形 ({choice} / {attackers} / {blocks})

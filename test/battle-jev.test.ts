@@ -1,7 +1,7 @@
 import assert from "node:assert";
 import { DEFAULT_AI, JEV_SCENES, fallbackAi, migrateAi, providersFor } from "../src/battle/aiConfig";
 import { ClaudeError, Http } from "../src/battle/claude";
-import { JEV_URL, askJev, jevAct, jevAttack, jevBlock, jevSelectNodes, nodeQuestions, pickNodes } from "../src/battle/jev";
+import { JEV_URL, askJev, jevAct, jevAttack, jevBlock } from "../src/battle/jev";
 
 // 通信は、仮の応答 (Http) で試す。本物の Jev には、つながない
 const reply = (answers: Record<string, unknown>, usage = { input_tokens: 100, output_tokens: 10 }): Http => async () => ({ status: 200, json: { model: "jev-1", answers, usage } });
@@ -32,18 +32,6 @@ const base = { apiKey: "SECRET-KEY", model: "jev-latest" };
     assert.deepEqual(r.answers, {});
     await assert.rejects(askJev({ ...base, state: "S", questions: {}, wait: async () => {}, http: async () => ({ status: 429, json: {} }) }), /レート制限/, "3回目も 429 なら、諦める");
     await assert.rejects(askJev({ ...base, state: "S", questions: {}, http: async () => ({ status: 500, json: { error: "oops SECRET-KEY" } }) }), (e) => e instanceof ClaudeError && !e.message.includes("SECRET-KEY"), "キーは、メッセージに出さない");
-  }
-
-  // ---- ノードを選ぶ: ノードごとの はい/いいえ。確率が recall 以上のものを選ぶ
-  {
-    const nodes = [{ id: "draw", title: "引く", summary: "プレイヤーがカードを引く。詳しい説明" }, { id: "counter", title: "打ち消す", summary: "呪文を打ち消す" }, { id: "exile", title: "追放する", summary: "追放する" }];
-    const q = nodeQuestions(nodes);
-    assert.deepEqual(Object.keys(q), ["draw", "counter", "exile"]);
-    assert.ok(q.draw.type === "noul" && q.draw.instructions.includes("引く") && !q.draw.instructions.includes("詳しい説明"), "説明は、最初の1文だけ");
-    assert.deepEqual(pickNodes({ draw: { noul: 0.9 }, counter: { noul: 0.25 }, exile: { noul: 0.05 } }, 0.2), ["draw", "counter"], "低めのしきい値で、見落とさない");
-    const r = await jevSelectNodes({ ...base, http: reply({ draw: { type: "noul", noul: 0.95 }, counter: { type: "noul", noul: 0.01 }, exile: { type: "noul", noul: 0.5 } }), card: "Brainstorm", oracle: "Draw three cards", nodes, recall: 0.2 });
-    assert.deepEqual(JSON.parse(r.text), { nodes: ["draw", "exile"], missing: [] }, "parseSelection が読む形");
-    assert.equal(r.input, 100);
   }
 
   // ---- 対戦: 行動 (「何もしない」は、最後に置く。最初の選択肢に偏るため)
@@ -77,14 +65,14 @@ const base = { apiKey: "SECRET-KEY", model: "jev-latest" };
 
   // ---- 設定: Jev は、選ぶ場面だけ。聞き直す AI
   {
-    assert.deepEqual(JEV_SCENES, ["battle", "nodes"]);
-    assert.ok(providersFor("battle").some(([id]) => id === "jev") && !providersFor("rules").some(([id]) => id === "jev") && !providersFor("memo").some(([id]) => id === "jev"), "ルール・メモ (文章を作る) では、Jev を選べない");
-    const m = migrateAi({ ai: { keys: { jev: "kj" }, scenes: { rules: { provider: "jev" }, battle: { provider: "jev", models: { jev: "jev-x" } } }, jev: { confidence: 0.8, recall: 0.1, fallback: "none" } } });
+    assert.deepEqual(JEV_SCENES, ["battle"]);
+    assert.ok(providersFor("battle").some(([id]) => id === "jev") && !providersFor("rules").some(([id]) => id === "jev") && !providersFor("nodes").some(([id]) => id === "jev") && !providersFor("memo").some(([id]) => id === "jev"), "ルール・メモ (文章を作る) では、Jev を選べない");
+    const m = migrateAi({ ai: { keys: { jev: "kj" }, scenes: { rules: { provider: "jev" }, battle: { provider: "jev", models: { jev: "jev-x" } } }, jev: { confidence: 0.8, recall: 0.1, fallback: "none", compile: true } } });
     assert.equal(m.keys.jev, "kj");
     assert.equal(m.scenes.battle.provider, "jev");
     assert.equal(m.scenes.battle.models.jev, "jev-x");
     assert.equal(m.scenes.rules.provider, "claude", "文章を作る場面に Jev が書いてあっても、無視する");
-    assert.deepEqual(m.jev, { confidence: 0.8, recall: 0.1, fallback: "none", compile: false });
+    assert.deepEqual(m.jev, { confidence: 0.8, fallback: "none" });
     assert.deepEqual(migrateAi({ ai: { jev: { confidence: 5, fallback: "jev" } } }).jev, DEFAULT_AI.jev, "範囲外・知らない値は、初期値");
     const secret = (n: string) => (n === "kc" ? "KEY" : null);
     const ai = migrateAi({ ai: { keys: { claude: "kc" }, scenes: { battle: { provider: "jev" } } } });
