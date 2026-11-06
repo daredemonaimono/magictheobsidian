@@ -1,5 +1,5 @@
 import { App, ItemView, Modal, Notice, Setting, TFile, ViewStateResult, WorkspaceLeaf, moment, setIcon } from "obsidian";
-import { imageButton } from "./icons";
+import { iconButton, imageButton } from "./icons";
 import { editableMemo, setMemo } from "./battle/memo";
 import { addFlip } from "./flip";
 import { normLocalName } from "./localName";
@@ -566,7 +566,7 @@ export class DeckView extends ItemView {
           imageButton(ctl, "イラスト変更").onclick = () => void this.pickPrint(c.key, c.board);
           // 統率者構築: 伝説のカードはコマンダーに指定できる。指定済みなら解除
           if (rules.hasCommander && (c.board === "commander" || c.meta?.typeLine.includes("Legendary"))) {
-            const crown = ctl.createEl("button", { text: "👑", attr: { "aria-label": c.board === "commander" ? "コマンダーを解除" : "コマンダーにする" } });
+            const crown = iconButton(ctl, "crown", c.board === "commander" ? "コマンダーを解除" : "コマンダーにする");
             crown.toggleClass("is-on", c.board === "commander");
             crown.onclick = () => void (c.board === "commander" ? this.undesignate(c.key) : this.designate(c.key));
           }

@@ -1,4 +1,4 @@
-import { App, EventRef, ItemView, Modal, Notice, Setting, WorkspaceLeaf } from "obsidian";
+import { App, EventRef, ItemView, Modal, Notice, Setting, WorkspaceLeaf, setIcon } from "obsidian";
 import { cardInfo } from "./cards";
 import { Board } from "./deck";
 import { DeckView } from "./DeckView";
@@ -167,7 +167,8 @@ export class CardListView extends ItemView {
 
   private deckRows(): Row[] {
     const t = this.getTarget();
-    const tag = { commander: "👑", main: undefined, side: undefined, token: undefined };
+    const tag = { commander: "crown", // アイコンの名前 (lucide)
+       main: undefined, side: undefined, token: undefined };
     const rows: Row[] = [];
     for (const c of t?.deckCards() ?? []) {
       if ((c.board === "side") !== !!t?.onSide) continue;
@@ -210,7 +211,7 @@ export class CardListView extends ItemView {
       manaCost(cell, r.manaCost).addClass("mtg-lcost");
       cell.createSpan({ text: r.ja ?? r.name, cls: "mtg-lname" });
       if (illegal) cell.createSpan({ text: "✕ 使えない", cls: "mtg-lillegal" });
-      if (tag) cell.createSpan({ text: tag, cls: "mtg-ltag" });
+      if (tag) setIcon(cell.createSpan({ cls: "mtg-ltag mtg-iconbtn" }), tag);
       if (n) cell.createSpan({ text: `${n}×`, cls: "mtg-lcount" });
       cell.onmouseenter = () => target?.previewResult(r);
       cell.onclick = async (e) => {

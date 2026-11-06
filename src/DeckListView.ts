@@ -5,7 +5,7 @@ import { DECK_VIEW } from "./DeckView";
 import { FORMATS, LEGAL_FORMATS } from "./rules";
 import { artCropUrl } from "./scryfall";
 import { ThumbnailModal } from "./ThumbnailModal";
-import { imageButton } from "./icons";
+import { iconButton, imageButton } from "./icons";
 import { COLORS, symbolImg } from "./symbols";
 
 export const DECKLIST_VIEW = "mtg-decklist";
@@ -177,7 +177,7 @@ export class DeckListView extends ItemView {
       e.stopPropagation();
       new ThumbnailModal(this.app, d.file, "サムネイルにするカードアート", (key) => void this.app.fileManager.processFrontMatter(d.file, (fm) => (fm.thumbnail = key))).open();
     };
-    ctl.createEl("button", { text: "🗑", attr: { "aria-label": "デッキを削除" } }).onclick = (e) => {
+    iconButton(ctl, "trash-2", "デッキを削除").onclick = (e) => {
       e.stopPropagation();
       new ConfirmDelete(this.app, d.file, () => void this.deleteDeck(d.file)).open();
     };
