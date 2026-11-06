@@ -94,7 +94,7 @@ export function registerTargets(): void {
   node({
     id: "statOf",
     title: "数値を読む",
-    summary: "対象(複数なら、合計)のパワー・タフネス・マナ総量を、n として出力する (stat=power / toughness / mv)。戦場を離れる効果の前に使う: 「そのパワーに等しいライフを得る」(Swords to Plowshares)は、statOf → exile → gainLife amount=$名前",
+    summary: "対象(複数なら、合計。スタックの呪文のマナ総量も)のパワー・タフネス・マナ総量を、n として出力する (stat=power / toughness / mv)。戦場を離れる効果の前に使う: 「そのパワーに等しいライフを得る」(Swords to Plowshares)は、statOf → exile → gainLife amount=$名前",
     params: { target: { type: "ref", required: true }, stat: { type: "string", required: true, choices: ["power", "toughness", "mv"] } },
     outputs: { n: "number" },
     run: (ctx, a): Record<string, Value> => {
@@ -102,12 +102,26 @@ export function registerTargets(): void {
       let n = 0;
       for (const id of idList(a.target)) {
         const perm = g.battlefield.find((x) => x.id === id);
-        if (!perm) continue;
+        if (!perm) {
+          const sp = a.stat === "mv" ? g.stack.find((x) => x.id === id && !x.ability) : undefined; // スタックの呪文のマナ総量 (Chalice of the Void)
+          if (sp) n += sp.card.mv;
+          continue;
+        }
         const now = characteristics(g, perm, ctx.rules);
         n += a.stat === "mv" ? perm.card.mv : a.stat === "toughness" ? now.toughness ?? 0 : now.power ?? 0;
       }
       return { n };
     },
+  });
+
+  // パーマネントの上のカウンターの数
+  node({
+    id: "counterCount",
+    title: "カウンターの数",
+    summary: "対象のパーマネント(複数なら合計)の上にある kind のカウンターの数を、n として出力する。「カウンターの数に等しいマナ総量」(Chalice of the Void)は、self as=s → counterCount target=$s kind=charge → compare",
+    params: { target: { type: "ref", required: true }, kind: { type: "string", required: true } },
+    outputs: { n: "number" },
+    run: (ctx, a): Record<string, Value> => ({ n: idList(a.target).reduce((s, id) => s + (ctx.game.battlefield.find((x) => x.id === id)?.counters?.[String(a.kind)] ?? 0), 0) }),
   });
 
   // 対象のパーマネントの、コントローラー。「そのコントローラーは、〜」は、これを player=target の、target に渡す

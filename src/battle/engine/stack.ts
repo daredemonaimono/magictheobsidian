@@ -21,7 +21,7 @@ export function resolveTop(g: Game, rules: RuleBook): void {
   if (fizzled) g.log.push(`${item.card.name}: 対象が無くなったので解決しない`);
   const permanent = !item.ability && isPermanentCard(item.card);
   if (permanent && !fizzled) {
-    enterBattlefield(g, item.card, item.controller, rules, item.cast);
+    enterBattlefield(g, item.card, item.controller, rules, item.cast, { x: item.x });
     item.source = item.card.id;
   }
   if (!fizzled) {

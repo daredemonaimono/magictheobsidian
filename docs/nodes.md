@@ -2,17 +2,17 @@
 
 > このファイルは、自動で作られます (`src/battle/nodeDocs.ts`)。直接は書き換えません。ノードを足したら、`npm run docs:nodes` で更新します。ノードは、`src/battle/nodes/` の、カテゴリーごとのファイルにあります。
 
-全 78 個のノード、9 個の条件。
+全 81 個のノード、9 個の条件。
 
 目次: [宣言・コスト・条件](#宣言・コスト・条件) / [対象・数える・絞り込む](#対象・数える・絞り込む) / [カードの移動・ライブラリー・手札](#カードの移動・ライブラリー・手札) / [パーマネント・トークン・カウンター](#パーマネント・トークン・カウンター) / [ダメージ・ライフ・マナ・打ち消し](#ダメージ・ライフ・マナ・打ち消し) / [継続効果](#継続効果)
 
-## 宣言・コスト・条件 (20 個)
+## 宣言・コスト・条件 (21 個)
 
 ### `cost` コスト
 
-起動型能力のコスト(能力の最初に書く)。mana=払う汎用マナの数 / manaCost=色つきのマナコスト("{1}{U}") / tap=このパーマネントをタップ / sacrifice=このパーマネントを生け贄に捧げる / life=N点のライフを払う (フェッチランド) / tapCreatures=パワーの合計がこの値以上になるよう、自分のクリーチャーをタップ / loyalty=忠誠度を足す(+1 は loyalty=1、−2 は loyalty=-2。プレインズウォーカーの能力。ソーサリーのタイミングで1ターンに1回) / loyaltyX=true で −X(X は起動時に選び、効果の中で $X として参照する)
+起動型能力のコスト(能力の最初に書く)。mana=払う汎用マナの数 / manaCost=色つきのマナコスト("{1}{U}") / tap=このパーマネントをタップ / sacrifice=このパーマネントを生け贄に捧げる / life=N点のライフを払う (フェッチランド) / tapCreatures=パワーの合計がこの値以上になるよう、自分のクリーチャーをタップ / loyalty=忠誠度を足す(+1 は loyalty=1、−2 は loyalty=-2。プレインズウォーカーの能力。ソーサリーのタイミングで1ターンに1回) / loyaltyX=true で −X(X は起動時に選び、効果の中で $X として参照する) / removeCounter=カウンターの種類(+1/+1 など)を 1 個取り除く
 
-- 引数: `mana`(number)、`manaCost`(string)、`tap`(boolean)、`sacrifice`(boolean)、`life`(number)、`tapCreatures`(number)、`loyalty`(number)、`loyaltyX`(boolean)
+- 引数: `mana`(number)、`manaCost`(string)、`tap`(boolean)、`sacrifice`(boolean)、`life`(number)、`tapCreatures`(number)、`loyalty`(number)、`loyaltyX`(boolean)、`removeCounter`(string)
 - 書ける能力: activated
 - 宣言のノード (エンジンが読む。`if=` は付けられない)
 - 中心のノード (ルールを書かせるとき、いつも AI の指示に入る。ほかは、カードごとに選ぶ)
@@ -51,6 +51,16 @@ Delve の宣言(呪文能力の最初に書く。引数なし)。唱えるとき
 - 引数: `step`(string・必須・upkeep / draw / main1 / combat / main2 / end)
 - 言い方 (キー): 次の終了ステップの開始時に、あとで、遅延誘発
 - 書ける能力: triggered / activated / spell
+
+### `entersWith` カウンターつきで出る
+
+戦場に出るとき、kind のカウンターが置かれた状態で出る(常在型能力)。x=true で、唱えるときに選んだ X 個(Chalice of the Void)/ count=N 個 / zone=graveyard + type=creature で、自分の墓地のその型のカード 1 枚につき 1 個(Golgari Grave-Troll)。出た直後から、カウンターが載っている
+
+- 引数: `kind`(string・必須)、`x`(boolean)、`count`(number)、`zone`(string・graveyard)、`type`(string)
+- 言い方 (キー): カウンターが置かれた状態で出る、出るときにカウンター
+- 書ける能力: static
+- 宣言のノード (エンジンが読む。`if=` は付けられない)
+- 中心のノード (ルールを書かせるとき、いつも AI の指示に入る。ほかは、カードごとに選ぶ)
 
 ### `dredge` Dredge
 
@@ -179,7 +189,7 @@ from(graveyard / library。graveyard|library のように並べられる)にあ�
 - 宣言のノード (エンジンが読む。`if=` は付けられない)
 - 中心のノード (ルールを書かせるとき、いつも AI の指示に入る。ほかは、カードごとに選ぶ)
 
-## 対象・数える・絞り込む (11 個)
+## 対象・数える・絞り込む (12 個)
 
 ### `target` 対象
 
@@ -206,10 +216,18 @@ zone(hand / graveyard / library / battlefield)のカードの枚数を、n と�
 
 ### `statOf` 数値を読む
 
-対象(複数なら、合計)のパワー・タフネス・マナ総量を、n として出力する (stat=power / toughness / mv)。戦場を離れる効果の前に使う: 「そのパワーに等しいライフを得る」(Swords to Plowshares)は、statOf → exile → gainLife amount=$名前
+対象(複数なら、合計。スタックの呪文のマナ総量も)のパワー・タフネス・マナ総量を、n として出力する (stat=power / toughness / mv)。戦場を離れる効果の前に使う: 「そのパワーに等しいライフを得る」(Swords to Plowshares)は、statOf → exile → gainLife amount=$名前
 
 - 引数: `target`(ref・必須)、`stat`(string・必須・power / toughness / mv)
 - 出力: `n`(number) (`as=名前` で受けて、`$名前` で渡す)
+
+### `counterCount` カウンターの数
+
+対象のパーマネント(複数なら合計)の上にある kind のカウンターの数を、n として出力する。「カウンターの数に等しいマナ総量」(Chalice of the Void)は、self as=s → counterCount target=$s kind=charge → compare
+
+- 引数: `target`(ref・必須)、`kind`(string・必須)
+- 出力: `n`(number) (`as=名前` で受けて、`$名前` で渡す)
+- 言い方 (キー): カウンターの数、カウンターが何個
 
 ### `controllerOf` コントローラーを読む
 
@@ -385,7 +403,7 @@ cards(choose などの出力)の1枚ごとに、コントローラーが life �
 - 出力: `n`(number) (`as=名前` で受けて、`$名前` で渡す)
 - 言い方 (キー): 追放する、追放
 
-## パーマネント・トークン・カウンター (14 個)
+## パーマネント・トークン・カウンター (15 個)
 
 ### `tap` タップする
 
@@ -480,11 +498,18 @@ a と b(それぞれ target ノードの出力)のパーマネントのコント
 - 引数: `name`(string・必須)、`types`(string・必須)、`power`(number)、`toughness`(number)、`colors`(string)、`count`(number)
 - 言い方 (キー): トークンを作る、トークンを生成
 
+### `regenerate` 再生する
+
+対象のパーマネントに、再生の盾を 1 つ与える(このターンのあいだ、次に破壊されるかわりに、タップして戦闘から外れ、ダメージが取り除かれる。致死ダメージも防ぐ)。「このクリーチャーを再生する」は、self as=s → regenerate target=$s
+
+- 引数: `target`(ref・必須)
+- 言い方 (キー): 再生する、再生の盾
+
 ### `addCounter` カウンターを置く
 
-対象のパーマネントの上にカウンターを count 個置く。kind=+1/+1(パワー・タフネスに足される) / stun(麻痺。アンタップするかわりに1つ取り除く)
+対象のパーマネントの上にカウンターを count 個置く。kind=+1/+1(パワー・タフネスに足される) / stun(麻痺。アンタップするかわりに1つ取り除く) / charge など、好きな名前(数えるだけ)
 
-- 引数: `target`(ref・必須)、`kind`(string・必須・+1/+1 / stun)、`count`(number・必須)
+- 引数: `target`(ref・必須)、`kind`(string・必須)、`count`(number・必須)
 - 言い方 (キー): カウンターを置く、+1/+1 カウンター
 
 ## ダメージ・ライフ・マナ・打ち消し (8 個)

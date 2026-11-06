@@ -24,8 +24,8 @@ export function registerDeclarations(): void {
     id: "cost",
     core: true,
     title: "コスト",
-    summary: "起動型能力のコスト(能力の最初に書く)。mana=払う汎用マナの数 / manaCost=色つきのマナコスト(\"{1}{U}\") / tap=このパーマネントをタップ / sacrifice=このパーマネントを生け贄に捧げる / life=N点のライフを払う (フェッチランド) / tapCreatures=パワーの合計がこの値以上になるよう、自分のクリーチャーをタップ / loyalty=忠誠度を足す(+1 は loyalty=1、−2 は loyalty=-2。プレインズウォーカーの能力。ソーサリーのタイミングで1ターンに1回) / loyaltyX=true で −X(X は起動時に選び、効果の中で $X として参照する)",
-    params: { mana: { type: "number", min: 0 }, manaCost: { type: "string" }, tap: { type: "boolean" }, sacrifice: { type: "boolean" }, life: { type: "number", min: 0 }, tapCreatures: { type: "number", min: 0 }, loyalty: { type: "number" }, loyaltyX: { type: "boolean" } },
+    summary: "起動型能力のコスト(能力の最初に書く)。mana=払う汎用マナの数 / manaCost=色つきのマナコスト(\"{1}{U}\") / tap=このパーマネントをタップ / sacrifice=このパーマネントを生け贄に捧げる / life=N点のライフを払う (フェッチランド) / tapCreatures=パワーの合計がこの値以上になるよう、自分のクリーチャーをタップ / loyalty=忠誠度を足す(+1 は loyalty=1、−2 は loyalty=-2。プレインズウォーカーの能力。ソーサリーのタイミングで1ターンに1回) / loyaltyX=true で −X(X は起動時に選び、効果の中で $X として参照する) / removeCounter=カウンターの種類(+1/+1 など)を 1 個取り除く",
+    params: { mana: { type: "number", min: 0 }, manaCost: { type: "string" }, tap: { type: "boolean" }, sacrifice: { type: "boolean" }, life: { type: "number", min: 0 }, tapCreatures: { type: "number", min: 0 }, loyalty: { type: "number" }, loyaltyX: { type: "boolean" }, removeCounter: { type: "string" } },
     check: (a) => { try { if (typeof a.manaCost === "string") parseManaCost(a.manaCost); return null; } catch (e) { return (e as Error).message; } },
     outputs: {},
     declaration: true,
@@ -79,6 +79,19 @@ export function registerDeclarations(): void {
     params: { step: { type: "string", required: true, choices: ["upkeep", "draw", "main1", "combat", "main2", "end"] } },
     outputs: {},
     only: ["triggered", "activated", "spell"],
+    run: (): Record<string, Value> => ({}),
+  });
+
+  node({
+    id: "entersWith",
+    core: true,
+    title: "カウンターつきで出る",
+    summary: "戦場に出るとき、kind のカウンターが置かれた状態で出る(常在型能力)。x=true で、唱えるときに選んだ X 個(Chalice of the Void)/ count=N 個 / zone=graveyard + type=creature で、自分の墓地のその型のカード 1 枚につき 1 個(Golgari Grave-Troll)。出た直後から、カウンターが載っている",
+    params: { kind: { type: "string", required: true }, x: { type: "boolean" }, count: { type: "number", min: 1 }, zone: { type: "string", choices: ["graveyard"] }, type: { type: "string" } },
+    check: (a) => (a.x === true || a.count !== undefined || a.zone !== undefined ? null : "x か count か zone が要る"),
+    outputs: {},
+    declaration: true,
+    only: ["static"],
     run: (): Record<string, Value> => ({}),
   });
 

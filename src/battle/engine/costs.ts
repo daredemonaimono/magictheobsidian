@@ -16,6 +16,7 @@ export interface CostSpec {
   loyalty: number; // 忠誠度を足す量 (+1 は 1、−2 は −2)
   loyaltyX: boolean; // −X
   isLoyalty: boolean; // 忠誠度能力 (ソーサリーのタイミングで、1ターンに1回)
+  removeCounter?: string; // 取り除くカウンターの種類 (1 個。Golgari Grave-Troll の +1/+1)
   life: number; // 払うライフ (フェッチランドの「1点のライフを払う」)
   preferLife?: boolean; // ファイレクシア・マナを、ライフで払う
   spent?: { colors: number; life: number; mana: number }; // 払ったあと、色の数が入る (payCost が書く)
@@ -39,6 +40,7 @@ export const costOf = (calls: NodeCall[]): CostSpec => ({
   loyaltyX: calls.some((c) => c.args.loyaltyX === true),
   isLoyalty: calls.some((c) => c.args.loyalty !== undefined || c.args.loyaltyX === true),
   life: calls.reduce((a, c) => a + Number(c.args.life ?? 0), 0),
+  removeCounter: calls.find((c) => typeof c.args.removeCounter === "string")?.args.removeCounter as string | undefined,
 });
 
 // 払えるか。払えなければ理由 (状態は変えない)。tapIds = パワーの合計のためにタップするクリーチャー
@@ -50,6 +52,7 @@ export function costProblem(g: Game, p: PlayerId, cost: CostSpec, source: Perm |
     if (cost.loyalty < 0 && now + cost.loyalty < 0) return `忠誠度が足りない (${now} / ${-cost.loyalty})`;
     if (cost.loyaltyX && (!Number.isInteger(x) || x < 0 || x > now + cost.loyalty)) return `X は 0〜忠誠度 (${now + cost.loyalty}) の整数`;
   }
+  if (cost.removeCounter && (source?.counters?.[cost.removeCounter] ?? 0) < 1) return `取り除く ${cost.removeCounter} カウンターが無い`;
   if (cost.life > 0 && g.life[p] < cost.life) return `ライフが足りない (${g.life[p]} / ${cost.life})`;
   if (cost.tap && (!source || source.tapped)) return "すでにタップされていて、タップできない";
   if (cost.tap && source && isSick(g, source, rules)) return "召喚酔いで、{T} のコストを払えない";
@@ -74,6 +77,10 @@ export function payCost(g: Game, p: PlayerId, cost: CostSpec, source: Perm | und
   if (cost.isLoyalty && source) {
     source.counters = { ...source.counters, loyalty: (source.counters?.loyalty ?? 0) + cost.loyalty - (cost.loyaltyX ? x : 0) };
     source.loyaltyUsed = true;
+  }
+  if (cost.removeCounter && source?.counters) {
+    source.counters[cost.removeCounter]--;
+    g.log.push(`${source.card.name} から ${cost.removeCounter} カウンターを 1 個取り除いた`);
   }
   if (cost.life > 0) {
     g.life[p] -= cost.life;

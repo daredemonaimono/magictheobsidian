@@ -24,6 +24,7 @@ export function advanceStep(g: Game, rules: RuleBook): void {
     for (const p of g.battlefield) {
       delete p.damage; // ダメージも消える
       delete p.deathtouched;
+      delete p.regen; // 再生の盾も消える
     }
     g.active = g.extraTurns?.shift() ?? nextPlayer(g, g.active); // 追加のターンがあれば、それが先
     g.turn++;

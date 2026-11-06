@@ -227,11 +227,27 @@ export function registerPermanents(): void {
   });
 
   // カウンターを置く。対象が戦場に無ければ何もしない
+  // 再生の盾: このターン、破壊される (致死ダメージを含む) かわりに、タップして戦闘から外れ、ダメージが取り除かれる
+  node({
+    id: "regenerate",
+    title: "再生する",
+    summary: "対象のパーマネントに、再生の盾を 1 つ与える(このターンのあいだ、次に破壊されるかわりに、タップして戦闘から外れ、ダメージが取り除かれる。致死ダメージも防ぐ)。「このクリーチャーを再生する」は、self as=s → regenerate target=$s",
+    params: { target: { type: "ref", required: true } },
+    outputs: {},
+    run: (ctx, a): Record<string, Value> => {
+      for (const x of idList(a.target)) {
+        const p = ctx.game.battlefield.find((y) => y.id === x);
+        if (p) p.regen = (p.regen ?? 0) + 1;
+      }
+      return {};
+    },
+  });
+
   node({
     id: "addCounter",
     title: "カウンターを置く",
-    summary: "対象のパーマネントの上にカウンターを count 個置く。kind=+1/+1(パワー・タフネスに足される) / stun(麻痺。アンタップするかわりに1つ取り除く)",
-    params: { target: { type: "ref", required: true }, kind: { type: "string", required: true, choices: ["+1/+1", "stun"] }, count: { type: "number", required: true, min: 0 } },
+    summary: "対象のパーマネントの上にカウンターを count 個置く。kind=+1/+1(パワー・タフネスに足される) / stun(麻痺。アンタップするかわりに1つ取り除く) / charge など、好きな名前(数えるだけ)",
+    params: { target: { type: "ref", required: true }, kind: { type: "string", required: true }, count: { type: "number", required: true, min: 0 } },
     outputs: {},
     run: (ctx, a): Record<string, Value> => {
       for (const x of idList(a.target)) {

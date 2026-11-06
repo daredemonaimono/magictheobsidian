@@ -3,7 +3,7 @@ import { NodeDef, Value } from "../node";
 import { defineNode as define } from "../registry";
 import { nextRandom } from "../rng";
 import { discardCards, drawCards, putInGraveyard, Game, Perm, typeIn } from "../state";
-import { enterBattlefield, removeFromBattlefield } from "../engine/battlefield";
+import { enterBattlefield, removeFromBattlefield, tryRegenerate } from "../engine/battlefield";
 import { enterBlocked, entersTapped } from "../engine/restrict";
 import { who as logWho } from "../engine/shared";
 import { findCard, idList, playersFor, takeCard, targetPlayer, who, zoneOf } from "./shared";
@@ -293,6 +293,7 @@ export function registerCards(): void {
       for (const id of idList(a.target)) {
         const perm = g.battlefield.find((p) => p.id === id);
         if (!perm || characteristics(g, perm, ctx.rules).keywords.includes("indestructible")) continue;
+        if (tryRegenerate(g, perm)) continue; // 再生の盾があれば、破壊されない
         removeFromBattlefield(g, perm);
         g.log.push(`${perm.card.name} を破壊した`);
       }
