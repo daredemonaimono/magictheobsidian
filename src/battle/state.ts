@@ -167,6 +167,9 @@ export function untapPerm(g: Game, p: Perm): void {
 }
 
 // 型行に、spec (| は「または」) のどれかが含まれるか。type=artifact|creature、notType=creature|land (どちらでもない) の判定に使う
+// id をカンマでつないだ文字列を、id の並びに戻す。伝説のカードの名前には、", " (カンマと空白) が入る (Lavinia, Azorius Renegade) ので、その後ろに空白が続くカンマでは割らない
+export const splitIds = (s: string): string[] => (s === "" ? [] : s.split(/,(?! )/));
+
 export const typeIn = (typeLine: string, spec: string): boolean => spec.split("|").some((t) => typeLine.toLowerCase().includes(t.trim().toLowerCase()));
 
 // カードを n 枚引く。ライブラリーが空で引けなかったら、次の状況起因処理で負ける

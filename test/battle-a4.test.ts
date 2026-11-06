@@ -87,3 +87,21 @@ const attack = (g: Game, ids: string[]) => {
   assert.equal(g.battlefield.find((p) => p.id === "Bear")!.mods?.length, 2);
 }
 console.log("a4 ok");
+
+// 伝説のクリーチャー: 名前に「, 」(カンマと空白) が入る id でも、Exalted の +1/+1 が付く (id をカンマでつなぐので、割れないこと)
+{
+  const { g, c } = make();
+  const legend = perm(card("you:Lavinia, Azorius Renegade#5", "Lavinia, Azorius Renegade", "Legendary Creature — Human Soldier", { power: 2, toughness: 2 }));
+  g.battlefield.push(hierarch(), legend);
+  attack(g, [legend.id]);
+  assert.equal(g.stack.length, 1, "Exalted が誘発した");
+  c.next();
+  assert.deepEqual(g.battlefield.find((p) => p.id === legend.id)!.mods?.map((m) => [m.power, m.toughness]), [[1, 1]], "カンマの入った id でも、攻撃したクリーチャーが +1/+1");
+}
+{
+  const { splitIds } = await import("../src/battle/state");
+  assert.deepEqual(splitIds("you:Oko, Thief of Crowns#3,you:Bear#4"), ["you:Oko, Thief of Crowns#3", "you:Bear#4"], "名前のカンマでは割らず、id の区切りだけで割る");
+  assert.deepEqual(splitIds("A1,A4"), ["A1", "A4"]);
+  assert.deepEqual(splitIds(""), []);
+}
+console.log("a4 legend ok");

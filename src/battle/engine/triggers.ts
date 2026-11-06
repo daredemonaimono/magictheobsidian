@@ -1,7 +1,7 @@
 import { characteristics, extraTriggers } from "../continuous";
 import { NodeCall } from "../node";
 import { evalCondition, getNode } from "../registry";
-import { Game, GameCard, GameEvent, Perm, PlayerId, RuleBook, StackItem, typeIn } from "../state";
+import { Game, GameCard, GameEvent, Perm, PlayerId, RuleBook, StackItem, splitIds, typeIn } from "../state";
 import { spellBody } from "./shared";
 import { stateBased } from "./battlefield";
 import { chooseTargets } from "./targets";
@@ -42,7 +42,7 @@ export function announceTargets(g: Game, item: StackItem, rules: RuleBook): void
   for (const call of body) {
     if (!getNode(call.node)?.isTarget) continue;
     if (call.if !== undefined && !evalCondition(call.if, { game: g, rules, item, vars: {}, call })) continue;
-    for (const id of (item.targets[call.as ?? ""] ?? "").split(",")) {
+    for (const id of splitIds(item.targets[call.as ?? ""] ?? "")) {
       const perm = g.battlefield.find((x) => x.id === id);
       if (perm && perm.controller !== item.controller && !seen.has(perm.id)) {
         seen.add(perm.id);

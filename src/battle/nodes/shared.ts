@@ -4,7 +4,7 @@ import { defineCondition, defineNode, getNode } from "../registry";
 import { dealDamage } from "../damage";
 import { parseManaCost, spendGeneric } from "../mana";
 import { nextRandom } from "../rng";
-import { discardCards, drawCards, prepareAbilityOf, Game, GameCard, Perm, playersOf, typeIn, untapPerm } from "../state";
+import { discardCards, drawCards, prepareAbilityOf, Game, GameCard, Perm, playersOf, splitIds, typeIn, untapPerm } from "../state";
 
 // 実装済みの基本ノード。打ち消しは「対象」+「打ち消す」の組み合わせで、カードごとの違いは対象の条件 (引数) だけ
 
@@ -12,7 +12,7 @@ import { discardCards, drawCards, prepareAbilityOf, Game, GameCard, Perm, player
 export const KEYWORDS = ["flying", "hexproof", "flash", "haste", "vigilance", "trample", "lifelink", "deathtouch", "firstStrike", "doubleStrike", "reach", "menace", "defender", "prowess", "indestructible"];
 
 // 対象・選択の出力は、id をカンマでつないだ文字列 (複数の対象・集合のため)。空なら空文字
-export const idList = (v: Value | undefined): string[] => (v === undefined || v === "" ? [] : String(v).split(","));
+export const idList = (v: Value | undefined): string[] => (v === undefined || v === "" ? [] : splitIds(String(v)));
 
 // 場所を問わずカードを探す (ライブラリー・手札・墓地)。見つかれば取り除いて返す
 export function takeCard(g: Game, id: string): GameCard | undefined {
