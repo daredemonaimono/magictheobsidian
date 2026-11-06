@@ -61,7 +61,7 @@ export function aiOptions(g: Game, rules: RuleBook, p: PlayerId): AiOption[] {
 // 選択肢が「何もしない」だけか (その場合は、API を呼ばず、機械的にパスする)
 export const aiTrivial = (opts: AiOption[]): boolean => opts.length <= 1;
 
-const permLine = (g: Game, x: Perm, rules: RuleBook): string => {
+export const permLine = (g: Game, x: Perm, rules: RuleBook): string => {
   const c = characteristics(g, x, rules);
   const st = [x.tapped ? "タップ" : "", x.attacking ? "攻撃中" : "", x.blocking ? "ブロック中" : "", x.damage ? `ダメージ${x.damage}` : "", c.keywords.length ? c.keywords.join("/") : ""].filter(Boolean).join(",");
   return `${x.card.name}${isCreature(g, x, rules) ? ` ${c.power}/${c.toughness}` : ""}${st ? ` [${st}]` : ""} (id:${x.id})`;

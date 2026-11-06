@@ -5,10 +5,10 @@ import { Http } from "../src/battle/claude";
 // 昔の設定 (場面ごとの区別が無かった) から、移す: キー・モデルが、残る。メモの下書きは、対戦の相手と同じだった
 const legacy = { claudeKeySecret: "k-claude", claudeModel: "claude-opus-5-5", battleModel: "claude-haiku-5-5", battleProvider: "openai", openaiKeySecret: "k-openai", openaiModel: "gpt-x", openaiBaseUrl: "http://localhost:11434/v1", geminiKeySecret: "k-gemini", geminiModel: "gem-x" };
 const m = migrateAi(legacy);
-assert.deepEqual(m.keys, { claude: "k-claude", openai: "k-openai", gemini: "k-gemini" });
+assert.deepEqual(m.keys, { claude: "k-claude", openai: "k-openai", gemini: "k-gemini", jev: "" }, "昔の設定には、Jev のキーは無い (空)");
 assert.equal(m.openaiBaseUrl, "http://localhost:11434/v1");
 assert.equal(m.scenes.battle.provider, "openai");
-assert.deepEqual(m.scenes.battle.models, { claude: "claude-haiku-5-5", openai: "gpt-x", gemini: "gem-x" }, "切り替えても、各種類のモデルが残る");
+assert.deepEqual(m.scenes.battle.models, { claude: "claude-haiku-5-5", openai: "gpt-x", gemini: "gem-x", jev: "jev-latest" }, "切り替えても、各種類のモデルが残る");
 assert.equal(m.scenes.memo.provider, "openai");
 assert.equal(m.scenes.rules.provider, "claude");
 assert.equal(m.scenes.rules.models.claude, "claude-opus-5-5");

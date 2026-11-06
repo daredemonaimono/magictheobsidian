@@ -1,5 +1,5 @@
 import { App, Notice, Platform, Plugin, PluginSettingTab, SecretComponent, Setting } from "obsidian";
-import { AiSettings, DEFAULT_AI, PROVIDERS, Provider, SCENES, Scene } from "./battle/aiConfig";
+import { AiSettings, DEFAULT_AI, PROVIDERS, Provider, SCENES, Scene, TextProvider, providersFor } from "./battle/aiConfig";
 import { CURRENCIES, updateRates } from "./prices";
 import { IMAGE_MODES, ImageMode, PRELOAD_KINDS, PRELOAD_SCOPES, PreloadKind, PreloadScope } from "./imageKey";
 import { cacheInfo, clearImageCache } from "./imageCache";
@@ -138,7 +138,7 @@ export class SettingsTab extends PluginSettingTab {
             await this.save();
           }),
         );
-    const hint: Record<Provider, string> = { claude: "例: claude-haiku-5-5(安い)/ claude-sonnet-5-5 / claude-opus-5-5 / claude-fable-5-1(強い・高い)", openai: "例: gpt-4o-mini", gemini: "例: gemini-2.5-flash" };
+    const hint: Record<Provider, string> = { claude: "例: claude-haiku-5-5(安い)/ claude-sonnet-5-5 / claude-opus-5-5 / claude-fable-5-1(強い・高い)", openai: "例: gpt-4o-mini", gemini: "例: gemini-2.5-flash", jev: "jev-latest (最新の Jev。docs.typesafe.ai の「Models」で、名前を確かめられる)" };
 
     return [
       {
@@ -333,6 +333,7 @@ export class SettingsTab extends PluginSettingTab {
                     }),
                   ),
               (c) => keyRow(c, "gemini", "Gemini の API キー / Gemini API key", "Google。"),
+              (c) => keyRow(c, "jev", "Jev の API キー / Jev API key (TypeSafe)", "console.typesafe.ai で作る。Jev は、選ぶ仕事 (対戦の判断・ノードを選ぶ) だけに使える、速くて安いモデル。入力 100 万トークン 0.042 ドル。"),
             ],
           },
           {
@@ -343,7 +344,7 @@ export class SettingsTab extends PluginSettingTab {
               const sc = ai.scenes[scene as Scene];
               return [
                 (c: Ctx) =>
-                  toggles<Provider>(c, label, desc, PROVIDERS, sc.provider, async (v) => {
+                  toggles<Provider>(c, label, desc, providersFor(scene as Scene), sc.provider, async (v) => {
                     sc.provider = v;
                     await this.save();
                   }),
@@ -359,6 +360,44 @@ export class SettingsTab extends PluginSettingTab {
                     ),
               ];
             }),
+          },
+          {
+            id: "jev",
+            title: "Jev の使い方 / Jev options",
+            desc: "Jev (速くて安い、選ぶだけのモデル) を、「対戦の相手」「ノードを選ぶ」に選んだときの設定。Jev は、文章を作れないので、ルールを書かせる・メモの下書きには、選べない。",
+            items: [
+              (c) =>
+                new Setting(el(c))
+                  .setName("対戦: 自信のしきい値 / Confidence threshold")
+                  .setDesc("対戦の判断で、Jev の自信がこの値以上なら、Jev の答えを使う。未満なら、下の「聞き直す AI」に聞く。高いほど、慎重 (AI を呼ぶ回数が増える)。0.5〜1。")
+                  .addSlider((s) =>
+                    s.setLimits(0.5, 1, 0.05).setValue(ai.jev.confidence).setDynamicTooltip().onChange(async (v) => {
+                      ai.jev.confidence = v;
+                      await this.save();
+                    }),
+                  ),
+              (c) => {
+                const st = new Setting(el(c)).setName("対戦: 聞き直す AI / Fallback AI").setDesc("Jev の自信が足りないときに、聞く AI (モデルは、「対戦の相手」の、その AI のモデル欄)。使わない: Jev の答えを、そのまま使う (いちばん安く速いが、判断が粗くなる)。");
+                const row = st.controlEl.createDiv("mtg-seg");
+                for (const [v, label] of [["claude", "Claude"], ["openai", "OpenAI"], ["gemini", "Gemini"], ["none", "使わない"]] as [TextProvider | "none", string][]) {
+                  row.createEl("button", { text: label, cls: v === ai.jev.fallback ? "is-on" : "" }).addEventListener("click", async () => {
+                    ai.jev.fallback = v;
+                    await this.save();
+                    this.display();
+                  });
+                }
+              },
+              (c) =>
+                new Setting(el(c))
+                  .setName("ノード選び: 拾う確率 / Node recall")
+                  .setDesc("ノードを選ぶとき、「要る」の確率がこの値以上のノードを、ルールを書かせる AI に渡す。低いほど、見落とさない (渡すノードが増える)。0.01〜0.9。")
+                  .addSlider((s) =>
+                    s.setLimits(0.05, 0.9, 0.05).setValue(ai.jev.recall).setDynamicTooltip().onChange(async (v) => {
+                      ai.jev.recall = v;
+                      await this.save();
+                    }),
+                  ),
+            ],
           },
         ],
       },

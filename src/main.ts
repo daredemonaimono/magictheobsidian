@@ -1,4 +1,7 @@
 import { App, EventRef, Modal, Notice, Plugin, Setting, TFile, WorkspaceLeaf, normalizePath } from "obsidian";
+import { allNodes } from "./battle/registry";
+import { JevDriver } from "./battle/aiRun";
+import { jevAct, jevAttack, jevBlock, jevSelectNodes } from "./battle/jev";
 import { buildRuleTwoStage, unsupportedLines } from "./battle/build";
 import { DEFAULT_GLOSSARY, GLOSSARY_NOTE, OLD_GLOSSARY_NOTE } from "./battle/glossary";
 import { Kind, freeName, parseVersion, sortNewestFirst } from "./battle/history";
@@ -37,7 +40,7 @@ import { IMAGE_MODES, PRELOAD_KINDS, PRELOAD_SCOPES } from "./imageKey";
 import { initImageCache } from "./imageCache";
 import { preloadImages } from "./imagePreload";
 import { DEFAULT_SETTINGS, MOD_KEYS, Settings, SettingsTab, secretKey } from "./settings";
-import { Scene, aiLabel, aiReady, migrateAi, providerName, runAi } from "./battle/aiConfig";
+import { Scene, aiLabel, aiReady, fallbackAi, migrateAi, providerName, runAi } from "./battle/aiConfig";
 import { AskAi } from "./battle/ai";
 
 // 「メモ」はカード行の外なので、デッキ画面で枚数を変えても書き換わらない。統率戦だけコマンダー欄があり、サイドは無い
@@ -129,7 +132,7 @@ export default class MagicTheObsidian extends Plugin {
       }, () => void this.preloadImages(false)),
     );
     this.registerView(DECK_VIEW, (leaf) => new DeckView(leaf, this.settings));
-    this.registerView(BATTLE_VIEW, (leaf) => new BattleView(leaf, () => this.battleSession, () => this.settings.battleStops, () => this.settings.battleOpponent, () => this.settings.battleEffects, () => this.makeAsk(), (b) => void this.saveBattle(b), () => this.ensureBattleSide()));
+    this.registerView(BATTLE_VIEW, (leaf) => new BattleView(leaf, () => this.battleSession, () => this.settings.battleStops, () => this.settings.battleOpponent, () => this.settings.battleEffects, () => this.makeAsk(), (b) => void this.saveBattle(b), () => this.ensureBattleSide(), () => this.battleJev()));
     this.registerView(BATTLE_SIDE_VIEW, (leaf) => new BattleSideView(leaf));
     this.registerView(DASHBOARD_VIEW, (leaf) => new DashboardView(leaf, { collection: () => void this.openOrReveal(COLLECTION_VIEW), deck: () => void this.openOrReveal(DECKLIST_VIEW), cards: () => void this.openOrReveal(CARDS_VIEW) }));
     this.registerView(CARDS_VIEW, (leaf) => new CardsView(leaf, this.settings));
@@ -384,8 +387,25 @@ export default class MagicTheObsidian extends Plugin {
   // 場面 (対戦の相手・ルールを書かせる・メモの下書き) の AI を呼ぶ関数。設定の、その場面の種類・モデル。キーが無い (互換 API の URL を変えていない OpenAI・Gemini・Claude) ときは undefined
   private askFor(scene: Scene): ((system: string, messages: { role: "user" | "assistant"; content: string }[]) => Promise<{ text: string; input?: number; output?: number }>) | undefined {
     const secret = (name: string) => secretKey(this.app, name);
-    if (!aiReady(this.settings.ai, scene, secret)) return undefined;
-    return (system, messages) => runAi({ ai: this.settings.ai, scene, secret, http: obsidianHttp, system, messages });
+    // 場面の AI が Jev のとき、文章を作る (聞き直す) 相手は、設定の「聞き直す AI」(その種類のキー・モデルを使う)。無ければ、無し
+    const ai = this.settings.ai.scenes[scene].provider === "jev" ? fallbackAi(this.settings.ai, scene, secret) : this.settings.ai;
+    if (!ai || !aiReady(ai, scene, secret)) return undefined;
+    return (system, messages) => runAi({ ai, scene, secret, http: obsidianHttp, system, messages });
+  }
+  // 対戦の相手が Jev のとき、判断を Jev に聞く道具 (キーが無ければ、無し)
+  private battleJev(): JevDriver | undefined {
+    const ai = this.settings.ai;
+    if (ai.scenes.battle.provider !== "jev") return undefined;
+    const apiKey = secretKey(this.app, ai.keys.jev);
+    if (!apiKey) return undefined;
+    const model = ai.scenes.battle.models.jev;
+    const base = { apiKey, model, http: obsidianHttp };
+    return {
+      confidence: ai.jev.confidence,
+      act: (state, options) => jevAct({ ...base, state, options }),
+      attack: (state, attackers) => jevAttack({ ...base, state, attackers }),
+      block: (state, attackers, blockers) => jevBlock({ ...base, state, attackers, blockers }),
+    };
   }
   // 対戦の相手の AI (1 通の質問 → 返事)
   private makeAsk(scene: Scene = "battle"): AskAi | undefined {
@@ -569,6 +589,7 @@ export default class MagicTheObsidian extends Plugin {
     await this.ensureRulesDir();
     const glossary = await this.readGlossary();
     const select = this.askFor("nodes"); // 1段目 (ノードを選ぶ)。キーが無ければ、飛ばして、全ノードを渡す
+    const jevKey = this.settings.ai.scenes.nodes.provider === "jev" ? secretKey(this.app, this.settings.ai.keys.jev) : null; // 1段目を Jev でするとき (Jev は、選ぶのが得意で、速くて安い)
     let made = 0;
     let over = 0;
     let failed = 0;
@@ -584,7 +605,18 @@ export default class MagicTheObsidian extends Plugin {
           ruling,
           glossary,
           ask: async (system, messages) => (await ask(system, messages)).text,
-          ...(select ? { askSelect: async (system: string, user: string) => (await select(system, [{ role: "user" as const, content: user }])).text } : {}),
+          ...(jevKey
+            ? {
+                askSelectCard: async (card: string, oracle: string, rulingText?: string) => {
+                  const nodes = allNodes().filter((n) => !n.core).map((n) => ({ id: n.id, title: n.title, summary: n.summary }));
+                  const r = await jevSelectNodes({ apiKey: jevKey, model: this.settings.ai.scenes.nodes.models.jev, http: obsidianHttp, card, oracle, ruling: rulingText, nodes, recall: this.settings.ai.jev.recall });
+                  console.debug(`[jev] ノード選び: ${card} ${r.ms}ms 入力 ${r.input} トークン`);
+                  return r.text;
+                },
+              }
+            : select
+              ? { askSelect: async (system: string, user: string) => (await select(system, [{ role: "user" as const, content: user }])).text }
+              : {}),
         });
         if ((await this.saveRule(name, r.md, "ai")) === "created") made++;
         else over++;

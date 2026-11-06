@@ -71,11 +71,13 @@ export interface TwoStageResult {
 
 // ルールを書かせる、2段階。1段目 (askSelect): カードの効果から、使いそうなノードを選ばせる (安い AI で足りる)。2段目 (ask): 中心のノード + 選んだノードだけを渡して、書かせる。
 // 取りこぼしの保険: 2段目の結果に「未対応」が残ったら、全ノードで、もう1回だけ、やり直す (選び漏れで、書けるものを、未対応にしないため)。1段目が使えない・返事が読めないときは、最初から、全ノード。askSelect が無ければ、1段目は飛ばす
-export async function buildRuleTwoStage(o: { card: string; oracle: string; ruling?: string; glossary?: string; ask: (system: string, messages: Msg[]) => Promise<string>; askSelect?: (system: string, user: string) => Promise<string> }): Promise<TwoStageResult> {
+export async function buildRuleTwoStage(o: { card: string; oracle: string; ruling?: string; glossary?: string; ask: (system: string, messages: Msg[]) => Promise<string>; askSelect?: (system: string, user: string) => Promise<string>; askSelectCard?: (card: string, oracle: string, ruling?: string) => Promise<string> }): Promise<TwoStageResult> {
   let selection: ReturnType<typeof parseSelection>;
-  if (o.askSelect) {
+  if (o.askSelect || o.askSelectCard) {
     try {
-      selection = parseSelection(await o.askSelect(selectSystem(), selectPrompt(o.card, o.oracle, o.ruling)));
+      // askSelectCard = カードの情報だけを渡す形 (Jev: ノードごとに「要るか」を聞く)。askSelect = 一覧つきの文章を渡す形 (LLM)
+      const text = o.askSelectCard ? await o.askSelectCard(o.card, o.oracle, o.ruling) : await o.askSelect!(selectSystem(), selectPrompt(o.card, o.oracle, o.ruling));
+      selection = parseSelection(text);
     } catch {
       selection = undefined; // 1段目の失敗は、全ノードで、続ける
     }

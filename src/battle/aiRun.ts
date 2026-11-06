@@ -1,10 +1,19 @@
-import { AI_SYSTEM, AskAi, aiActPrompt, aiAttackPrompt, aiAttackers, aiBlockPrompt, aiBlockers, aiParse, matchIds, withMemo } from "./ai";
+import { AI_SYSTEM, AskAi, aiActPrompt, aiAttackPrompt, aiAttackers, aiBlockPrompt, aiBlockers, aiDescribe, aiParse, matchIds, permLine, withMemo } from "./ai";
+import type { JevDecision } from "./jev";
 import { attackersAt } from "./engine";
 import { BattleController } from "./play";
 
+// Jev (選ぶだけの、速くて安いモデル) で判断する道具。画面 (main.ts) が、キーとモデルを入れて作る。confidence = この自信以上なら、Jev の答えを使う
+export interface JevDriver {
+  confidence: number;
+  act(state: string, options: { id: number; label: string }[]): Promise<JevDecision>;
+  attack(state: string, attackers: { id: string; label: string }[]): Promise<JevDecision>;
+  block(state: string, attackers: { id: string; label: string }[], blockers: { id: string; label: string }[]): Promise<JevDecision>;
+}
+
 // Claude の AI の、1回ぶんの判断 (画面 BattleView.driveAi と、テストが使う)。判断が要らない優先権はパスして、要る場面では API を呼んで、返事を実行する。
 // 戻り値: "none" = 判断が要らない (人の番) / "acted" = 1つ実行した (続きがあるかもしれない) / "failed" = 失敗した (以降は、雑魚 CPU の決まり。理由はログに)
-export async function aiStep(ctl: BattleController, ask: AskAi | undefined, ai: string): Promise<"none" | "acted" | "failed"> {
+export async function aiStep(ctl: BattleController, ask: AskAi | undefined, ai: string, jev?: JevDriver): Promise<"none" | "acted" | "failed"> {
   if (!ctl.aiActive || ctl.game.over || ctl.pending) return "none";
   let w = ctl.aiWaiting();
   if (!w) {
@@ -14,7 +23,7 @@ export async function aiStep(ctl: BattleController, ask: AskAi | undefined, ai: 
   }
   const g = ctl.game;
   const rules = ctl.rules;
-  if (!ask) {
+  if (!ask && !jev) {
     ctl.aiFail(w, "API キーが未設定");
     return "failed";
   }
@@ -23,8 +32,32 @@ export async function aiStep(ctl: BattleController, ask: AskAi | undefined, ai: 
   let problem = "";
   // 返事が使えなかったら (形が違う・できない行動)、理由を添えて、1回だけ聞き直す。それでもだめなら、この判断だけ雑魚 CPU の決まりで (次は、また Claude)
   for (let attempt = 0; attempt < 2; attempt++) {
-    let text: string;
+    let text: string | undefined;
+    // 1回目は、Jev に聞く (速くて安い)。自信が足りない・失敗したときは、別の AI (ask) に聞き直す。聞き直す AI が無ければ、Jev の答えを、そのまま使う
+    if (attempt === 0 && jev) {
+      try {
+        const state = aiDescribe(g, rules, ai);
+        const d =
+          w === "act"
+            ? await jev.act(state, opts)
+            : w === "attack"
+              ? await jev.attack(state, aiAttackers(g, rules, ai).map((x) => ({ id: x.id, label: permLine(g, x, rules) })))
+              : await jev.block(state, attackersAt(g, ai).map((x) => ({ id: x.id, label: permLine(g, x, rules) })), aiBlockers(g, rules, ai).map((x) => ({ id: x.id, label: permLine(g, x, rules) })));
+        ctl.aiTokens.input += d.input;
+        ctl.aiTokens.output += d.output;
+        const usable = d.confidence >= jev.confidence || !ask;
+        g.log.push(`相手 (AI/jev): ${usable ? "採用" : "自信が足りないので、別の AI に聞く"} (自信 ${d.confidence.toFixed(2)} · ${d.ms}ms · 入力 ${d.input} トークン · この対戦の合計 ${ctl.aiTokens.input + ctl.aiTokens.output})`);
+        if (usable) text = JSON.stringify({ ...d.reply, why: d.note });
+      } catch (e) {
+        g.log.push(`相手 (AI/jev): 使えなかった (${(e as Error).message})${ask ? "。別の AI に聞く" : ""}`);
+        if (!ask) {
+          ctl.aiFail(w, (e as Error).message);
+          return "failed";
+        }
+      }
+    }
     try {
+      if (text === undefined && ask) {
       const r = await ask(withMemo(AI_SYSTEM, ctl.aiMemo, ctl.aiDecks), attempt === 0 ? prompt : `${prompt}\n\n前の返事は使えませんでした (${problem})。選択肢の番号・id を確かめて、もう一度、JSON だけで答えてください。`);
       text = r.text;
       if (r.input !== undefined || r.output !== undefined) {
@@ -32,11 +65,16 @@ export async function aiStep(ctl: BattleController, ask: AskAi | undefined, ai: 
         ctl.aiTokens.output += r.output ?? 0;
         g.log.push(`相手 (AI) のトークン: 入力 ${r.input ?? "?"} / 出力 ${r.output ?? "?"} (この対戦の合計 ${ctl.aiTokens.input + ctl.aiTokens.output})`);
       }
+      }
     } catch (e) {
       ctl.aiFail(w, (e as Error).message); // API そのものの失敗: 以降は、雑魚 CPU
       return "failed";
     }
     if (!ctl.aiActive) return "none"; // 待っている間に、状況が変わった (新しい対戦など)
+    if (text === undefined) {
+      ctl.aiFail(w, "聞き直す AI が使えない");
+      return "failed";
+    }
     const reply = aiParse(text);
     if (!reply) {
       problem = `JSON として読めない: ${text.slice(0, 60).replace(/\s+/g, " ")}`;
