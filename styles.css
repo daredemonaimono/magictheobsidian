@@ -459,3 +459,5 @@ button.mtg-color .mtg-sym { width: 20px; height: 20px; display: block; }
 /* 画像を変えるボタン (src/icons.ts): アイコンを、ボタンの真ん中に */
 .mtg-iconbtn { display: inline-flex; align-items: center; justify-content: center; }
 .mtg-iconbtn svg { width: 16px; height: 16px; }
+.mtg-foilmark { display: inline-flex; vertical-align: middle; margin-left: 4px; }
+.mtg-foilmark svg { width: 13px; height: 13px; }

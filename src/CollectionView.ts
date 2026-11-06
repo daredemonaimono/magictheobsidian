@@ -1,5 +1,5 @@
 import { Notice, ViewStateResult } from "obsidian";
-import { imageButton } from "./icons";
+import { foilMark, iconButton, imageButton } from "./icons";
 import { addFlip } from "./flip";
 import { CardInfo, cardBackImage, cardImage, cardInfo, printingOf, readPrintings } from "./cards";
 import { CONDS, Row, loadCollection, rowKey, saveCollection } from "./collection";
@@ -7,7 +7,7 @@ import { DeckView, PrintModal } from "./DeckView";
 import { Result } from "./search";
 import { formatPrice, priceOf, priceStore, updateCollectionPrices } from "./prices";
 import { printingImageUrl } from "./scryfall";
-import { COLORS, symbolImg } from "./symbols";
+import { colorFilterButtons, matchesColors } from "./symbols";
 
 export const COLLECTION_VIEW = "mtg-collection";
 
@@ -82,15 +82,7 @@ export class CollectionView extends DeckView {
       this.cf.set = this.setSelect.value;
       void this.render();
     };
-    for (const c of COLORS) {
-      const b = fbar.createEl("button", { cls: "mtg-color", attr: { "aria-label": c } });
-      symbolImg(b, c);
-      b.onclick = () => {
-        this.cf.colors.has(c) ? this.cf.colors.delete(c) : this.cf.colors.add(c);
-        b.toggleClass("is-on", this.cf.colors.has(c));
-        void this.render();
-      };
-    }
+    colorFilterButtons(fbar, this.cf.colors, () => void this.render());
     fbar.createEl("input", { type: "text", placeholder: "所持カードを検索" }).addEventListener("input", (e) => {
       this.cf.name = (e.target as HTMLInputElement).value.trim();
       void this.render();
@@ -137,7 +129,7 @@ export class CollectionView extends DeckView {
       .filter((i) => {
         if (set && i.row.print.split(" ")[0] !== set) return false;
         if (name && ![i.row.card, i.info?.name, i.info?.nameLocal].some((n) => lc(n).includes(lc(name)))) return false;
-        return [...colors].every((c) => i.info?.colors.includes(c));
+        return matchesColors(i.info?.colors ?? [], colors);
       })
       .sort((a, b) => a.row.card.localeCompare(b.row.card) || a.row.print.localeCompare(b.row.print));
 
@@ -172,7 +164,8 @@ export class CollectionView extends DeckView {
     if (i.info && img) void cardBackImage(this.app, i.info.file, i.image).then((back) => addFlip(ctl, img, i.image, back));
     const meta = cell.createDiv("mtg-cmeta");
     meta.createSpan({ text: this.fmt(this.price(i)), cls: "mtg-cprice" });
-    meta.createSpan({ text: `${this.tags(i)} · ${i.row.cond}${i.row.foil ? " ✨" : ""}`, cls: "mtg-dim" });
+    const tagEl = meta.createSpan({ text: `${this.tags(i)} · ${i.row.cond}`, cls: "mtg-dim" });
+    if (i.row.foil) foilMark(tagEl);
   }
 
   private listRow(parent: HTMLElement, i: Item) {
@@ -180,7 +173,8 @@ export class CollectionView extends DeckView {
     row.createSpan({ text: `${i.row.n}×`, cls: "mtg-dim" });
     row.createSpan({ text: i.info?.nameLocal ? `${i.row.card} / ${i.info.nameLocal}` : i.row.card, cls: "mtg-name" });
     row.createSpan({ text: this.tags(i), cls: "mtg-dim" });
-    row.createSpan({ text: `${i.row.cond}${i.row.foil ? " ✨" : ""}`, cls: "mtg-dim" });
+    const condEl = row.createSpan({ text: i.row.cond, cls: "mtg-dim" });
+    if (i.row.foil) foilMark(condEl);
     row.createSpan({ text: this.fmt(this.price(i)) });
     this.controls(row.createDiv("mtg-ctl is-inline"), i);
   }
@@ -193,7 +187,7 @@ export class CollectionView extends DeckView {
     ctl.createEl("button", { text: "+" }).onclick = () => void this.adjust(k, 1);
     ctl.createEl("button", { text: i.row.cond, attr: { "aria-label": "状態を変更 (1枚)" } }).onclick = () =>
       void this.moveOne(k, { cond: CONDS[(CONDS.indexOf(i.row.cond) + 1) % CONDS.length] });
-    const foil = ctl.createEl("button", { text: "✨", attr: { "aria-label": "foil 切替 (1枚)" } });
+    const foil = iconButton(ctl, "sparkles", "foil 切替 (1枚)");
     foil.toggleClass("is-on", i.row.foil);
     foil.onclick = () => void this.moveOne(k, { foil: !i.row.foil });
   }

@@ -1,9 +1,10 @@
 import { App, ItemView, Modal, Notice, Setting, TFile, ViewStateResult, WorkspaceLeaf, moment, setIcon } from "obsidian";
+import { TextModal, editLocalName, editLocalText, wikiButton } from "./cardEdit";
 import { iconButton, imageButton } from "./icons";
 import { editableMemo, setMemo } from "./battle/memo";
 import { addFlip } from "./flip";
 import { normLocalName } from "./localName";
-import { CARD_DIR, cardBackImage, cardBackText, cardImage, cardInfo, cardText, oracleEnglish, printingImage, printingOf, readPrintings, refetchCard, setLocalName, setLocalText, updateLegality } from "./cards";
+import { CARD_DIR, cardBackImage, cardBackText, cardImage, cardInfo, cardText, oracleEnglish, printingImage, printingOf, readPrintings, refetchCard, updateLegality } from "./cards";
 import { CREATABLE, FORMATS, formatOf, judge } from "./rules";
 import { loadCollection } from "./collection";
 import { formatPrice, priceOf, refreshPrices } from "./prices";
@@ -564,6 +565,7 @@ export class DeckView extends ItemView {
           item.createSpan({ text: String(c.count), cls: "mtg-badge" });
           const ctl = item.createDiv("mtg-ctl");
           imageButton(ctl, "イラスト変更").onclick = () => void this.pickPrint(c.key, c.board);
+          if (this.settings.textLang === "ja") wikiButton(ctl, c.key, cardInfo(this.app, c.key)?.nameLocal); // 日本語の設定のときだけ、MTG Wiki のページを開く
           // 統率者構築: 伝説のカードはコマンダーに指定できる。指定済みなら解除
           if (rules.hasCommander && (c.board === "commander" || c.meta?.typeLine.includes("Legendary"))) {
             const crown = iconButton(ctl, "crown", c.board === "commander" ? "コマンダーを解除" : "コマンダーにする");
@@ -599,30 +601,16 @@ export class DeckView extends ItemView {
     const nameRow = this.el.preview.createDiv("mtg-preview-namerow");
     nameRow.createDiv({ text: ja && ja !== name ? `${name} (${ja})` : name, cls: "mtg-preview-name" });
     const lang = this.settings.textLang;
+    const editable = lang !== "en" && !!cardInfo(this.app, name);
     // 設定した言語のカード名 (ローカルネーム) を手で直す。フロントマターの name_local と aliases に書く (効果テキストの欄の上)
-    if (lang !== "en" && cardInfo(this.app, name)) {
-      const pen = nameRow.createEl("button", { text: "✎", cls: "mtg-preview-nameedit", attr: { "aria-label": `カード名 (${lang}) を編集` } });
-      pen.onclick = () =>
-        new TextModal(
-          this.app,
-          `${name} のカード名 (${lang})`,
-          ja && ja !== name ? ja : "",
-          async (t) => {
-            await setLocalName(this.app, name, t);
-            void this.preview(name, image, text, normLocalName(t) && normLocalName(t) !== name ? normLocalName(t) : undefined); // いま書いた名前で出し直す (メタデータの更新を待たない)
-          },
-          "設定した言語のカード名。フロントマターの name_local と aliases に書く。空にすると、ローカルネームを消す。",
-        ).open();
+    if (editable) {
+      iconButton(nameRow, "pencil", `カード名 (${lang}) を編集`).onclick = () =>
+        editLocalName(this.app, this.settings, name, ja, (local) => void this.preview(name, image, text, local)); // いま書いた名前で出し直す (メタデータの更新を待たない)
     }
     const text_ = this.el.preview.createDiv({ text: body, cls: "mtg-preview-text" });
     // 設定した言語のテキストを手で直す (取れなかったとき用)。英語の本文は変えない
-    if (lang !== "en" && cardInfo(this.app, name)) {
-      const pen = text_.createEl("button", { text: "✎", cls: "mtg-preview-edit", attr: { "aria-label": `効果テキスト (${lang}) を編集` } });
-      pen.onclick = () =>
-        new TextModal(this.app, `${name} (${lang})`, body, async (t) => {
-          await setLocalText(this.app, name, lang, t);
-          void this.preview(name, image, cardText(this.app, name), ja);
-        }).open();
+    if (editable) {
+      iconButton(text_, "pencil", `効果テキスト (${lang}) を編集`, "mtg-preview-edit").onclick = () => editLocalText(this.app, this.settings, name, body, () => void this.preview(name, image, cardText(this.app, name), ja));
     }
   }
 }
@@ -649,27 +637,6 @@ export class PrintModal extends Modal {
   private pick(print?: string) {
     this.close();
     this.onPick(print);
-  }
-  onClose() {
-    this.contentEl.empty();
-  }
-}
-
-class TextModal extends Modal {
-  constructor(app: App, private title: string, private body: string, private onSave: (text: string) => Promise<void>, private hint?: string) {
-    super(app);
-  }
-  onOpen() {
-    this.setTitle(this.title);
-    if (this.hint) this.contentEl.createEl("p", { text: this.hint, cls: "setting-item-description" });
-    const area = this.contentEl.createEl("textarea", { cls: "mtg-textedit" });
-    area.value = this.body;
-    new Setting(this.contentEl).addButton((b) =>
-      b.setButtonText("保存").setCta().onClick(async () => {
-        await this.onSave(area.value);
-        this.close();
-      }),
-    );
   }
   onClose() {
     this.contentEl.empty();

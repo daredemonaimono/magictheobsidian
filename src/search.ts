@@ -2,7 +2,7 @@ import { App } from "obsidian";
 import { CardInfo, cardImage, cardText, ensureCardFile, localCards, readPrintings } from "./cards";
 import { ScryfallCard, artCropUrl, cardImageUrl, legalList, restrictedList, searchCards } from "./scryfall";
 import { Settings } from "./settings";
-import { COLORS, symbolImg } from "./symbols";
+import { COLORLESS, colorFilterButtons, matchesColors } from "./symbols";
 
 export interface Meta {
   name: string;
@@ -76,16 +76,7 @@ export function buildFilterBar(parent: HTMLElement, f: Filters, onChange: () => 
     f.type = sel.value;
     onChange();
   };
-  for (const c of COLORS) {
-    const b = bar.createEl("button", { cls: "mtg-color", attr: { "aria-label": c } });
-    symbolImg(b, c);
-    b.toggleClass("is-on", f.colors.has(c));
-    b.onclick = () => {
-      f.colors.has(c) ? f.colors.delete(c) : f.colors.add(c);
-      b.toggleClass("is-on", f.colors.has(c));
-      onChange();
-    };
-  }
+  colorFilterButtons(bar, f.colors, onChange);
 }
 
 // 条件が空なら Cards/ の全カード (名前順)
@@ -100,7 +91,7 @@ export async function searchLocal(app: App, f: Filters): Promise<Result[]> {
     if (name && !lc(c.name).includes(lc(name)) && !lc(c.nameLocal).includes(lc(name))) continue;
     if (noToken && lc(c.typeLine).startsWith("token")) continue;
     if (type && !lc(c.typeLine).includes(lc(type))) continue;
-    if ([...colors].some((x) => !c.colors.includes(x))) continue;
+    if (!matchesColors(c.colors, colors)) continue;
     // shortcut: 効果検索は md を毎回読む。数千枚で重くなったら索引を作る
     if (effect && !lc(await app.vault.cachedRead(c.file)).includes(lc(effect))) continue;
     out.push(localResult(app, c));
@@ -114,7 +105,7 @@ export function scryfallQuery(f: Filters): string {
   if (/[^\x00-\x7F]/.test(name)) q.push("lang:any"); // 日本語名
   if (effect) q.push(`o:"${effect}"`);
   for (const t of type.split(/\s+/).filter(Boolean)) q.push(`t:${t}`);
-  if (colors.size) q.push(`c>=${[...colors].join("")}`);
+  if (colors.size) q.push(colors.has(COLORLESS) ? "c:c" : `c>=${[...colors].join("")}`); // 無色は c:c (色が1つも無い)
   if (f.tokens || lcType(type) === "token") q.push("include:extras"); // Scryfall は既定でトークンを出さない
   return q.join(" ");
 }

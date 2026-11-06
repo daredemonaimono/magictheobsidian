@@ -4,7 +4,7 @@ import { CARD_DIR, cardBackImage, cardInfo, refetchCard } from "./cards";
 import { Result, buildFilterBar, emptyFilters, searchLocal } from "./search";
 import { Settings } from "./settings";
 import { manaCost } from "./symbols";
-import { wikiUrl } from "./wiki";
+import { localPenButtons, wikiButton } from "./cardEdit";
 
 export const CARDS_VIEW = "mtg-cards";
 const PAGE = 60;
@@ -67,7 +67,7 @@ export class CardsView extends ItemView {
       const img = cell.createEl("img", { attr: { loading: "lazy", alt: r.name } });
       void r.image().then((url) => url && img.setAttr("src", url));
       const meta = cell.createDiv("mtg-ccmeta");
-      meta.createSpan({ text: r.ja ?? r.name, cls: "mtg-ccname" });
+      const nameEl = meta.createSpan({ text: r.ja ?? r.name, cls: "mtg-ccname" });
       manaCost(meta, r.manaCost);
 
       const ctl = cell.createDiv("mtg-ctl");
@@ -90,21 +90,9 @@ export class CardsView extends ItemView {
         }
       };
       // 日本語の設定のときだけ、MTG Wiki のそのカードのページを開くボタン (ページは API で探す)
-      if (this.settings.textLang === "ja") {
-        const wiki = ctl.createEl("button", { text: "Wiki", attr: { "aria-label": "MTG Wiki のカードのページを開く" } });
-        wiki.onclick = async (e) => {
-          e.stopPropagation();
-          wiki.disabled = true;
-          try {
-            window.open(await wikiUrl(r.name, r.ja));
-          } catch (err) {
-            console.error(err);
-            new Notice(`Wiki を開けない: ${(err as Error).message}`);
-          } finally {
-            wiki.disabled = false;
-          }
-        };
-      }
+      if (this.settings.textLang === "ja") wikiButton(ctl, r.name, r.ja);
+      // ローカルネーム・ローカルテキスト (設定した言語のカード名・効果テキスト) を手で直す。デッキ画面のプレビューと同じペン
+      if (r.localKey) localPenButtons(this.app, this.settings, ctl, r.localKey, () => r.ja, { name: (local) => { r.ja = local; nameEl.setText(local ?? r.name); }, text: () => new Notice("効果テキストを保存した") });
       // クリックでカードのノートを開く
       cell.onclick = () => {
         const f = this.app.vault.getAbstractFileByPath(`${CARD_DIR}/${r.localKey}.md`);

@@ -11,3 +11,8 @@ export function iconButton(parent: HTMLElement, icon: string, label: string, cls
 export function imageButton(parent: HTMLElement, label: string, cls = ""): HTMLButtonElement {
   return iconButton(parent, "image", label, cls);
 }
+
+// foil の印 (✨ の絵文字のかわり)。文字のあとに、小さなアイコンを足す
+export function foilMark(parent: HTMLElement): void {
+  setIcon(parent.createSpan({ cls: "mtg-foilmark", attr: { "aria-label": "foil" } }), "sparkles");
+}
