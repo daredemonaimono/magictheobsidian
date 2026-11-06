@@ -2,7 +2,7 @@ import { Action, manaOnly, slotsOf, tryAction } from "./actions";
 import { abilityLabel } from "./abilityLabel";
 import { CastRecord } from "./node";
 import { characteristics } from "./continuous";
-import { RuleError, activateAbility, attackersAt, canAttackPerm, castSpell, declareAttackers, declareBlockers, playLand } from "./engine";
+import { RuleError, activateAbility, activateFromHand, attackersAt, canAttackPerm, castSpell, declareAttackers, declareBlockers, playLand } from "./engine";
 import { HAND_SIZE, putBottom, redraw } from "./mulligan";
 import { Game, GameCard, Perm, PlayerId, RuleBook, statsOf } from "./state";
 
@@ -101,6 +101,9 @@ export function cpuDo(g: Game, rules: RuleBook, p: PlayerId, a: Action, targets?
   } else if (a.kind === "cast") {
     g.log.push(`${who(g, p)}が ${g.hands[p].find((x) => x.id === a.card)?.name} を唱えた`);
     castSpell(g, p, a.card, targets ?? {}, rules);
+  } else if (a.kind === "handAbility") {
+    g.log.push(`${who(g, p)}が ${g.hands[p].find((x) => x.id === a.card)?.name} の能力を、手札から起動した`);
+    activateFromHand(g, p, a.card, a.index, targets ?? {}, rules);
   } else {
     const name = g.battlefield.find((x) => x.id === a.perm)?.card.name;
     const before = g.stack.length;

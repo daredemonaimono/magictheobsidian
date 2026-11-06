@@ -2,7 +2,7 @@ import { characteristics, costReduction } from "../continuous";
 import { CastRecord, NodeCall } from "../node";
 import { getNode } from "../registry";
 import { addCosts, emptyCost, ManaCost, parseManaCost } from "../mana";
-import { prepareAbilityOf, Game, GameCard, PlayerId, RuleBook, StackItem } from "../state";
+import { prepareAbilityOf, putInGraveyard, Game, GameCard, PlayerId, RuleBook, StackItem } from "../state";
 import { RuleError, UNRULED, isPermanentCard, live, resolveArgs, spellBody, staticKeywords, unruled } from "./shared";
 import { enterBattlefield } from "./battlefield";
 import { announceTargets, flushEvents } from "./triggers";
@@ -157,6 +157,7 @@ export function activateAbility(g: Game, p: PlayerId, permId: string, index: num
   if (!ab) throw new RuleError(`起動型能力が無い: ${perm.card.name} (${index} 番目)`);
   const timing = ab.body.find((c) => c.node === "timing");
   const cost = costOf(ab.body.filter((c) => c.node === "cost"));
+  if (cost.discardSelf) throw new RuleError(`${perm.card.name}: この能力は、手札から起動する (戦場からは起動できない)`);
   if ((timing?.args.sorcery === true || cost.isLoyalty) && !(p === g.active && (g.step === "main1" || g.step === "main2") && g.stack.length === 0)) throw new RuleError(`${perm.card.name}: ソーサリーのタイミングだけ起動できる (自分のメインフェイズで、スタックが空のとき)`);
   const effects = ab.body.filter((c) => c.node !== "cost" && c.node !== "timing");
   const item: StackItem = { id: `${perm.id}#${g.serial + 1}`, card: perm.card, controller: p, targets, cast: {}, body: effects, ability: true, source: perm.id, ...(cost.loyaltyX ? { x, loyaltyX: true } : cost.isLoyalty ? { loyalty: cost.loyalty } : {}) };
@@ -177,6 +178,35 @@ export function activateAbility(g: Game, p: PlayerId, permId: string, index: num
   g.priority = p;
   g.passes = [];
   flushEvents(g, rules); // 生け贄などで「戦場を離れた」誘発は、この能力の上に積まれる
+}
+
+// 手札から起動する能力 (cost discardSelf=true: サイクリング)。そのカードの、手札から起動できる能力の一覧 (起動型能力のうち、コストにこのカードを捨てるもの)
+export const handAbilitiesOf = (rules: RuleBook, cardName: string) => (rules.get(cardName)?.abilities ?? []).filter((a) => a.kind === "activated" && a.body.some((c) => c.node === "cost" && c.args.discardSelf === true));
+
+// 手札のカードの、index 番目の手札から起動する能力を起動する。コストを払い (マナ・このカードを捨てる)、能力をスタックに積む。インスタントのタイミング (優先権があるとき)
+export function activateFromHand(g: Game, p: PlayerId, cardId: string, index: number, targets: Record<string, string>, rules: RuleBook): void {
+  live(g);
+  const card = g.hands[p]?.find((c) => c.id === cardId);
+  if (!card) throw new RuleError(`手札に無い: ${cardId}`);
+  if (g.priority !== p) throw new RuleError(`${p} は優先権を持っていない`);
+  const ab = handAbilitiesOf(rules, card.name)[index];
+  if (!ab) throw new RuleError(`手札から起動する能力が無い: ${card.name} (${index} 番目)`);
+  const cost = costOf(ab.body.filter((c) => c.node === "cost"));
+  const effects = ab.body.filter((c) => c.node !== "cost" && c.node !== "timing");
+  const item: StackItem = { id: `${card.id}#${g.serial + 1}`, card, controller: p, targets, cast: {}, body: effects, ability: true, source: card.id };
+  validate(g, item, ab.body, card.name, rules);
+  const why = costProblem(g, p, cost, undefined, [], rules);
+  if (why) throw new RuleError(`${card.name}: ${why}`);
+  payCost(g, p, cost, undefined, [], undefined);
+  g.hands[p] = g.hands[p].filter((c) => c !== card);
+  putInGraveyard(g, card, "hand"); // コストで捨てる (捨てた数に数える)
+  g.log.push(`${card.name} を手札から捨てて、能力を起動した`);
+  g.serial++;
+  g.stack.push(item);
+  announceTargets(g, item, rules);
+  g.priority = p;
+  g.passes = [];
+  flushEvents(g, rules);
 }
 
 // 唱えられるタイミングは、カードタイプから決まる (ノードにはしない)

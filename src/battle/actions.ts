@@ -1,10 +1,10 @@
-import { RuleError, TargetSlot, activateAbility, castSpell, playLand, targetSlots } from "./engine";
+import { RuleError, TargetSlot, activateAbility, activateFromHand, castSpell, handAbilitiesOf, playLand, targetSlots } from "./engine";
 import { CastRecord } from "./node";
 import { getNode } from "./registry";
 import { Game, PlayerId, RuleBook } from "./state";
 
 // いまできる行動の一覧 (対戦の画面・CPU・AI が使う)。判定は、エンジンの本物の入口を、コピーした局面で試し撃ちして決める (エンジンと食い違わない)
-export type Action = { kind: "land"; card: string } | { kind: "cast"; card: string } | { kind: "activate"; perm: string; index: number };
+export type Action = { kind: "land"; card: string } | { kind: "cast"; card: string } | { kind: "activate"; perm: string; index: number } | { kind: "handAbility"; card: string; index: number }; // handAbility = 手札から起動する能力 (サイクリング)。人の画面だけが使う (actionsFor の一覧には入れない: CPU・AI は使わない)
 
 export const NO_TARGET = "対象にできるものがありません";
 
@@ -17,6 +17,11 @@ export function slotsOf(g: Game, rules: RuleBook, p: PlayerId, a: Action): Targe
     const card = g.hands[p]?.find((x) => x.id === a.card);
     const body = card && rules.get(card.name)?.abilities.find((x) => x.kind === "spell")?.body;
     return card && body ? targetSlots(g, rules, { id: card.id, card, controller: p, targets: {}, cast: {}, body }) : [];
+  }
+  if (a.kind === "handAbility") {
+    const card = g.hands[p]?.find((x) => x.id === a.card);
+    const ab = card && handAbilitiesOf(rules, card.name)[a.index];
+    return card && ab ? targetSlots(g, rules, { id: card.id, card, controller: p, targets: {}, cast: {}, body: ab.body, ability: true, source: card.id }) : [];
   }
   const perm = g.battlefield.find((x) => x.id === a.perm);
   const ab = perm && activatedOf(rules, perm.card.name)[a.index];
@@ -36,6 +41,7 @@ export function tryAction(g: Game, rules: RuleBook, p: PlayerId, a: Action, targ
   try {
     if (a.kind === "land") playLand(copy, p, a.card, rules);
     else if (a.kind === "cast") castSpell(copy, p, a.card, t, rules, cast);
+    else if (a.kind === "handAbility") activateFromHand(copy, p, a.card, a.index, t, rules);
     else activateAbility(copy, p, a.perm, a.index, t, rules);
   } catch (e) {
     return e instanceof RuleError ? e.message : `内部エラー: ${(e as Error).message}`; // ルールのノートの不備でも、画面を止めない (使えない扱い)

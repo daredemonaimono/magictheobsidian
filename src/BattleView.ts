@@ -599,7 +599,7 @@ export class BattleView extends ItemView {
       data: c,
       name: c.name,
       paint: (el) => this.fill(el, c),
-      ...(this.ctl && kind === "hand" ? { use: () => {
+      ...(this.ctl && kind === "hand" ? { pick: () => this.pickHandAbility(c.id), use: () => {
         const why = this.ctl!.whyNot(c.id); // カードを選んだ時点で、使えない理由 (マナが足りません、など) を出す
         if (why) return this.toast(why);
         this.askKick(c.name, this.ctl!.kickChoices(c.id), this.ctl!.canCastNormally(c.id), c.id, (cast0) => this.askOptions(c.id, c.name, cast0, (cast) => this.ask(c.name, this.ctl!.needsForCard(c.id), (t) => this.askMana(c.name, { kind: "cast", card: c.id }, t, cast, (ids) => this.run(() => this.ctl!.use(c.id, t, cast, ids))))));
@@ -950,6 +950,29 @@ export class BattleView extends ItemView {
     const first = abs.find((a) => a.usable);
     if (first) this.activateWith(permId, first.index);
   }
+  // 手札のカードを 1 回クリック: 手札から起動できる能力 (サイクリング) があれば、一覧を出す
+  private pickHandAbility(cardId: string) {
+    if (this.targeting || !this.ctl) return;
+    const abs = this.ctl.handAbilities(cardId);
+    this.closeMenu();
+    if (!abs.length) return;
+    const anchor = this.ui.stage.querySelector(`[data-id="${cardId}"]`) as HTMLElement | null;
+    const name = this.game.hands[this.ctl.me]?.find((c) => c.id === cardId)?.name ?? "";
+    const menu = this.ui.stage.createDiv("mtg-bt-menu");
+    const box = anchor?.getBoundingClientRect();
+    const st = this.ui.stage.getBoundingClientRect();
+    if (box) menu.setCssStyles({ left: `${box.left - st.left}px`, top: `${Math.max(4, box.top - st.top - abs.length * 28 - 8)}px` });
+    for (const a of abs) {
+      const row = menu.createDiv({ cls: `mtg-bt-menuitem${a.usable ? "" : " is-off"}`, text: a.label });
+      row.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (!a.usable) return;
+        this.closeMenu();
+        this.ask(name, this.ctl!.needsForHandAbility(cardId, a.index), (t) => this.run(() => this.ctl!.activateHand(cardId, a.index, t)));
+      });
+    }
+    this.menu = menu;
+  }
   // 1回クリック: 能力が2つ以上あれば、一覧を出す
   private pickAbility(permId: string) {
     if (this.targeting) return;
@@ -978,6 +1001,34 @@ export class BattleView extends ItemView {
     const asked = slots.filter((x) => x.legal.length > 0);
     if (!asked.length || slots.some((x) => x.legal.length < x.min)) return done({}); // 対象が足りないときは、聞かずに、使おうとして、理由をログに出す
     this.closeMenu();
+    // 墓地のカードが対象のスロットは、盤面では選べないので、カードの一覧から選ばせる (Noxious Revival)。終わったら、残りのスロットを、盤面で選ぶ
+    const gy = asked.filter((x) => x.zone === "graveyard");
+    if (gy.length) {
+      const rest = asked.filter((x) => x.zone !== "graveyard");
+      const pre: Record<string, string> = {};
+      const nameOf = (id: string) => Object.values(this.game.graveyards).flat().find((c) => c.id === id)?.name ?? id;
+      const step = (i: number) => {
+        if (i >= gy.length) {
+          if (!rest.length) return done(pre);
+          this.targeting = { title, slots: rest, i: 0, picks: rest.map(() => []), done: (t) => done({ ...pre, ...t }) };
+          return this.paintTargeting();
+        }
+        const s = gy[i];
+        const cards = s.legal.map((id) => ({ id, name: nameOf(id) }));
+        void this.loadImages(cards.map((c) => c.name)).then(() => {
+          this.askCancel = () => {}; // Esc: 何も起きなかったことになる
+          this.showAsk({ kind: "choose", min: s.min, max: s.max, cards }, (v) => {
+            this.askEl?.remove();
+            this.askEl = undefined;
+            this.askCancel = undefined;
+            this.ui.stage.removeClass("is-asking");
+            pre[s.as] = (v as string[]).join(",");
+            step(i + 1);
+          }, `${title}: 墓地のカードを選ぶ`);
+        });
+      };
+      return step(0);
+    }
     this.targeting = { title, slots: asked, i: 0, picks: asked.map(() => []), done };
     this.paintTargeting();
   }

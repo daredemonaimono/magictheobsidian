@@ -86,6 +86,7 @@ export type Zone = "library" | "hand" | "graveyard" | "battlefield" | "stack" | 
 // カードを墓地に置く (持ち主の墓地へ)。「墓地に置かれた」(moved) を積む。from = どこから
 export function putInGraveyard(g: Game, card: GameCard, from: Zone): void {
   g.graveyards[card.owner].push(card);
+  if (from === "hand") (g.discarded ??= {})[card.owner] = (g.discarded?.[card.owner] ?? 0) + 1; // 手札から墓地へ = 捨てた
   g.events.push({ type: "moved", card, from, to: "graveyard" });
 }
 
@@ -134,6 +135,7 @@ export interface Game {
   handLook?: { by: PlayerId; of: PlayerId; ids: string[]; n: number }; // 手札を見たとき (lookHand): だれが、だれの手札を、どのカードを見たか。n = 何回目か (画面が、新しい「見た」を見つける)
   restrictedMana: Record<PlayerId, { amount: number; color?: PoolKey; type?: string; notType?: string }[]>; // 使い道に制限のあるマナ (「クリーチャーでない呪文を唱えるためにしか使えない」)
   extraTurns?: PlayerId[]; // 追加のターン (次のターンの前に、順に取る)
+  discarded?: Record<PlayerId, number>; // このターンに捨てた・サイクリングしたカードの数 (手札から墓地へ。プレイヤーごと。ターンが替わると 0)
   gained?: Record<PlayerId, number>; // このターンに得たライフの量 (プレイヤーごと。ターンが替わると 0)
   delayed?: Delayed[]; // 遅延誘発 (あとのステップの開始時に積む)
   drawn?: Record<PlayerId, string[]>; // このターンに引いたカードの id (プレイヤーごと)

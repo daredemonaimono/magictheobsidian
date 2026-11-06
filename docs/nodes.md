@@ -10,9 +10,9 @@
 
 ### `cost` コスト
 
-起動型能力のコスト(能力の最初に書く)。mana=払う汎用マナの数 / manaCost=色つきのマナコスト("{1}{U}") / tap=このパーマネントをタップ / sacrifice=このパーマネントを生け贄に捧げる / life=N点のライフを払う (フェッチランド) / tapCreatures=パワーの合計がこの値以上になるよう、自分のクリーチャーをタップ / loyalty=忠誠度を足す(+1 は loyalty=1、−2 は loyalty=-2。プレインズウォーカーの能力。ソーサリーのタイミングで1ターンに1回) / loyaltyX=true で −X(X は起動時に選び、効果の中で $X として参照する) / removeCounter=カウンターの種類(+1/+1 など)を 1 個取り除く
+起動型能力のコスト(能力の最初に書く)。mana=払う汎用マナの数 / manaCost=色つきのマナコスト("{1}{U}") / tap=このパーマネントをタップ / sacrifice=このパーマネントを生け贄に捧げる / life=N点のライフを払う (フェッチランド) / tapCreatures=パワーの合計がこの値以上になるよう、自分のクリーチャーをタップ / loyalty=忠誠度を足す(+1 は loyalty=1、−2 は loyalty=-2。プレインズウォーカーの能力。ソーサリーのタイミングで1ターンに1回) / loyaltyX=true で −X(X は起動時に選び、効果の中で $X として参照する) / removeCounter=カウンターの種類(+1/+1 など)を 1 個取り除く / discardSelf=true で、このカードを手札から捨てる(手札から起動する能力: サイクリング {2}。cost mana=2 discardSelf=true → draw)
 
-- 引数: `mana`(number)、`manaCost`(string)、`tap`(boolean)、`sacrifice`(boolean)、`life`(number)、`tapCreatures`(number)、`loyalty`(number)、`loyaltyX`(boolean)、`removeCounter`(string)
+- 引数: `mana`(number)、`manaCost`(string)、`tap`(boolean)、`sacrifice`(boolean)、`life`(number)、`tapCreatures`(number)、`loyalty`(number)、`loyaltyX`(boolean)、`removeCounter`(string)、`discardSelf`(boolean)
 - 書ける能力: activated
 - 宣言のノード (エンジンが読む。`if=` は付けられない)
 - 中心のノード (ルールを書かせるとき、いつも AI の指示に入る。ほかは、カードごとに選ぶ)
@@ -110,9 +110,9 @@ Storm の宣言(呪文能力の最初に書く。引数なし)。この呪文を
 
 ### `reduceCost` コスト軽減
 
-呪文のコストを amount 減らす(マナ総量から引く)。who=you(このパーマネントのコントローラーの呪文。既定) / opponents / all。type・notType で呪文の型を絞る。affect は要らない
+呪文のコストを amount 減らす(マナ総量から引く)。who=you(このパーマネントのコントローラーの呪文。既定) / opponents / all。type・notType で呪文の型を絞る。affect は要らない。self=true は、このカード自身を唱えるときの軽減(「この呪文は〜安くなる」)で、per=discarded を付けると、このターンに捨てた・サイクリングしたカード 1 枚につき amount 減る(Hollow One)
 
-- 引数: `amount`(number・必須)、`who`(string・you / opponents / all)、`type`(string)、`notType`(string)
+- 引数: `amount`(number・必須)、`who`(string・you / opponents / all)、`type`(string)、`notType`(string)、`self`(boolean)、`per`(string・discarded)
 - 書ける能力: static
 - 宣言のノード (エンジンが読む。`if=` は付けられない)
 

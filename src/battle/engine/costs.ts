@@ -16,6 +16,7 @@ export interface CostSpec {
   loyalty: number; // 忠誠度を足す量 (+1 は 1、−2 は −2)
   loyaltyX: boolean; // −X
   isLoyalty: boolean; // 忠誠度能力 (ソーサリーのタイミングで、1ターンに1回)
+  discardSelf: boolean; // このカードを手札から捨てる (手札から起動する能力: サイクリング)
   removeCounter?: string; // 取り除くカウンターの種類 (1 個。Golgari Grave-Troll の +1/+1)
   life: number; // 払うライフ (フェッチランドの「1点のライフを払う」)
   preferLife?: boolean; // ファイレクシア・マナを、ライフで払う
@@ -40,6 +41,7 @@ export const costOf = (calls: NodeCall[]): CostSpec => ({
   loyaltyX: calls.some((c) => c.args.loyaltyX === true),
   isLoyalty: calls.some((c) => c.args.loyalty !== undefined || c.args.loyaltyX === true),
   life: calls.reduce((a, c) => a + Number(c.args.life ?? 0), 0),
+  discardSelf: calls.some((c) => c.args.discardSelf === true),
   removeCounter: calls.find((c) => typeof c.args.removeCounter === "string")?.args.removeCounter as string | undefined,
 });
 

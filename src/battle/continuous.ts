@@ -107,11 +107,16 @@ export function costReduction(g: Game, p: PlayerId, card: GameCard, rules: RuleB
     for (const ab of rules.get(s.card.name)?.abilities ?? []) {
       if (ab.kind !== "static" || ab.body[0]?.node === "affect") continue;
       for (const c of ab.body) {
-        if (c.node !== "reduceCost" || !typeOk(c.args, card.typeLine)) continue;
+        if (c.node !== "reduceCost" || c.args.self === true || !typeOk(c.args, card.typeLine)) continue; // self は、唱えるカード自身の軽減 (下)
         const who = c.args.who ?? "you";
         if (who === "all" || (who === "you" ? s.controller === p : s.controller !== p)) sum += Number(c.args.amount);
       }
     }
+  }
+  // このカード自身を唱えるときの軽減 (reduceCost self=true): 手札のカードの、常在型能力。per=discarded なら、このターンに捨てた・サイクリングした数ぶん
+  for (const ab of rules.get(card.name)?.abilities ?? []) {
+    if (ab.kind !== "static") continue;
+    for (const c of ab.body) if (c.node === "reduceCost" && c.args.self === true) sum += Number(c.args.amount) * (c.args.per === "discarded" ? g.discarded?.[p] ?? 0 : 1);
   }
   return sum;
 }

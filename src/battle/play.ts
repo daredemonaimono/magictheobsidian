@@ -1,5 +1,5 @@
 import { Action, abilityLabels, actionsFor, autoTargets, manaOnly, slotsOf, tryAction, tryWithMana, uselessMana, withAllMana } from "./actions";
-import { RuleError, TargetSlot, activateAbility, attackersAt, canAttackWith, castSpell, pitchable, declareAttackers, declareBlockers, assignDamage, passPriority, playLand } from "./engine";
+import { RuleError, TargetSlot, activateAbility, activateFromHand, handAbilitiesOf, attackersAt, canAttackWith, castSpell, pitchable, declareAttackers, declareBlockers, assignDamage, passPriority, playLand } from "./engine";
 import { AiOption, aiAttackers, aiBlockers, aiOptions } from "./ai";
 import { cpuAct, cpuAttack, cpuBlock, cpuDo, tapFor, tapOne } from "./cpu";
 import { Answer, InputRequest, NeedInput, makeDecider } from "./input";
@@ -7,6 +7,7 @@ import { HAND_SIZE, putBottom, redraw } from "./mulligan";
 import { abilityLabel } from "./abilityLabel";
 import { CastRecord } from "./node";
 import { parseManaCost } from "./mana";
+import { getNode } from "./registry";
 import { Game, PlayerId, RuleBook } from "./state";
 
 // 記録の1件: 入口の呼び出し (op と引数) と、途中の質問への答え
@@ -30,6 +31,16 @@ export function describeAlt(a: Record<string, unknown>): string {
   if (typeof a.manaCost === "string") parts.push(a.manaCost);
   else if (a.mana !== undefined) parts.push(`{${Number(a.mana)}}`);
   if (a.exile !== undefined) parts.push(`手札の${typeof a.exileColor === "string" ? COLOR_JA[a.exileColor] : ""}のカード${Number(a.exile)}枚を追放`.replace("のカード", typeof a.exileColor === "string" ? "のカード" : "カード"));
+  if (a.life !== undefined) parts.push(`${Number(a.life)} ライフ`);
+  return parts.join("・");
+}
+
+// 起動型能力のコストの表示 ("{2}・このカードを捨てる")
+export function describeAbilityCost(a: Record<string, unknown>): string {
+  const parts: string[] = [];
+  if (typeof a.manaCost === "string") parts.push(a.manaCost);
+  else if (a.mana !== undefined) parts.push(`{${Number(a.mana)}}`);
+  if (a.discardSelf === true) parts.push("このカードを捨てる");
   if (a.life !== undefined) parts.push(`${Number(a.life)} ライフ`);
   return parts.join("・");
 }
@@ -507,6 +518,35 @@ export class BattleController {
       activateAbility(x, this.me, permId, index, t, this.rules);
       const item = x.stack.length > before ? [...x.stack].reverse().find((s) => s.ability && s.source === permId && !s.body?.some((c) => c.node === "when")) : undefined; // この能力 (誘発は、その上に積まれることがある)
       x.log.push(manaOnly ? `あなたが ${name} をタップしてマナを出した` : item?.source === permId && abilityLabel(item) ? `あなたが ${name} の能力 ${abilityLabel(item)} を起動した` : `あなたが ${name} の能力を起動した`);
+    }, []);
+  }
+
+  // ---- 手札から起動する能力 (サイクリング): 手札のカードを 1 回クリックして出す一覧から
+  handAbilities(cardId: string): { index: number; label: string; usable: boolean }[] {
+    const card = this.game.hands[this.me].find((c) => c.id === cardId);
+    if (!card) return [];
+    return handAbilitiesOf(this.rules, card.name).map((ab, index) => ({
+      index,
+      label: `手札から: ${ab.body.filter((c) => c.node !== "cost" && c.node !== "timing").map((c) => getNode(c.node)?.title ?? c.node).join(" → ")} (${describeAbilityCost(ab.body.find((c) => c.node === "cost")?.args ?? {})})`,
+      usable: tryWithMana(this.game, this.rules, this.me, { kind: "handAbility", card: cardId, index }) === undefined,
+    }));
+  }
+  needsForHandAbility(cardId: string, index: number): TargetSlot[] {
+    return slotsOf(this.game, this.rules, this.me, { kind: "handAbility", card: cardId, index });
+  }
+  activateHand(cardId: string, index: number, targets?: Record<string, string>): string | undefined {
+    const g = this.game;
+    if (g.mulligan) return this.fail("使えない", "マリガンを終えてください");
+    const card = g.hands[this.me].find((c) => c.id === cardId);
+    if (!card) return this.fail(cardId, "手札に無い");
+    const act: Action = { kind: "handAbility", card: cardId, index };
+    const t = targets ?? autoTargets(slotsOf(g, this.rules, this.me, act));
+    const why = tryWithMana(g, this.rules, this.me, act, t);
+    if (why) return this.fail(card.name, why.replace("マナが足りない", "マナが足りません"));
+    this.rec("hand", [cardId, index, targets]);
+    return this.perform(card.name, (x) => {
+      tapFor(x, this.rules, this.me, act, t);
+      activateFromHand(x, this.me, cardId, index, t, this.rules);
     }, []);
   }
 
