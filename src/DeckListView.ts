@@ -1,8 +1,8 @@
 import { App, ItemView, Modal, Notice, Setting, TAbstractFile, TFile, WorkspaceLeaf, debounce } from "obsidian";
-import { cardInfo, deckVerdicts, printingOf } from "./cards";
+import { cardInfo, printingOf } from "./cards";
 import { DECK_DIR, parseDeck } from "./deck";
 import { DECK_VIEW } from "./DeckView";
-import { LEGAL_FORMATS, Verdict } from "./rules";
+import { FORMATS, LEGAL_FORMATS } from "./rules";
 import { artCropUrl } from "./scryfall";
 import { ThumbnailModal } from "./ThumbnailModal";
 import { COLORS, symbolImg } from "./symbols";
@@ -16,7 +16,7 @@ export interface DeckListActions {
 
 interface Entry {
   file: TFile;
-  legal: Record<string, Verdict>; // フォーマットごとの判定 (デッキ内の全カード)
+  format: string; // デッキに設定したフォーマット (作成時、またはデッキ画面で選んだもの。frontmatter の format:)。無い・知らないものは、制限なし (constructed)
   favorite: boolean;
   colors: string[];
   count: number; // メインの枚数
@@ -108,7 +108,7 @@ export class DeckListView extends ItemView {
       }
       out.push({
         file,
-        legal: deckVerdicts(this.app, keys, deck.commander.size > 0 || fm.format === "commander"),
+        format: typeof fm.format === "string" && fm.format in FORMATS ? fm.format : "constructed",
         favorite: !!fm.favorite,
         colors: COLORS.filter((c) => colors.has(c)),
         count: [...deck.main.values(), ...deck.commander.values()].reduce((a, e) => a + e.n, 0),
@@ -134,7 +134,7 @@ export class DeckListView extends ItemView {
       };
     }
 
-    const list = all.filter((d) => (this.tab === "all" || d.favorite) && d.file.basename.toLowerCase().includes(this.query) && (!this.format || d.legal[this.format] === "ok"));
+    const list = all.filter((d) => (this.tab === "all" || d.favorite) && d.file.basename.toLowerCase().includes(this.query) && (!this.format || d.format === this.format));
     this.status.setText(`${list.length} 件 (更新日の新しい順)`);
     this.body.empty();
     for (const d of list) this.card(d);
@@ -160,10 +160,8 @@ export class DeckListView extends ItemView {
     if (d.art) tile.createEl("img", { attr: { src: d.art, loading: "lazy", alt: "" } });
     tile.createDiv("mtg-dshade");
     tile.createDiv({ text: d.file.basename, cls: "mtg-dname" });
-    // 使えるフォーマット (全カードが使えると分かっているもの)。未取得ならその旨
-    const names = LEGAL_FORMATS.filter(([id]) => d.legal[id] === "ok").map(([, n]) => n.toUpperCase());
-    const unknown = LEGAL_FORMATS.every(([id]) => d.legal[id] === "unknown");
-    tile.createDiv({ text: `${unknown ? "判定なし" : names.join(" · ") || "どのフォーマットでも不可"} · ${d.count}枚`, cls: "mtg-dformat" });
+    // フォーマットは、デッキに設定したものだけ (どのフォーマットで使えるかの一覧は出さない)
+    tile.createDiv({ text: `${FORMATS[d.format].name.toUpperCase()} · ${d.count}枚`, cls: "mtg-dformat" });
     const pips = tile.createDiv("mtg-dpips");
     for (const c of d.colors) symbolImg(pips, c);
 
