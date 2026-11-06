@@ -53,6 +53,7 @@ export interface NodeBrief {
   id: string;
   title: string;
   summary: string;
+  keys?: string[]; // 日本語の言い方 (同義語)。literal に読む Jev に、言い方の幅を渡す
 }
 const first = (s: string, n = 70) => {
   const t = s.split("。")[0];
@@ -60,7 +61,7 @@ const first = (s: string, n = 70) => {
 };
 export function nodeQuestions(nodes: NodeBrief[]): Record<string, JevQuestion> {
   const out: Record<string, JevQuestion> = {};
-  for (const n of nodes) out[n.id] = { type: "noul", instructions: `このカードの効果を、汎用のノードの組み合わせで書くとき、「${n.title}」(${first(n.summary)}) の部品が要りますか` };
+  for (const n of nodes) out[n.id] = { type: "noul", instructions: `このカードの効果を、汎用のノードの組み合わせで書くとき、「${n.title}」(${first(n.summary)}${n.keys?.length ? `。言い方: ${n.keys.join("・")}` : ""}) の部品が要りますか` };
   return out;
 }
 export function pickNodes(answers: Record<string, JevAnswer>, recall: number): string[] {

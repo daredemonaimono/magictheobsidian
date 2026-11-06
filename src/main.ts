@@ -1,4 +1,6 @@
 import { App, EventRef, Modal, Notice, Plugin, Setting, TFile, WorkspaceLeaf, normalizePath } from "obsidian";
+import { buildRule } from "./battle/build";
+import { sameRule } from "./battle/ruleCompare";
 import { JevAsk, compileRule } from "./battle/compileRule";
 import { askJev } from "./battle/jev";
 import { allNodes } from "./battle/registry";
@@ -200,6 +202,8 @@ export default class MagicTheObsidian extends Plugin {
         new Notice(r.md ? `Jev で組めた (${stat})\n${r.md.split("## 呪文能力")[1].trim()}` : `組めなかった: ${r.reason}\n${stat}\n返事: ${JSON.stringify(r.answers ?? {}).slice(0, 300)}`, 20000);
       },
     });
+    // ヒントの効果の測定: すでにルールのあるカードを、「切った結果のヒントあり / なし」で、AI に作らせ直して、今のルールと比べる (Rules/_ヒント比較.md に書く。今のルールは書き換えない)
+    this.addCommand({ id: "compare-hints", name: "Rules: compare AI rule building with / without hints (writes a report)", callback: () => void this.compareHints(12) });
     this.addCommand({ id: "cache-images", name: "Save card images (local cache, per settings)", callback: () => void this.preloadImages(true) });
 
     this.addCommand({
@@ -447,6 +451,72 @@ export default class MagicTheObsidian extends Plugin {
     }
   }
 
+  private async compareHints(limit: number) {
+    const ask = this.askFor("rules");
+    if (!ask) return void this.missingKeyNotice("rules");
+    const names = this.app.vault
+      .getMarkdownFiles()
+      .filter((f) => f.path.startsWith(`${RULES_DIR}/`) && !f.basename.startsWith("_"))
+      .map((f) => f.basename);
+    const picked: { name: string; oracle: string; current: string }[] = [];
+    for (const name of names) {
+      if (picked.length >= limit) break;
+      const current = await this.app.vault.adapter.read(`${RULES_DIR}/${name}.md`);
+      const oracle = await oracleEnglish(this.app, name);
+      if (!oracle || /^## 未対応/m.test(current) || oracle.length > 700) continue; // 未対応が残るもの・長すぎるものは、正解として弱いので、飛ばす
+      picked.push({ name, oracle, current });
+    }
+    if (!picked.length) return void new Notice("比べられるカードが無い");
+    const notice = new Notice("ヒントの効果を測っています…", 0);
+    const glossary = await this.readGlossary();
+    const rows: string[] = [];
+    let withOk = 0;
+    let withoutOk = 0;
+    let withIn = 0;
+    let withoutIn = 0;
+    try {
+      for (const [i, c] of picked.entries()) {
+        notice.setMessage(`ヒントの効果を測っています… ${i + 1}/${picked.length}: ${c.name}`);
+        const run = async (hints: boolean) => {
+          let input = 0;
+          try {
+            const r = await buildRule({ card: c.name, oracle: c.oracle, glossary, hints, ask: async (system, messages) => { const x = await ask(system, messages); input += x.input ?? 0; return x.text; } });
+            return { ok: sameRule(r.md, c.current), input, attempts: r.attempts };
+          } catch {
+            return { ok: false, input, attempts: 0 };
+          }
+        };
+        const a = await run(true);
+        const b = await run(false);
+        withOk += a.ok ? 1 : 0;
+        withoutOk += b.ok ? 1 : 0;
+        withIn += a.input;
+        withoutIn += b.input;
+        rows.push(`| ${c.name} | ${a.ok ? "○" : "×"} (${a.attempts} 回・${a.input})  | ${b.ok ? "○" : "×"} (${b.attempts} 回・${b.input}) |`);
+      }
+    } finally {
+      notice.hide();
+    }
+    const md = `# ヒントの効果の測定
+
+今のルール (人・AI が作ったもの) と、同じ内容 (○) になった数。ヒント = 効果テキストを、コードで切った結果を、AI への指示に添えたもの。
+
+- 対象: ${picked.length} 枚
+- ヒントあり: ${withOk} 枚 ○ / 入力 ${withIn} トークン
+- ヒントなし: ${withoutOk} 枚 ○ / 入力 ${withoutIn} トークン
+
+| カード | ヒントあり (呼び出し回数・入力トークン) | ヒントなし |
+|---|---|---|
+${rows.join("\n")}
+
+注: 「今のルール」が、唯一の正解とは限りません。×でも、別の書き方で、動きが同じものがあります。
+`;
+    const path = normalizePath(`${RULES_DIR}/_ヒント比較.md`);
+    if (this.app.vault.getAbstractFileByPath(path)) await this.app.vault.adapter.write(path, md);
+    else await this.app.vault.create(path, md);
+    new Notice(`ヒントあり ${withOk}/${picked.length} 枚 ○・なし ${withoutOk}/${picked.length} 枚 ○ (${RULES_DIR}/_ヒント比較.md)`, 15000);
+  }
+
   // 「先に保存」: デッキとコレクションのカードの画像を、ローカルへ。loud = 手で呼んだとき (設定に関係なく、結果を知らせる。ただし、保存しない設定のときは、保存されない旨を知らせる)
   private preloading = false;
   private async preloadImages(loud: boolean) {
@@ -642,7 +712,7 @@ export default class MagicTheObsidian extends Plugin {
           ...(jevKey
             ? {
                 askSelectCard: async (card: string, oracle: string, rulingText?: string) => {
-                  const nodes = allNodes().filter((n) => !n.core).map((n) => ({ id: n.id, title: n.title, summary: n.summary }));
+                  const nodes = allNodes().filter((n) => !n.core).map((n) => ({ id: n.id, title: n.title, summary: n.summary, keys: n.keys }));
                   const r = await jevSelectNodes({ apiKey: jevKey, model: this.settings.ai.scenes.nodes.models.jev, http: obsidianHttp, card, oracle, ruling: rulingText, nodes, recall: this.settings.ai.jev.recall });
                   console.debug(`[jev] ノード選び: ${card} ${r.ms}ms 入力 ${r.input} トークン`);
                   return r.text;

@@ -1,6 +1,11 @@
 import assert from "node:assert";
 import { readFileSync, readdirSync } from "node:fs";
+import { registerBuiltinNodes } from "../src/battle/nodes";
+import { resetRegistry } from "../src/battle/registry";
 import { effectsOf, splitAbility, splitClauses, splitOracle } from "../src/battle/splitText";
+
+resetRegistry();
+registerBuiltinNodes(); // 辞書は、ノード側 (keys.ts) が持つ
 
 // ---- 例: Ancestral Recall → 動作 draw / 数字 3 / 対象 player
 {

@@ -246,12 +246,14 @@ a と b を、op (lt = a<b / le = a≤b / eq = a=b / ge = a≥b / gt = a>b) で�
 
 - 引数: `player`(string・必須・you / opponents / target)、`target`(ref)、`count`(number・必須)、`optional`(boolean)
 - 出力: `n`(number) (`as=名前` で受けて、`$名前` で渡す)
+- 言い方 (キー): 引く、ドロー、カードを引く、手札に加える (ライブラリーから)
 
 ### `discard` 捨てる
 
 プレイヤーが手札を count 枚捨てる。player=you / opponents / target(draw と同じ)
 
 - 引数: `player`(string・必須・you / opponents / target)、`target`(ref)、`count`(number・必須)
+- 言い方 (キー): 捨てる、ディスカード、手札を捨てる
 
 ### `look` ライブラリーの上を見る
 
@@ -259,6 +261,7 @@ a と b を、op (lt = a<b / le = a≤b / eq = a=b / ge = a≥b / gt = a>b) で�
 
 - 引数: `player`(string・必須・you / opponents / target)、`target`(ref)、`count`(number・必須)
 - 出力: `id`(id) (`as=名前` で受けて、`$名前` で渡す)
+- 言い方 (キー): 見る、占術、諜報、ライブラリーの上を見る
 
 ### `lookHand` 手札を見る
 
@@ -266,12 +269,14 @@ a と b を、op (lt = a<b / le = a≤b / eq = a=b / ge = a≥b / gt = a>b) で�
 
 - 引数: `player`(string・必須・you / opponents / target)、`target`(ref)
 - 出力: `id`(id) (`as=名前` で受けて、`$名前` で渡す)
+- 言い方 (キー): 手札を見る、手札を公開させる
 
 ### `shuffle` ライブラリーを切る
 
 プレイヤーのライブラリーを切る。player=you / opponents / target。optional=true なら「してもよい」(断れる。「切ってもよい」)
 
 - 引数: `player`(string・必須・you / opponents / target)、`target`(ref)、`optional`(boolean)
+- 言い方 (キー): 切る、シャッフル
 
 ### `choose` 選ぶ
 
@@ -279,12 +284,14 @@ from(look などの出力)の中から count 枚を選ぶ。atMost=true なら 0
 
 - 引数: `from`(ref・必須)、`count`(number・必須)、`atMost`(boolean)
 - 出力: `id`(id) (`as=名前` で受けて、`$名前` で渡す)
+- 言い方 (キー): 選ぶ、その中から選ぶ
 
 ### `move` カードを動かす
 
 cards(look / choose の出力)を、持ち主の to へ動かす。to=hand / graveyard / top(ライブラリーの一番上) / bottom(一番下)。except に渡したカードは動かさない(「残りを底に」)。random=true で、ランダムな順で(「ランダムな順番でライブラリーの一番下に置く」)
 
 - 引数: `cards`(ref・必須)、`except`(ref)、`to`(string・必須・hand / graveyard / top / bottom)、`random`(boolean)
+- 言い方 (キー): 動かす、墓地に置く、ライブラリーの上・下に置く、墓地から戻す
 
 ### `zoneCards` 墓地・手札のカード
 
@@ -305,24 +312,28 @@ cards(look / choose の出力)を、持ち主の to へ動かす。to=hand / gra
 cards(choose などの出力)の1枚ごとに、コントローラーが life 点のライフを払う(そのカードは手札に残る)か、払わずに、そのカードを to(top / bottom)に置くかを選ぶ。払うか聞かれたら、既定は払わない(Sylvan Library は life=4 to=top)
 
 - 引数: `cards`(ref・必須)、`life`(number・必須)、`to`(string・必須・top / bottom)
+- 言い方 (キー): ライフを払うか、戻す
 
 ### `bounce` 手札に戻す
 
 対象(select の出力も可)のパーマネントを持ち主の手札に戻す
 
 - 引数: `target`(ref・必須)
+- 言い方 (キー): 手札に戻す、バウンス、持ち主の手札に戻す
 
 ### `sacrifice` 生け贄に捧げる
 
 コントローラーが、対象のパーマネント(自分のもの。self ノードの出力で「これを生け贄に捧げる」)を生け贄に捧げる(持ち主の墓地へ。破壊不能でも捧げられる)。他人のパーマネントは、捧げられない
 
 - 引数: `target`(ref・必須)
+- 言い方 (キー): 生け贄に捧げる、生け贄
 
 ### `destroy` 破壊する
 
 対象(select の出力も可)のパーマネントを破壊する (持ち主の墓地へ。破壊不能は、破壊されない)。「土地を破壊する」(Wasteland・Strip Mine)・「アーティファクトやエンチャントを、最大2つ破壊する」は、target(type=・notType=・min=・max=)と使う
 
 - 引数: `target`(ref・必須)
+- 言い方 (キー): 破壊する、壊す
 
 ### `search` ライブラリーから探す
 
@@ -330,6 +341,7 @@ cards(choose などの出力)の1枚ごとに、コントローラーが life �
 
 - 引数: `type`(string)、`name`(string)、`to`(string・必須・battlefield / hand)、`count`(number)、`tapped`(boolean)、`shuffle`(boolean)
 - 出力: `id`(id) (`as=名前` で受けて、`$名前` で渡す)
+- 言い方 (キー): 探す、サーチ、ライブラリーから探す
 
 ### `exile` 追放する
 
@@ -337,6 +349,7 @@ cards(choose などの出力)の1枚ごとに、コントローラーが life �
 
 - 引数: `target`(ref)、`zone`(string・graveyard)、`count`(number)、`optional`(boolean)
 - 出力: `n`(number) (`as=名前` で受けて、`$名前` で渡す)
+- 言い方 (キー): 追放する、追放
 
 ## パーマネント・トークン・カウンター (14 個)
 
@@ -345,36 +358,42 @@ cards(choose などの出力)の1枚ごとに、コントローラーが life �
 対象(複数も可)のパーマネントをタップする
 
 - 引数: `target`(ref・必須)
+- 言い方 (キー): タップする
 
 ### `untap` アンタップする
 
 対象(複数も可)のパーマネントをアンタップする
 
 - 引数: `target`(ref・必須)
+- 言い方 (キー): アンタップする
 
 ### `modify` 修整を受ける
 
 対象のクリーチャーが +power/+toughness の修整を受ける。duration=endOfTurn(ターン終了時まで) / forever
 
 - 引数: `target`(ref・必須)、`power`(number・必須)、`toughness`(number・必須)、`duration`(string・必須・endOfTurn / forever)
+- 言い方 (キー): 修整を受ける、+X/+X、パワー・タフネスの修整
 
 ### `becomes` 〜になる
 
 対象のパーマネントが、types(型行。例: "Creature — Elk")・colors(例: G)・power と toughness(基本のパワー・タフネス)になる。loseAbilities=true なら、すべての能力を失う。duration=forever / endOfTurn。Oko の +1 (target artifact or creature → becomes types="Creature — Elk" colors=G power=3 toughness=3 loseAbilities=true duration=forever)
 
 - 引数: `target`(ref・必須)、`types`(string)、`colors`(string)、`power`(number)、`toughness`(number)、`loseAbilities`(boolean)、`duration`(string・必須・endOfTurn / forever)
+- 言い方 (キー): 〜になる、変身させる
 
 ### `exchangeControl` コントロールを交換する
 
 a と b(それぞれ target ノードの出力)のパーマネントのコントロールを交換する。どちらかが戦場になければ、何も起きない。交換したパーマネントは、召喚酔いになる(クリーチャーの場合)。Oko の −5
 
 - 引数: `a`(ref・必須)、`b`(ref・必須)
+- 言い方 (キー): コントロールを交換する
 
 ### `grant` キーワードを得る
 
 対象のクリーチャーがキーワード能力を得る。duration=endOfTurn(ターン終了時まで) / forever
 
 - 引数: `target`(ref・必須)、`keyword`(string・必須・flying / hexproof / flash / haste / vigilance / trample / lifelink / deathtouch / firstStrike / doubleStrike / reach / menace / defender / prowess / indestructible)、`duration`(string・必須・endOfTurn / forever)
+- 言い方 (キー): 能力を得る、飛行を得る
 
 ### `prepareSpell` 準備呪文
 
@@ -404,6 +423,7 @@ a と b(それぞれ target ノードの出力)のパーマネントのコント
 この能力の発生源(装備品・オーラ)を、対象のパーマネントに付ける。オーラは、戦場に出てから付く
 
 - 引数: `target`(ref・必須)
+- 言い方 (キー): 付ける、装備する、オーラ
 
 ### `emblem` 紋章の能力
 
@@ -424,12 +444,14 @@ a と b(それぞれ target ノードの出力)のパーマネントのコント
 コントローラーが、トークンのクリーチャーなどを count 個(既定は1)作る。name=名前 / types=型行(例: "Creature — Illusion") / power・toughness / colors=色(空白区切り。例: "U")
 
 - 引数: `name`(string・必須)、`types`(string・必須)、`power`(number)、`toughness`(number)、`colors`(string)、`count`(number)
+- 言い方 (キー): トークンを作る、トークンを生成
 
 ### `addCounter` カウンターを置く
 
 対象のパーマネントの上にカウンターを count 個置く。kind=+1/+1(パワー・タフネスに足される) / stun(麻痺。アンタップするかわりに1つ取り除く)
 
 - 引数: `target`(ref・必須)、`kind`(string・必須・+1/+1 / stun)、`count`(number・必須)
+- 言い方 (キー): カウンターを置く、+1/+1 カウンター
 
 ## ダメージ・ライフ・マナ・打ち消し (7 個)
 
@@ -438,42 +460,49 @@ a と b(それぞれ target ノードの出力)のパーマネントのコント
 プレイヤーが amount 点のライフを得る。player=you / opponents / target(draw と同じ)
 
 - 引数: `player`(string・必須・you / opponents / target)、`target`(ref)、`amount`(number・必須)
+- 言い方 (キー): ライフを得る、回復、ライフを回復
 
 ### `loseLife` ライフを失う
 
 プレイヤーが amount 点のライフを失う。player=you / opponents / target(draw と同じ)
 
 - 引数: `player`(string・必須・you / opponents / target)、`target`(ref)、`amount`(number・必須)
+- 言い方 (キー): ライフを失う、ライフを払う、ライフ損失
 
 ### `damage` ダメージを与える
 
 対象 (target ノードの出力。zone=any なら、プレイヤー・クリーチャー・プレインズウォーカー) に amount 点のダメージを与える
 
 - 引数: `target`(ref・必須)、`amount`(number・必須)
+- 言い方 (キー): ダメージを与える、ダメージ、焼く
 
 ### `addMana` マナを加える
 
 コントローラーがマナを amount 点加える。colors=GWU(その中の好きな1色。「{G}、{W}、{U} のいずれか」)。color=W・U・B・R・G(その色) / C(無色。既定) / any(好きな色。どの色のコストにも使える)。spellType / spellNotType を添えると、そのマナは、その型の呪文(spellNotType ならその型でない呪文)を唱えるためにしか使えない(「クリーチャーでない呪文を唱えるためにしか使えない」は spellNotType=creature)
 
 - 引数: `amount`(number・必須)、`color`(string・W / U / B / R / G / C / any)、`colors`(string)、`spellType`(string)、`spellNotType`(string)
+- 言い方 (キー): マナを加える、マナ
 
 ### `extraTurn` 追加のターン
 
 コントローラーが、このターンの次に、追加のターンを count 回(既定は1)得る(Time Walk)
 
 - 引数: `count`(number)
+- 言い方 (キー): 追加のターン
 
 ### `copySpell` 呪文をコピーする
 
 スタックの呪文(target ノードの出力。zone=stack)を count 回(既定は1)コピーする。コピーは、能力のコントローラーのもので、元と同じ対象を持ち、解決しても墓地に行かず消える。shortcut: 対象は選び直せない
 
 - 引数: `target`(ref)、`spell`(string)、`count`(number)
+- 言い方 (キー): 呪文をコピーする、コピー
 
 ### `counter` 打ち消す
 
 対象の呪文を打ち消す (スタックから取り除いて、持ち主の墓地へ)。unlessPay=N を付けると「そのコントローラーが N を支払わないかぎり」。exile=true で「墓地に置くかわりに追放する」
 
 - 引数: `target`(ref・必須)、`unlessPay`(number)、`exile`(boolean)
+- 言い方 (キー): 打ち消す、カウンター (呪文を打ち消す)
 
 ## 継続効果 (9 個)
 

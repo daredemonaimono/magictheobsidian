@@ -18,41 +18,21 @@ export interface Ability {
   clauses: Clause[];
 }
 
+import { allNodes } from "./registry";
+
 const WORDS: Record<string, number> = { a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
 const NUM = "(?:a|an|one|two|three|four|five|six|seven|eight|nine|ten|x|\\d+)";
 
-// 節 → ノードの候補。上から順に、合うものを、すべて拾う (1つの節に、動作が2つ以上あってよい)
-export const LEXICON: [RegExp, string][] = [
-  [new RegExp(`\\bdraws? ${NUM} (?:additional |more |extra )?cards?\\b|\\bdraws? (?:that many|cards)\\b`), "draw"],
-  [/\bdiscards?\b/, "discard"],
-  [new RegExp(`\\bgains? ${NUM} life\\b|\\bgains? life equal\\b`), "gainLife"],
-  [new RegExp(`\\bloses? ${NUM} life\\b|\\bloses? life equal\\b|\\bpay ${NUM} life\\b`), "loseLife"],
-  [new RegExp(`\\bdeals? ${NUM} damage\\b|\\bdeals? damage\\b`), "damage"],
-  [/\bcounter (?:target|that|it)\b/, "counter"],
-  [/\bdestroy\b/, "destroy"],
-  [/\bexile\b/, "exile"],
-  [/\breturn [^.]* to (?:its owner's|their owner's|your|their) hands?\b/, "bounce"],
-  [/\breturn [^.]* from (?:a|your|your|their|target) graveyard\b|\bputs? [^.]* into (?:your|their) hand\b|\bputs? [^.]* (?:on top of|on the bottom of|into) [^.]*(?:library|graveyard)\b|\bput the rest\b|\bputs? all the cards\b/, "move"],
-  [/\bcreates? [^.]*tokens?\b/, "createToken"],
-  [/\bputs? [^.]*counters? on\b/, "addCounter"],
-  [/\bscry\b|\bsurveil\b|\blook at the top\b|\breveal the top\b/, "look"],
-  [/\bsearch (?:your|their|target player's) library\b/, "search"],
-  [/\bshuffles?\b/, "shuffle"],
-  [/\badd \{|\badds? (?:one|two|three|\{)/, "addMana"],
-  [/\bgets? [+-][\dx]+\/[+-][\dx]+\b/, "modify"],
-  [/\bsacrifices?\b/, "sacrifice"],
-  [/\buntap\b/, "untap"],
-  [/\btaps?\b/, "tap"],
-  [/\battach\b/, "attach"],
-  [/\bcopy (?:target|that|it|this) (?:instant|sorcery|spell)\b|\bcopy target spell\b/, "copySpell"],
-  [/\bextra turn\b/, "extraTurn"],
-  [/\bexchange control\b/, "exchangeControl"],
-  [/\blook at (?:target (?:player|opponent)'s|their|that player's|your opponent's) hands?\b|\breveals? (?:their|your|his or her) hand\b/, "lookHand"],
-  [/\bpay \d+ life or put\b/, "payOrMove"],
-  [/\bbecomes? (?:a|an|the)\b/, "becomes"],
-  [/\bgains? (?:flying|first strike|deathtouch|haste|trample|vigilance|lifelink|hexproof|indestructible|reach|menace)\b/, "grant"],
-  [/\bchoose (?:up to |one |two |three )?(?:of|from|a card|target)\b|\byou may put\b|\bchoose \w+ of them\b|\b(?:one|two|three|that many) of them\b|\bof those cards\b/, "choose"],
-];
+// 節 → ノードの候補。辞書は、ノード側 (NodeDef.patterns。src/battle/nodes/keys.ts) が持つ。ノードの数が変わったら、作り直す
+let lexCache: { n: number; lex: [RegExp, string][] } | undefined;
+export function lexicon(): [RegExp, string][] {
+  const nodes = allNodes();
+  if (lexCache && lexCache.n === nodes.length) return lexCache.lex;
+  const lex: [RegExp, string][] = [];
+  for (const n of nodes) for (const p of n.patterns ?? []) lex.push([new RegExp(p), n.id]);
+  lexCache = { n: nodes.length, lex };
+  return lex;
+}
 
 const num = (s: string): number | "X" => (s.toLowerCase() === "x" ? "X" : WORDS[s.toLowerCase()] ?? Number(s));
 
@@ -72,7 +52,7 @@ export function analyzeClause(raw: string): Clause {
   const text = raw.trim();
   const low = text.toLowerCase();
   const effects: string[] = [];
-  for (const [re, id] of LEXICON) if (re.test(low) && !effects.includes(id)) effects.push(id);
+  for (const [re, id] of lexicon()) if (re.test(low) && !effects.includes(id)) effects.push(id);
   const numbers: Clause["numbers"] = [];
   for (const m of low.matchAll(new RegExp(`\\b${NUM}\\b`, "g"))) {
     const v = num(m[0]);

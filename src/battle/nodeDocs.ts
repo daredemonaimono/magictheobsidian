@@ -24,6 +24,7 @@ export function nodeDocs(): string {
       const ps = Object.entries(n.params).map(([k, p]) => param(k, p));
       out.push("", `- 引数: ${ps.join("、") || "なし"}`);
       if (Object.keys(n.outputs).length) out.push(`- 出力: ${Object.entries(n.outputs).map(([k, t]) => `\`${k}\`(${t})`).join("、")} (\`as=名前\` で受けて、\`$名前\` で渡す)`);
+      if (n.keys?.length) out.push(`- 言い方 (キー): ${n.keys.join("、")}`);
       if (n.only) out.push(`- 書ける能力: ${n.only.join(" / ")}`);
       if (n.declaration) out.push("- 宣言のノード (エンジンが読む。`if=` は付けられない)");
       if (n.core) out.push("- 中心のノード (ルールを書かせるとき、いつも AI の指示に入る。ほかは、カードごとに選ぶ)");

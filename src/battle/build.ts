@@ -38,8 +38,8 @@ export function problemsOf(md: string, card: string): string[] {
 }
 
 // AI にカードの md を作らせる。検証を通ったものだけを返す。通らなければ、問題を渡して1回だけやり直させる。通信のエラーはそのまま投げる
-export async function buildRule(o: { card: string; oracle: string; ruling?: string; glossary?: string; nodes?: ReadonlySet<string>; ask: (system: string, messages: Msg[]) => Promise<string> }): Promise<{ md: string; attempts: number }> {
-  const { system, user } = buildPrompt(o.card, o.oracle, o.ruling, o.glossary, o.nodes);
+export async function buildRule(o: { card: string; oracle: string; ruling?: string; glossary?: string; nodes?: ReadonlySet<string>; hints?: boolean; ask: (system: string, messages: Msg[]) => Promise<string> }): Promise<{ md: string; attempts: number }> {
+  const { system, user } = buildPrompt(o.card, o.oracle, o.ruling, o.glossary, o.nodes, o.hints ?? true);
   const messages: Msg[] = [{ role: "user", content: user }];
   let problems: string[] = [];
   for (let attempts = 1; attempts <= 2; attempts++) {
@@ -71,7 +71,7 @@ export interface TwoStageResult {
 
 // ルールを書かせる、2段階。1段目 (askSelect): カードの効果から、使いそうなノードを選ばせる (安い AI で足りる)。2段目 (ask): 中心のノード + 選んだノードだけを渡して、書かせる。
 // 取りこぼしの保険: 2段目の結果に「未対応」が残ったら、全ノードで、もう1回だけ、やり直す (選び漏れで、書けるものを、未対応にしないため)。1段目が使えない・返事が読めないときは、最初から、全ノード。askSelect が無ければ、1段目は飛ばす
-export async function buildRuleTwoStage(o: { card: string; oracle: string; ruling?: string; glossary?: string; ask: (system: string, messages: Msg[]) => Promise<string>; askSelect?: (system: string, user: string) => Promise<string>; askSelectCard?: (card: string, oracle: string, ruling?: string) => Promise<string> }): Promise<TwoStageResult> {
+export async function buildRuleTwoStage(o: { card: string; oracle: string; ruling?: string; glossary?: string; ask: (system: string, messages: Msg[]) => Promise<string>; askSelect?: (system: string, user: string) => Promise<string>; askSelectCard?: (card: string, oracle: string, ruling?: string) => Promise<string>; hints?: boolean }): Promise<TwoStageResult> {
   let selection: ReturnType<typeof parseSelection>;
   if (o.askSelect || o.askSelectCard) {
     try {
@@ -82,7 +82,7 @@ export async function buildRuleTwoStage(o: { card: string; oracle: string; rulin
       selection = undefined; // 1段目の失敗は、全ノードで、続ける
     }
   }
-  const base = { card: o.card, oracle: o.oracle, ruling: o.ruling, glossary: o.glossary, ask: o.ask };
+  const base = { card: o.card, oracle: o.oracle, ruling: o.ruling, glossary: o.glossary, ask: o.ask, hints: o.hints };
   if (!selection) return { ...(await buildRule(base)), missing: [], fallback: false };
   const first = await buildRule({ ...base, nodes: selection.ids });
   const selected = [...selection.ids];

@@ -1,4 +1,5 @@
 import { getNode } from "../registry";
+import { applyNodeKeys } from "./keys";
 import { registerCards } from "./cards";
 import { registerCombat } from "./combat";
 import { registerContinuous } from "./continuous";
@@ -15,4 +16,5 @@ export function registerBuiltinNodes(): void {
   registerPermanents();
   registerCombat();
   registerContinuous();
+  applyNodeKeys(); // 言い方 (キー・言い回し) を、取り付ける
 }
