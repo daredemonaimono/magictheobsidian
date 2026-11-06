@@ -704,6 +704,7 @@ export class BattleView extends ItemView {
     const mull = row.createEl("button", { text: "マリガン" });
     mull.disabled = m.count >= 7;
     mull.addEventListener("click", () => this.run(() => this.ctl!.mulligan()));
+    for (const c of this.ctl.powderCards()) row.createEl("button", { text: `${c.name}: 手札を入れ替える` }).addEventListener("click", () => this.run(() => this.ctl!.powder(c.id)));
   }
   private async showBottom(count: number) {
     const cards = this.game.hands[VIEWER].map((c) => ({ id: c.id, name: c.name }));

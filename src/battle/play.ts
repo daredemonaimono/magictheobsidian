@@ -1,5 +1,5 @@
 import { Action, abilityLabels, actionsFor, autoTargets, manaOnly, slotsOf, tryAction, tryWithMana, uselessMana, withAllMana } from "./actions";
-import { RuleError, TargetSlot, activateAbility, activateFromHand, handAbilitiesOf, attackersAt, canAttackWith, castSpell, pitchable, declareAttackers, declareBlockers, assignDamage, passPriority, playLand } from "./engine";
+import { RuleError, TargetSlot, applyOpening, serumPowder, activateAbility, activateFromHand, handAbilitiesOf, attackersAt, canAttackWith, castSpell, pitchable, declareAttackers, declareBlockers, assignDamage, passPriority, playLand } from "./engine";
 import { AiOption, aiAttackers, aiBlockers, aiOptions } from "./ai";
 import { cpuAct, cpuAttack, cpuBlock, cpuDo, tapFor, tapOne } from "./cpu";
 import { Answer, InputRequest, NeedInput, makeDecider } from "./input";
@@ -180,12 +180,28 @@ export class BattleController {
     this.record.push({ op: "mulligan", args: [] });
     return undefined;
   }
+  // マリガンのかわりに使える手札のカード (Serum Powder)
+  powderCards(): { id: string; name: string }[] {
+    return this.game.mulligan ? this.game.hands[this.me].filter((c) => (this.rules.get(c.name)?.abilities ?? []).some((a) => a.kind === "static" && a.body.some((x) => x.node === "mulliganExile"))).map((c) => ({ id: c.id, name: c.name })) : [];
+  }
+  // Serum Powder: 手札を全部追放して、同じ枚数を引く (マリガンの回数には数えない)
+  powder(cardId: string): string | undefined {
+    try {
+      serumPowder(this.game, this.me, cardId, this.rules);
+    } catch (e) {
+      if (e instanceof RuleError) return this.fail("Serum Powder", e.message);
+      throw e;
+    }
+    this.record.push({ op: "powder", args: [cardId] });
+    return undefined;
+  }
   // キープする。マリガンした回数ぶん、底に置くカードが要るなら "bottom" (画面が選ばせて、bottom() を呼ぶ)。要らなければ、すぐ始まる
   keep(): "bottom" | "done" {
     const g = this.game;
     if (!g.mulligan) return "done";
     if (g.mulligan.count > 0) return "bottom";
     g.mulligan = undefined;
+    applyOpening(g, this.me, this.rules); // 開始時に戦場に出すカード (Leyline of the Void)
     g.log.push("あなたはキープした");
     this.record.push({ op: "keep", args: [] });
     return "done";
@@ -198,6 +214,7 @@ export class BattleController {
     if (!putBottom(g, this.me, ids)) return this.fail("マリガン", "手札に無いカードが含まれている");
     g.log.push(`あなたはキープして、${ids.length} 枚を底に置いた`);
     g.mulligan = undefined;
+    applyOpening(g, this.me, this.rules);
     this.record.push({ op: "bottom", args: [ids] });
     return undefined;
   }

@@ -19,6 +19,8 @@ export function enterBattlefield(g: Game, card: GameCard, controller: PlayerId, 
     const n = a.x === true ? opts.x ?? 0 : typeof a.count === "number" ? a.count : a.zone === "graveyard" ? g.graveyards[controller].filter((x) => typeof a.type !== "string" || typeIn(x.typeLine, a.type)).length : 0;
     if (n > 0) perm.counters = { ...perm.counters, [String(a.kind)]: (perm.counters?.[String(a.kind)] ?? 0) + n };
   }
+  const repl = (rules.get(card.name)?.abilities ?? []).filter((a) => a.kind === "static").flatMap((a) => a.body).find((c) => c.node === "exileInstead");
+  if (repl) perm.exileInstead = repl.args.who as "opponents" | "you" | "all"; // shortcut: すべての能力を失っても、置換は残る (出たときに写すだけ)
   g.battlefield.push(perm);
   g.events.push({ type: "enters", perm, ...(opts.from ? { from: opts.from } : {}) });
 }
@@ -26,8 +28,8 @@ export function enterBattlefield(g: Game, card: GameCard, controller: PlayerId, 
 // 戦場を離れる (墓地へ。トークンは消える)。「戦場を離れた」イベントを積む
 export function removeFromBattlefield(g: Game, perm: Perm): void {
   g.battlefield = g.battlefield.filter((x) => x !== perm);
-  if (!perm.card.token) putInGraveyard(g, perm.card, "battlefield");
-  g.events.push({ type: "leaves", perm, to: "graveyard" });
+  const to = perm.card.token ? "graveyard" : putInGraveyard(g, perm.card, "battlefield");
+  g.events.push({ type: "leaves", perm, to });
 }
 
 // 再生の盾があれば、1つ使って、破壊のかわりに、タップして戦闘から外れ、ダメージが取り除かれる。使ったら true

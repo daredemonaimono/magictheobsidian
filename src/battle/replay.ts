@@ -10,6 +10,7 @@ export function replay(ctl: BattleController, entries: RecordEntry[], upTo = ent
     let r: unknown;
     switch (e.op) {
       case "mulligan": r = ctl.mulligan(); break;
+      case "powder": r = ctl.powder(a[0]); break;
       case "keep": r = ctl.keep(); break;
       case "bottom": r = ctl.bottom(a[0]); break;
       case "next": r = ctl.next(); break;

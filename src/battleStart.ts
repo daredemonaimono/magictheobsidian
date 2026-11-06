@@ -2,6 +2,7 @@ import { App, TFile, normalizePath } from "obsidian";
 import { AskAi } from "./battle/ai";
 import { MulliganResult, aiMulligan, applyMulligan } from "./battle/aiMulligan";
 import { cpuMulligan } from "./battle/cpu";
+import { applyOpening } from "./battle/engine";
 import { extractMemo } from "./battle/memo";
 import { seeded } from "./battle/rng";
 import { SavedBattle } from "./battle/saved";
@@ -79,6 +80,7 @@ export function buildSession(inputs: Inputs, selfName: string, oppName: string, 
   game.rngState = Math.imul(seed ^ 0x9e3779b9, 0x85ebca6b) >>> 0; // ゲームの中の乱数 (ライブラリーを切る、など) の初期状態: 種から決める (リプレイで、同じ結果)
   if (aiMulligan) applyMulligan(game, "opp", rng, aiMulligan);
   else if (cpu) cpuMulligan(game, "opp", rng);
+  applyOpening(game, "opp", inputs.rules); // 相手の、開始時に戦場に出すカード (自分のは、キープしたあと)
   return { game, rules: inputs.rules, seed, rng, self: selfName, opp: oppName, ...(aiMulligan ? { aiMulligan } : {}) };
 }
 

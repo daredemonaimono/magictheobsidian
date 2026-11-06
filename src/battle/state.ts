@@ -76,6 +76,7 @@ export interface Perm {
   blockedBy?: string[]; // 攻撃しているとき、ブロッカーの id (宣言の順 = ダメージを割り振る順)
   assign?: Record<string, number>; // 攻撃しているとき、ブロッカーごとに割り振るダメージ (攻撃側が決める。無ければ、宣言の順に致死ダメージ)
   blocking?: string; // ブロックしているとき、ブロック先の攻撃クリーチャーの id
+  exileInstead?: "opponents" | "you" | "all"; // 墓地に行くカードのかわりに追放する置換 (exileInstead)。だれの墓地に行くカードか (Leyline of the Void = opponents)。戦場に出たとき、ルールから写す
   regen?: number; // 再生の盾の数 (破壊・致死ダメージのかわりに、タップして残る。ターン終了時に消える)
   counters?: Record<string, number>; // "+1/+1" (パワー・タフネスに足される) / "stun" (麻痺: アンタップのかわりに1つ取り除く)
 }
@@ -84,10 +85,19 @@ export interface Perm {
 // カードがいる場所 (ゾーン)。moved / enters / leaves のイベントで、どこからどこへ動いたかを表す
 export type Zone = "library" | "hand" | "graveyard" | "battlefield" | "stack" | "exile";
 // カードを墓地に置く (持ち主の墓地へ)。「墓地に置かれた」(moved) を積む。from = どこから
-export function putInGraveyard(g: Game, card: GameCard, from: Zone): void {
+// 置換: 戦場に exileInstead のパーマネントがあれば、墓地に行くかわりに追放される (Leyline of the Void・Rest in Peace)。行き先 ("graveyard" / "exile") を返す
+export function putInGraveyard(g: Game, card: GameCard, from: Zone): "graveyard" | "exile" {
+  const hit = g.battlefield.some((p) => p.exileInstead && (p.exileInstead === "all" || (p.exileInstead === "opponents" ? card.owner !== p.controller : card.owner === p.controller)));
+  if (hit) {
+    g.exile[card.owner].push(card);
+    g.log.push(`${card.name} は、墓地に行くかわりに追放された`);
+    g.events.push({ type: "moved", card, from, to: "exile" });
+    return "exile";
+  }
   g.graveyards[card.owner].push(card);
   if (from === "hand") (g.discarded ??= {})[card.owner] = (g.discarded?.[card.owner] ?? 0) + 1; // 手札から墓地へ = 捨てた
   g.events.push({ type: "moved", card, from, to: "graveyard" });
+  return "graveyard";
 }
 
 // 遅延誘発 (delay): あとのステップの開始時に、スタックに積む、残りのノード。source = もとの能力の発生源の id

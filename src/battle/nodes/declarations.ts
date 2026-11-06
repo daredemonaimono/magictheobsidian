@@ -82,6 +82,40 @@ export function registerDeclarations(): void {
     run: (): Record<string, Value> => ({}),
   });
 
+  // 墓地に行くかわりに追放 (置換)。戦場にあるあいだ働く
+  node({
+    id: "exileInstead",
+    title: "墓地に行くかわりに追放",
+    summary: "常在型能力。カードが墓地に置かれるかわりに、追放される(どこから置かれるときでも)。who=opponents(相手の墓地に行くカード。Leyline of the Void) / you / all(だれの墓地でも。Rest in Peace)。戦場にあるあいだ働く",
+    params: { who: { type: "string", required: true, choices: ["opponents", "you", "all"] } },
+    outputs: {},
+    declaration: true,
+    only: ["static"],
+    run: (): Record<string, Value> => ({}),
+  });
+
+  node({
+    id: "startOnBattlefield",
+    title: "開始時に戦場に出す",
+    summary: "常在型能力。このカードが、ゲーム開始時の手札にあるなら、ゲームを戦場に出して始められる(Leyline of the Void)。マリガンが終わったあとに、戦場に出る",
+    params: {},
+    outputs: {},
+    declaration: true,
+    only: ["static"],
+    run: (): Record<string, Value> => ({}),
+  });
+
+  node({
+    id: "mulliganExile",
+    title: "マリガンのかわりに手札を入れ替える",
+    summary: "常在型能力。マリガンできるとき、このカードが手札にあれば、手札を全部追放して、同じ枚数を引いてもよい(マリガンの回数には数えない。Serum Powder)",
+    params: {},
+    outputs: {},
+    declaration: true,
+    only: ["static"],
+    run: (): Record<string, Value> => ({}),
+  });
+
   node({
     id: "entersWith",
     core: true,
