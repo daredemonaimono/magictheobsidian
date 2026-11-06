@@ -1,7 +1,7 @@
 {
   "id": "magictheobsidian",
   "name": "Magic the Obsidian",
-  "version": "0.111.0",
+  "version": "0.112.0",
   "minAppVersion": "1.11.4",
   "description": "Turn Obsidian into a Magic: The Gathering deck builder and playtester. Cards are fetched from Scryfall as notes.",
   "author": "daredemonaimono",
