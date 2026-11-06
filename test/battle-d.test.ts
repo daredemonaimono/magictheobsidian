@@ -11,7 +11,7 @@ resetRegistry();
 registerBuiltinNodes();
 // ルールは、実際の Rules/ のノートをそのまま読む (Bant Hatebears D: Time Walk・Oko・Food・Endurance・Sylvan Library)
 const VAULT = "/Users/daredemonai/Documents/Westeros/MagicTheObsidian/Rules";
-const REAL = ["Time Walk", "Oko, Thief of Crowns", "Food", "Endurance", "Sylvan Library"];
+const REAL = ["Mox Emerald", "Time Walk", "Oko, Thief of Crowns", "Food", "Endurance", "Sylvan Library"];
 const rules: RuleBook = { get: (c) => (REAL.includes(c) ? parseRule(readFileSync(`${VAULT}/${c}.md`, "utf-8")) : undefined) };
 const card = (id: string, name: string, typeLine: string, mv: number, owner = "you", extra: Partial<GameCard> = {}): GameCard => ({ id, name, typeLine, mv, owner, ...extra });
 const perm = (c: GameCard, extra: Partial<Perm> = {}): Perm => ({ id: c.id, card: c, controller: c.owner, enteredTurn: 0, ...extra });
@@ -103,6 +103,25 @@ const oko = (g: Game, loyalty: number) => g.battlefield.push(perm(card("OK", "Ok
   const c = (id: string) => g.battlefield.find((p) => p.id === id)!.controller;
   assert.deepEqual([c("Mine"), c("Small"), c("Big")], ["opp", "you", "opp"], "交換された");
   assert.equal(g.battlefield.find((p) => p.id === "OK")!.counters!.loyalty, 1);
+}
+
+{
+  // +1 で大鹿になった Mox Emerald は、すべての能力を失うので、マナを出せない
+  const g = make();
+  g.active = "you";
+  oko(g, 4);
+  g.battlefield.push(perm(card("MX", "Mox Emerald", "Artifact", 0)));
+  g.priority = "you";
+  activateAbility(g, "you", "MX", 0, {}, rules);
+  assert.equal(g.mana["you"], 1, "大鹿にする前は、マナを出せる");
+  g.battlefield.find((p) => p.id === "MX")!.tapped = false;
+  g.mana["you"] = 0;
+  g.pool["you"] = {};
+  activateAbility(g, "you", "OK", 1, { t: "MX" }, rules);
+  resolveAll(g);
+  g.priority = "you";
+  assert.throws(() => activateAbility(g, "you", "MX", 0, {}, rules), (e) => e instanceof RuleError && /すべての能力を失っている/.test(e.message), "能力を失ったので、起動できない");
+  assert.equal(g.mana["you"], 0);
 }
 
 // ---- Endurance: 出たとき、対象のプレイヤーの墓地を、ランダムな順でライブラリーの一番下へ

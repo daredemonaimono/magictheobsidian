@@ -1,4 +1,4 @@
-import { costReduction } from "../continuous";
+import { characteristics, costReduction } from "../continuous";
 import { CastRecord, NodeCall } from "../node";
 import { getNode } from "../registry";
 import { addCosts, emptyCost, ManaCost, parseManaCost } from "../mana";
@@ -149,6 +149,7 @@ export function activateAbility(g: Game, p: PlayerId, permId: string, index: num
   const perm = g.battlefield.find((x) => x.id === permId);
   if (!perm) throw new RuleError(`戦場に無い: ${permId}`);
   if (perm.controller !== p) throw new RuleError(`${p} のコントロールするパーマネントではない: ${permId}`);
+  if (characteristics(g, perm, rules).lostAbilities) throw new RuleError(`${perm.card.name}: すべての能力を失っているので、起動できない`); // 大鹿になった Mox など
   if (g.priority !== p) throw new RuleError(`${p} は優先権を持っていない`);
   const ab = rules.get(perm.card.name)?.abilities.filter((a) => a.kind === "activated")[index];
   if (!ab) throw new RuleError(`起動型能力が無い: ${perm.card.name} (${index} 番目)`);
