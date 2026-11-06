@@ -1,4 +1,6 @@
 import { App, EventRef, Modal, Notice, Plugin, Setting, TFile, WorkspaceLeaf, normalizePath } from "obsidian";
+import { JevAsk, compileRule } from "./battle/compileRule";
+import { askJev } from "./battle/jev";
 import { allNodes } from "./battle/registry";
 import { JevDriver } from "./battle/aiRun";
 import { jevAct, jevAttack, jevBlock, jevSelectNodes } from "./battle/jev";
@@ -595,10 +597,25 @@ export default class MagicTheObsidian extends Plugin {
     let failed = 0;
     let fallback = 0;
     let gaps = 0;
+    let compiled = 0; // コードと Jev で組めた (LLM を呼ばなかった) 枚数
+    // まず、コードと Jev で組む (設定。Jev のキーが要る)。組めなければ、理由を控えて、LLM に回す
+    const compileKey = this.settings.ai.jev.compile ? secretKey(this.app, this.settings.ai.keys.jev) : null;
+    const jevAsk: JevAsk | undefined = compileKey ? (state, questions) => askJev({ apiKey: compileKey, model: this.settings.ai.scenes.nodes.models.jev, state, questions, http: obsidianHttp }) : undefined;
     for (const [i, name] of names.entries()) {
       new Notice(`AI に頼んでいる (${i + 1}/${names.length}): ${name}`);
       try {
         const oracle = await oracleEnglish(this.app, name);
+        if (jevAsk) {
+          const c = await compileRule({ card: name, oracle, ask: jevAsk });
+          if (c.md && !ruling) {
+            if ((await this.saveRule(name, c.md, "ai")) === "created") made++;
+            else over++;
+            compiled++;
+            console.debug(`[jev] コードと Jev で組んだ: ${name} (${c.jev?.ms}ms・入力 ${c.jev?.input} トークン)`);
+            continue;
+          }
+          console.debug(`[jev] LLM に回す: ${name}: ${c.reason ?? "裁定後のテキストがある"}`);
+        }
         const r = await buildRuleTwoStage({
           card: name,
           oracle,
@@ -627,7 +644,7 @@ export default class MagicTheObsidian extends Plugin {
         new Notice(`${name}: ${(e as Error).message}`);
       }
     }
-    new Notice(`AI のルール作成: 作った ${made} 枚 / 上書きした ${over} 枚 / 失敗 ${failed} 枚${fallback ? ` / 全ノードで、やり直した ${fallback} 枚` : ""}${gaps ? ` / 足りない効果あり ${gaps} 枚 (${RULES_DIR}/${GAPS_NOTE})` : ""}`);
+    new Notice(`AI のルール作成: 作った ${made} 枚 / 上書きした ${over} 枚 / 失敗 ${failed} 枚${compiled ? ` / コードと Jev で組んだ ${compiled} 枚 (AI を呼ばなかった)` : ""}${fallback ? ` / 全ノードで、やり直した ${fallback} 枚` : ""}${gaps ? ` / 足りない効果あり ${gaps} 枚 (${RULES_DIR}/${GAPS_NOTE})` : ""}`);
   }
 
   // 足りない効果 (ルールの「未対応」と、1段目が「書けなさそう」と答えたもの) を、Rules/_足りないノード.md に、カードごとに残す。次に作るノードの手がかり (ノードを足したら、そのカードを、もう一度、書かせる)。無ければ、そのカードの行を消す

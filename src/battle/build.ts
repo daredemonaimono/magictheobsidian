@@ -16,7 +16,7 @@ const extract = (reply: string): string => {
 };
 
 // 読み込み (parseRule)・カード名の一致・全ノード呼び出しの検証 (checkCall)。問題が無ければ空
-function problemsOf(md: string, card: string): string[] {
+export function problemsOf(md: string, card: string): string[] {
   try {
     const rule = parseRule(md);
     if (rule.card !== card) return [`card: が "${rule.card}" になっている。"${card}" にする`];

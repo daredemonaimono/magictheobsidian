@@ -25,14 +25,15 @@ export interface AiSettings {
   openaiBaseUrl: string; // OpenAI の欄の URL。互換 API (Ollama・LM Studio など) なら、その URL
   scenes: Record<Scene, SceneAi>;
   // Jev の設定。confidence = 対戦の判断で、Jev の自信がこれ以上なら、その答えを使う (未満なら、fallback の AI に聞き直す)。recall = ノードを選ぶとき、「要る」の確率がこれ以上のノードを選ぶ (低いほど、見落とさない)。fallback = 聞き直す AI (none なら、Jev の答えをそのまま使う)
-  jev: { confidence: number; recall: number; fallback: TextProvider | "none" };
+  // compile = ルールを作るとき、まず、コード (効果テキストを切る) と Jev (確かめる) で組んでみる。組めなければ、これまでどおり AI (LLM) に頼む (試験)
+  jev: { confidence: number; recall: number; fallback: TextProvider | "none"; compile: boolean };
 }
 
 const models = (claude: string): Record<Provider, string> => ({ claude, openai: "gpt-4o-mini", gemini: "gemini-2.5-flash", jev: "jev-latest" });
 export const DEFAULT_AI: AiSettings = {
   keys: { claude: "", openai: "", gemini: "", jev: "" },
   openaiBaseUrl: OPENAI_BASE,
-  jev: { confidence: 0.7, recall: 0.2, fallback: "claude" },
+  jev: { confidence: 0.7, recall: 0.2, fallback: "claude", compile: false },
   scenes: { battle: { provider: "claude", models: models("claude-sonnet-5-5") }, rules: { provider: "claude", models: models("claude-opus-5-5") }, nodes: { provider: "claude", models: models("claude-haiku-5-5") }, memo: { provider: "claude", models: models("claude-sonnet-5-5") } },
 };
 
@@ -48,7 +49,7 @@ export function migrateAi(d: any): AiSettings {
   const a = d?.ai;
   if (a && typeof a === "object") {
     for (const p of ["claude", "openai", "gemini", "jev"] as const) out.keys[p] = str(a.keys?.[p], "");
-    out.jev = { confidence: num(a.jev?.confidence, out.jev.confidence, 0.5, 1), recall: num(a.jev?.recall, out.jev.recall, 0.01, 0.9), fallback: isText(a.jev?.fallback) || a.jev?.fallback === "none" ? a.jev.fallback : out.jev.fallback };
+    out.jev = { confidence: num(a.jev?.confidence, out.jev.confidence, 0.5, 1), recall: num(a.jev?.recall, out.jev.recall, 0.01, 0.9), fallback: isText(a.jev?.fallback) || a.jev?.fallback === "none" ? a.jev.fallback : out.jev.fallback, compile: a.jev?.compile === true };
     out.openaiBaseUrl = str(a.openaiBaseUrl, out.openaiBaseUrl);
     for (const [s] of SCENES) {
       const sc = a.scenes?.[s];

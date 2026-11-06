@@ -84,7 +84,7 @@ const base = { apiKey: "SECRET-KEY", model: "jev-latest" };
     assert.equal(m.scenes.battle.provider, "jev");
     assert.equal(m.scenes.battle.models.jev, "jev-x");
     assert.equal(m.scenes.rules.provider, "claude", "文章を作る場面に Jev が書いてあっても、無視する");
-    assert.deepEqual(m.jev, { confidence: 0.8, recall: 0.1, fallback: "none" });
+    assert.deepEqual(m.jev, { confidence: 0.8, recall: 0.1, fallback: "none", compile: false });
     assert.deepEqual(migrateAi({ ai: { jev: { confidence: 5, fallback: "jev" } } }).jev, DEFAULT_AI.jev, "範囲外・知らない値は、初期値");
     const secret = (n: string) => (n === "kc" ? "KEY" : null);
     const ai = migrateAi({ ai: { keys: { claude: "kc" }, scenes: { battle: { provider: "jev" } } } });

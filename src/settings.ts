@@ -391,6 +391,16 @@ export class SettingsTab extends PluginSettingTab {
               },
               (c) =>
                 new Setting(el(c))
+                  .setName("ルール作り: まず、コードと Jev で組む (試験) / Compile first")
+                  .setDesc("ルールを作るとき、効果テキストを、コードで小さく切って、Jev に「その動作だけか」を確かめさせて、決まった型で組む。組めたら、AI (LLM) を呼ばない(速く、安い)。組めない・自信が足りない・条件の言葉があるときは、これまでどおり AI に頼む。いまの対象は、呪文 (インスタント・ソーサリー) の、引く・ライフ・ダメージ・打ち消し・破壊・追放・手札に戻す・追加のターンなど、単純なもの。「ノードを選ぶ」の Jev のキーが要る。")
+                  .addToggle((t) =>
+                    t.setValue(ai.jev.compile).onChange(async (v) => {
+                      ai.jev.compile = v;
+                      await this.save();
+                    }),
+                  ),
+              (c) =>
+                new Setting(el(c))
                   .setName("ノード選び: 拾う確率 / Node recall")
                   .setDesc("ノードを選ぶとき、「要る」の確率がこの値以上のノードを、ルールを書かせる AI に渡す。低いほど、見落とさない (渡すノードが増える)。0.01〜0.9。")
                   .addSlider((s) =>
