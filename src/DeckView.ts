@@ -2,6 +2,7 @@ import { App, ItemView, Modal, Notice, Setting, TFile, ViewStateResult, Workspac
 import { cssUrl, localUrl, setImg } from "./imageCache";
 import { TextModal, editLocalName, editLocalText, wikiButton } from "./cardEdit";
 import { iconButton, imageButton } from "./icons";
+import { typeIcon } from "./typeIcon";
 import { editableMemo, setMemo } from "./battle/memo";
 import { addFlip } from "./flip";
 import { normLocalName } from "./localName";
@@ -13,7 +14,7 @@ import { ThumbnailModal, deckArtUrl } from "./ThumbnailModal";
 import { Settings } from "./settings";
 import { Board, Deck, emptyDeck, parseDeck, thumbnailKey, writeDeck } from "./deck";
 import { Printing, printingImageUrl } from "./scryfall";
-import { COLUMNS, GROUP_ICONS, groupOf, groupRank, isToken } from "./layout";
+import { COLUMNS, groupOf, groupRank, isToken } from "./layout";
 import { Filters, Meta, Result, buildFilterBar, emptyFilters, isEmpty, searchAll } from "./search";
 
 export const DECK_VIEW = "mtg-deck";
@@ -314,7 +315,11 @@ export class DeckView extends ItemView {
       attr: { "aria-label": "資産 (コレクション) に無いカードの差額。価格は「価格取得」で取り直せる" },
     });
     const right = el.createDiv("mtg-dfoot-types");
-    for (const g of [...types.keys()].sort((a, b) => groupRank(a) - groupRank(b))) right.createSpan({ text: `${g} ${types.get(g)}` });
+    for (const g of [...types.keys()].sort((a, b) => groupRank(a) - groupRank(b))) {
+      const item = right.createSpan("mtg-dfoot-type"); // タイプのアイコン + 枚数
+      typeIcon(item, g);
+      item.createSpan({ text: String(types.get(g)) });
+    }
   }
 
   // デッキのフォーマット (frontmatter の format:)。無い・知らないものは制限なし
@@ -566,10 +571,7 @@ export class DeckView extends ItemView {
         const items = groups.get(g)?.sort((a, b) => (a.meta?.cmc ?? 0) - (b.meta?.cmc ?? 0) || a.key.localeCompare(b.key));
         if (!items) continue;
         const col = column.createDiv("mtg-group");
-        const h = col.createEl("h4", { cls: "mtg-ghead", attr: { "aria-label": GROUP_ICONS[g]?.ja ?? g, title: GROUP_ICONS[g]?.ja ?? g } });
-        if (GROUP_ICONS[g]) setIcon(h.createSpan("mtg-gicon"), GROUP_ICONS[g].icon);
-        else h.createSpan({ text: g });
-        h.createSpan({ text: String(items.reduce((a, c) => a + c.count, 0)), cls: "mtg-gcount" });
+        col.createEl("h4", { text: `${g} (${items.reduce((a, c) => a + c.count, 0)})` });
         for (const c of items) {
           const item = col.createDiv("mtg-item");
           const img = c.image ? item.createEl("img", { attr: { alt: c.key } }) : undefined;

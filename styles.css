@@ -462,11 +462,10 @@ button.mtg-color .mtg-sym { width: 20px; height: 20px; display: block; }
 .mtg-foilmark { display: inline-flex; vertical-align: middle; margin-left: 4px; }
 .mtg-foilmark svg { width: 13px; height: 13px; }
 
-/* デッキ画面の見出し: タイプのアイコン + 枚数 */
-.mtg-ghead { display: flex; align-items: center; gap: 8px; }
-.mtg-gicon { display: inline-flex; color: var(--text-muted); }
-.mtg-gicon svg { width: 20px; height: 20px; }
-.mtg-gcount { font-size: var(--font-ui-medium); font-weight: 600; }
+/* デッキ画面の下のバー: タイプのアイコン + 枚数 (src/typeIcon.ts)。アイコンは、文字の色に合わせる */
+.mtg-dfoot-type { display: inline-flex; align-items: center; gap: 4px; }
+.mtg-typeicon { display: inline-flex; opacity: 0.8; }
+.mtg-typeicon svg { width: 16px; height: 16px; fill: currentColor; }
 
 /* デッキ画面のヘッダー: 情報の更新ボタン (カバー写真のアイコンの左)。取得中は回る */
 .mtg-dhead > .mtg-drefresh { position: absolute; top: 8px; right: 84px; z-index: 3; opacity: 0; transition: opacity .15s; color: var(--text-on-accent); background: rgba(0, 0, 0, 0.25); }
