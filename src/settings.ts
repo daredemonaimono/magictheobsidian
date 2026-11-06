@@ -1,7 +1,7 @@
 import { App, Notice, Platform, Plugin, PluginSettingTab, SecretComponent, Setting } from "obsidian";
 import { AiSettings, DEFAULT_AI, PROVIDERS, Provider, SCENES, Scene } from "./battle/aiConfig";
 import { CURRENCIES, updateRates } from "./prices";
-import { IMAGE_MODES, ImageMode } from "./imageKey";
+import { IMAGE_MODES, ImageMode, PRELOAD_KINDS, PRELOAD_SCOPES, PreloadKind, PreloadScope } from "./imageKey";
 import { cacheInfo, clearImageCache } from "./imageCache";
 
 
@@ -40,11 +40,13 @@ export interface Settings {
   keyRemove: ModKey; // デッキの一覧で、このキーを押しながらクリック = 1枚減らす (初期値 Shift)
   keyMove: ModKey; // デッキの一覧で、このキーを押しながらクリック = メインとサイドを入れ替える (初期値 ⌘ / Ctrl)
   imageMode: ImageMode; // カード画像の保存 (プラグインのフォルダの中。Vault からは参照しない)。off = 保存しない / view = 見た画像を保存 / preload = デッキ・コレクションのカードも先に保存
+  imageScope: PreloadScope; // 「先に保存」の範囲。decks = デッキとコレクションのカード / all = Cards/ のカードすべて
+  imageKind: PreloadKind; // 「先に保存」の種類。both = カード全体とイラスト / card = カード全体 / art = イラストだけ
   battleNoMirror: boolean; // 対戦の相手を「ランダム」にしたとき、自分と同じデッキ (ミラー) を選ばない
   battleStops: "always" | "smart"; // 対戦の優先権の止まり方。always = 毎回止まる / smart = 使えるものがあるときだけ (メインフェイズでは、必ず止まる)
 }
 
-export const DEFAULT_SETTINGS: Settings = { textLang: "en", cardLang: "en", sidebar: true, listArt: true, dashboardTab: true, currency: "USD", ai: DEFAULT_AI, keyRemove: "shift", keyMove: "mod", battleNoMirror: false, imageMode: "view", battleStops: "smart", battleOpponent: "cpu", battleHistory: true, battleEffects: true };
+export const DEFAULT_SETTINGS: Settings = { textLang: "en", cardLang: "en", sidebar: true, listArt: true, dashboardTab: true, currency: "USD", ai: DEFAULT_AI, keyRemove: "shift", keyMove: "mod", battleNoMirror: false, imageMode: "view", imageScope: "decks", imageKind: "both", battleStops: "smart", battleOpponent: "cpu", battleHistory: true, battleEffects: true };
 
 // 設定の名前で、キーチェーンから取る (空・見つからないときは null)
 // 設定画面の部品: 大項目 (タブ) → 中項目 (折りたたみ) → 小項目 (1つの設定を描く関数)
@@ -170,6 +172,31 @@ export class SettingsTab extends PluginSettingTab {
                     this.settings.imageMode = v;
                     await this.save();
                     this.onImages();
+                    this.display();
+                  });
+                }
+              },
+              (c) => {
+                const st = new Setting(c.el).setName("先に保存する範囲 / Preload scope").setDesc("「先に保存」のときと、コマンド「Save card images…」で保存するカード。デッキとコレクション: 使っているカードだけ(デッキで選んだ版も)。Cards のすべて: Cards フォルダのカードを標準の版で全部(数千枚あると、時間とディスクを使う)。");
+                const row = st.controlEl.createDiv("mtg-seg");
+                for (const [v, label] of [["decks", "デッキとコレクション"], ["all", "Cards のすべて"]] as [PreloadScope, string][]) {
+                  row.createEl("button", { text: label, cls: v === this.settings.imageScope ? "is-on" : "" }).addEventListener("click", async () => {
+                    if (!PRELOAD_SCOPES.includes(v)) return;
+                    this.settings.imageScope = v;
+                    await this.save();
+                    this.onImages();
+                    this.display();
+                  });
+                }
+              },
+              (c) => {
+                const st = new Setting(c.el).setName("先に保存する画像の種類 / Preload kind").setDesc("カード全体: 大きい画像(プレビュー・対戦・デッキ画面)。イラスト: 一覧・サムネイルの小さい画像。両方がいちばん多く使うが、どの画面も通信しなくなる。");
+                const row = st.controlEl.createDiv("mtg-seg");
+                for (const [v, label] of [["both", "両方"], ["card", "カード全体"], ["art", "イラスト"]] as [PreloadKind, string][]) {
+                  row.createEl("button", { text: label, cls: v === this.settings.imageKind ? "is-on" : "" }).addEventListener("click", async () => {
+                    if (!PRELOAD_KINDS.includes(v)) return;
+                    this.settings.imageKind = v;
+                    await this.save();
                     this.display();
                   });
                 }

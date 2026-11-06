@@ -24,3 +24,9 @@ export const cacheable = (url: string): boolean => /^https:\/\/(cards|backs)\.sc
 // 画像の保存の仕方 (設定)。off = 保存しない (そのつど通信) / view = 見た画像を保存する / preload = 見た画像に加えて、デッキとコレクションのカードを、先にまとめて保存する
 export type ImageMode = "off" | "view" | "preload";
 export const IMAGE_MODES: ImageMode[] = ["off", "view", "preload"];
+
+// 「先に保存」の範囲と種類 (設定)。範囲: decks = デッキとコレクションのカード / all = Cards/ のカードすべて。種類: both = カード全体とイラスト / card = カード全体 / art = イラストだけ
+export type PreloadScope = "decks" | "all";
+export type PreloadKind = "both" | "card" | "art";
+export const PRELOAD_SCOPES: PreloadScope[] = ["decks", "all"];
+export const PRELOAD_KINDS: PreloadKind[] = ["both", "card", "art"];

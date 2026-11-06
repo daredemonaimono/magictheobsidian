@@ -33,9 +33,9 @@ import { DECKLIST_VIEW, DeckListView } from "./DeckListView";
 import { DECK_VIEW, DeckView } from "./DeckView";
 import { fetchCard, fileSafe } from "./scryfall";
 import { priceStore, updateCollectionPrices } from "./prices";
-import { IMAGE_MODES } from "./imageKey";
+import { IMAGE_MODES, PRELOAD_KINDS, PRELOAD_SCOPES } from "./imageKey";
 import { initImageCache } from "./imageCache";
-import { preloadDeckAndCollection } from "./imagePreload";
+import { preloadImages } from "./imagePreload";
 import { DEFAULT_SETTINGS, MOD_KEYS, Settings, SettingsTab, secretKey } from "./settings";
 import { Scene, aiLabel, aiReady, migrateAi, providerName, runAi } from "./battle/aiConfig";
 import { AskAi } from "./battle/ai";
@@ -110,6 +110,8 @@ export default class MagicTheObsidian extends Plugin {
       keyMove: MOD_KEYS.includes(d.keyMove) ? d.keyMove : DEFAULT_SETTINGS.keyMove,
       battleNoMirror: d.battleNoMirror ?? DEFAULT_SETTINGS.battleNoMirror,
       imageMode: IMAGE_MODES.includes(d.imageMode) ? d.imageMode : DEFAULT_SETTINGS.imageMode,
+      imageScope: PRELOAD_SCOPES.includes(d.imageScope) ? d.imageScope : DEFAULT_SETTINGS.imageScope,
+      imageKind: PRELOAD_KINDS.includes(d.imageKind) ? d.imageKind : DEFAULT_SETTINGS.imageKind,
       battleHistory: d.battleHistory ?? DEFAULT_SETTINGS.battleHistory,
       battleEffects: d.battleEffects ?? DEFAULT_SETTINGS.battleEffects,
     };
@@ -179,7 +181,7 @@ export default class MagicTheObsidian extends Plugin {
       void this.syncSidebar();
       window.setTimeout(() => void this.preloadImages(false), 8000); // 「先に保存」のときだけ。起動の直後を避けて、あとから、静かに
     });
-    this.addCommand({ id: "cache-images", name: "Save card images of decks and collection (local cache)", callback: () => void this.preloadImages(true) });
+    this.addCommand({ id: "cache-images", name: "Save card images (local cache, per settings)", callback: () => void this.preloadImages(true) });
 
     this.addCommand({
       id: "fetch-card",
@@ -418,7 +420,7 @@ export default class MagicTheObsidian extends Plugin {
     this.preloading = true;
     const notice = loud ? new Notice("画像を保存しています…", 0) : undefined;
     try {
-      const n = await preloadDeckAndCollection(this.app, (done, total) => notice?.setMessage(`画像を保存しています… ${done} / ${total}`));
+      const n = await preloadImages(this.app, this.settings.imageScope, this.settings.imageKind, (done, total) => notice?.setMessage(`画像を保存しています… ${done} / ${total}`));
       notice?.hide();
       if (loud) new Notice(`画像を保存した: ${n} 枚 (保存済みは、飛ばした)`);
     } catch (e) {
