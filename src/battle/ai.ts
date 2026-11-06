@@ -1,3 +1,4 @@
+import { compactLog } from "./aiLog";
 import { Action, abilityLabels, actionsFor, autoTargets, manaOnly, slotsOf, withAllMana } from "./actions";
 import { characteristics } from "./continuous";
 import { attackersAt, canAttackPerm } from "./engine";
@@ -81,7 +82,7 @@ export function aiDescribe(g: Game, rules: RuleBook, p: PlayerId): string {
     `あなたの墓地: ${g.graveyards[p].map((c) => c.name).join("、") || "なし"} / 相手の墓地: ${g.graveyards[foe].map((c) => c.name).join("、") || "なし"}`,
     `スタック (上から): ${[...g.stack].reverse().map((s) => `${s.card.name}${s.ability ? "(能力)" : ""} (${s.controller === p ? "あなた" : "相手"})`).join("、") || "空"}`,
     `使えるマナ: ${g.mana[p] ?? 0}`,
-    `最近のログ:\n${g.log.slice(-8).join("\n")}`,
+    `最近のログ:\n${compactLog(g.log, p !== g.players[0]).slice(-8).join("\n")}`, // 向きを AI に合わせ、記録用の行を除いて、短くしたもの (src/battle/aiLog.ts)
   ];
   return lines.join("\n");
 }
