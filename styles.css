@@ -455,3 +455,7 @@ button.mtg-color .mtg-sym { width: 20px; height: 20px; display: block; }
 /* デッキ画面のプレビュー: カード名の行 (右にローカルネームを直す ✎) */
 .mtg-preview-namerow { display: flex; align-items: center; justify-content: center; gap: 6px; }
 .mtg-preview-nameedit { padding: 0 6px; }
+
+/* 画像を変えるボタン (src/icons.ts): アイコンを、ボタンの真ん中に */
+.mtg-iconbtn { display: inline-flex; align-items: center; justify-content: center; }
+.mtg-iconbtn svg { width: 16px; height: 16px; }

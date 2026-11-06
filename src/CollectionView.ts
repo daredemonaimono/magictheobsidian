@@ -1,4 +1,5 @@
 import { Notice, ViewStateResult } from "obsidian";
+import { imageButton } from "./icons";
 import { addFlip } from "./flip";
 import { CardInfo, cardBackImage, cardImage, cardInfo, printingOf, readPrintings } from "./cards";
 import { CONDS, Row, loadCollection, rowKey, saveCollection } from "./collection";
@@ -187,7 +188,7 @@ export class CollectionView extends DeckView {
   // ホバーで出る操作。状態/foil は1枚だけ別の行に移す (3枚持ちの1枚だけ foil にできる)
   private controls(ctl: HTMLElement, i: Item) {
     const k = i.key;
-    ctl.createEl("button", { text: "🖼", attr: { "aria-label": "イラスト変更" } }).onclick = () => void this.pickRowPrint(k);
+    imageButton(ctl, "イラスト変更").onclick = () => void this.pickRowPrint(k);
     ctl.createEl("button", { text: "−" }).onclick = () => void this.adjust(k, -1);
     ctl.createEl("button", { text: "+" }).onclick = () => void this.adjust(k, 1);
     ctl.createEl("button", { text: i.row.cond, attr: { "aria-label": "状態を変更 (1枚)" } }).onclick = () =>

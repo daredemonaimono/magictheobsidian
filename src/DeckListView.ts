@@ -5,6 +5,7 @@ import { DECK_VIEW } from "./DeckView";
 import { FORMATS, LEGAL_FORMATS } from "./rules";
 import { artCropUrl } from "./scryfall";
 import { ThumbnailModal } from "./ThumbnailModal";
+import { imageButton } from "./icons";
 import { COLORS, symbolImg } from "./symbols";
 
 export const DECKLIST_VIEW = "mtg-decklist";
@@ -172,7 +173,7 @@ export class DeckListView extends ItemView {
       e.stopPropagation();
       void this.app.fileManager.processFrontMatter(d.file, (fm) => (d.favorite ? delete fm.favorite : (fm.favorite = true)));
     };
-    ctl.createEl("button", { text: "🖼", attr: { "aria-label": "サムネイルを選ぶ" } }).onclick = (e) => {
+    imageButton(ctl, "サムネイルを選ぶ").onclick = (e) => {
       e.stopPropagation();
       new ThumbnailModal(this.app, d.file, "サムネイルにするカードアート", (key) => void this.app.fileManager.processFrontMatter(d.file, (fm) => (fm.thumbnail = key))).open();
     };

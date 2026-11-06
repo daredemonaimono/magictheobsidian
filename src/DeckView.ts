@@ -1,4 +1,5 @@
 import { App, ItemView, Modal, Notice, Setting, TFile, ViewStateResult, WorkspaceLeaf, moment, setIcon } from "obsidian";
+import { imageButton } from "./icons";
 import { editableMemo, setMemo } from "./battle/memo";
 import { addFlip } from "./flip";
 import { normLocalName } from "./localName";
@@ -211,8 +212,7 @@ export class DeckView extends ItemView {
 
     // ヘッダーにカーソルを合わせると、右上に、メモのアイコン。押すと、AI へのメモ (対戦で、このデッキを AI が使うときに読む) を、自由に書ける
     // 隣の画像のアイコンで、カバー写真 (デッキ一覧のサムネイルと同じもの) を選べる
-    const cover = el.createEl("button", { cls: "mtg-dcover clickable-icon", attr: { "aria-label": "カバー写真を選ぶ" } });
-    setIcon(cover, "image");
+    const cover = imageButton(el, "カバー写真を選ぶ", "mtg-dcover clickable-icon");
     cover.onclick = () => new ThumbnailModal(this.app, file, "カバー写真にするカードアート", (k) => void this.app.fileManager.processFrontMatter(file, (f) => (f.thumbnail = k))).open();
     const memo = el.createEl("button", { cls: "mtg-dmemo clickable-icon", attr: { "aria-label": "AI へのメモ" } });
     setIcon(memo, "sticky-note");
@@ -245,7 +245,7 @@ export class DeckView extends ItemView {
     }
     badges.createSpan({ text: `更新 ${moment(file.stat.mtime).fromNow()}`, cls: "mtg-dago-head" });
 
-    // 説明文はクリックで編集 (ヘッダー画像は、デッキ一覧の🖼で設定する)
+    // 説明文はクリックで編集 (ヘッダー画像 (カバー写真) は、ここのヘッダーの画像アイコンか、デッキ一覧で設定する)
     const desc = el.createDiv({ text: fm?.description || "クリックして説明文を入力", cls: "mtg-ddesc" });
     desc.toggleClass("is-empty", !fm?.description);
     desc.onclick = () =>
@@ -563,7 +563,7 @@ export class DeckView extends ItemView {
           if (!img) item.createSpan({ text: c.key, cls: "mtg-name" });
           item.createSpan({ text: String(c.count), cls: "mtg-badge" });
           const ctl = item.createDiv("mtg-ctl");
-          ctl.createEl("button", { text: "🖼", attr: { "aria-label": "イラスト変更" } }).onclick = () => void this.pickPrint(c.key, c.board);
+          imageButton(ctl, "イラスト変更").onclick = () => void this.pickPrint(c.key, c.board);
           // 統率者構築: 伝説のカードはコマンダーに指定できる。指定済みなら解除
           if (rules.hasCommander && (c.board === "commander" || c.meta?.typeLine.includes("Legendary"))) {
             const crown = ctl.createEl("button", { text: "👑", attr: { "aria-label": c.board === "commander" ? "コマンダーを解除" : "コマンダーにする" } });
