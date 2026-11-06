@@ -33,6 +33,9 @@ import { DECKLIST_VIEW, DeckListView } from "./DeckListView";
 import { DECK_VIEW, DeckView } from "./DeckView";
 import { fetchCard, fileSafe } from "./scryfall";
 import { priceStore, updateCollectionPrices } from "./prices";
+import { IMAGE_MODES } from "./imageKey";
+import { initImageCache } from "./imageCache";
+import { preloadDeckAndCollection } from "./imagePreload";
 import { DEFAULT_SETTINGS, MOD_KEYS, Settings, SettingsTab, secretKey } from "./settings";
 import { Scene, aiLabel, aiReady, migrateAi, providerName, runAi } from "./battle/aiConfig";
 import { AskAi } from "./battle/ai";
@@ -90,6 +93,7 @@ export default class MagicTheObsidian extends Plugin {
 
   async onload() {
     registerBuiltinNodes();
+    initImageCache(this.app, this.manifest.dir ?? `${this.app.vault.configDir}/plugins/${this.manifest.id}`, () => this.settings.imageMode); // 画像の保存先は、プラグインのフォルダの中
     // data.json: 設定 + 価格キャッシュ (フラットな1つのオブジェクト)
     const d = (await this.loadData()) ?? {};
     this.settings = {
@@ -105,6 +109,7 @@ export default class MagicTheObsidian extends Plugin {
       keyRemove: MOD_KEYS.includes(d.keyRemove) ? d.keyRemove : DEFAULT_SETTINGS.keyRemove,
       keyMove: MOD_KEYS.includes(d.keyMove) ? d.keyMove : DEFAULT_SETTINGS.keyMove,
       battleNoMirror: d.battleNoMirror ?? DEFAULT_SETTINGS.battleNoMirror,
+      imageMode: IMAGE_MODES.includes(d.imageMode) ? d.imageMode : DEFAULT_SETTINGS.imageMode,
       battleHistory: d.battleHistory ?? DEFAULT_SETTINGS.battleHistory,
       battleEffects: d.battleEffects ?? DEFAULT_SETTINGS.battleEffects,
     };
@@ -119,7 +124,7 @@ export default class MagicTheObsidian extends Plugin {
         for (const l of this.app.workspace.getLeavesOfType(CARDLIST_VIEW)) if (l.view instanceof CardListView) l.view.refresh();
         this.prevCount = 0; // 次の同期で開き直す
         void this.syncSidebar();
-      }),
+      }, () => void this.preloadImages(false)),
     );
     this.registerView(DECK_VIEW, (leaf) => new DeckView(leaf, this.settings));
     this.registerView(BATTLE_VIEW, (leaf) => new BattleView(leaf, () => this.battleSession, () => this.settings.battleStops, () => this.settings.battleOpponent, () => this.settings.battleEffects, () => this.makeAsk(), (b) => void this.saveBattle(b), () => this.ensureBattleSide()));
@@ -172,7 +177,9 @@ export default class MagicTheObsidian extends Plugin {
     ws.onLayoutReady(() => {
       this.dashboardIfEmpty(ws.getMostRecentLeaf());
       void this.syncSidebar();
+      window.setTimeout(() => void this.preloadImages(false), 8000); // 「先に保存」のときだけ。起動の直後を避けて、あとから、静かに
     });
+    this.addCommand({ id: "cache-images", name: "Save card images of decks and collection (local cache)", callback: () => void this.preloadImages(true) });
 
     this.addCommand({
       id: "fetch-card",
@@ -399,6 +406,27 @@ export default class MagicTheObsidian extends Plugin {
       await this.app.vault.create(path, battleNote(b.mode === "claude" ? { ...b, model: aiLabel(this.settings.ai, "battle") } : b));
     } catch (e) {
       new Notice(`対戦の履歴を保存できなかった: ${(e as Error).message}`);
+    }
+  }
+
+  // 「先に保存」: デッキとコレクションのカードの画像を、ローカルへ。loud = 手で呼んだとき (設定に関係なく、結果を知らせる。ただし、保存しない設定のときは、保存されない旨を知らせる)
+  private preloading = false;
+  private async preloadImages(loud: boolean) {
+    if (this.settings.imageMode === "off") return void (loud && new Notice("画像の保存が「保存しない」になっている。設定の「画像」で変えられる"));
+    if (!loud && this.settings.imageMode !== "preload") return;
+    if (this.preloading) return;
+    this.preloading = true;
+    const notice = loud ? new Notice("画像を保存しています…", 0) : undefined;
+    try {
+      const n = await preloadDeckAndCollection(this.app, (done, total) => notice?.setMessage(`画像を保存しています… ${done} / ${total}`));
+      notice?.hide();
+      if (loud) new Notice(`画像を保存した: ${n} 枚 (保存済みは、飛ばした)`);
+    } catch (e) {
+      notice?.hide();
+      console.error(e);
+      if (loud) new Notice(`画像を保存できない: ${(e as Error).message}`);
+    } finally {
+      this.preloading = false;
     }
   }
 

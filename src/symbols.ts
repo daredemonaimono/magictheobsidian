@@ -1,13 +1,27 @@
 // 色の並び (白青黒赤緑)。色のボタン、デッキ一覧の色の表示、並び替えで共通
 export const COLORS = ["W", "U", "B", "R", "G"];
 
-// マナシンボルは Scryfall の画像 (SVG)。コスト {2}{W/U} → コード 2, WU (スラッシュを除く) がファイル名
-export const symbolUrl = (code: string) => `https://svgs.scryfall.io/card-symbols/${code}.svg`;
+// マナシンボルは、プラグインに埋め込んだ SVG (src/symbolSvgs.ts。scripts/gen-symbols.mjs で作る)。表示で通信しない (オフラインでも出る)。
+// コスト {2}{W/U} → コード 2, WU (最初のスラッシュを除く)
+import { SYMBOL_SVGS } from "./symbolSvgs";
 
 export const manaCodes = (cost: string) => [...cost.matchAll(/\{([^}]+)\}/g)].map((m) => m[1].replace("/", ""));
 
-export function symbolImg(parent: HTMLElement, code: string) {
-  return parent.createEl("img", { cls: "mtg-sym", attr: { src: symbolUrl(code), alt: `{${code}}`, loading: "lazy" } });
+const uris = new Map<string, string>();
+// シンボルの画像 (data URI)。埋め込んでいないシンボルは undefined
+export function symbolSrc(code: string): string | undefined {
+  const svg = SYMBOL_SVGS[code];
+  if (!svg) return undefined;
+  let u = uris.get(code);
+  if (!u) uris.set(code, (u = `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`));
+  return u;
+}
+
+// シンボルを並べる。埋め込んでいないものは、{コード} の文字で出す (通信しない)
+export function symbolImg(parent: HTMLElement, code: string): HTMLElement {
+  const src = symbolSrc(code);
+  if (!src) return parent.createSpan({ cls: "mtg-sym mtg-sym-text", text: `{${code}}` });
+  return parent.createEl("img", { cls: "mtg-sym", attr: { src, alt: `{${code}}` } });
 }
 
 // `{2}{W}{W}` をシンボルの並びにする。コストが無い (土地など) と空

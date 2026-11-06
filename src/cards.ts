@@ -80,15 +80,23 @@ export async function ensureCardFile(app: App, card: ScryfallCard, settings: Set
 }
 
 // カード md の Printings 表を読む。表が無ければ空 (取得前に作ったカード)
+// 収録一覧は、カードのノートの表 (ローカル) から読む。通信はしない。表の読み取りは、ノートが変わらないかぎり、1回だけ (更新日時で見る)。
+// 一覧の行ごと・描き直しのたびに、何百行もの表を読み直さないため (島など、版の多いカードは重い)
+const printingsCache = new Map<string, { mtime: number; prints: Printing[] }>();
+
 export async function readPrintings(app: App, key: string): Promise<Printing[]> {
   const f = app.vault.getAbstractFileByPath(`${CARD_DIR}/${key}.md`);
   if (!(f instanceof TFile)) return [];
-  return (await app.vault.cachedRead(f))
+  const hit = printingsCache.get(f.path);
+  if (hit && hit.mtime === f.stat.mtime) return hit.prints;
+  const prints = (await app.vault.cachedRead(f))
     .split("\n")
     .filter((l) => l.startsWith("| "))
     .map((l) => l.slice(2, -2).split(" | "))
     .filter((c) => /^[0-9a-f-]{36}$/.test(c[4] ?? ""))
     .map(([set, collector_number, rarity, released_at, id, lang]) => ({ set, collector_number, rarity, released_at, id, lang }));
+  printingsCache.set(f.path, { mtime: f.stat.mtime, prints });
+  return prints;
 }
 
 // 英語のオラクルテキスト (設定言語の Text 節は含めない)。ルール判定用

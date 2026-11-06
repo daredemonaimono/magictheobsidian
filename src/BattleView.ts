@@ -1,4 +1,5 @@
 import { ItemView, WorkspaceLeaf } from "obsidian";
+import { cssUrl, localUrl } from "./imageCache";
 import { TargetSlot } from "./battle/engine";
 import { InputRequest } from "./battle/input";
 import { Action } from "./battle/actions";
@@ -284,7 +285,8 @@ export class BattleView extends ItemView {
     root.addClass("mtg-bt");
     const stage = root.createDiv("mtg-bt-stage");
     for (const [k, v] of [["--bw", CARD_W], ["--bh", CARD_H], ["--hw", HAND_W], ["--hh", HAND_H], ["--tx", TAP_EXTRA / 2]] as const) stage.style.setProperty(k, `${v}px`); // カードの大きさ (src/battle/layout.ts)
-    stage.style.setProperty("--back", `url("${cardBackUrl()}")`); // 山札の裏面の絵 (読めなければ、CSS の代わりの絵)
+    stage.style.setProperty("--back", `url("${cardBackUrl()}")`);
+    void cssUrl(cardBackUrl()).then((u) => u && stage.style.setProperty("--back", `url("${u}")`)); // 保存済みなら、そちら // 山札の裏面の絵 (読めなければ、CSS の代わりの絵)
     const inner = side ? undefined : root.createDiv("mtg-bt-side"); // サイドバーを使うなら、プレビューとログは、そちらに出す
     const board = stage.createDiv("mtg-bt-board");
     const rows: Record<string, HTMLElement> = {};
@@ -338,7 +340,8 @@ export class BattleView extends ItemView {
         this.tried.add(n);
         const info = cardInfo(this.app, n);
         const url = info ? await cardImage(this.app, info.file) : undefined;
-        if (url) this.urls.set(n, url);
+        const local = await localUrl(url); // 保存済みの画像 (通信しない)
+        if (local) this.urls.set(n, local);
       }),
     );
   }

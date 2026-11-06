@@ -1,6 +1,8 @@
 import { App, Notice, Platform, Plugin, PluginSettingTab, SecretComponent, Setting } from "obsidian";
 import { AiSettings, DEFAULT_AI, PROVIDERS, Provider, SCENES, Scene } from "./battle/aiConfig";
 import { CURRENCIES, updateRates } from "./prices";
+import { IMAGE_MODES, ImageMode } from "./imageKey";
+import { cacheInfo, clearImageCache } from "./imageCache";
 
 
 // Scryfall の言語コード
@@ -37,11 +39,12 @@ export interface Settings {
   battleEffects: boolean; // 対戦の演出 (ダメージ・ライフの数字を大きく出す)
   keyRemove: ModKey; // デッキの一覧で、このキーを押しながらクリック = 1枚減らす (初期値 Shift)
   keyMove: ModKey; // デッキの一覧で、このキーを押しながらクリック = メインとサイドを入れ替える (初期値 ⌘ / Ctrl)
+  imageMode: ImageMode; // カード画像の保存 (プラグインのフォルダの中。Vault からは参照しない)。off = 保存しない / view = 見た画像を保存 / preload = デッキ・コレクションのカードも先に保存
   battleNoMirror: boolean; // 対戦の相手を「ランダム」にしたとき、自分と同じデッキ (ミラー) を選ばない
   battleStops: "always" | "smart"; // 対戦の優先権の止まり方。always = 毎回止まる / smart = 使えるものがあるときだけ (メインフェイズでは、必ず止まる)
 }
 
-export const DEFAULT_SETTINGS: Settings = { textLang: "en", cardLang: "en", sidebar: true, listArt: true, dashboardTab: true, currency: "USD", ai: DEFAULT_AI, keyRemove: "shift", keyMove: "mod", battleNoMirror: false, battleStops: "smart", battleOpponent: "cpu", battleHistory: true, battleEffects: true };
+export const DEFAULT_SETTINGS: Settings = { textLang: "en", cardLang: "en", sidebar: true, listArt: true, dashboardTab: true, currency: "USD", ai: DEFAULT_AI, keyRemove: "shift", keyMove: "mod", battleNoMirror: false, imageMode: "view", battleStops: "smart", battleOpponent: "cpu", battleHistory: true, battleEffects: true };
 
 // 設定の名前で、キーチェーンから取る (空・見つからないときは null)
 // 設定画面の部品: 大項目 (タブ) → 中項目 (折りたたみ) → 小項目 (1つの設定を描く関数)
@@ -63,7 +66,7 @@ interface TabDef {
 export const secretKey = (app: App, name: string): string | null => (name ? app.secretStorage.getSecret(name) : null);
 
 export class SettingsTab extends PluginSettingTab {
-  constructor(app: App, plugin: Plugin, private settings: Settings, private save: () => Promise<void>, private onSidebar: () => void) {
+  constructor(app: App, plugin: Plugin, private settings: Settings, private save: () => Promise<void>, private onSidebar: () => void, private onImages: () => void = () => {}) {
     super(app, plugin);
   }
   // ---- 設定画面の構造: 大項目 (タブ) → 中項目 (折りたたみ) → 小項目 (1つの設定)。
@@ -152,6 +155,37 @@ export class SettingsTab extends PluginSettingTab {
             id: "screen",
             title: "画面 / Screen",
             items: [(c) => toggle(c, "新しいタブをダッシュボードにする / New tab is the dashboard", "新しいタブ(空のタブ)を開くと、ダッシュボードが開く。オフにすると、Obsidian 標準の新しいタブに戻る。", "dashboardTab")],
+          },
+          {
+            id: "images",
+            title: "画像 / Images",
+            desc: "カードの画像は、プラグインのフォルダの中 (.obsidian/plugins/…/cache/images) に保存して、2回目からは通信せずに出す。Vault の外なので、ノートからは参照されず、検索・一覧にも出ない。マナのシンボルは、プラグインに埋め込んであり、通信しない。",
+            items: [
+              (c) => {
+                const st = new Setting(c.el).setName("画像の保存 / Image cache").setDesc("保存しない: そのつど通信する(いちばん軽いが、オフラインでは出ない)。見た画像を保存: 画面に出た画像だけ、1枚ずつ保存する(おすすめ)。先に保存: 見た画像に加えて、デッキとコレクションのカードを、起動のあとに、まとめて保存する(最初は、通信とディスクを多く使う)。");
+                const row = st.controlEl.createDiv("mtg-seg");
+                for (const [v, label] of [["off", "保存しない"], ["view", "見た画像を保存"], ["preload", "先に保存"]] as [ImageMode, string][]) {
+                  row.createEl("button", { text: label, cls: v === this.settings.imageMode ? "is-on" : "" }).addEventListener("click", async () => {
+                    if (!IMAGE_MODES.includes(v)) return;
+                    this.settings.imageMode = v;
+                    await this.save();
+                    this.onImages();
+                    this.display();
+                  });
+                }
+              },
+              (c) => {
+                const st = new Setting(c.el).setName("保存した画像 / Saved images").setDesc("調べています…");
+                void cacheInfo().then(({ files, bytes }) => st.setDesc(`${files} 枚 · ${(bytes / 1024 / 1024).toFixed(1)} MB。消しても、次に見るときに、また保存される。`)).catch(() => st.setDesc("保存先を読めない"));
+                st.addButton((b) =>
+                  b.setButtonText("すべて消す").onClick(async () => {
+                    const n = await clearImageCache();
+                    new Notice(`保存した画像を消した: ${n} 枚`);
+                    this.display();
+                  }),
+                );
+              },
+            ],
           },
           {
             id: "price",

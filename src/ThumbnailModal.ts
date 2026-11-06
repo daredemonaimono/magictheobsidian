@@ -1,4 +1,5 @@
 import { App, Modal, TFile } from "obsidian";
+import { setImg } from "./imageCache";
 import { cardInfo, printingOf } from "./cards";
 import { Deck, parseDeck } from "./deck";
 import { artCropUrl } from "./scryfall";
@@ -28,7 +29,7 @@ export class ThumbnailModal extends Modal {
       const img = cell.createEl("img", { attr: { loading: "lazy", alt: key } });
       void (async () => {
         const id = (e.print && (await printingOf(this.app, key, e.print))?.id) || cardInfo(this.app, key)?.id;
-        if (id) img.setAttr("src", artCropUrl(id));
+        if (id) setImg(img, artCropUrl(id));
       })();
       cell.createDiv({ text: key, cls: "mtg-dim" });
       if (e.print) cell.createDiv({ text: e.print.toUpperCase(), cls: "mtg-dim" });

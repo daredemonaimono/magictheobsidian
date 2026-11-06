@@ -1,4 +1,5 @@
 import { App, ItemView, Modal, Notice, Setting, TAbstractFile, TFile, WorkspaceLeaf, debounce } from "obsidian";
+import { setImg } from "./imageCache";
 import { cardInfo, printingOf } from "./cards";
 import { DECK_DIR, parseDeck, thumbnailKey } from "./deck";
 import { DECK_VIEW } from "./DeckView";
@@ -158,7 +159,7 @@ export class DeckListView extends ItemView {
   private card(d: Entry) {
     const wrap = this.body.createDiv("mtg-dcard");
     const tile = wrap.createDiv("mtg-dtile");
-    if (d.art) tile.createEl("img", { attr: { src: d.art, loading: "lazy", alt: "" } });
+    if (d.art) setImg(tile.createEl("img", { attr: { loading: "lazy", alt: "" } }), d.art);
     tile.createDiv("mtg-dshade");
     tile.createDiv({ text: d.file.basename, cls: "mtg-dname" });
     // フォーマットは、デッキに設定したものだけ (どのフォーマットで使えるかの一覧は出さない)

@@ -1,4 +1,5 @@
 import { App, EventRef, ItemView, Modal, Notice, Setting, WorkspaceLeaf, setIcon } from "obsidian";
+import { setImg } from "./imageCache";
 import { cardInfo, printingImage, printingOf } from "./cards";
 import { artCropUrl } from "./scryfall";
 import { Board } from "./deck";
@@ -212,9 +213,10 @@ export class CardListView extends ItemView {
       if (illegal) cell.setAttr("aria-label", `${r.ja ?? r.name} (このフォーマットでは使えない。${modLabel(this.settings.keyRemove)}+クリックで外す)`);
       // 見えている行の分だけ読み込む (loading=lazy)。設定でオフにできる
       if (this.settings.listArt && r.art) {
-        const art = cell.createEl("img", { cls: "mtg-lart", attr: { src: r.art, loading: "lazy", alt: "" } });
-        // デッキで選んだ版があれば、その版のイラストに (版の id は、収録一覧から引く)
-        if (print && r.localKey) void printingOf(this.app, r.localKey, print).then((p) => p && art.setAttr("src", artCropUrl(p.id)));
+        const art = cell.createEl("img", { cls: "mtg-lart", attr: { loading: "lazy", alt: "" } });
+        // デッキで選んだ版があれば、その版のイラスト (版の id は、収録一覧から引く)。無ければ、標準の版
+        if (print && r.localKey) void printingOf(this.app, r.localKey, print).then((p) => setImg(art, p ? artCropUrl(p.id) : r.art));
+        else setImg(art, r.art);
       }
       manaCost(cell, r.manaCost).addClass("mtg-lcost");
       cell.createSpan({ text: r.ja ?? r.name, cls: "mtg-lname" });

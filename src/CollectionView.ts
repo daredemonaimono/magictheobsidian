@@ -1,4 +1,5 @@
 import { Notice, ViewStateResult } from "obsidian";
+import { setImg } from "./imageCache";
 import { foilMark, iconButton, imageButton } from "./icons";
 import { addFlip } from "./flip";
 import { CardInfo, cardBackImage, cardImage, cardInfo, printingOf, readPrintings } from "./cards";
@@ -155,7 +156,8 @@ export class CollectionView extends DeckView {
   private gridCell(parent: HTMLElement, i: Item) {
     const cell = parent.createDiv("mtg-ccell");
     const card = cell.createDiv("mtg-citem");
-    const img = i.image ? card.createEl("img", { attr: { src: i.image, alt: i.row.card } }) : undefined;
+    const img = i.image ? card.createEl("img", { attr: { alt: i.row.card } }) : undefined;
+    setImg(img, i.image);
     if (!img) card.createSpan({ text: i.row.card, cls: "mtg-name" });
     card.toggleClass("is-foil", i.row.foil);
     card.createSpan({ text: `${i.row.n}×`, cls: "mtg-badge" });

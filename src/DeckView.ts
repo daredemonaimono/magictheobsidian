@@ -1,4 +1,5 @@
 import { App, ItemView, Modal, Notice, Setting, TFile, ViewStateResult, WorkspaceLeaf, moment, setIcon } from "obsidian";
+import { cssUrl, localUrl, setImg } from "./imageCache";
 import { TextModal, editLocalName, editLocalText, wikiButton } from "./cardEdit";
 import { iconButton, imageButton } from "./icons";
 import { editableMemo, setMemo } from "./battle/memo";
@@ -208,7 +209,9 @@ export class DeckView extends ItemView {
     const art = key ? await deckArtUrl(this.app, this.deck, key) : undefined;
     if (seq !== this.headSeq) return;
     el.empty();
-    if (art) el.style.setProperty("--mtg-head-art", `url("${art}")`);
+    const artLocal = await cssUrl(art); // 保存済みの画像 (通信しない)
+    if (seq !== this.headSeq) return;
+    if (artLocal) el.style.setProperty("--mtg-head-art", `url("${artLocal}")`);
     else el.style.removeProperty("--mtg-head-art");
 
     // ヘッダーにカーソルを合わせると、右上に、メモのアイコン。押すと、AI へのメモ (対戦で、このデッキを AI が使うときに読む) を、自由に書ける
@@ -560,7 +563,8 @@ export class DeckView extends ItemView {
         col.createEl("h4", { text: `${g} (${items.reduce((a, c) => a + c.count, 0)})` });
         for (const c of items) {
           const item = col.createDiv("mtg-item");
-          const img = c.image ? item.createEl("img", { attr: { src: c.image, alt: c.key } }) : undefined;
+          const img = c.image ? item.createEl("img", { attr: { alt: c.key } }) : undefined;
+          setImg(img, c.image); // 保存済みの画像 (通信しない)。無ければ、読み込みと同時に保存する
           if (!img) item.createSpan({ text: c.key, cls: "mtg-name" });
           item.createSpan({ text: String(c.count), cls: "mtg-badge" });
           const ctl = item.createDiv("mtg-ctl");
@@ -597,7 +601,7 @@ export class DeckView extends ItemView {
     const [url, body] = await Promise.all([image, text]);
     if (seq !== this.previewSeq) return;
     this.el.preview.empty();
-    if (url) this.el.preview.createEl("img", { attr: { src: url, alt: name } });
+    if (url) setImg(this.el.preview.createEl("img", { attr: { alt: name } }), url);
     const nameRow = this.el.preview.createDiv("mtg-preview-namerow");
     nameRow.createDiv({ text: ja && ja !== name ? `${name} (${ja})` : name, cls: "mtg-preview-name" });
     const lang = this.settings.textLang;

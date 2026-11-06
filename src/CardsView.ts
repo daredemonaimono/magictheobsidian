@@ -1,4 +1,5 @@
 import { addFlip } from "./flip";
+import { setImg } from "./imageCache";
 import { EventRef, ItemView, Notice, TFile, WorkspaceLeaf, debounce } from "obsidian";
 import { CARD_DIR, cardBackImage, cardInfo, refetchCard } from "./cards";
 import { Result, buildFilterBar, emptyFilters, searchLocal } from "./search";
@@ -65,7 +66,7 @@ export class CardsView extends ItemView {
     for (const r of this.results.slice(0, this.shown)) {
       const cell = this.grid.createDiv("mtg-cc");
       const img = cell.createEl("img", { attr: { loading: "lazy", alt: r.name } });
-      void r.image().then((url) => url && img.setAttr("src", url));
+      void r.image().then((url) => setImg(img, url));
       const meta = cell.createDiv("mtg-ccmeta");
       const nameEl = meta.createSpan({ text: r.ja ?? r.name, cls: "mtg-ccname" });
       manaCost(meta, r.manaCost);

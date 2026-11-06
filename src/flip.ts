@@ -1,3 +1,4 @@
+import { setImg } from "./imageCache";
 // 両面カード (変身・表裏) を、裏返して見る。裏面の画像は、表の画像と同じく、取得したときにノートに書く。冒険・準備などは、1枚の画像に裏面も載っているので、書かず、ボタンも出さない
 
 export const isMultiFace = (name?: string): boolean => !!name?.includes(" // ");
@@ -32,7 +33,7 @@ export function addFlip(ctl: HTMLElement, img: HTMLImageElement | undefined, fro
     flipped = !flipped;
     btn.toggleClass("is-on", flipped);
     const src = flipped ? back : front;
-    img.setAttribute("src", src);
+    setImg(img, src);
     onFlip?.(flipped, src);
   };
 }
