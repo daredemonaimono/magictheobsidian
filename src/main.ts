@@ -203,7 +203,7 @@ export default class MagicTheObsidian extends Plugin {
       },
     });
     // ヒントの効果の測定: すでにルールのあるカードを、「切った結果のヒントあり / なし」で、AI に作らせ直して、今のルールと比べる (Rules/_ヒント比較.md に書く。今のルールは書き換えない)
-    this.addCommand({ id: "compare-hints", name: "Rules: compare AI rule building with / without hints (writes a report)", callback: () => void this.compareHints(12) });
+    this.addCommand({ id: "compare-hints", name: "Rules: compare AI rule building with / without hints (writes a report)", callback: () => void this.compareHints(12).catch((e) => new Notice(`ヒントの比較に失敗: ${(e as Error).message}`, 15000)) });
     this.addCommand({ id: "cache-images", name: "Save card images (local cache, per settings)", callback: () => void this.preloadImages(true) });
 
     this.addCommand({
@@ -456,7 +456,7 @@ export default class MagicTheObsidian extends Plugin {
     if (!ask) return void this.missingKeyNotice("rules");
     const names = this.app.vault
       .getMarkdownFiles()
-      .filter((f) => f.path.startsWith(`${RULES_DIR}/`) && !f.basename.startsWith("_"))
+      .filter((f) => f.parent?.path === RULES_DIR && !f.basename.startsWith("_")) // 直下だけ (Rules/_backup/ の中は除く)
       .map((f) => f.basename);
     const picked: { name: string; oracle: string; current: string }[] = [];
     for (const name of names) {
