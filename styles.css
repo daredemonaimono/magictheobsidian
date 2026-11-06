@@ -461,3 +461,15 @@ button.mtg-color .mtg-sym { width: 20px; height: 20px; display: block; }
 .mtg-iconbtn svg { width: 16px; height: 16px; }
 .mtg-foilmark { display: inline-flex; vertical-align: middle; margin-left: 4px; }
 .mtg-foilmark svg { width: 13px; height: 13px; }
+
+/* デッキ画面の見出し: タイプのアイコン + 枚数 */
+.mtg-ghead { display: flex; align-items: center; gap: 8px; }
+.mtg-gicon { display: inline-flex; color: var(--text-muted); }
+.mtg-gicon svg { width: 20px; height: 20px; }
+.mtg-gcount { font-size: var(--font-ui-medium); font-weight: 600; }
+
+/* デッキ画面のヘッダー: 情報の更新ボタン (カバー写真のアイコンの左)。取得中は回る */
+.mtg-dhead > .mtg-drefresh { position: absolute; top: 8px; right: 84px; z-index: 3; opacity: 0; transition: opacity .15s; color: var(--text-on-accent); background: rgba(0, 0, 0, 0.25); }
+.mtg-dhead:hover > .mtg-drefresh, .mtg-dhead > .mtg-drefresh:focus-visible, .mtg-dhead > .mtg-drefresh.is-busy { opacity: 1; }
+.mtg-drefresh.is-busy svg { animation: mtg-spin 1s linear infinite; }
+@keyframes mtg-spin { to { transform: rotate(360deg); } }

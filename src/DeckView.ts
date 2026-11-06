@@ -13,7 +13,7 @@ import { ThumbnailModal, deckArtUrl } from "./ThumbnailModal";
 import { Settings } from "./settings";
 import { Board, Deck, emptyDeck, parseDeck, thumbnailKey, writeDeck } from "./deck";
 import { Printing, printingImageUrl } from "./scryfall";
-import { COLUMNS, groupOf, groupRank, isToken } from "./layout";
+import { COLUMNS, GROUP_ICONS, groupOf, groupRank, isToken } from "./layout";
 import { Filters, Meta, Result, buildFilterBar, emptyFilters, isEmpty, searchAll } from "./search";
 
 export const DECK_VIEW = "mtg-deck";
@@ -125,71 +125,75 @@ export class DeckView extends ItemView {
         this.app.workspace.trigger("mtg-show-list"); // サイドバーが畳まれていたら開く
       };
     }
-    // デッキの全カード (トークン含む) の情報を Scryfall から取る (勝手には取らない)。
-    // 取り込みで取れなかった効果テキスト・リーガル情報を補い、価格も取り直す。手で直したテキストは上書きしない
-    const infoBtn = this.el.tabs.createEl("button", { text: "情報取得" });
-    infoBtn.onclick = async () => {
-      infoBtn.disabled = true;
-      const notice = new Notice("情報を取得中…", 0);
-      try {
-        const entries = (["commander", "main", "side", "token"] as Board[]).flatMap((b) => [...this.deck[b]]);
-        const keys = [...new Set(entries.map(([k]) => k))];
-        const lang = this.settings.textLang;
-        // 設定言語のテキスト (## Text (ja)) が無いノートは、取り直して作る (英語設定なら不要)
-        const noText: string[] = [];
-        if (lang !== "en") {
-          for (const k of keys) {
-            const f = this.app.vault.getAbstractFileByPath(`${CARD_DIR}/${k}.md`);
-            if (f instanceof TFile && !(await this.app.vault.cachedRead(f)).includes("\n## Text (")) noText.push(k);
-          }
-        }
-        // クリーチャーで、パワー・タフネスが無い古いノートも取り直す (対戦エンジンで使う)
-        for (const k of keys) {
-          const i = cardInfo(this.app, k);
-          if (i && /\bCreature\b/.test(i.typeLine) && (i.power === undefined || i.keywords === undefined) && !noText.includes(k)) noText.push(k);
-        }
-        // 名前が A // B で、layout が無い古いノートも取り直す (裏面の画像を取る)
-        for (const k of keys) {
-          const i = cardInfo(this.app, k);
-          if (i && i.name.includes(" // ") && !i.layout && !noText.includes(k)) noText.push(k);
-          if (i && /\bPlaneswalker\b/.test(i.typeLine) && !i.loyaltyKnown && !noText.includes(k)) noText.push(k); // 忠誠度の行が無い古いノートも取り直す (対戦で使う。X は X と書くので、取り直しは1回だけ)
-        }
-        let fetched = 0;
-        let failedCards = 0;
-        const failedNames: string[] = [];
-        for (const k of noText) {
-          notice.setMessage(`情報を取得中… ${++fetched}/${noText.length}`);
-          try {
-            await refetchCard(this.app, this.settings, k);
-          } catch (e) {
-            failedCards++;
-            failedNames.push(`${k} (${(e as Error).message})`);
-          }
-          await new Promise((r) => setTimeout(r, 100)); // Scryfall の負荷配慮
-        }
-        const noLegal = keys.filter((k) => !noText.includes(k) && !cardInfo(this.app, k)?.legal);
-        if (noLegal.length) await updateLegality(this.app, noLegal).catch(() => failedCards++);
-        const ids = new Set<string>();
-        for (const [key, e] of entries) {
-          const id = (e.print && (await printingOf(this.app, key, e.print))?.id) || cardInfo(this.app, key)?.id;
-          if (id) ids.add(id);
-        }
-        const failed = await refreshPrices([...ids]);
-        this.meta.clear(); // 取り直した型・リーガルを読み直す
-        notice.hide();
-        new Notice(
-          `情報を取得: 取り直し ${noText.length} 枚・価格 ${ids.size} 件` +
-            (failed || failedCards ? ` (失敗 ${failed + failedCards} 回。取れた分だけ更新した${failedNames.length ? `。取り直せなかったカード: ${failedNames.slice(0, 3).join(", ")}` : ""})` : ""),
-        );
-      } catch (e) {
-        notice.hide();
-        new Notice(`情報の取得失敗: ${(e as Error).message}`);
-      }
-      infoBtn.disabled = false;
-      void this.renderStack();
-      void this.renderFooter();
-    };
     void this.renderHeader();
+    void this.renderFooter();
+  }
+
+  // デッキの全カード (トークン含む) の情報を Scryfall から取る (勝手には取らない。ヘッダーの更新ボタンから)。
+  // 取り込みで取れなかった効果テキスト・リーガル情報を補い、価格も取り直す。手で直したテキストは上書きしない
+  private refreshing = false;
+  private async refreshInfo() {
+    if (this.refreshing) return;
+    this.refreshing = true;
+    this.headEl?.querySelector<HTMLElement>(".mtg-drefresh")?.addClass("is-busy");
+    const notice = new Notice("情報を取得中…", 0);
+    try {
+      const entries = (["commander", "main", "side", "token"] as Board[]).flatMap((b) => [...this.deck[b]]);
+      const keys = [...new Set(entries.map(([k]) => k))];
+      const lang = this.settings.textLang;
+      // 設定言語のテキスト (## Text (ja)) が無いノートは、取り直して作る (英語設定なら不要)
+      const noText: string[] = [];
+      if (lang !== "en") {
+        for (const k of keys) {
+          const f = this.app.vault.getAbstractFileByPath(`${CARD_DIR}/${k}.md`);
+          if (f instanceof TFile && !(await this.app.vault.cachedRead(f)).includes("\n## Text (")) noText.push(k);
+        }
+      }
+      // クリーチャーで、パワー・タフネスが無い古いノートも取り直す (対戦エンジンで使う)
+      for (const k of keys) {
+        const i = cardInfo(this.app, k);
+        if (i && /\bCreature\b/.test(i.typeLine) && (i.power === undefined || i.keywords === undefined) && !noText.includes(k)) noText.push(k);
+      }
+      // 名前が A // B で、layout が無い古いノートも取り直す (裏面の画像を取る)
+      for (const k of keys) {
+        const i = cardInfo(this.app, k);
+        if (i && i.name.includes(" // ") && !i.layout && !noText.includes(k)) noText.push(k);
+        if (i && /\bPlaneswalker\b/.test(i.typeLine) && !i.loyaltyKnown && !noText.includes(k)) noText.push(k); // 忠誠度の行が無い古いノートも取り直す (対戦で使う。X は X と書くので、取り直しは1回だけ)
+      }
+      let fetched = 0;
+      let failedCards = 0;
+      const failedNames: string[] = [];
+      for (const k of noText) {
+        notice.setMessage(`情報を取得中… ${++fetched}/${noText.length}`);
+        try {
+          await refetchCard(this.app, this.settings, k);
+        } catch (e) {
+          failedCards++;
+          failedNames.push(`${k} (${(e as Error).message})`);
+        }
+        await new Promise((r) => setTimeout(r, 100)); // Scryfall の負荷配慮
+      }
+      const noLegal = keys.filter((k) => !noText.includes(k) && !cardInfo(this.app, k)?.legal);
+      if (noLegal.length) await updateLegality(this.app, noLegal).catch(() => failedCards++);
+      const ids = new Set<string>();
+      for (const [key, e] of entries) {
+        const id = (e.print && (await printingOf(this.app, key, e.print))?.id) || cardInfo(this.app, key)?.id;
+        if (id) ids.add(id);
+      }
+      const failed = await refreshPrices([...ids]);
+      this.meta.clear(); // 取り直した型・リーガルを読み直す
+      notice.hide();
+      new Notice(
+        `情報を取得: 取り直し ${noText.length} 枚・価格 ${ids.size} 件` +
+          (failed || failedCards ? ` (失敗 ${failed + failedCards} 回。取れた分だけ更新した${failedNames.length ? `。取り直せなかったカード: ${failedNames.slice(0, 3).join(", ")}` : ""})` : ""),
+      );
+    } catch (e) {
+      notice.hide();
+      new Notice(`情報の取得失敗: ${(e as Error).message}`);
+    }
+    this.refreshing = false;
+    this.headEl?.querySelector<HTMLElement>(".mtg-drefresh")?.removeClass("is-busy");
+    void this.renderStack();
     void this.renderFooter();
   }
 
@@ -215,6 +219,8 @@ export class DeckView extends ItemView {
     else el.style.removeProperty("--mtg-head-art");
 
     // ヘッダーにカーソルを合わせると、右上に、メモのアイコン。押すと、AI へのメモ (対戦で、このデッキを AI が使うときに読む) を、自由に書ける
+    // 更新ボタン (カバー写真のアイコンの左): デッキの全カードの情報 (効果テキスト・リーガル・価格) を取り直す
+    iconButton(el, "refresh-cw", "情報を更新 (効果テキスト・リーガル・価格を取り直す)", `mtg-drefresh clickable-icon${this.refreshing ? " is-busy" : ""}`).onclick = () => void this.refreshInfo();
     // 隣の画像のアイコンで、カバー写真 (デッキ一覧のサムネイルと同じもの) を選べる
     const cover = imageButton(el, "カバー写真を選ぶ", "mtg-dcover clickable-icon");
     cover.onclick = () => new ThumbnailModal(this.app, file, "カバー写真にするカードアート", (k) => void this.app.fileManager.processFrontMatter(file, (f) => (f.thumbnail = k))).open();
@@ -560,7 +566,10 @@ export class DeckView extends ItemView {
         const items = groups.get(g)?.sort((a, b) => (a.meta?.cmc ?? 0) - (b.meta?.cmc ?? 0) || a.key.localeCompare(b.key));
         if (!items) continue;
         const col = column.createDiv("mtg-group");
-        col.createEl("h4", { text: `${g} (${items.reduce((a, c) => a + c.count, 0)})` });
+        const h = col.createEl("h4", { cls: "mtg-ghead", attr: { "aria-label": GROUP_ICONS[g]?.ja ?? g, title: GROUP_ICONS[g]?.ja ?? g } });
+        if (GROUP_ICONS[g]) setIcon(h.createSpan("mtg-gicon"), GROUP_ICONS[g].icon);
+        else h.createSpan({ text: g });
+        h.createSpan({ text: String(items.reduce((a, c) => a + c.count, 0)), cls: "mtg-gcount" });
         for (const c of items) {
           const item = col.createDiv("mtg-item");
           const img = c.image ? item.createEl("img", { attr: { alt: c.key } }) : undefined;

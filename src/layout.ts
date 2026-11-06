@@ -20,5 +20,20 @@ export const isToken = (typeLine: string) => /^Token\b/.test(typeLine);
 export const groupOf = (typeLine: string, commander = false): string =>
   commander ? "Commander" : isToken(typeLine) ? "Token" : TYPE_CHECK.find((t) => typeLine.includes(t)) ?? "Other";
 
+// 見出しのアイコン (Obsidian 標準の lucide)。デッキ画面の見出しは、文字のかわりに、このアイコンと枚数を出す。名前は、カーソルを合わせたときに出る
+export const GROUP_ICONS: Record<string, { icon: string; ja: string }> = {
+  Commander: { icon: "crown", ja: "コマンダー" },
+  Planeswalker: { icon: "star", ja: "プレインズウォーカー" },
+  Creature: { icon: "swords", ja: "クリーチャー" },
+  Sorcery: { icon: "flame", ja: "ソーサリー" },
+  Instant: { icon: "zap", ja: "インスタント" },
+  Artifact: { icon: "gem", ja: "アーティファクト" },
+  Enchantment: { icon: "sparkles", ja: "エンチャント" },
+  Battle: { icon: "shield", ja: "バトル" },
+  Land: { icon: "mountain", ja: "土地" },
+  Other: { icon: "layers", ja: "その他" },
+  Token: { icon: "circle-dot", ja: "トークン" },
+};
+
 // 見出しの並び順での位置 (左の列の上から)
 export const groupRank = (group: string) => ORDER.indexOf(group);
