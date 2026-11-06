@@ -418,10 +418,10 @@ export class DeckView extends ItemView {
   }
 
   // サイドバーに並べる、いまデッキに入っているカード (コマンダー → メイン → サイド、コスト順)
-  deckCards(): { key: string; n: number; board: Board }[] {
+  deckCards(): { key: string; n: number; board: Board; print?: string }[] {
     const cmc = (k: string) => cardInfo(this.app, k)?.cmc ?? 0;
     return (["commander", "main", "side", "token"] as Board[]).flatMap((board) =>
-      [...this.deck[board]].map(([key, e]) => ({ key, n: e.n, board })).sort((a, b) => cmc(a.key) - cmc(b.key) || a.key.localeCompare(b.key)),
+      [...this.deck[board]].map(([key, e]) => ({ key, n: e.n, board, print: e.print })).sort((a, b) => cmc(a.key) - cmc(b.key) || a.key.localeCompare(b.key)),
     );
   }
 

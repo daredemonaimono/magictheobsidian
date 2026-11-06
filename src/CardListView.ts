@@ -1,5 +1,6 @@
 import { App, EventRef, ItemView, Modal, Notice, Setting, WorkspaceLeaf, setIcon } from "obsidian";
-import { cardInfo } from "./cards";
+import { cardInfo, printingImage, printingOf } from "./cards";
+import { artCropUrl } from "./scryfall";
 import { Board } from "./deck";
 import { DeckView } from "./DeckView";
 import { groupOf, groupRank } from "./layout";
@@ -28,6 +29,7 @@ interface Row {
   n?: number; // デッキ内の枚数
   tag?: string;
   board?: Board; // デッキ内の一覧のとき、そのカードがいる欄
+  print?: string; // デッキ内の一覧のとき、デッキで選んだ版 ("set 番号")。イラストとプレビューは、この版のもの
   illegal?: boolean; // デッキ内の一覧のとき、いまのフォーマットで使えない
 }
 
@@ -174,8 +176,10 @@ export class CardListView extends ItemView {
       if ((c.board === "side") !== !!t?.onSide) continue;
       const info = cardInfo(this.app, c.key);
       if (!info) continue;
-      const r = localResult(this.app, info);
-      rows.push({ r, n: c.n, tag: tag[c.board], board: c.board, illegal: !!t && !t.allows(r) });
+      const base = localResult(this.app, info);
+      // デッキで版 (イラスト) を選んでいれば、プレビューは、その版の画像
+      const r: Result = c.print ? { ...base, image: () => printingImage(this.app, c.key, c.print!) } : base;
+      rows.push({ r, n: c.n, tag: tag[c.board], board: c.board, print: c.print, illegal: !!t && !t.allows(r) });
     }
     // 使えないカードは先頭にまとめて見落とさないようにし、あとはメイン → サイド。
     // それぞれ、デッキ画面の見出しと同じ並び (タイプ別、コスト順)
@@ -197,7 +201,7 @@ export class CardListView extends ItemView {
     );
 
     this.grid.empty();
-    for (const { r, n, tag, board, illegal } of rows) {
+    for (const { r, n, tag, board, illegal, print } of rows) {
       const cell = this.grid.createDiv("mtg-lcell");
       cell.setAttr("aria-label", r.ja && r.ja !== r.name ? `${r.name} (${r.ja})` : r.name);
       cell.style.setProperty("--mtg-color", colorOf(r.colors));
@@ -207,7 +211,11 @@ export class CardListView extends ItemView {
       cell.toggleClass("is-illegal", !!illegal);
       if (illegal) cell.setAttr("aria-label", `${r.ja ?? r.name} (このフォーマットでは使えない。${modLabel(this.settings.keyRemove)}+クリックで外す)`);
       // 見えている行の分だけ読み込む (loading=lazy)。設定でオフにできる
-      if (this.settings.listArt && r.art) cell.createEl("img", { cls: "mtg-lart", attr: { src: r.art, loading: "lazy", alt: "" } });
+      if (this.settings.listArt && r.art) {
+        const art = cell.createEl("img", { cls: "mtg-lart", attr: { src: r.art, loading: "lazy", alt: "" } });
+        // デッキで選んだ版があれば、その版のイラストに (版の id は、収録一覧から引く)
+        if (print && r.localKey) void printingOf(this.app, r.localKey, print).then((p) => p && art.setAttr("src", artCropUrl(p.id)));
+      }
       manaCost(cell, r.manaCost).addClass("mtg-lcost");
       cell.createSpan({ text: r.ja ?? r.name, cls: "mtg-lname" });
       if (illegal) cell.createSpan({ text: "✕ 使えない", cls: "mtg-lillegal" });
