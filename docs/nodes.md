@@ -2,7 +2,7 @@
 
 > このファイルは、自動で作られます (`src/battle/nodeDocs.ts`)。直接は書き換えません。ノードを足したら、`npm run docs:nodes` で更新します。ノードは、`src/battle/nodes/` の、カテゴリーごとのファイルにあります。
 
-全 77 個のノード、9 個の条件。
+全 78 個のノード、9 個の条件。
 
 目次: [宣言・コスト・条件](#宣言・コスト・条件) / [対象・数える・絞り込む](#対象・数える・絞り込む) / [カードの移動・ライブラリー・手札](#カードの移動・ライブラリー・手札) / [パーマネント・トークン・カウンター](#パーマネント・トークン・カウンター) / [ダメージ・ライフ・マナ・打ち消し](#ダメージ・ライフ・マナ・打ち消し) / [継続効果](#継続効果)
 
@@ -28,9 +28,9 @@
 
 ### `altCost` 別のコスト
 
-呪文を唱えるとき、マナコストのかわりに払ってもよい別のコスト(Force of Will・召喚者)。払って唱えると、if=alt のノードが実行される。mana=汎用のマナ / manaCost=色つきのマナコスト / life=払うライフ / exile=手札から追放するカードの枚数(exileColor=W・U・B・R・G でその色のカード。唱える呪文自身は数えない) / notYourTurn=true で、自分のターンでないときだけ
+呪文を唱えるとき、マナコストのかわりに払ってもよい別のコスト(Force of Will・召喚者)。払って唱えると、if=alt のノードが実行される。mana=汎用のマナ / manaCost=色つきのマナコスト / life=払うライフ / exile=手札から追放するカードの枚数(exileColor=W・U・B・R・G でその色のカード。唱える呪文自身は数えない) / notYourTurn=true で、自分のターンでないときだけ / exileX=true で、追放したカードのマナ総量が X になる(Sickening Shoal。$X で読む) / oppSpells=N で、相手がこのターンに N 個以上呪文を唱えていたときだけ(Mindbreak Trap。mana=0 と使う)。パーマネントなら Evoke: 出たとき if=alt で生け贄に(Grief)
 
-- 引数: `mana`(number)、`manaCost`(string)、`life`(number)、`exile`(number)、`exileColor`(string・W / U / B / R / G)、`notYourTurn`(boolean)
+- 引数: `mana`(number)、`manaCost`(string)、`life`(number)、`exile`(number)、`exileColor`(string・W / U / B / R / G)、`notYourTurn`(boolean)、`exileX`(boolean)、`oppSpells`(number)
 - 書ける能力: spell
 - 宣言のノード (エンジンが読む。`if=` は付けられない)
 - 中心のノード (ルールを書かせるとき、いつも AI の指示に入る。ほかは、カードごとに選ぶ)
@@ -179,7 +179,7 @@ from(graveyard / library。graveyard|library のように並べられる)にあ�
 - 宣言のノード (エンジンが読む。`if=` は付けられない)
 - 中心のノード (ルールを書かせるとき、いつも AI の指示に入る。ほかは、カードごとに選ぶ)
 
-## 対象・数える・絞り込む (10 個)
+## 対象・数える・絞り込む (11 個)
 
 ### `target` 対象
 
@@ -239,6 +239,14 @@ a と b を、op (lt = a<b / le = a≤b / eq = a=b / ge = a≥b / gt = a>b) で�
 
 - 引数: `a`(number・必須)、`b`(number・必須)、`op`(string・必須・lt / le / eq / ge / gt)
 - 出力: `ok`(boolean) (`as=名前` で受けて、`$名前` で渡す)
+
+### `math` 数を計算する
+
+a と b を、op (add = a+b / sub = a−b / mul = a×b) で計算して、n として出力する。as= で受けて、count=$名前・power=$名前 などに渡す。「−X/−X」は、math a=$X op=mul b=-1 → modify power=$名前 toughness=$名前
+
+- 引数: `a`(number・必須)、`b`(number・必須)、`op`(string・必須・add / sub / mul)
+- 出力: `n`(number) (`as=名前` で受けて、`$名前` で渡す)
+- 言い方 (キー): 計算する、−X/−X (X を負にする)、足す・引く・かける
 
 ### `eventPerm` 引き金のパーマネント
 
@@ -371,7 +379,7 @@ cards(choose などの出力)の1枚ごとに、コントローラーが life �
 
 ### `exile` 追放する
 
-追放する。target=(対象・select の出力・self) があれば、戦場のそのパーマネント (戦場に無ければ、墓地のそのカード) を追放する (トークンは消える)。無ければ、自分の墓地のカードを count 枚(zone=graveyard。足りなければ何もしない)。optional=true なら「してもよい」(断れる)。追放できた枚数を n として出力する(0 なら追放していない)。「そうしたなら〜」は、これを as=名前 で受けて、次のノードに if=$名前 を付ける。「追放して、そのパワーに等しいライフを得る」は、追放の前に statOf・controllerOf で読んでおく。shortcut: 墓地から追放するカードは、古いものから (選べるのは、判断の入力を作るとき)
+追放する。target=(対象・select の出力・self) があれば、戦場のそのパーマネント (戦場に無ければ、墓地のそのカード。スタックの呪文も) を追放する (トークンは消える)。無ければ、自分の墓地のカードを count 枚(zone=graveyard。足りなければ何もしない)。optional=true なら「してもよい」(断れる)。追放できた枚数を n として出力する(0 なら追放していない)。「そうしたなら〜」は、これを as=名前 で受けて、次のノードに if=$名前 を付ける。「追放して、そのパワーに等しいライフを得る」は、追放の前に statOf・controllerOf で読んでおく。shortcut: 墓地から追放するカードは、古いものから (選べるのは、判断の入力を作るとき)
 
 - 引数: `target`(ref)、`zone`(string・graveyard)、`count`(number)、`optional`(boolean)
 - 出力: `n`(number) (`as=名前` で受けて、`$名前` で渡す)

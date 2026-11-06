@@ -47,6 +47,7 @@ export function castCore(g: Game, p: PlayerId, card: GameCard, body: NodeCall[],
   const alt = cast.alt ? body.find((c) => c.node === "altCost") : undefined;
   if (cast.alt && !alt) throw new RuleError(`${card.name}: 別のコストが書かれていない`);
   if (alt?.args.notYourTurn === true && g.active === p) throw new RuleError(`${card.name}: 自分のターンには、別のコストで唱えられない`);
+  if (typeof alt?.args.oppSpells === "number" && g.players.filter((q) => q !== p).reduce((n, q) => n + (g.spellsBy?.[q] ?? 0), 0) < alt.args.oppSpells) throw new RuleError(`${card.name}: 相手が、このターンに ${alt.args.oppSpells} 個以上の呪文を唱えていないと、別のコストで唱えられない`);
   const pitch = alt ? pitchCards(g, p, card, alt, cast) : [];
   const cost = costOf(alt ? [...decls, alt] : decls);
   if (cast.phyLife) cost.preferLife = true;
@@ -70,7 +71,8 @@ export function castCore(g: Game, p: PlayerId, card: GameCard, body: NodeCall[],
   }
   if (delved.length) g.log.push(`墓地の ${delved.length} 枚を追放した (Delve)`);
   if (g.payManaCosts) item.cast = { ...cast, colors: cost.spent?.colors ?? 0, paid: cost.spent?.mana ?? 0 };
-  if (own.x) item.x = Math.max(0, cast.x ?? 0);
+  if (alt?.args.exileX === true) item.x = pitch[0]?.mv ?? 0; // 追放したカードのマナ総量が X
+  else if (own.x) item.x = Math.max(0, cast.x ?? 0);
   const before = g.spellsCast ?? 0; // この呪文より前に唱えられた数 (Storm)
   g.spellsCast = before + 1;
   (g.spellsBy ??= {})[p] = (g.spellsBy[p] ?? 0) + 1;

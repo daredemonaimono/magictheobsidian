@@ -339,7 +339,7 @@ export function registerCards(): void {
   node({
     id: "exile",
     title: "追放する",
-    summary: "追放する。target=(対象・select の出力・self) があれば、戦場のそのパーマネント (戦場に無ければ、墓地のそのカード) を追放する (トークンは消える)。無ければ、自分の墓地のカードを count 枚(zone=graveyard。足りなければ何もしない)。optional=true なら「してもよい」(断れる)。追放できた枚数を n として出力する(0 なら追放していない)。「そうしたなら〜」は、これを as=名前 で受けて、次のノードに if=$名前 を付ける。「追放して、そのパワーに等しいライフを得る」は、追放の前に statOf・controllerOf で読んでおく。shortcut: 墓地から追放するカードは、古いものから (選べるのは、判断の入力を作るとき)",
+    summary: "追放する。target=(対象・select の出力・self) があれば、戦場のそのパーマネント (戦場に無ければ、墓地のそのカード。スタックの呪文も) を追放する (トークンは消える)。無ければ、自分の墓地のカードを count 枚(zone=graveyard。足りなければ何もしない)。optional=true なら「してもよい」(断れる)。追放できた枚数を n として出力する(0 なら追放していない)。「そうしたなら〜」は、これを as=名前 で受けて、次のノードに if=$名前 を付ける。「追放して、そのパワーに等しいライフを得る」は、追放の前に statOf・controllerOf で読んでおく。shortcut: 墓地から追放するカードは、古いものから (選べるのは、判断の入力を作るとき)",
     params: { target: { type: "ref" }, zone: { type: "string", choices: ["graveyard"] }, count: { type: "number", min: 1 }, optional: { type: "boolean" } },
     outputs: { n: "number" },
     check: (a) => (a.target !== undefined || (a.zone !== undefined && a.count !== undefined) ? null : "target か、(zone と count) の、どちらかが要る"),
@@ -351,6 +351,15 @@ export function registerCards(): void {
         if (a.optional === true && !(g.decide?.may?.(g, p, "exile") ?? true)) return { n: 0 };
         for (const id of idList(a.target)) {
           const perm = g.battlefield.find((x) => x.id === id);
+          const onStack = perm ? -1 : g.stack.findIndex((x) => x.id === id && !x.ability);
+          if (onStack >= 0) {
+            // スタックの呪文 (Mindbreak Trap): 打ち消すのではなく、追放する。呪文のコピーは消える
+            const [spell] = g.stack.splice(onStack, 1);
+            if (!spell.copy) g.exile[spell.card.owner].push(spell.card);
+            g.log.push(`${spell.card.name} を、呪文のまま追放した`);
+            n++;
+            continue;
+          }
           if (!perm) {
             // 戦場に無ければ、墓地のカード (そのカード自身を追放する誘発など)
             const gy = Object.values(g.graveyards).flat().find((c) => c.id === id);

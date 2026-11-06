@@ -164,6 +164,16 @@ export function registerTargets(): void {
     },
   });
 
+  // 数の計算 (X を負にする、足す、引く、かける)
+  node({
+    id: "math",
+    title: "数を計算する",
+    summary: "a と b を、op (add = a+b / sub = a−b / mul = a×b) で計算して、n として出力する。as= で受けて、count=$名前・power=$名前 などに渡す。「−X/−X」は、math a=$X op=mul b=-1 → modify power=$名前 toughness=$名前",
+    params: { a: { type: "number", required: true }, b: { type: "number", required: true }, op: { type: "string", required: true, choices: ["add", "sub", "mul"] } },
+    outputs: { n: "number" },
+    run: (_ctx, a): Record<string, Value> => ({ n: a.op === "add" ? Number(a.a) + Number(a.b) : a.op === "sub" ? Number(a.a) - Number(a.b) : Number(a.a) * Number(a.b) }),
+  });
+
   // 誘発の引き金になったパーマネント (「攻撃したクリーチャー」「出てきたクリーチャー」)
   node({
     id: "eventPerm",
