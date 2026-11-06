@@ -6,6 +6,8 @@ import { Clause, splitOracle } from "./splitText";
 // Jev の仕事: 「この節は、本当に、その動作だけか」を、はい/いいえの確率で確かめる。数量や「だれが」が、1つに決まらないときは、選択式で聞く。
 // 切れない・型が無い・Jev の自信が足りない・検証 (problemsOf) に通らないときは、md を返さず、理由を返す → 呼び出し側が、これまでの LLM の道に回す。
 // v1 の範囲: 呪文能力 (インスタント・ソーサリー) だけで、各節が、型のある動作を 1 つだけ持つもの。キーワード・起動型・誘発型・常在型は、LLM のまま
+// 「ほかの動作・条件がある」の確率が、これを超えたら、組まない
+export const OTHER_LIMIT = 0.9;
 export type JevAsk = (state: string, questions: Record<string, JevQuestion>) => Promise<JevResult>;
 
 export interface CompileResult {
@@ -181,7 +183,8 @@ export async function compileRule(o: { card: string; oracle: string; ask: JevAsk
     const v = answers[p.verify]?.noul;
     const x = answers[`x${p.verify.slice(1)}`]?.noul;
     if (v === undefined || v < min) return { reason: `${p.effect}: Jev の確かさが足りない (その動作か: ${v === undefined ? "答え無し" : v.toFixed(2)})`, jev, answers };
-    if (x === undefined || x > 1 - min) return { reason: `${p.effect}: Jev が、ほかの動作・条件があると見ている (${x === undefined ? "答え無し" : x.toFixed(2)})`, jev, answers };
+    // 「ほかがあるか」は、補助: 実機で、余計なもののない文でも 0.59 と答えた (決めかねる問い方)。条件・限定の言葉は、コード側 (RISKY) が止めるので、ここは、強く「ある」と答えたときだけ止める
+    if (x !== undefined && x > OTHER_LIMIT) return { reason: `${p.effect}: Jev が、ほかの動作・条件があると見ている (${x.toFixed(2)})`, jev, answers };
     let who = p.who;
     if (p.whoKey) {
       const a = answers[p.whoKey];

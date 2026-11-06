@@ -63,8 +63,10 @@ const fake = (overrides: Record<string, unknown> = {}): { ask: JevAsk; seen: Rec
   {
     const low = await compileRule({ card: "Ancestral Recall", oracle: "Target player draws three cards.", ask: fake({ v0: { type: "noul", noul: 0.4 } }).ask });
     assert.ok(!low.md && /確かさが足りない/.test(low.reason!));
-    const other = await compileRule({ card: "Ancestral Recall", oracle: "Target player draws three cards.", ask: fake({ x0: { type: "noul", noul: 0.7 } }).ask });
-    assert.ok(!other.md && /ほかの動作・条件があると見ている/.test(other.reason!), "ほかの動作・条件があると答えたら、組まない");
+    const other = await compileRule({ card: "Ancestral Recall", oracle: "Target player draws three cards.", ask: fake({ x0: { type: "noul", noul: 0.95 } }).ask });
+    assert.ok(!other.md && /ほかの動作・条件があると見ている/.test(other.reason!), "強く「ほかの動作・条件がある」と答えたら、組まない");
+    const unsure = await compileRule({ card: "Ancestral Recall", oracle: "Target player draws three cards.", ask: fake({ x0: { type: "noul", noul: 0.59 } }).ask });
+    assert.ok(unsure.md, "実機の返事 (v=0.99・x=0.59) では、組める");
     assert.ok(other.answers, "診断用に、Jev の返事を返す");
     const boom = await compileRule({ card: "X", oracle: "Draw three cards.", ask: async () => { throw new Error("Jev の API キーが無効"); } });
     assert.ok(!boom.md && /Jev が使えない/.test(boom.reason!));
