@@ -2,6 +2,7 @@ import { characteristics } from "../continuous";
 import { NodeCall } from "../node";
 import { addCosts, describeCost, emptyCost, ManaCost, parseManaCost, SpendOpts, trySpend } from "../mana";
 import { Game, GameCard, Perm, PlayerId, RuleBook } from "../state";
+import { removeFromBattlefield } from "./battlefield";
 import { RuleError, isSick } from "./shared";
 
 // コスト (集める・払えるか・払う)
@@ -81,8 +82,6 @@ export function payCost(g: Game, p: PlayerId, cost: CostSpec, source: Perm | und
   if (cost.tap && source) source.tapped = true;
   if (cost.tapCreatures > 0) for (const id of tapIds) g.battlefield.find((x) => x.id === id)!.tapped = true;
   if (cost.sacrifice && source) {
-    g.battlefield = g.battlefield.filter((x) => x !== source);
-    g.graveyards[source.card.owner].push(source.card);
-    g.events.push({ type: "leaves", perm: source });
+    removeFromBattlefield(g, source);
   }
 }

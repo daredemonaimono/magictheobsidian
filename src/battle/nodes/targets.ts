@@ -15,11 +15,11 @@ export function registerTargets(): void {
     core: true,
     title: "対象",
     summary:
-      "対象を決める。zone=stack + kind=spell(スタックの呪文) / zone=battlefield + kind=permanent(戦場のパーマネント) / zone=player + kind=player(プレイヤー。draw や discard の player=target と使う) / zone=any + kind=any(「any target」。プレイヤー・クリーチャー・プレインズウォーカー。damage と使う)。" +
+      "対象を決める。zone=stack + kind=spell(スタックの呪文) / zone=battlefield + kind=permanent(戦場のパーマネント) / zone=player + kind=player(プレイヤー。draw や discard の player=target と使う) / zone=graveyard + kind=card(墓地のカード。type=creature などで絞る。controller=you は、自分の墓地) / zone=any + kind=any(「any target」。プレイヤー・クリーチャー・プレインズウォーカー。damage と使う)。" +
       "type=型 / notType=その型でない / mv=マナ総量 / controller=you(この呪文のコントローラーのもの)・opponents(それ以外) / attacking=攻撃中か / tapped=タップ状態 で絞る。min / max = 対象の数(既定は1。「1体か2体」は min=1 max=2、「最大1つ」は min=0 max=1)",
     params: {
-      zone: { type: "string", required: true, choices: ["stack", "battlefield", "player", "any"] },
-      kind: { type: "string", required: true, choices: ["spell", "permanent", "player", "any"] },
+      zone: { type: "string", required: true, choices: ["stack", "battlefield", "player", "any", "graveyard"] },
+      kind: { type: "string", required: true, choices: ["spell", "permanent", "player", "any", "card"] },
       ...filterParams,
       min: { type: "number", min: 0 },
       max: { type: "number", min: 1 },
@@ -37,6 +37,10 @@ export function registerTargets(): void {
       const legal = (id: string): boolean => {
         if (a.zone === "player" && a.kind === "player") return g.players.includes(id); // プレイヤーは型・マナ総量で絞らない
         if (a.zone === "any" && a.kind === "any" && g.players.includes(id)) return true;
+        if (a.zone === "graveyard" && a.kind === "card") {
+          const c = Object.values(g.graveyards).flat().find((x) => x.id === id); // 墓地のカード (controller は、墓地の持ち主)
+          return !!c && matches(ctx, a, { card: c, controller: c.owner });
+        }
         const anyHit = a.zone === "any" && a.kind === "any" ? g.battlefield.find((p) => p.id === id && /\b(Creature|Planeswalker)\b/.test(characteristics(g, p, ctx.rules).typeLine)) : undefined;
         // zone と kind の組み合わせは stack+spell / battlefield+permanent だけ。それ以外は対象無し (スタックの起動型能力は呪文ではない)
         const hit = a.zone === "stack" && a.kind === "spell" ? g.stack.find((s) => s.id === id && !s.ability) : (a.zone === "battlefield" && a.kind === "permanent") || anyHit ? g.battlefield.find((p) => p.id === id && (a.zone !== "any" || p === anyHit)) : undefined;

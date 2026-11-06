@@ -101,9 +101,12 @@ export function registerDeclarations(): void {
     core: true,
     title: "どうなったら",
     summary:
-      "誘発型能力の最初に書く、誘発のきっかけ。event=cast(呪文を唱えた) / enters(戦場に出た) / leaves(戦場を離れた) / attacks(攻撃した。「攻撃するたび」) / blocks(ブロックした) / step(ステップの開始時。step=upkeep・draw・main1・combat・main2・end を添える)。絞り込み: who=you・opponents(唱えた/コントロールするプレイヤー。attacks / blocks では、そのクリーチャーのコントローラー。step ではそのターンのプレイヤー) / type・notType(その呪文・パーマネントの型) / turn=yours・opponents(だれのターン中か) / self=true(このパーマネント自身のとき。enters / leaves / attacks / blocks) / alone=true(attacks で、そのクリーチャーだけが攻撃しているとき)",
+      "誘発型能力の最初に書く、誘発のきっかけ。event=cast(呪文を唱えた) / enters(戦場に出た。from=graveyard で墓地から) / leaves(離れた。to=graveyard で死亡・exile・hand) / moved(カードがゾーンを移った。from=library to=graveyard など。self=true でこのカード) / attacks / blocks / step(ステップの開始時。step=upkeep・draw・main1・combat・main2・end)。zone=graveyard で、このカードが墓地にあるあいだだけ働く(Narcomoeba・Ichorid)。絞り込み: who=you・opponents(唱えた・コントロールするプレイヤー。step はそのターンのプレイヤー) / type・notType / turn=yours・opponents / self=true / alone=true(attacks で単独)",
     params: {
-      event: { type: "string", required: true, choices: ["cast", "enters", "leaves", "step", "attacks", "blocks"] },
+      event: { type: "string", required: true, choices: ["cast", "enters", "leaves", "moved", "step", "attacks", "blocks"] },
+      zone: { type: "string", choices: ["battlefield", "graveyard"] },
+      from: { type: "string", choices: ["library", "hand", "graveyard", "stack", "battlefield"] },
+      to: { type: "string", choices: ["library", "hand", "graveyard", "exile", "battlefield"] },
       step: { type: "string", choices: ["upkeep", "draw", "main1", "combat", "main2", "end"] },
       who: { type: "string", choices: ["you", "opponents"] },
       type: { type: "string" },

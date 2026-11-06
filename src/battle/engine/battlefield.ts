@@ -1,26 +1,27 @@
 import { characteristics } from "../continuous";
 import { CastRecord } from "../node";
 import { entersTapped } from "./restrict";
-import { prepareAbilityOf, Game, GameCard, Perm, PlayerId, RuleBook } from "../state";
+import { prepareAbilityOf, putInGraveyard, Game, GameCard, Perm, PlayerId, RuleBook, Zone } from "../state";
 
 // 戦場に出る・離れる・状況起因処理
 
 // パーマネントを戦場に出す。「戦場に出た」イベントを積む (宣言されたキーワードは、characteristics が導く)
-export function enterBattlefield(g: Game, card: GameCard, controller: PlayerId, rules: RuleBook, cast?: CastRecord): void {
+// opts.from = どこから出たか (墓地から出たとき from=graveyard。誘発の絞り込みに使う)。opts.tapped = タップ状態で出す
+export function enterBattlefield(g: Game, card: GameCard, controller: PlayerId, rules: RuleBook, cast?: CastRecord, opts: { from?: Zone; tapped?: boolean } = {}): void {
   const perm: Perm = { id: card.id, card, controller, enteredTurn: g.turn, ...(cast && (cast.kicked || cast.teamwork || cast.alt) ? { cast } : {}) };
   // 「準備済状態で戦場に出る」: 準備呪文を持つクリーチャーだけ
   if (prepareAbilityOf(rules, card.name) && (rules.get(card.name)?.abilities ?? []).some((a) => a.kind === "static" && a.body.some((c) => c.node === "entersPrepared"))) perm.prepared = true;
   if (card.loyalty !== undefined) perm.counters = { loyalty: card.loyalty }; // プレインズウォーカーは、初期忠誠度で戦場に出る
-  if (entersTapped(g, rules, card, controller)) perm.tapped = true; // 「タップ状態で戦場に出る」(Archon of Emeria)
+  if (opts.tapped || entersTapped(g, rules, card, controller)) perm.tapped = true; // 「タップ状態で戦場に出る」(Archon of Emeria)
   g.battlefield.push(perm);
-  g.events.push({ type: "enters", perm });
+  g.events.push({ type: "enters", perm, ...(opts.from ? { from: opts.from } : {}) });
 }
 
 // 戦場を離れる (墓地へ。トークンは消える)。「戦場を離れた」イベントを積む
 export function removeFromBattlefield(g: Game, perm: Perm): void {
   g.battlefield = g.battlefield.filter((x) => x !== perm);
-  if (!perm.card.token) g.graveyards[perm.card.owner].push(perm.card);
-  g.events.push({ type: "leaves", perm });
+  if (!perm.card.token) putInGraveyard(g, perm.card, "battlefield");
+  g.events.push({ type: "leaves", perm, to: "graveyard" });
 }
 
 export function stateBased(g: Game, rules: RuleBook): void {

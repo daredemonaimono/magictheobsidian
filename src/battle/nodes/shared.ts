@@ -4,7 +4,7 @@ import { defineCondition, defineNode, getNode } from "../registry";
 import { dealDamage } from "../damage";
 import { parseManaCost, spendGeneric } from "../mana";
 import { nextRandom } from "../rng";
-import { discardCards, drawCards, prepareAbilityOf, Game, GameCard, Perm, playersOf, splitIds, typeIn, untapPerm } from "../state";
+import { discardCards, drawCards, prepareAbilityOf, Game, GameCard, Perm, playersOf, splitIds, typeIn, untapPerm, Zone } from "../state";
 
 // 実装済みの基本ノード。打ち消しは「対象」+「打ち消す」の組み合わせで、カードごとの違いは対象の条件 (引数) だけ
 
@@ -23,6 +23,11 @@ export function takeCard(g: Game, id: string): GameCard | undefined {
     }
   }
   return undefined;
+}
+// カードがいま、どのゾーンにいるか (ライブラリー・手札・墓地のどれか。無ければ undefined)
+export function zoneOf(g: Game, id: string): Zone | undefined {
+  const zones: [Record<string, GameCard[]>, Zone][] = [[g.libraries, "library"], [g.hands, "hand"], [g.graveyards, "graveyard"]];
+  return zones.find(([z]) => Object.values(z).some((cs) => cs.some((c) => c.id === id)))?.[1];
 }
 export const findCard = (g: Game, id: string): GameCard | undefined => [g.libraries, g.hands, g.graveyards].flatMap((z) => Object.values(z).flat()).find((c) => c.id === id);
 

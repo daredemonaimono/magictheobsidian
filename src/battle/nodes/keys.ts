@@ -19,6 +19,7 @@ export const NODE_KEYS: Record<string, { keys: string[] }> = {
   addCounter: { keys: ["カウンターを置く", "+1/+1 カウンター"] },
   look: { keys: ["見る", "占術", "諜報", "ライブラリーの上を見る"] },
   search: { keys: ["探す", "サーチ", "ライブラリーから探す"] },
+  mill: { keys: ["墓地に置く (ライブラリーから)", "切削", "ミル", "ライブラリーの上から N 枚を墓地へ"] },
   shuffle: { keys: ["切る", "シャッフル"] },
   addMana: { keys: ["マナを加える", "マナ"] },
   modify: { keys: ["修整を受ける", "+X/+X", "パワー・タフネスの修整"] },

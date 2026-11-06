@@ -2,10 +2,11 @@ import { characteristics } from "../continuous";
 import { NodeDef, Value } from "../node";
 import { defineNode as define } from "../registry";
 import { nextRandom } from "../rng";
-import { discardCards, drawCards, Game, Perm, typeIn } from "../state";
+import { discardCards, drawCards, putInGraveyard, Game, Perm, typeIn } from "../state";
+import { enterBattlefield, removeFromBattlefield } from "../engine/battlefield";
 import { enterBlocked, entersTapped } from "../engine/restrict";
 import { who as logWho } from "../engine/shared";
-import { findCard, idList, playersFor, takeCard, targetPlayer, who } from "./shared";
+import { findCard, idList, playersFor, takeCard, targetPlayer, who, zoneOf } from "./shared";
 
 // ノード: カードの移動・ライブラリー・手札
 const CATEGORY = "カードの移動・ライブラリー・手札";
@@ -115,11 +116,12 @@ export function registerCards(): void {
   node({
     id: "move",
     title: "カードを動かす",
-    summary: "cards(look / choose の出力)を、持ち主の to へ動かす。to=hand / graveyard / top(ライブラリーの一番上) / bottom(一番下)。except に渡したカードは動かさない(「残りを底に」)。random=true で、ランダムな順で(「ランダムな順番でライブラリーの一番下に置く」)",
-    params: { cards: { type: "ref", required: true }, except: { type: "ref" }, to: { type: "string", required: true, choices: ["hand", "graveyard", "top", "bottom"] }, random: { type: "boolean" } },
+    summary: "cards(look / choose の出力)を、持ち主の to へ動かす。to=hand / graveyard / top(ライブラリーの一番上) / bottom(一番下) / battlefield(持ち主のコントロールで、戦場へ。tapped=true でタップ状態。「墓地から出られない」の制限に従う)。optional=true なら「してもよい」(断れる)。except に渡したカードは動かさない(「残りを底に」)。random=true で、ランダムな順で(「ランダムな順番でライブラリーの一番下に置く」)",
+    params: { cards: { type: "ref", required: true }, except: { type: "ref" }, to: { type: "string", required: true, choices: ["hand", "graveyard", "top", "bottom", "battlefield"] }, random: { type: "boolean" }, tapped: { type: "boolean" }, optional: { type: "boolean" } },
     outputs: {},
     run: (ctx, a): Record<string, Value> => {
       const g = ctx.game;
+      if (a.optional === true && !(g.decide?.may?.(g, ctx.item.controller, "move") ?? true)) return {};
       const skip = new Set(idList(a.except));
       let list = idList(a.cards).filter((id) => !skip.has(id));
       if (a.random === true) for (let i = list.length - 1; i > 0; i--) { const j = Math.floor(nextRandom(g) * (i + 1)); [list[i], list[j]] = [list[j], list[i]]; } // ランダムな順で
@@ -131,14 +133,43 @@ export function registerCards(): void {
       }
       if (a.to === "top") list.reverse(); // 順番を保ったまま一番上に積む
       for (const id of list) {
+        const from = zoneOf(g, id);
+        if (a.to === "battlefield") {
+          const c0 = findCard(g, id);
+          if (!c0 || enterBlocked(g, ctx.rules, c0, from ?? "")) continue; // 墓地・ライブラリーから出られない (Grafdigger's Cage)
+          const c1 = takeCard(g, id)!;
+          enterBattlefield(g, c1, c1.owner, ctx.rules, undefined, { from, tapped: a.tapped === true });
+          g.log.push(`${c1.name} が戦場に出た`);
+          continue;
+        }
         const c = takeCard(g, id);
         if (!c) continue;
         if (a.to === "hand") g.hands[c.owner].push(c);
-        else if (a.to === "graveyard") g.graveyards[c.owner].push(c);
+        else if (a.to === "graveyard") putInGraveyard(g, c, from ?? "hand");
         else if (a.to === "top") g.libraries[c.owner].unshift(c);
         else g.libraries[c.owner].push(c);
       }
       return {};
+    },
+  });
+
+  // ライブラリーの上から N 枚を墓地に置く (切削)。置かれたカードごとに、moved (from=library to=graveyard) を起こす
+  node({
+    id: "mill",
+    title: "切削 (ライブラリーの上から墓地へ)",
+    summary: "プレイヤーのライブラリーの上から count 枚を、墓地に置く(足りなければ、ある分だけ)。player=you / opponents / target。置いたカードの id を出力する。置かれたカードは「ライブラリーから墓地に置かれた」(Narcomoeba・Creeping Chill が誘発する)",
+    params: { player: who, target: targetPlayer, count: { type: "number", required: true, min: 1 } },
+    outputs: { id: "id" },
+    run: (ctx, a): Record<string, Value> => {
+      const g = ctx.game;
+      const out: string[] = [];
+      for (const p of playersFor(ctx, a)) {
+        const top = g.libraries[p].splice(0, Number(a.count));
+        for (const c of top) putInGraveyard(g, c, "library");
+        out.push(...top.map((c) => c.id));
+        g.log.push(`${logWho(p)}のライブラリーの上から ${top.length} 枚を墓地に置いた${top.length ? ` (${top.map((c) => c.name).join("、")})` : ""}`);
+      }
+      return { id: out.join(",") };
     },
   });
 
@@ -213,7 +244,7 @@ export function registerCards(): void {
         const [gone] = ctx.game.battlefield.splice(i, 1);
         if (!gone.card.token) ctx.game.hands[gone.card.owner].push(gone.card); // トークンは、戦場を離れると消える
         ctx.game.log.push(`${gone.card.name} を手札に戻した`);
-        ctx.game.events.push({ type: "leaves", perm: gone });
+        ctx.game.events.push({ type: "leaves", perm: gone, to: "hand" });
       }
       return {};
     },
@@ -231,10 +262,8 @@ export function registerCards(): void {
       for (const id of idList(a.target)) {
         const perm = g.battlefield.find((p) => p.id === id && p.controller === ctx.item.controller);
         if (!perm) continue;
-        g.battlefield = g.battlefield.filter((p) => p !== perm);
-        if (!perm.card.token) g.graveyards[perm.card.owner].push(perm.card);
+        removeFromBattlefield(g, perm);
         g.log.push(`${perm.card.name} を生け贄に捧げた`);
-        g.events.push({ type: "leaves", perm });
       }
       return {};
     },
@@ -251,10 +280,8 @@ export function registerCards(): void {
       for (const id of idList(a.target)) {
         const perm = g.battlefield.find((p) => p.id === id);
         if (!perm || characteristics(g, perm, ctx.rules).keywords.includes("indestructible")) continue;
-        g.battlefield = g.battlefield.filter((p) => p !== perm);
-        if (!perm.card.token) g.graveyards[perm.card.owner].push(perm.card);
+        removeFromBattlefield(g, perm);
         g.log.push(`${perm.card.name} を破壊した`);
-        g.events.push({ type: "leaves", perm });
       }
       return {};
     },
@@ -299,7 +326,7 @@ export function registerCards(): void {
   node({
     id: "exile",
     title: "追放する",
-    summary: "追放する。target=(対象・select の出力) があれば、戦場のそのパーマネントを追放する (トークンは消える)。無ければ、自分の墓地のカードを count 枚(zone=graveyard。足りなければ何もしない)。optional=true なら「してもよい」(断れる)。追放できた枚数を n として出力する(0 なら追放していない)。「そうしたなら〜」は、これを as=名前 で受けて、次のノードに if=$名前 を付ける。「追放して、そのパワーに等しいライフを得る」は、追放の前に statOf・controllerOf で読んでおく。shortcut: 墓地から追放するカードは、古いものから (選べるのは、判断の入力を作るとき)",
+    summary: "追放する。target=(対象・select の出力・self) があれば、戦場のそのパーマネント (戦場に無ければ、墓地のそのカード) を追放する (トークンは消える)。無ければ、自分の墓地のカードを count 枚(zone=graveyard。足りなければ何もしない)。optional=true なら「してもよい」(断れる)。追放できた枚数を n として出力する(0 なら追放していない)。「そうしたなら〜」は、これを as=名前 で受けて、次のノードに if=$名前 を付ける。「追放して、そのパワーに等しいライフを得る」は、追放の前に statOf・controllerOf で読んでおく。shortcut: 墓地から追放するカードは、古いものから (選べるのは、判断の入力を作るとき)",
     params: { target: { type: "ref" }, zone: { type: "string", choices: ["graveyard"] }, count: { type: "number", min: 1 }, optional: { type: "boolean" } },
     outputs: { n: "number" },
     check: (a) => (a.target !== undefined || (a.zone !== undefined && a.count !== undefined) ? null : "target か、(zone と count) の、どちらかが要る"),
@@ -308,13 +335,23 @@ export function registerCards(): void {
       const p = ctx.item.controller;
       if (a.target !== undefined) {
         let n = 0;
+        if (a.optional === true && !(g.decide?.may?.(g, p, "exile") ?? true)) return { n: 0 };
         for (const id of idList(a.target)) {
           const perm = g.battlefield.find((x) => x.id === id);
-          if (!perm) continue;
+          if (!perm) {
+            // 戦場に無ければ、墓地のカード (そのカード自身を追放する誘発など)
+            const gy = Object.values(g.graveyards).flat().find((c) => c.id === id);
+            if (!gy) continue;
+            g.graveyards[gy.owner] = g.graveyards[gy.owner].filter((c) => c !== gy);
+            g.exile[gy.owner].push(gy);
+            g.log.push(`${gy.name} を墓地から追放した`);
+            n++;
+            continue;
+          }
           g.battlefield = g.battlefield.filter((x) => x !== perm);
           if (!perm.card.token) g.exile[perm.card.owner].push(perm.card);
           g.log.push(`${perm.card.name} を追放した`);
-          g.events.push({ type: "leaves", perm });
+          g.events.push({ type: "leaves", perm, to: "exile" });
           n++;
         }
         return { n };

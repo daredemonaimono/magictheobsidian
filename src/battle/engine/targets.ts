@@ -25,7 +25,7 @@ export function targetSlots(g: Game, rules: RuleBook, item: StackItem): TargetSl
     const a = call.args as Record<string, Value>; // 対象のノードの引数は、参照ではない
     const min = typeof a.min === "number" ? a.min : 1;
     const max = typeof a.max === "number" ? a.max : Math.max(1, min);
-    const pool = a.zone === "stack" ? g.stack.filter((x) => !x.ability).map((x) => x.id) : a.zone === "battlefield" ? g.battlefield.map((x) => x.id) : a.zone === "any" ? [...g.players, ...g.battlefield.map((x) => x.id)] : g.players;
+    const pool = a.zone === "stack" ? g.stack.filter((x) => !x.ability).map((x) => x.id) : a.zone === "battlefield" ? g.battlefield.map((x) => x.id) : a.zone === "any" ? [...g.players, ...g.battlefield.map((x) => x.id)] : a.zone === "graveyard" ? Object.values(g.graveyards).flat().map((c) => c.id) : g.players;
     const legal = pool.filter((id) => def.run!({ ...ctx, item: { ...item, targets: { [call.as ?? ""]: id } } }, a).id !== undefined);
     out.push({ as: call.as ?? "", min, max, legal, zone: String(a.zone), kind: String(a.kind) });
   }

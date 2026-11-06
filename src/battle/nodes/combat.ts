@@ -3,6 +3,7 @@ import { defineNode as define } from "../registry";
 import { spellBody, who as logWho } from "../engine/shared";
 import { dealDamage } from "../damage";
 import { spendGeneric } from "../mana";
+import { playersOf } from "../state";
 import { idList, playersFor, targetPlayer, who } from "./shared";
 
 // ノード: ダメージ・ライフ・マナ・打ち消し
@@ -32,13 +33,15 @@ export function registerCombat(): void {
   node({
     id: "damage",
     title: "ダメージを与える",
-    summary: "対象 (target ノードの出力。zone=any なら、プレイヤー・クリーチャー・プレインズウォーカー) に amount 点のダメージを与える",
-    params: { target: { type: "ref", required: true }, amount: { type: "number", required: true, min: 0 } },
+    summary: "対象 (target ノードの出力。zone=any なら、プレイヤー・クリーチャー・プレインズウォーカー) に amount 点のダメージを与える。対象を取らないときは、player=you / opponents (「各対戦相手に」) を、target のかわりに書く",
+    params: { target: { type: "ref" }, player: { type: "string", choices: ["you", "opponents"] }, amount: { type: "number", required: true, min: 0 } },
     outputs: {},
+    check: (a) => (a.target !== undefined || a.player !== undefined ? null : "target か player が要る"),
     run: (ctx, a): Record<string, Value> => {
       const g = ctx.game;
       const source = ctx.item.ability ? g.battlefield.find((x) => x.id === ctx.item.source) : undefined; // 能力の発生源 (接死・絆魂が効く)。呪文なら、キーワードは無し
-      for (const id of idList(a.target)) dealDamage(g, ctx.rules, source, id, Number(a.amount));
+      const ids = a.player !== undefined ? playersOf(g, ctx.item.controller, String(a.player)) : idList(a.target);
+      for (const id of ids) dealDamage(g, ctx.rules, source, id, Number(a.amount));
       return {};
     },
   });

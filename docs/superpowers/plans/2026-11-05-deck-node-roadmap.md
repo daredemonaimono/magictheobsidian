@@ -73,6 +73,22 @@
 
 おすすめの進め方: A-1 → A-2 → A-3 → A-4 を、1弾ずつ、テスト・レビュー・リリースの順で。A だけで、14 種類・約 25 枚 (デッキの 3 割) が、動くようになる。B-1 (別のコスト) は、Force of Will の 4 枚と、デッキの核なので、次に。C は、制限の枠を、1つ作って、6 種類をまとめて通す。
 
+## デッキ3: Dredge (ビンテージ) のノード (2026-11-06、ユーザー依頼)
+
+デッキ (`Decks/Dradge.md`) 18 種類・60 枚のうち、ルールがあるのは Force of Will・Force of Negation・Mental Misstep・Force of Vigor・Strip Mine の 5 種類 (別のコスト・サイドの Strip Mine)。残り 18 種類は、`Rules/` が無い。方針は同じで、**カード専用のノードを作らず、組み合わせで効く部品**を足す。いまのエンジンは、誘発型能力が「戦場のパーマネント」のイベント (`cast / enters / leaves / step / attacks / blocks`) だけで、**墓地・ライブラリー・手札にあるカードの能力**と、**カードのゾーン移動のイベント**が無い。ここが、Dredge の土台。
+
+| 弾 | 足す部品 (汎用) | 動くようになるカード | 手間 |
+|---|---|---|---|
+| DR-1 (実装済み 0.123.0) | **ゾーン移動のイベント**: `when event=moved from=library to=graveyard` (ライブラリーから墓地へ)・`event=leaves to=graveyard` (死亡)・`event=enters from=graveyard` (墓地から出た)。**墓地・手札にあるカード自身の誘発** (`when zone=graveyard`)。`mill` (上から N 枚を墓地へ)。`move` の `to=battlefield tapped=true` | Narcomoeba・Creeping Chill・Golgari Thug (死亡)・Ichorid (アップキープ、墓地から)・Silversmote Ghoul (終了ステップ、墓地から) の誘発の土台。実装: `when event=moved/enters/leaves` に from・to、`when zone=graveyard`、`mill`、`move to=battlefield tapped= optional=`、`target zone=graveyard kind=card`、`exile` が墓地のカードも、`damage player=opponents`。shortcut: 墓地のカードを対象にする呪文を、人が唱えるときの画面の選択は、まだ (誘発の対象は自動) | 大 |
+| DR-2 | **Dredge** (引く代わりに、上から N 枚を墓地に置いて、このカードを手札に戻す。引くときに選ばせる: ドロー・ステップ・「引く」効果のすべて)。置換の枠 (`restrict.ts` の「かわりに」) を、「引く」にも | Stinkweed Imp・Golgari Thug・Shambling Shell・Golgari Grave-Troll (計 4 種・13 枚) + Bazaar of Baghdad (引く・捨てる) | 大 |
+| DR-3 | 遅延誘発 (「次の終了ステップの開始時に」)・「このターンにライフを得た量」・「〜したら (if you do)」の連鎖 | Ichorid (追放→戻る・終了時に生け贄)・Prized Amalgam (墓地から出たら、次の終了時に戻る)・Silversmote Ghoul (3 点以上ライフを得たら)・Grief の誘発 (手札を見て選ばせて捨てさせる) | 中 |
+| DR-4 | **別のコストの拡張**: 手札から黒いカードを追放 (X はそのマナ総量)・「このターンに、相手が 3 つ以上呪文を唱えた」ときの 0 マナ。**Evoke** (別のコストで唱え、出たら生け贄に) | Grief (4)・Sickening Shoal (4 サイド)・Mindbreak Trap (サイド) | 中 |
+| DR-5 | **カウンター・X・唱えた数の参照**: X 個のカウンターつきで出る・唱えた呪文のマナ総量とカウンターの数を比べて打ち消す・「戦場に出るとき、墓地のクリーチャー・カード 1 枚につきカウンター」・カウンターを取り除いて再生 | Chalice of the Void (1)・Golgari Grave-Troll の ETB | 中 |
+| DR-6 | **サイクリングと「捨てた・サイクリングした数」**: 手札から起動する能力・コストの軽減 (このターンに捨てた・サイクリングしたカード 1 枚につき {2} 安く)。Phyrexian マナつきの呪文の対象 (墓地のカードを、ライブラリーの上に置く)。Noxious Revival | Hollow One (4)・Noxious Revival (4) | 中 |
+| DR-7 | **置換: 相手の墓地に行くカードを、かわりに追放**・開始時の手札から、戦場に出して始める (Leyline)・Serum Powder の「マリガンの代わりに、手札を追放して、同じ枚数引く」(マリガンの画面に、手札のカードの能力を出す) | Leyline of the Void (4 サイド)・Serum Powder (4) | 中〜大 |
+
+おすすめの進め方: DR-1 → DR-2 を、先に (土台と、デッキの顔)。ここが動けば、墓地から戻る・引く代わりに掘る、動きが、対戦で見られる。DR-3 以降は、カードごとに、1弾ずつ。Grafdigger's Cage の「墓地・ライブラリーから呪文を唱えられない」は、Rules の「未対応」のまま (戦場に出られない方だけ動く)。墓地から唱えるカードは、このデッキには、ほぼ無いので、DR 系の後ろに、「墓地から唱える」(`cantCast from=graveyard`) として足す。
+
 ## あとでまとめて書くもの
 
 - シナリオ (`src/battle/samples.ts` の `SCENARIOS`。動いた記録): 無いカードは Chandra, Chill of Compliance / The Theorist, Jace Beleren / Into the Roil / Island / Octopus Form / We Say Thee Nay! (打ち消し3種だけある)。無いと `Battle: rules coverage` で partial になる。

@@ -80,7 +80,15 @@ export interface Perm {
 }
 
 // エンジンが誘発型能力を探すためのイベント。ノードや処理が積み、エンジンが flush して、条件に合う誘発型能力をスタックに積む
-export type GameEvent = { type: "cast"; player: PlayerId; card: GameCard } | { type: "enters"; perm: Perm } | { type: "leaves"; perm: Perm } | { type: "step"; step: Step; player: PlayerId } | { type: "attacks"; perm: Perm } | { type: "blocks"; perm: Perm } | { type: "targeted"; perm: Perm; by: StackItem }; // targeted = パーマネントが、呪文・能力の対象になった (護法)
+// カードがいる場所 (ゾーン)。moved / enters / leaves のイベントで、どこからどこへ動いたかを表す
+export type Zone = "library" | "hand" | "graveyard" | "battlefield" | "stack" | "exile";
+// カードを墓地に置く (持ち主の墓地へ)。「墓地に置かれた」(moved) を積む。from = どこから
+export function putInGraveyard(g: Game, card: GameCard, from: Zone): void {
+  g.graveyards[card.owner].push(card);
+  g.events.push({ type: "moved", card, from, to: "graveyard" });
+}
+
+export type GameEvent = { type: "cast"; player: PlayerId; card: GameCard } | { type: "enters"; perm: Perm; from?: Zone } | { type: "leaves"; perm: Perm; to?: Zone } | { type: "moved"; card: GameCard; from: Zone; to: Zone } | { type: "step"; step: Step; player: PlayerId } | { type: "attacks"; perm: Perm } | { type: "blocks"; perm: Perm } | { type: "targeted"; perm: Perm; by: StackItem }; // targeted = パーマネントが、呪文・能力の対象になった (護法)
 // 人の判断の差し替え口。無ければ決まった動きになる (shortcut: 判断の入力はまだ無い。入力の仕組みを作るときに置き換える)
 export interface Decider {
   discard?(g: Game, p: PlayerId, n: number, cleanup?: boolean): GameCard[] | undefined; // 捨てるカード
@@ -191,7 +199,7 @@ export function discardCards(g: Game, p: PlayerId, n: number, cleanup = false): 
   const k = Math.min(n, g.hands[p].length);
   const picked = (g.decide?.discard?.(g, p, k, cleanup) ?? g.hands[p].slice(g.hands[p].length - k)).filter((c) => g.hands[p].includes(c)).slice(0, k);
   g.hands[p] = g.hands[p].filter((c) => !picked.includes(c));
-  g.graveyards[p].push(...picked);
+  for (const c of picked) putInGraveyard(g, c, "hand");
   if (picked.length) g.log.push(`${p === "you" ? "あなた" : p === "opp" ? "相手" : p}が ${picked.map((c) => c.name).join("、")} を捨てた${cleanup ? " (手札の上限)" : ""}`);
 }
 

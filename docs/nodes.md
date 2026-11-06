@@ -2,7 +2,7 @@
 
 > このファイルは、自動で作られます (`src/battle/nodeDocs.ts`)。直接は書き換えません。ノードを足したら、`npm run docs:nodes` で更新します。ノードは、`src/battle/nodes/` の、カテゴリーごとのファイルにあります。
 
-全 73 個のノード、9 個の条件。
+全 74 個のノード、9 個の条件。
 
 目次: [宣言・コスト・条件](#宣言・コスト・条件) / [対象・数える・絞り込む](#対象・数える・絞り込む) / [カードの移動・ライブラリー・手札](#カードの移動・ライブラリー・手札) / [パーマネント・トークン・カウンター](#パーマネント・トークン・カウンター) / [ダメージ・ライフ・マナ・打ち消し](#ダメージ・ライフ・マナ・打ち消し) / [継続効果](#継続効果)
 
@@ -64,9 +64,9 @@ Storm の宣言(呪文能力の最初に書く。引数なし)。この呪文を
 
 ### `when` どうなったら
 
-誘発型能力の最初に書く、誘発のきっかけ。event=cast(呪文を唱えた) / enters(戦場に出た) / leaves(戦場を離れた) / attacks(攻撃した。「攻撃するたび」) / blocks(ブロックした) / step(ステップの開始時。step=upkeep・draw・main1・combat・main2・end を添える)。絞り込み: who=you・opponents(唱えた/コントロールするプレイヤー。attacks / blocks では、そのクリーチャーのコントローラー。step ではそのターンのプレイヤー) / type・notType(その呪文・パーマネントの型) / turn=yours・opponents(だれのターン中か) / self=true(このパーマネント自身のとき。enters / leaves / attacks / blocks) / alone=true(attacks で、そのクリーチャーだけが攻撃しているとき)
+誘発型能力の最初に書く、誘発のきっかけ。event=cast(呪文を唱えた) / enters(戦場に出た。from=graveyard で墓地から) / leaves(離れた。to=graveyard で死亡・exile・hand) / moved(カードがゾーンを移った。from=library to=graveyard など。self=true でこのカード) / attacks / blocks / step(ステップの開始時。step=upkeep・draw・main1・combat・main2・end)。zone=graveyard で、このカードが墓地にあるあいだだけ働く(Narcomoeba・Ichorid)。絞り込み: who=you・opponents(唱えた・コントロールするプレイヤー。step はそのターンのプレイヤー) / type・notType / turn=yours・opponents / self=true / alone=true(attacks で単独)
 
-- 引数: `event`(string・必須・cast / enters / leaves / step / attacks / blocks)、`step`(string・upkeep / draw / main1 / combat / main2 / end)、`who`(string・you / opponents)、`type`(string)、`notType`(string)、`turn`(string・yours / opponents)、`self`(boolean)、`alone`(boolean)
+- 引数: `event`(string・必須・cast / enters / leaves / moved / step / attacks / blocks)、`zone`(string・battlefield / graveyard)、`from`(string・library / hand / graveyard / stack / battlefield)、`to`(string・library / hand / graveyard / exile / battlefield)、`step`(string・upkeep / draw / main1 / combat / main2 / end)、`who`(string・you / opponents)、`type`(string)、`notType`(string)、`turn`(string・yours / opponents)、`self`(boolean)、`alone`(boolean)
 - 書ける能力: triggered
 - 宣言のノード (エンジンが読む。`if=` は付けられない)
 - 中心のノード (ルールを書かせるとき、いつも AI の指示に入る。ほかは、カードごとに選ぶ)
@@ -165,9 +165,9 @@ from(graveyard / library。graveyard|library のように並べられる)にあ�
 
 ### `target` 対象
 
-対象を決める。zone=stack + kind=spell(スタックの呪文) / zone=battlefield + kind=permanent(戦場のパーマネント) / zone=player + kind=player(プレイヤー。draw や discard の player=target と使う) / zone=any + kind=any(「any target」。プレイヤー・クリーチャー・プレインズウォーカー。damage と使う)。type=型 / notType=その型でない / mv=マナ総量 / controller=you(この呪文のコントローラーのもの)・opponents(それ以外) / attacking=攻撃中か / tapped=タップ状態 で絞る。min / max = 対象の数(既定は1。「1体か2体」は min=1 max=2、「最大1つ」は min=0 max=1)
+対象を決める。zone=stack + kind=spell(スタックの呪文) / zone=battlefield + kind=permanent(戦場のパーマネント) / zone=player + kind=player(プレイヤー。draw や discard の player=target と使う) / zone=graveyard + kind=card(墓地のカード。type=creature などで絞る。controller=you は、自分の墓地) / zone=any + kind=any(「any target」。プレイヤー・クリーチャー・プレインズウォーカー。damage と使う)。type=型 / notType=その型でない / mv=マナ総量 / controller=you(この呪文のコントローラーのもの)・opponents(それ以外) / attacking=攻撃中か / tapped=タップ状態 で絞る。min / max = 対象の数(既定は1。「1体か2体」は min=1 max=2、「最大1つ」は min=0 max=1)
 
-- 引数: `zone`(string・必須・stack / battlefield / player / any)、`kind`(string・必須・spell / permanent / player / any)、`type`(string)、`notType`(string)、`mv`(number)、`maxPower`(number)、`controller`(string・you / opponents)、`attacking`(boolean)、`tapped`(boolean)、`min`(number)、`max`(number)
+- 引数: `zone`(string・必須・stack / battlefield / player / any / graveyard)、`kind`(string・必須・spell / permanent / player / any / card)、`type`(string)、`notType`(string)、`mv`(number)、`maxPower`(number)、`controller`(string・you / opponents)、`attacking`(boolean)、`tapped`(boolean)、`min`(number)、`max`(number)
 - 出力: `id`(id) (`as=名前` で受けて、`$名前` で渡す)
 - 中心のノード (ルールを書かせるとき、いつも AI の指示に入る。ほかは、カードごとに選ぶ)
 
@@ -238,7 +238,7 @@ a と b を、op (lt = a<b / le = a≤b / eq = a=b / ge = a≥b / gt = a>b) で�
 - 出力: `id`(id) (`as=名前` で受けて、`$名前` で渡す)
 - 中心のノード (ルールを書かせるとき、いつも AI の指示に入る。ほかは、カードごとに選ぶ)
 
-## カードの移動・ライブラリー・手札 (15 個)
+## カードの移動・ライブラリー・手札 (16 個)
 
 ### `draw` 引く
 
@@ -288,10 +288,18 @@ from(look などの出力)の中から count 枚を選ぶ。atMost=true なら 0
 
 ### `move` カードを動かす
 
-cards(look / choose の出力)を、持ち主の to へ動かす。to=hand / graveyard / top(ライブラリーの一番上) / bottom(一番下)。except に渡したカードは動かさない(「残りを底に」)。random=true で、ランダムな順で(「ランダムな順番でライブラリーの一番下に置く」)
+cards(look / choose の出力)を、持ち主の to へ動かす。to=hand / graveyard / top(ライブラリーの一番上) / bottom(一番下) / battlefield(持ち主のコントロールで、戦場へ。tapped=true でタップ状態。「墓地から出られない」の制限に従う)。optional=true なら「してもよい」(断れる)。except に渡したカードは動かさない(「残りを底に」)。random=true で、ランダムな順で(「ランダムな順番でライブラリーの一番下に置く」)
 
-- 引数: `cards`(ref・必須)、`except`(ref)、`to`(string・必須・hand / graveyard / top / bottom)、`random`(boolean)
+- 引数: `cards`(ref・必須)、`except`(ref)、`to`(string・必須・hand / graveyard / top / bottom / battlefield)、`random`(boolean)、`tapped`(boolean)、`optional`(boolean)
 - 言い方 (キー): 動かす、墓地に置く、ライブラリーの上・下に置く、墓地から戻す
+
+### `mill` 切削 (ライブラリーの上から墓地へ)
+
+プレイヤーのライブラリーの上から count 枚を、墓地に置く(足りなければ、ある分だけ)。player=you / opponents / target。置いたカードの id を出力する。置かれたカードは「ライブラリーから墓地に置かれた」(Narcomoeba・Creeping Chill が誘発する)
+
+- 引数: `player`(string・必須・you / opponents / target)、`target`(ref)、`count`(number・必須)
+- 出力: `id`(id) (`as=名前` で受けて、`$名前` で渡す)
+- 言い方 (キー): 墓地に置く (ライブラリーから)、切削、ミル、ライブラリーの上から N 枚を墓地へ
 
 ### `zoneCards` 墓地・手札のカード
 
@@ -345,7 +353,7 @@ cards(choose などの出力)の1枚ごとに、コントローラーが life �
 
 ### `exile` 追放する
 
-追放する。target=(対象・select の出力) があれば、戦場のそのパーマネントを追放する (トークンは消える)。無ければ、自分の墓地のカードを count 枚(zone=graveyard。足りなければ何もしない)。optional=true なら「してもよい」(断れる)。追放できた枚数を n として出力する(0 なら追放していない)。「そうしたなら〜」は、これを as=名前 で受けて、次のノードに if=$名前 を付ける。「追放して、そのパワーに等しいライフを得る」は、追放の前に statOf・controllerOf で読んでおく。shortcut: 墓地から追放するカードは、古いものから (選べるのは、判断の入力を作るとき)
+追放する。target=(対象・select の出力・self) があれば、戦場のそのパーマネント (戦場に無ければ、墓地のそのカード) を追放する (トークンは消える)。無ければ、自分の墓地のカードを count 枚(zone=graveyard。足りなければ何もしない)。optional=true なら「してもよい」(断れる)。追放できた枚数を n として出力する(0 なら追放していない)。「そうしたなら〜」は、これを as=名前 で受けて、次のノードに if=$名前 を付ける。「追放して、そのパワーに等しいライフを得る」は、追放の前に statOf・controllerOf で読んでおく。shortcut: 墓地から追放するカードは、古いものから (選べるのは、判断の入力を作るとき)
 
 - 引数: `target`(ref)、`zone`(string・graveyard)、`count`(number)、`optional`(boolean)
 - 出力: `n`(number) (`as=名前` で受けて、`$名前` で渡す)
@@ -471,9 +479,9 @@ a と b(それぞれ target ノードの出力)のパーマネントのコント
 
 ### `damage` ダメージを与える
 
-対象 (target ノードの出力。zone=any なら、プレイヤー・クリーチャー・プレインズウォーカー) に amount 点のダメージを与える
+対象 (target ノードの出力。zone=any なら、プレイヤー・クリーチャー・プレインズウォーカー) に amount 点のダメージを与える。対象を取らないときは、player=you / opponents (「各対戦相手に」) を、target のかわりに書く
 
-- 引数: `target`(ref・必須)、`amount`(number・必須)
+- 引数: `target`(ref)、`player`(string・you / opponents)、`amount`(number・必須)
 - 言い方 (キー): ダメージを与える、ダメージ、焼く
 
 ### `addMana` マナを加える

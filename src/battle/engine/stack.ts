@@ -1,6 +1,6 @@
 import { NodeCall, RunCtx, Value } from "../node";
 import { evalCondition, getNode } from "../registry";
-import { Game, RuleBook } from "../state";
+import { Game, RuleBook, putInGraveyard } from "../state";
 import { isPermanentCard, live, resolveArgs, spellBody } from "./shared";
 import { enterBattlefield } from "./battlefield";
 import { flushEvents } from "./triggers";
@@ -40,6 +40,6 @@ export function resolveTop(g: Game, rules: RuleBook): void {
     }
   }
   // 起動型・誘発型能力は、解決してもカードは動かない。パーマネント呪文は戦場へ(解決しなかったときは墓地へ)、インスタント・ソーサリーは墓地へ
-  if (!item.ability && !item.copy && !(permanent && !fizzled)) g.graveyards[item.card.owner].push(item.card); // 呪文のコピーは、墓地に行かず消える
+  if (!item.ability && !item.copy && !(permanent && !fizzled)) putInGraveyard(g, item.card, "stack"); // 呪文のコピーは、墓地に行かず消える
   flushEvents(g, rules);
 }

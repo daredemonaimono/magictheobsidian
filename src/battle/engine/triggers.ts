@@ -9,13 +9,20 @@ import { applyUpkeepTaxes } from "./upkeep";
 
 // 誘発型能力 (イベント → スタックに積む)
 
+// 誘発のもと (スタックの trigger に残す id): 唱えた呪文・カード・パーマネント。ステップには無い
+const triggerOf = (ev: GameEvent): string | undefined => (ev.type === "step" ? undefined : ev.type === "cast" || ev.type === "moved" ? ev.card.id : ev.perm.id);
+
 // 誘発型能力の最初のノード (when) が、このイベントに合うか。s = 能力の発生源のパーマネント (紋章を含む)
 export function matchesEvent(g: Game, s: Perm, when: NodeCall, ev: GameEvent): boolean {
   const a = when.args;
   if (a.event !== ev.type) return false;
   if (ev.type === "step" && a.step !== ev.step) return false;
-  if (a.self === true && (ev.type === "cast" || ev.type === "step" || ev.perm !== s)) return false;
-  const subject: { controller: PlayerId; card?: GameCard } = ev.type === "cast" ? { controller: ev.player, card: ev.card } : ev.type === "step" ? { controller: ev.player } : ev.perm;
+  if (a.self === true && (ev.type === "cast" || ev.type === "step" || (ev.type === "moved" ? ev.card.id !== s.card.id : ev.perm !== s))) return false;
+  const subject: { controller: PlayerId; card?: GameCard } = ev.type === "cast" ? { controller: ev.player, card: ev.card } : ev.type === "step" ? { controller: ev.player } : ev.type === "moved" ? { controller: ev.card.owner, card: ev.card } : ev.perm;
+  // どこから (from)・どこへ (to): moved は、そのまま。enters の from は、手札・スタックから出たなら stack。leaves の to は、離れたあとの行き先 (指定が無ければ墓地)
+  const from = ev.type === "moved" ? ev.from : ev.type === "enters" ? ev.from ?? "stack" : undefined;
+  const to = ev.type === "moved" ? ev.to : ev.type === "leaves" ? ev.to ?? "graveyard" : undefined;
+  if ((a.from !== undefined && from !== a.from) || (a.to !== undefined && to !== a.to)) return false;
   if (a.who === "you" && subject.controller !== s.controller) return false;
   if (a.who === "opponents" && subject.controller === s.controller) return false;
   if (subject.card) {
@@ -98,10 +105,19 @@ export function flushEvents(g: Game, rules: RuleBook): void {
           if (marker ? s.emblem !== marker.args.name : s.emblem !== undefined) continue;
           const at = marker ? 1 : 0;
           const when = ab.body[at];
-          if (ab.kind === "triggered" && when?.node === "when" && matchesEvent(g, s, when, ev)) push(s, ab.body.slice(at + 1), ev.type === "step" ? undefined : ev.type === "cast" ? ev.card.id : ev.perm.id);
+          if (ab.kind === "triggered" && when?.node === "when" && when.args.zone !== "graveyard" && matchesEvent(g, s, when, ev)) push(s, ab.body.slice(at + 1), triggerOf(ev));
         }
       }
       if (ev.type === "cast" && !s.emblem && ev.player === s.controller && now.keywords.includes("prowess") && !/\bcreature\b/i.test(ev.card.typeLine)) push(s, PROWESS);
+    }
+    // 墓地にあるカード自身の誘発型能力 (when zone=graveyard。墓地にあるあいだだけ働く): Narcomoeba・Ichorid など。置かれた直後 (moved) のカードも、ここにいる
+    for (const card of Object.values(g.graveyards).flat()) {
+      for (const ab of rules.get(card.name)?.abilities ?? []) {
+        const when = ab.body[0];
+        if (ab.kind !== "triggered" || when?.node !== "when" || when.args.zone !== "graveyard") continue;
+        const s: Perm = { id: card.id, card, controller: card.owner, enteredTurn: g.turn };
+        if (matchesEvent(g, s, when, ev)) push(s, ab.body.slice(1), triggerOf(ev));
+      }
     }
     stateBased(g, rules); // 誘発の効果が積まれる前に起きた変化も、落ち着かせる
   }

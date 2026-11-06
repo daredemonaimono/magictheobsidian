@@ -1,6 +1,7 @@
 import { characteristics } from "../continuous";
 import { spendGeneric } from "../mana";
 import { Game, PlayerId, RuleBook } from "../state";
+import { removeFromBattlefield } from "./battlefield";
 import { activateAbility } from "./cast";
 import { staticCalls, typeOk, whoOk } from "./restrict";
 
@@ -49,9 +50,7 @@ export function applyUpkeepTaxes(g: Game, rules: RuleBook, player: PlayerId): vo
       continue;
     }
     if (tax.call.args.else === "destroy" && characteristics(g, perm, rules).keywords.includes("indestructible")) continue;
-    g.battlefield = g.battlefield.filter((x) => x !== perm);
-    if (!perm.card.token) g.graveyards[perm.card.owner].push(perm.card);
     g.log.push(`${perm.card.name} は、支払われなかったので、${tax.call.args.else === "destroy" ? "破壊された" : "生け贄に捧げられた"} (${tax.source.card.name})`);
-    g.events.push({ type: "leaves", perm });
+    removeFromBattlefield(g, perm);
   }
 }
