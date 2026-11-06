@@ -4,6 +4,7 @@ import { AiOption, aiAttackers, aiBlockers, aiOptions } from "./ai";
 import { cpuAct, cpuAttack, cpuBlock, cpuDo, tapFor, tapOne } from "./cpu";
 import { Answer, InputRequest, NeedInput, makeDecider } from "./input";
 import { HAND_SIZE, putBottom, redraw } from "./mulligan";
+import { abilityLabel } from "./abilityLabel";
 import { CastRecord } from "./node";
 import { parseManaCost } from "./mana";
 import { Game, PlayerId, RuleBook } from "./state";
@@ -498,12 +499,14 @@ export class BattleController {
     const name = perm.card.name;
     this.rec("activate", [permId, index, targets, tapIds]);
     return this.perform(name, (x) => {
-      x.log.push(manaOnly ? `あなたが ${name} をタップしてマナを出した` : `あなたが ${name} の能力を起動した`);
       if (!manaOnly) {
         this.tapChosen(x, tapIds);
         tapFor(x, this.rules, this.me, act, t);
       }
+      const before = x.stack.length;
       activateAbility(x, this.me, permId, index, t, this.rules);
+      const item = x.stack.length > before ? [...x.stack].reverse().find((s) => s.ability && s.source === permId && !s.body?.some((c) => c.node === "when")) : undefined; // この能力 (誘発は、その上に積まれることがある)
+      x.log.push(manaOnly ? `あなたが ${name} をタップしてマナを出した` : item?.source === permId && abilityLabel(item) ? `あなたが ${name} の能力 ${abilityLabel(item)} を起動した` : `あなたが ${name} の能力を起動した`);
     }, []);
   }
 

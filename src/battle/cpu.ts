@@ -1,4 +1,5 @@
 import { Action, manaOnly, slotsOf, tryAction } from "./actions";
+import { abilityLabel } from "./abilityLabel";
 import { CastRecord } from "./node";
 import { characteristics } from "./continuous";
 import { RuleError, activateAbility, attackersAt, canAttackPerm, castSpell, declareAttackers, declareBlockers, playLand } from "./engine";
@@ -101,8 +102,11 @@ export function cpuDo(g: Game, rules: RuleBook, p: PlayerId, a: Action, targets?
     g.log.push(`${who(g, p)}が ${g.hands[p].find((x) => x.id === a.card)?.name} を唱えた`);
     castSpell(g, p, a.card, targets ?? {}, rules);
   } else {
-    g.log.push(`${who(g, p)}が ${g.battlefield.find((x) => x.id === a.perm)?.card.name} の能力を起動した`);
+    const name = g.battlefield.find((x) => x.id === a.perm)?.card.name;
+    const before = g.stack.length;
     activateAbility(g, p, a.perm, a.index, targets ?? {}, rules);
+    const item = g.stack.length > before ? [...g.stack].reverse().find((s) => s.ability && s.source === a.perm && !s.body?.some((c) => c.node === "when")) : undefined; // スタックに積まれた、この能力 (マナ能力は積まれない。誘発は、その上に積まれることがある)
+    g.log.push(item?.source === a.perm && abilityLabel(item) ? `${who(g, p)}が ${name} の能力 ${abilityLabel(item)} を起動した` : `${who(g, p)}が ${name} の能力を起動した`);
   }
 }
 

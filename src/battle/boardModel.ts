@@ -1,7 +1,7 @@
 import { Action, actionsFor, canRespond, manaOnly, withAllMana } from "./actions";
 import { characteristics } from "./continuous";
 import { attackersAt, canAttackPerm, canBlock, isSick } from "./engine";
-import { getNode } from "./registry";
+import { abilityLabel } from "./abilityLabel";
 import { Game, GameCard, Perm, PlayerId, RuleBook, StackItem } from "./state";
 
 // 対戦の画面に出す内容。Game → 画面の内容の変換だけをする純粋な関数 (DOM を持たない。テストで確かめる)。画面は、これを描くだけ
@@ -101,21 +101,9 @@ function permView(g: Game, rules: RuleBook, p: Perm, imageOf: ImageOf, playable:
 }
 
 function loyaltyOf(s: StackItem): { loyalty?: number; loyaltyX?: boolean } {
-  const cost = s.ability ? s.body?.find((c) => c.node === "cost") : undefined;
-  if (cost?.args.loyaltyX === true) return { loyaltyX: true };
-  const n = cost?.args.loyalty !== undefined ? Number(cost.args.loyalty) : NaN;
-  return Number.isNaN(n) ? {} : { loyalty: n };
+  if (!s.ability) return {};
+  return s.loyaltyX ? { loyaltyX: true } : s.loyalty !== undefined ? { loyalty: s.loyalty } : {};
 }
-// スタックの能力の説明: 忠誠度能力なら「+1: 〜」「−2: 〜」、誘発型なら「誘発: 〜」、それ以外は「起動: 〜」。〜は、効果のノードの名前 (コスト・タイミング・対象は除く)
-function abilityLabel(s: StackItem): string | undefined {
-  if (!s.ability || !s.body) return undefined;
-  const cost = s.body.find((c) => c.node === "cost");
-  const loyalty = cost?.args.loyalty !== undefined ? Number(cost.args.loyalty) : undefined;
-  const what = s.body.filter((c) => !["cost", "timing", "when", "target", "self"].includes(c.node)).map((c) => getNode(c.node)?.title ?? c.node).join("、");
-  const head = cost?.args.loyaltyX === true ? `−X (X=${s.x ?? 0})` : loyalty !== undefined && !Number.isNaN(loyalty) ? (loyalty >= 0 ? `+${loyalty}` : `−${-loyalty}`) : s.body.some((c) => c.node === "when") ? "誘発" : "起動";
-  return what ? `${head}: ${what}` : head;
-}
-
 // 1人分の表示内容。列の分け方: 型行に Creature → creatures (土地クリーチャーも) / Land → lands / それ以外 → others。順番は戦場の順
 export function sideView(g: Game, rules: RuleBook, player: PlayerId, imageOf: ImageOf, showHand: boolean, playable: ReadonlySet<string> = new Set()): SideView {
   const out: SideView = {

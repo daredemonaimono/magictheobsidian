@@ -34,6 +34,8 @@ export interface StackItem {
   copy?: boolean; // 呪文のコピー (準備呪文など)。解決しても、打ち消されても、墓地に行かない (消える)。呪文としては、打ち消しの対象になる
   trigger?: string; // 誘発型能力の引き金になったパーマネントの id (eventPerm ノードが返す)
   source?: string; // 能力の発生源のパーマネントの id (self ノードが返す)
+  loyalty?: number; // 忠誠度能力の、忠誠度のコスト (+2 → 2、−5 → −5)。どの能力を使ったかを、画面とログに伝える
+  loyaltyX?: boolean; // −X の忠誠度能力
   x?: number; // 起動時に選んだ X (忠誠度の −X など。効果の中で $X として参照する)
 }
 // 修整とキーワードの変更。持続「ターン終了時まで」はターンの終わりに消え、forever は残る

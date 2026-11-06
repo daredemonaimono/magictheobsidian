@@ -11,8 +11,20 @@ const norm = (s: string) => s.replace(/[−–—]/g, "-").replace(/＋/g, "+").
 // 忠誠度能力の段落 ("+1: …" "-2：…" "−X: …") の、コスト部分 ("+1" "-2" "-X")。無ければ undefined
 const loyaltyHead = (p: string): string | undefined => norm(p).match(/^\s*([+-]?\d+|[+-]?X)\s*[:：]/i)?.[1].toUpperCase();
 
+// 段落の中で、忠誠度能力の行 (+2： −5： など) が2つ以上並んでいるとき (日本語のテキストは、能力が空行なしで並ぶ)、能力ごとに分ける。続きの行は、前の能力につく
+function splitLoyalty(p: string): string[] {
+  const lines = p.split("\n");
+  if (lines.filter((l) => loyaltyHead(l) !== undefined).length < 2) return [p];
+  const out: string[] = [];
+  for (const l of lines) {
+    if (loyaltyHead(l) !== undefined || !out.length) out.push(l);
+    else out[out.length - 1] += `\n${l}`;
+  }
+  return out.map((x) => x.trim()).filter(Boolean);
+}
+
 export function stackEffectText(text: string, o: StackTextOpts = {}): string {
-  let paras = text.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
+  let paras = text.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean).flatMap(splitLoyalty);
   if (o.typeLine && paras[0] && norm(paras[0]) === norm(o.typeLine)) paras = paras.slice(1);
   // 忠誠度能力: 使った能力の段落だけ
   if (o.loyalty !== undefined || o.loyaltyX) {

@@ -156,7 +156,7 @@ export function activateAbility(g: Game, p: PlayerId, permId: string, index: num
   const cost = costOf(ab.body.filter((c) => c.node === "cost"));
   if ((timing?.args.sorcery === true || cost.isLoyalty) && !(p === g.active && (g.step === "main1" || g.step === "main2") && g.stack.length === 0)) throw new RuleError(`${perm.card.name}: ソーサリーのタイミングだけ起動できる (自分のメインフェイズで、スタックが空のとき)`);
   const effects = ab.body.filter((c) => c.node !== "cost" && c.node !== "timing");
-  const item: StackItem = { id: `${perm.id}#${g.serial + 1}`, card: perm.card, controller: p, targets, cast: {}, body: effects, ability: true, source: perm.id, ...(cost.loyaltyX ? { x } : {}) };
+  const item: StackItem = { id: `${perm.id}#${g.serial + 1}`, card: perm.card, controller: p, targets, cast: {}, body: effects, ability: true, source: perm.id, ...(cost.loyaltyX ? { x, loyaltyX: true } : cost.isLoyalty ? { loyalty: cost.loyalty } : {}) };
   validate(g, item, ab.body, perm.card.name, rules);
   const blocked = activationBlocked(g, rules, perm, p);
   if (blocked) throw new RuleError(`${blocked}: ${perm.card.name} の起動型能力は、起動できない`);

@@ -64,7 +64,7 @@ const b1 = view.find((x) => x.id === "Bear1")!;
 assert.deepEqual([b1.power, b1.toughness, b1.powerMod, b1.toughnessMod], [2, 2, undefined, undefined]);
 // スタックの能力の説明: 忠誠度能力は +N / −N、呪文には付かない
 {
-  const mkItem = (id: string, args: Record<string, unknown>, ability = true) => ({ id, card: mk("Jace", "Legendary Planeswalker — Jace"), controller: "you", targets: {}, cast: {}, ability, body: [{ node: "cost", args }, { node: "createToken", args: {} }] }) as unknown as Game["stack"][number];
+  const mkItem = (id: string, args: Record<string, unknown>, ability = true) => ({ id, card: mk("Jace", "Legendary Planeswalker — Jace"), controller: "you", targets: {}, cast: {}, ability, ...(args.loyalty !== undefined ? { loyalty: args.loyalty } : {}), ...(args.loyaltyX ? { loyaltyX: true } : {}), body: [{ node: "createToken", args: {} }] }) as unknown as Game["stack"][number];
   g.stack = [mkItem("s1", { loyalty: 1 }), mkItem("s2", { loyalty: -2 }), mkItem("s3", {}), mkItem("s4", {}, false)];
   const st = boardModel(g, rules, "you", () => "u://j").stack;
   assert.ok(st[0].label?.startsWith("+1: "));

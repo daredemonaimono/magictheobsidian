@@ -1,5 +1,6 @@
 import { NodeDef, Value } from "../node";
 import { defineNode as define } from "../registry";
+import { who as logWho } from "../engine/shared";
 import { parseManaCost } from "../mana";
 import { prepareAbilityOf, GameCard, Perm, untapPerm } from "../state";
 import { KEYWORDS, cont, idList } from "./shared";
@@ -219,6 +220,7 @@ export function registerPermanents(): void {
         const perm: Perm = { id: card.id, card, controller: p, enteredTurn: g.turn };
         g.battlefield.push(perm);
         g.events.push({ type: "enters", perm });
+        g.log.push(`${logWho(p)}が ${card.name} (トークン) を作った`);
       }
       return {};
     },
@@ -237,6 +239,7 @@ export function registerPermanents(): void {
         if (p) {
           p.counters ??= {};
           p.counters[String(a.kind)] = (p.counters[String(a.kind)] ?? 0) + Number(a.count);
+          ctx.game.log.push(`${p.card.name} に ${a.kind} カウンターを ${a.count} 個置いた`);
         }
       }
       return {};

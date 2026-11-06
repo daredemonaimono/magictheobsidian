@@ -1,6 +1,6 @@
 import { NodeDef, Value } from "../node";
 import { defineNode as define } from "../registry";
-import { spellBody } from "../engine/shared";
+import { spellBody, who as logWho } from "../engine/shared";
 import { dealDamage } from "../damage";
 import { spendGeneric } from "../mana";
 import { idList, playersFor, targetPlayer, who } from "./shared";
@@ -19,7 +19,10 @@ export function registerCombat(): void {
       params: { player: who, target: targetPlayer, amount: { type: "number", required: true, min: 0 } },
       outputs: {},
       run: (ctx, a): Record<string, Value> => {
-        for (const p of playersFor(ctx, a)) ctx.game.life[p] += sign * Number(a.amount);
+        for (const p of playersFor(ctx, a)) {
+          ctx.game.life[p] += sign * Number(a.amount);
+          if (Number(a.amount) > 0) ctx.game.log.push(`${logWho(p)}が ${a.amount} 点のライフを${sign > 0 ? "得た" : "失った"}`);
+        }
         return {};
       },
     });

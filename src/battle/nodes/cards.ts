@@ -4,6 +4,7 @@ import { defineNode as define } from "../registry";
 import { nextRandom } from "../rng";
 import { discardCards, drawCards, Game, Perm, typeIn } from "../state";
 import { enterBlocked, entersTapped } from "../engine/restrict";
+import { who as logWho } from "../engine/shared";
 import { findCard, idList, playersFor, takeCard, targetPlayer, who } from "./shared";
 
 // ノード: カードの移動・ライブラリー・手札
@@ -20,7 +21,10 @@ export function registerCards(): void {
     outputs: { n: "number" },
     run: (ctx, a): Record<string, Value> => {
       if (a.optional === true && !(ctx.game.decide?.may?.(ctx.game, ctx.item.controller, `カードを ${Number(a.count)} 枚、追加で引きますか?`) ?? true)) return { n: 0 };
-      for (const p of playersFor(ctx, a)) drawCards(ctx.game, p, Number(a.count));
+      for (const p of playersFor(ctx, a)) {
+        drawCards(ctx.game, p, Number(a.count));
+        if (Number(a.count) > 0) ctx.game.log.push(`${logWho(p)}がカードを ${a.count} 枚引いた`);
+      }
       return { n: Number(a.count) };
     },
   });

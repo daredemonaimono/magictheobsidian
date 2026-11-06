@@ -29,3 +29,12 @@ assert.equal(stackEffectText(modal, { typeLine: "Instant", modes: [1, 2] }), "Ch
 // 普通の呪文: 全文
 assert.equal(stackEffectText("Instant\n\nDraw two cards.", { typeLine: "Instant" }), "Draw two cards.");
 console.log("stacktext ok");
+
+// 日本語のテキストは、忠誠度能力が、空行なしで並ぶ。使った能力の行だけを出す
+{
+  const ja = "Legendary Planeswalker — Oko\n\n+2：食物・トークンを１つ生成する。\n+1：アーティファクト１つかクリーチャー１体を対象とする。それは能力をすべて失う。\n-5：コントロールを交換する。\n続きの行。";
+  assert.equal(stackEffectText(ja, { typeLine: "Legendary Planeswalker — Oko", loyalty: 2 }), "+2：食物・トークンを１つ生成する。");
+  assert.equal(stackEffectText(ja, { typeLine: "Legendary Planeswalker — Oko", loyalty: 1 }), "+1：アーティファクト１つかクリーチャー１体を対象とする。それは能力をすべて失う。");
+  assert.equal(stackEffectText(ja, { typeLine: "Legendary Planeswalker — Oko", loyalty: -5 }), "-5：コントロールを交換する。\n続きの行。", "続きの行は、その能力につく");
+}
+console.log("stacktext ja ok");
