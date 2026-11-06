@@ -10,15 +10,18 @@ import { applyUpkeepTaxes } from "./upkeep";
 // 誘発型能力 (イベント → スタックに積む)
 
 // 誘発のもと (スタックの trigger に残す id): 唱えた呪文・カード・パーマネント。ステップには無い
-const triggerOf = (ev: GameEvent): string | undefined => (ev.type === "step" ? undefined : ev.type === "cast" || ev.type === "moved" ? ev.card.id : ev.perm.id);
+const triggerOf = (ev: GameEvent): string | undefined => (ev.type === "step" ? undefined : ev.type === "cast" || ev.type === "moved" ? ev.card.id : ev.type === "damaged" ? ev.target : ev.perm.id); // damaged は、ダメージを受けたもの
 
 // 誘発型能力の最初のノード (when) が、このイベントに合うか。s = 能力の発生源のパーマネント (紋章を含む)
 export function matchesEvent(g: Game, s: Perm, when: NodeCall, ev: GameEvent): boolean {
   const a = when.args;
   if (a.event !== ev.type) return false;
   if (ev.type === "step" && a.step !== ev.step) return false;
-  if (a.self === true && (ev.type === "cast" || ev.type === "step" || (ev.type === "moved" ? ev.card.id !== s.card.id : ev.perm !== s))) return false;
-  const subject: { controller: PlayerId; card?: GameCard } = ev.type === "cast" ? { controller: ev.player, card: ev.card } : ev.type === "step" ? { controller: ev.player } : ev.type === "moved" ? { controller: ev.card.owner, card: ev.card } : ev.perm;
+  // self=true: このパーマネント (カード) 自身のとき。step は、どの能力も自分のものなので、無視する。cast は、自分のものではない
+  if (a.self === true && ev.type !== "step" && (ev.type === "cast" || (ev.type === "moved" ? ev.card.id !== s.card.id : ev.type === "damaged" ? ev.source !== s : ev.perm !== s))) return false;
+  const subject: { controller: PlayerId; card?: GameCard } =
+    ev.type === "cast" ? { controller: ev.player, card: ev.card } : ev.type === "step" ? { controller: ev.player } : ev.type === "moved" ? { controller: ev.card.owner, card: ev.card } : ev.type === "damaged" ? { controller: ev.source?.controller ?? "", ...(ev.source ? { card: ev.source.card } : {}) } : ev.perm;
+  if (ev.type === "damaged" && ((a.combat === true && !ev.combat) || (typeof a.hit === "string" && a.hit !== ev.kind))) return false; // combat=true: 戦闘ダメージだけ。hit: ダメージを受けたもの (creature / player / planeswalker)
   // どこから (from)・どこへ (to): moved は、そのまま。enters の from は、手札・スタックから出たなら stack。leaves の to は、離れたあとの行き先 (指定が無ければ墓地)
   const from = ev.type === "moved" ? ev.from : ev.type === "enters" ? ev.from ?? "stack" : undefined;
   const to = ev.type === "moved" ? ev.to : ev.type === "leaves" ? ev.to ?? "graveyard" : undefined;
@@ -92,6 +95,17 @@ export function flushEvents(g: Game, rules: RuleBook): void {
         }
       }
       continue;
+    }
+    if (ev.type === "step" && g.delayed?.some((d) => d.step === ev.step)) {
+      // 遅延誘発: 予約したステップの開始時に積む (次の、そのステップ。だれのターンでも)
+      for (const d of g.delayed.filter((x) => x.step === ev.step)) {
+        const item: StackItem = { id: `${d.card.id}#${g.serial + 1}`, card: d.card, controller: d.controller, targets: {}, cast: {}, body: d.body, ability: true, ...(d.source ? { source: d.source } : {}) };
+        if (!chooseTargets(g, item, rules)) continue;
+        g.serial++;
+        g.stack.push(item);
+        added = true;
+      }
+      g.delayed = g.delayed.filter((x) => x.step !== ev.step);
     }
     if (ev.type === "leaves") for (const o of g.battlefield) if (o.attachedTo === ev.perm.id) delete o.attachedTo; // 付いていた先が離れたら、装備品・オーラは外れる (戻ってきても付き直さない)
     if (ev.type === "step" && ev.step === "upkeep") applyUpkeepTaxes(g, rules, ev.player); // 維持コスト (Energy Flux・The Tabernacle)

@@ -1,6 +1,6 @@
 import { NodeCall, RunCtx, Value } from "../node";
 import { evalCondition, getNode } from "../registry";
-import { Game, RuleBook, putInGraveyard } from "../state";
+import { Game, RuleBook, Step, putInGraveyard } from "../state";
 import { isPermanentCard, live, resolveArgs, spellBody } from "./shared";
 import { enterBattlefield } from "./battlefield";
 import { flushEvents } from "./triggers";
@@ -26,7 +26,12 @@ export function resolveTop(g: Game, rules: RuleBook): void {
   }
   if (!fizzled) {
     const vars: Record<string, Value> = item.x !== undefined ? { X: item.x } : {}; // 起動時に選んだ X は、$X として参照できる
-    for (const call of body) {
+    for (const [i, call] of body.entries()) {
+      if (call.node === "delay") {
+        // 遅延誘発: 残りのノードを、次の、そのステップの開始時に回して、ここでは止める
+        (g.delayed ??= []).push({ step: call.args.step as Step, card: item.card, controller: item.controller, ...(item.source ? { source: item.source } : {}), body: body.slice(i + 1) });
+        break;
+      }
       if (call.if !== undefined && !evalCondition(call.if, ctx(call, vars))) continue; // 条件を満たさないノードは飛ばす
       const def = getNode(call.node);
       if (!def?.run) {

@@ -2,11 +2,11 @@
 
 > このファイルは、自動で作られます (`src/battle/nodeDocs.ts`)。直接は書き換えません。ノードを足したら、`npm run docs:nodes` で更新します。ノードは、`src/battle/nodes/` の、カテゴリーごとのファイルにあります。
 
-全 75 個のノード、9 個の条件。
+全 77 個のノード、9 個の条件。
 
 目次: [宣言・コスト・条件](#宣言・コスト・条件) / [対象・数える・絞り込む](#対象・数える・絞り込む) / [カードの移動・ライブラリー・手札](#カードの移動・ライブラリー・手札) / [パーマネント・トークン・カウンター](#パーマネント・トークン・カウンター) / [ダメージ・ライフ・マナ・打ち消し](#ダメージ・ライフ・マナ・打ち消し) / [継続効果](#継続効果)
 
-## 宣言・コスト・条件 (19 個)
+## 宣言・コスト・条件 (20 個)
 
 ### `cost` コスト
 
@@ -44,6 +44,14 @@ Delve の宣言(呪文能力の最初に書く。引数なし)。唱えるとき
 - 宣言のノード (エンジンが読む。`if=` は付けられない)
 - 中心のノード (ルールを書かせるとき、いつも AI の指示に入る。ほかは、カードごとに選ぶ)
 
+### `delay` あとで (遅延誘発)
+
+誘発型能力の途中に書く。このノードより後ろのノードを、いまではなく、次の step(upkeep・draw・main1・combat・main2・end)の開始時(だれのターンでも、次のそれ)に実行する。「次の終了ステップの開始時に、戦場に戻す」(Prized Amalgam)は、delay step=end → self → move to=battlefield tapped=true
+
+- 引数: `step`(string・必須・upkeep / draw / main1 / combat / main2 / end)
+- 言い方 (キー): 次の終了ステップの開始時に、あとで、遅延誘発
+- 書ける能力: triggered / activated / spell
+
 ### `dredge` Dredge
 
 Dredge の宣言(常在型能力。amount=N)。このカードが墓地にあるとき、カードを引くかわりに、ライブラリーの上から N 枚を墓地に置いて、このカードを手札に戻してもよい(ライブラリーが N 枚以上のとき)。Stinkweed Imp・Golgari Thug・Shambling Shell・Golgari Grave-Troll
@@ -74,9 +82,9 @@ Storm の宣言(呪文能力の最初に書く。引数なし)。この呪文を
 
 ### `when` どうなったら
 
-誘発型能力の最初に書く、誘発のきっかけ。event=cast(呪文を唱えた) / enters(戦場に出た。from=graveyard で墓地から) / leaves(離れた。to=graveyard で死亡・exile・hand) / moved(カードがゾーンを移った。from=library to=graveyard など。self=true でこのカード) / attacks / blocks / step(ステップの開始時。step=upkeep・draw・main1・combat・main2・end)。zone=graveyard で、このカードが墓地にあるあいだだけ働く(Narcomoeba・Ichorid)。絞り込み: who=you・opponents(唱えた・コントロールするプレイヤー。step はそのターンのプレイヤー) / type・notType / turn=yours・opponents / self=true / alone=true(attacks で単独)
+誘発型能力の最初に書く、誘発のきっかけ。event=cast(呪文を唱えた) / enters(戦場に出た。from=graveyard で墓地から) / leaves(離れた。to=graveyard で死亡・exile・hand) / moved(カードがゾーンを移った。from=library to=graveyard など) / damaged(ダメージを与えた。combat=true で戦闘ダメージ。hit=creature・player。eventPerm はダメージを受けたもの) / attacks / blocks / step(ステップの開始時。step=upkeep・draw・main1・combat・main2・end)。zone=graveyard で、このカードが墓地にあるあいだだけ働く。絞り込み: who=you・opponents / type・notType / turn=yours・opponents / self=true(このカード自身) / alone=true(attacks で単独)
 
-- 引数: `event`(string・必須・cast / enters / leaves / moved / step / attacks / blocks)、`zone`(string・battlefield / graveyard)、`from`(string・library / hand / graveyard / stack / battlefield)、`to`(string・library / hand / graveyard / exile / battlefield)、`step`(string・upkeep / draw / main1 / combat / main2 / end)、`who`(string・you / opponents)、`type`(string)、`notType`(string)、`turn`(string・yours / opponents)、`self`(boolean)、`alone`(boolean)
+- 引数: `event`(string・必須・cast / enters / leaves / moved / damaged / step / attacks / blocks)、`combat`(boolean)、`hit`(string・creature / player / planeswalker)、`zone`(string・battlefield / graveyard)、`from`(string・library / hand / graveyard / stack / battlefield)、`to`(string・library / hand / graveyard / exile / battlefield)、`step`(string・upkeep / draw / main1 / combat / main2 / end)、`who`(string・you / opponents)、`type`(string)、`notType`(string)、`turn`(string・yours / opponents)、`self`(boolean)、`alone`(boolean)
 - 書ける能力: triggered
 - 宣言のノード (エンジンが読む。`if=` は付けられない)
 - 中心のノード (ルールを書かせるとき、いつも AI の指示に入る。ほかは、カードごとに選ぶ)
@@ -212,9 +220,9 @@ zone(hand / graveyard / library / battlefield)のカードの枚数を、n と�
 
 ### `filter` 絞り込む
 
-from(look / choose などの出力)のカードのうち、type(| は または)に合い、notType(| は どれでもない)に合うものだけを、出力する
+from(look / choose などの出力)のカードのうち、type(| は または)に合い、notType(| は どれでもない)に合い、color(W U B R G)の色を持つものだけを、出力する。except(self などの出力)に渡したカードは除く
 
-- 引数: `from`(ref・必須)、`type`(string)、`notType`(string)
+- 引数: `from`(ref・必須)、`type`(string)、`notType`(string)、`color`(string)、`except`(ref)
 - 出力: `id`(id) (`as=名前` で受けて、`$名前` で渡す)
 
 ### `spentColors` 払ったマナの色の数
@@ -260,9 +268,9 @@ a と b を、op (lt = a<b / le = a≤b / eq = a=b / ge = a≥b / gt = a>b) で�
 
 ### `discard` 捨てる
 
-プレイヤーが手札を count 枚捨てる。player=you / opponents / target(draw と同じ)
+プレイヤーが手札を count 枚捨てる(捨てるカードは、そのプレイヤーが選ぶ)。player=you / opponents / target(draw と同じ)。count のかわりに cards(選んだカードの id。choose の出力)を書くと、そのカードを捨てさせる(「1枚選ぶ。そのプレイヤーはそれを捨てる」Grief)
 
-- 引数: `player`(string・必須・you / opponents / target)、`target`(ref)、`count`(number・必須)
+- 引数: `player`(string・必須・you / opponents / target)、`target`(ref)、`count`(number)、`cards`(ref)
 - 言い方 (キー): 捨てる、ディスカード、手札を捨てる
 
 ### `look` ライブラリーの上を見る
@@ -471,7 +479,7 @@ a と b(それぞれ target ノードの出力)のパーマネントのコント
 - 引数: `target`(ref・必須)、`kind`(string・必須・+1/+1 / stun)、`count`(number・必須)
 - 言い方 (キー): カウンターを置く、+1/+1 カウンター
 
-## ダメージ・ライフ・マナ・打ち消し (7 個)
+## ダメージ・ライフ・マナ・打ち消し (8 個)
 
 ### `gainLife` ライフを得る
 
@@ -486,6 +494,14 @@ a と b(それぞれ target ノードの出力)のパーマネントのコント
 
 - 引数: `player`(string・必須・you / opponents / target)、`target`(ref)、`amount`(number・必須)
 - 言い方 (キー): ライフを失う、ライフを払う、ライフ損失
+
+### `lifeGained` このターンに得たライフ
+
+プレイヤー (player=you / opponents) が、このターンに得たライフの量 (合計) を、n として出力する。「3 点以上ライフを得ていたら」(Silversmote Ghoul)は、これを as= で受けて、compare op=ge と if=$名前
+
+- 引数: `player`(string・必須・you / opponents)
+- 出力: `n`(number) (`as=名前` で受けて、`$名前` で渡す)
+- 言い方 (キー): このターンにライフを得た、ライフを得ていたら
 
 ### `damage` ダメージを与える
 

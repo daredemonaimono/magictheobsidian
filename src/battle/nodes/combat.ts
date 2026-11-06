@@ -3,7 +3,7 @@ import { defineNode as define } from "../registry";
 import { spellBody, who as logWho } from "../engine/shared";
 import { dealDamage } from "../damage";
 import { spendGeneric } from "../mana";
-import { playersOf } from "../state";
+import { gainLife, playersOf } from "../state";
 import { idList, playersFor, targetPlayer, who } from "./shared";
 
 // ノード: ダメージ・ライフ・マナ・打ち消し
@@ -21,7 +21,8 @@ export function registerCombat(): void {
       outputs: {},
       run: (ctx, a): Record<string, Value> => {
         for (const p of playersFor(ctx, a)) {
-          ctx.game.life[p] += sign * Number(a.amount);
+          if (sign > 0) gainLife(ctx.game, p, Number(a.amount));
+          else ctx.game.life[p] += sign * Number(a.amount);
           if (Number(a.amount) > 0) ctx.game.log.push(`${logWho(p)}が ${a.amount} 点のライフを${sign > 0 ? "得た" : "失った"}`);
         }
         return {};
@@ -30,6 +31,16 @@ export function registerCombat(): void {
   }
 
   // ダメージ。プレイヤー → ライフを失う / クリーチャー → ダメージが載る (タフネス以上で死ぬ。ターン終了時に消える) / プレインズウォーカー → 忠誠度カウンターを取り除く
+  // このターンに得たライフの量
+  node({
+    id: "lifeGained",
+    title: "このターンに得たライフ",
+    summary: "プレイヤー (player=you / opponents) が、このターンに得たライフの量 (合計) を、n として出力する。「3 点以上ライフを得ていたら」(Silversmote Ghoul)は、これを as= で受けて、compare op=ge と if=$名前",
+    params: { player: { type: "string", required: true, choices: ["you", "opponents"] } },
+    outputs: { n: "number" },
+    run: (ctx, a): Record<string, Value> => ({ n: playersOf(ctx.game, ctx.item.controller, String(a.player)).reduce((s, p) => s + (ctx.game.gained?.[p] ?? 0), 0) }),
+  });
+
   node({
     id: "damage",
     title: "ダメージを与える",

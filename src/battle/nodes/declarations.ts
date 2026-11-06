@@ -71,6 +71,17 @@ export function registerDeclarations(): void {
     run: (): Record<string, Value> => ({}),
   });
 
+  // 遅延誘発: このノードより後ろのノードは、いまではなく、次の、そのステップの開始時に実行される
+  node({
+    id: "delay",
+    title: "あとで (遅延誘発)",
+    summary: "誘発型能力の途中に書く。このノードより後ろのノードを、いまではなく、次の step(upkeep・draw・main1・combat・main2・end)の開始時(だれのターンでも、次のそれ)に実行する。「次の終了ステップの開始時に、戦場に戻す」(Prized Amalgam)は、delay step=end → self → move to=battlefield tapped=true",
+    params: { step: { type: "string", required: true, choices: ["upkeep", "draw", "main1", "combat", "main2", "end"] } },
+    outputs: {},
+    only: ["triggered", "activated", "spell"],
+    run: (): Record<string, Value> => ({}),
+  });
+
   node({
     id: "dredge",
     core: true,
@@ -113,9 +124,11 @@ export function registerDeclarations(): void {
     core: true,
     title: "どうなったら",
     summary:
-      "誘発型能力の最初に書く、誘発のきっかけ。event=cast(呪文を唱えた) / enters(戦場に出た。from=graveyard で墓地から) / leaves(離れた。to=graveyard で死亡・exile・hand) / moved(カードがゾーンを移った。from=library to=graveyard など。self=true でこのカード) / attacks / blocks / step(ステップの開始時。step=upkeep・draw・main1・combat・main2・end)。zone=graveyard で、このカードが墓地にあるあいだだけ働く(Narcomoeba・Ichorid)。絞り込み: who=you・opponents(唱えた・コントロールするプレイヤー。step はそのターンのプレイヤー) / type・notType / turn=yours・opponents / self=true / alone=true(attacks で単独)",
+      "誘発型能力の最初に書く、誘発のきっかけ。event=cast(呪文を唱えた) / enters(戦場に出た。from=graveyard で墓地から) / leaves(離れた。to=graveyard で死亡・exile・hand) / moved(カードがゾーンを移った。from=library to=graveyard など) / damaged(ダメージを与えた。combat=true で戦闘ダメージ。hit=creature・player。eventPerm はダメージを受けたもの) / attacks / blocks / step(ステップの開始時。step=upkeep・draw・main1・combat・main2・end)。zone=graveyard で、このカードが墓地にあるあいだだけ働く。絞り込み: who=you・opponents / type・notType / turn=yours・opponents / self=true(このカード自身) / alone=true(attacks で単独)",
     params: {
-      event: { type: "string", required: true, choices: ["cast", "enters", "leaves", "moved", "step", "attacks", "blocks"] },
+      event: { type: "string", required: true, choices: ["cast", "enters", "leaves", "moved", "damaged", "step", "attacks", "blocks"] },
+      combat: { type: "boolean" },
+      hit: { type: "string", choices: ["creature", "player", "planeswalker"] },
       zone: { type: "string", choices: ["battlefield", "graveyard"] },
       from: { type: "string", choices: ["library", "hand", "graveyard", "stack", "battlefield"] },
       to: { type: "string", choices: ["library", "hand", "graveyard", "exile", "battlefield"] },

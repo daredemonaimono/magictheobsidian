@@ -34,11 +34,24 @@ export function registerCards(): void {
   node({
     id: "discard",
     title: "捨てる",
-    summary: "プレイヤーが手札を count 枚捨てる。player=you / opponents / target(draw と同じ)",
-    params: { player: who, target: targetPlayer, count: { type: "number", required: true, min: 0 } },
+    summary: "プレイヤーが手札を count 枚捨てる(捨てるカードは、そのプレイヤーが選ぶ)。player=you / opponents / target(draw と同じ)。count のかわりに cards(選んだカードの id。choose の出力)を書くと、そのカードを捨てさせる(「1枚選ぶ。そのプレイヤーはそれを捨てる」Grief)",
+    params: { player: who, target: targetPlayer, count: { type: "number", min: 0 }, cards: { type: "ref" } },
     outputs: {},
+    check: (a) => (a.count !== undefined || a.cards !== undefined ? null : "count か cards が要る"),
     run: (ctx, a): Record<string, Value> => {
-      for (const p of playersFor(ctx, a)) discardCards(ctx.game, p, Number(a.count));
+      const g = ctx.game;
+      if (a.cards !== undefined) {
+        for (const id of idList(a.cards)) {
+          const p = Object.keys(g.hands).find((q) => g.hands[q].some((c) => c.id === id));
+          const c = p ? g.hands[p].find((x) => x.id === id) : undefined;
+          if (!p || !c) continue;
+          g.hands[p] = g.hands[p].filter((x) => x !== c);
+          putInGraveyard(g, c, "hand");
+          g.log.push(`${logWho(p)}は ${c.name} を捨てた`);
+        }
+        return {};
+      }
+      for (const p of playersFor(ctx, a)) discardCards(g, p, Number(a.count));
       return {};
     },
   });

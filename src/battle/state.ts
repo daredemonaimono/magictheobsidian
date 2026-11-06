@@ -88,7 +88,16 @@ export function putInGraveyard(g: Game, card: GameCard, from: Zone): void {
   g.events.push({ type: "moved", card, from, to: "graveyard" });
 }
 
-export type GameEvent = { type: "cast"; player: PlayerId; card: GameCard } | { type: "enters"; perm: Perm; from?: Zone } | { type: "leaves"; perm: Perm; to?: Zone } | { type: "moved"; card: GameCard; from: Zone; to: Zone } | { type: "step"; step: Step; player: PlayerId } | { type: "attacks"; perm: Perm } | { type: "blocks"; perm: Perm } | { type: "targeted"; perm: Perm; by: StackItem }; // targeted = パーマネントが、呪文・能力の対象になった (護法)
+// 遅延誘発 (delay): あとのステップの開始時に、スタックに積む、残りのノード。source = もとの能力の発生源の id
+export interface Delayed { step: Step; card: GameCard; controller: PlayerId; source?: string; body: NodeCall[] }
+
+// ライフを得る (そのターンに得た量 gained も、数える)
+export function gainLife(g: Game, p: PlayerId, n: number): void {
+  g.life[p] += n;
+  if (n > 0) (g.gained ??= {})[p] = (g.gained[p] ?? 0) + n;
+}
+
+export type GameEvent = { type: "cast"; player: PlayerId; card: GameCard } | { type: "enters"; perm: Perm; from?: Zone } | { type: "leaves"; perm: Perm; to?: Zone } | { type: "moved"; card: GameCard; from: Zone; to: Zone } | { type: "damaged"; source?: Perm; target: string; kind: "player" | "creature" | "planeswalker"; amount: number; combat: boolean } | { type: "step"; step: Step; player: PlayerId } | { type: "attacks"; perm: Perm } | { type: "blocks"; perm: Perm } | { type: "targeted"; perm: Perm; by: StackItem }; // targeted = パーマネントが、呪文・能力の対象になった (護法)
 // 人の判断の差し替え口。無ければ決まった動きになる (shortcut: 判断の入力はまだ無い。入力の仕組みを作るときに置き換える)
 export interface Decider {
   discard?(g: Game, p: PlayerId, n: number, cleanup?: boolean): GameCard[] | undefined; // 捨てるカード
@@ -124,6 +133,8 @@ export interface Game {
   handLook?: { by: PlayerId; of: PlayerId; ids: string[]; n: number }; // 手札を見たとき (lookHand): だれが、だれの手札を、どのカードを見たか。n = 何回目か (画面が、新しい「見た」を見つける)
   restrictedMana: Record<PlayerId, { amount: number; color?: PoolKey; type?: string; notType?: string }[]>; // 使い道に制限のあるマナ (「クリーチャーでない呪文を唱えるためにしか使えない」)
   extraTurns?: PlayerId[]; // 追加のターン (次のターンの前に、順に取る)
+  gained?: Record<PlayerId, number>; // このターンに得たライフの量 (プレイヤーごと。ターンが替わると 0)
+  delayed?: Delayed[]; // 遅延誘発 (あとのステップの開始時に積む)
   drawn?: Record<PlayerId, string[]>; // このターンに引いたカードの id (プレイヤーごと)
   spellsBy?: Record<PlayerId, number>; // このターンに、プレイヤーごとに唱えた呪文の数 (castLimit)
   spellsCast?: number; // このターンに唱えられた呪文の数 (全員。Storm)。ターンが替わると 0

@@ -126,14 +126,14 @@ export function registerTargets(): void {
   node({
     id: "filter",
     title: "絞り込む",
-    summary: "from(look / choose などの出力)のカードのうち、type(| は または)に合い、notType(| は どれでもない)に合うものだけを、出力する",
-    params: { from: { type: "ref", required: true }, type: { type: "string" }, notType: { type: "string" } },
+    summary: "from(look / choose などの出力)のカードのうち、type(| は または)に合い、notType(| は どれでもない)に合い、color(W U B R G)の色を持つものだけを、出力する。except(self などの出力)に渡したカードは除く",
+    params: { from: { type: "ref", required: true }, type: { type: "string" }, notType: { type: "string" }, color: { type: "string" }, except: { type: "ref" } },
     outputs: { id: "id" },
     run: (ctx, a): Record<string, Value> => ({
       id: idList(a.from)
         .filter((id) => {
           const c = findCard(ctx.game, id);
-          return !!c && (typeof a.type !== "string" || typeIn(c.typeLine, a.type)) && (typeof a.notType !== "string" || !typeIn(c.typeLine, a.notType));
+          return !!c && (typeof a.type !== "string" || typeIn(c.typeLine, a.type)) && (typeof a.notType !== "string" || !typeIn(c.typeLine, a.notType)) && (typeof a.color !== "string" || (c.colors ?? []).includes(a.color)) && !idList(a.except).includes(id);
         })
         .join(","),
     }),

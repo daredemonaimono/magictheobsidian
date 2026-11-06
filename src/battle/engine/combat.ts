@@ -160,7 +160,7 @@ export function combatDamage(g: Game, rules: RuleBook, pass: "first" | "regular"
     const a = g.battlefield.find((x) => x.id === b.blocking && x.attacking);
     if (a && now(b) && powerOf(b) > 0) deals.push({ src: b, target: a.id, n: powerOf(b) });
   }
-  for (const d of deals) dealDamage(g, rules, d.src, d.target, d.n);
+  for (const d of deals) dealDamage(g, rules, d.src, d.target, d.n, true);
 }
 
 // 戦闘ステップの中の、次の段階へ。まだ戦闘の中なら true。戦闘が終わったら (攻撃が無かった場合も) 状態を片づけて false (呼び出し側が、次のステップへ進める)
