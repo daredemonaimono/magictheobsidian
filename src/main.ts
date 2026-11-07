@@ -27,6 +27,7 @@ import { BattleSession, MatchError } from "./battle/deckToGame";
 import { SavedBattle, battleNote, battleNoteName, parseBattleNote } from "./battle/saved";
 import { findDeckFile, listDecks, startBattle, startReplay } from "./battleStart";
 import { DeckMemoDraftModal } from "./DeckMemoDraftModal";
+import { SelfPlayModal } from "./SelfPlayModal";
 import { editableMemo, setMemo } from "./battle/memo";
 import { BattleHistoryModal } from "./BattleHistoryModal";
 import { COLLECTION_VIEW, CollectionView } from "./CollectionView";
@@ -222,6 +223,20 @@ export default class MagicTheObsidian extends Plugin {
     });
     this.addCommand({ id: "battle-open", name: "Battle: open battle screen (sample)", callback: () => { this.battleSession = undefined; void this.app.workspace.getLeaf(true).setViewState({ type: BATTLE_VIEW, active: true }); } });
     this.addCommand({ id: "battle-start", name: "Battle: start battle", callback: () => void this.openBattleStart() });
+    this.addCommand({
+      id: "battle-self-play",
+      name: "Battle: self-play debug (CPU vs CPU)",
+      callback: async () => {
+        const decks = await listDecks(this.app);
+        if (!decks.length) return void new Notice("デッキがありません (Decks/)");
+        new SelfPlayModal(this.app, decks, async (md) => {
+          const path = normalizePath(`${RULES_DIR}/_自動対戦レポート.md`);
+          const f = this.app.vault.getAbstractFileByPath(path);
+          const file = f instanceof TFile ? (await this.app.vault.modify(f, md), f) : await this.app.vault.create(path, md);
+          await this.app.workspace.getLeaf(true).openFile(file);
+        }).open();
+      },
+    });
     this.addCommand({ id: "battle-draft-memo", name: "Battle: draft deck memo", callback: () => void this.openMemoDraft() });
     this.addCommand({ id: "battle-replay", name: "Battle: replay", callback: () => new BattleHistoryModal(this.app, (f) => void this.openReplay(f)).open() });
     this.addCommand({ id: "battle-sample-rules", name: "Battle: create sample rules", callback: () => void this.createSampleRules() });

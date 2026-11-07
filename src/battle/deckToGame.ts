@@ -25,6 +25,12 @@ export interface DeckData {
   main: { key: string; n: number; data: CardData }[]; // メイン (コマンダー欄・サイド・トークン欄は、山札に入れない)
 }
 
+// 自動対戦 (selfplay) に渡す、名前つきのデッキ
+export interface BuiltDeck {
+  name: string;
+  data: DeckData;
+}
+
 export class MatchError extends Error {}
 
 const num = (s?: string): number => (s !== undefined && /^\d+$/.test(s) ? Number(s) : 0); // * や 1+* は 0 (エンジンに特性定義能力が無い。限界)

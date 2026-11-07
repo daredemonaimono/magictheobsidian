@@ -52,7 +52,7 @@ export function tryAction(g: Game, rules: RuleBook, p: PlayerId, a: Action, targ
   const slots = slotsOf(g, rules, p, a);
   if (slots.some((x) => x.legal.length < x.min)) return NO_TARGET;
   const t = targets ?? autoTargets(slots);
-  const copy = structuredClone({ ...g, decide: undefined }) as Game;
+  const copy = structuredClone({ ...g, decide: undefined, log: [] }) as Game;
   try {
     if (a.kind === "land") playLand(copy, p, a.card, rules);
     else if (a.kind === "cast") castSpell(copy, p, a.card, t, rules, cast);
@@ -177,7 +177,7 @@ export function tapManaSource(g: Game, rules: RuleBook, p: PlayerId, permId: str
 }
 
 export function withAllMana(g: Game, rules: RuleBook, p: PlayerId, want?: Want): Game {
-  const copy = structuredClone({ ...g, decide: undefined }) as Game;
+  const copy = structuredClone({ ...g, decide: undefined, log: [] }) as Game;
   copy.priority = p;
   for (const perm of copy.battlefield) {
     if (perm.controller !== p) continue;

@@ -24,7 +24,8 @@ const refs = (cs: GameCard[]): CardRef[] => cs.map((c) => ({ id: c.id, name: c.n
 
 // answers = これまでに集めた答え (質問の順)。足りなければ、次の質問で NeedInput
 // ai = AI の相手のプレイヤー。AI の Dredge の質問は、人には出さず (for = ai)、画面が AI (API) に聞いて、答えを足す (人への質問と、同じ仕組み)。AI が無ければ (雑魚 CPU など)、Dredge しない
-export function makeDecider(me: PlayerId, answers: Answer[], ai?: PlayerId, rules?: RuleBook): Decider {
+export function makeDecider(me: PlayerId, answers: Answer[], ai?: PlayerId | PlayerId[], rules?: RuleBook): Decider {
+  const isAi = (p: PlayerId) => (Array.isArray(ai) ? ai.includes(p) : p === ai);
   let i = 0;
   const next = (request: InputRequest): Answer => {
     if (i >= answers.length) throw new NeedInput(request);
@@ -47,7 +48,7 @@ export function makeDecider(me: PlayerId, answers: Answer[], ai?: PlayerId, rule
       return from.filter((c) => got.includes(c.id));
     },
     dredge(g, p, options0) {
-      if (p !== me && p !== ai) return undefined;
+      if (p !== me && !isAi(p)) return undefined;
       if (p === me) {
         const label = `引くかわりに Dredge する? ${options0.map((o) => `${o.card.name} (Dredge ${o.n})`).join("・")}: 手札に戻すカードを選ぶ (選ばなければ、ふつうに引く)`;
         const got = ids(next({ kind: "choose", min: 0, max: 1, cards: refs(options0.map((o) => o.card)), label }));
