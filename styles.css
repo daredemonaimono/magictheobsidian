@@ -489,3 +489,5 @@ button.mtg-color .mtg-sym { width: 20px; height: 20px; display: block; }
 .mtg-print-again { grid-column: 1 / -1; justify-self: start; }
 .mtg-item.is-foil::after { content: ""; position: absolute; inset: 0; pointer-events: none; border-radius: inherit; background: linear-gradient(115deg, rgba(255,0,128,.35), rgba(255,200,0,.3) 25%, rgba(0,255,160,.3) 50%, rgba(0,160,255,.35) 75%, rgba(180,0,255,.35)); mix-blend-mode: color-dodge; opacity: .55; }
 .mtg-bt-card.is-foil::after { content: ""; position: absolute; inset: 0; pointer-events: none; border-radius: inherit; background: linear-gradient(115deg, rgba(255,0,128,.35), rgba(255,200,0,.3) 25%, rgba(0,255,160,.3) 50%, rgba(0,160,255,.35) 75%, rgba(180,0,255,.35)); mix-blend-mode: color-dodge; opacity: .55; }
+.mtg-preview-art { position: relative; border-radius: 12px; overflow: hidden; line-height: 0; }
+.mtg-preview-art.is-foil::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(115deg, rgba(255,0,128,.35), rgba(255,200,0,.3) 25%, rgba(0,255,160,.3) 50%, rgba(0,160,255,.35) 75%, rgba(180,0,255,.35)); mix-blend-mode: color-dodge; opacity: .55; }

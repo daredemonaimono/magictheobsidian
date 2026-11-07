@@ -609,9 +609,9 @@ export class DeckView extends ItemView {
           const file = cardInfo(this.app, c.key)?.file;
           if (file && img)
             void cardBackImage(this.app, file, c.image).then((back) =>
-              addFlip(ctl, img, c.image, back, (flipped, src) => void this.preview(c.key, Promise.resolve(src), flipped ? cardBackText(this.app, c.key) : cardText(this.app, c.key), cardInfo(this.app, c.key)?.nameLocal)),
+              addFlip(ctl, img, c.image, back, (flipped, src) => void this.preview(c.key, Promise.resolve(src), flipped ? cardBackText(this.app, c.key) : cardText(this.app, c.key), cardInfo(this.app, c.key)?.nameLocal, c.foil)),
             );
-          item.onmouseenter = () => void this.preview(c.key, Promise.resolve(c.image), cardText(this.app, c.key), cardInfo(this.app, c.key)?.nameLocal);
+          item.onmouseenter = () => void this.preview(c.key, Promise.resolve(c.image), cardText(this.app, c.key), cardInfo(this.app, c.key)?.nameLocal, c.foil);
         }
       }
       if (!column.hasChildNodes()) column.remove();
@@ -645,12 +645,16 @@ export class DeckView extends ItemView {
   }
 
   // ja = 設定した言語のカード名。無ければ英語名だけ出す
-  protected async preview(name: string, image: Promise<string | undefined>, text: Promise<string>, ja?: string) {
+  protected async preview(name: string, image: Promise<string | undefined>, text: Promise<string>, ja?: string, foil = false) {
     const seq = ++this.previewSeq;
     const [url, body] = await Promise.all([image, text]);
     if (seq !== this.previewSeq) return;
     this.el.preview.empty();
-    if (url) setImg(this.el.preview.createEl("img", { attr: { alt: name } }), url);
+    if (url) {
+      const art = this.el.preview.createDiv({ cls: "mtg-preview-art" }); // フォイルの光を重ねる枠
+      art.toggleClass("is-foil", foil);
+      setImg(art.createEl("img", { attr: { alt: name } }), url);
+    }
     const nameRow = this.el.preview.createDiv("mtg-preview-namerow");
     nameRow.createDiv({ text: ja && ja !== name ? `${name} (${ja})` : name, cls: "mtg-preview-name" });
     const lang = this.settings.textLang;
@@ -658,12 +662,12 @@ export class DeckView extends ItemView {
     // 設定した言語のカード名 (ローカルネーム) を手で直す。フロントマターの name_local と aliases に書く (効果テキストの欄の上)
     if (editable) {
       iconButton(nameRow, "pencil", `カード名 (${lang}) を編集`).onclick = () =>
-        editLocalName(this.app, this.settings, name, ja, (local) => void this.preview(name, image, text, local)); // いま書いた名前で出し直す (メタデータの更新を待たない)
+        editLocalName(this.app, this.settings, name, ja, (local) => void this.preview(name, image, text, local, foil)); // いま書いた名前で出し直す (メタデータの更新を待たない)
     }
     const text_ = this.el.preview.createDiv({ text: body, cls: "mtg-preview-text" });
     // 設定した言語のテキストを手で直す (取れなかったとき用)。英語の本文は変えない
     if (editable) {
-      iconButton(text_, "pencil", `効果テキスト (${lang}) を編集`, "mtg-preview-edit").onclick = () => editLocalText(this.app, this.settings, name, body, () => void this.preview(name, image, cardText(this.app, name), ja));
+      iconButton(text_, "pencil", `効果テキスト (${lang}) を編集`, "mtg-preview-edit").onclick = () => editLocalText(this.app, this.settings, name, body, () => void this.preview(name, image, cardText(this.app, name), ja, foil));
     }
   }
 }
