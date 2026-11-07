@@ -43,10 +43,11 @@ export interface Settings {
   imageScope: PreloadScope; // 「先に保存」の範囲。decks = デッキとコレクションのカード / all = Cards/ のカードすべて
   imageKind: PreloadKind; // 「先に保存」の種類。both = カード全体とイラスト / card = カード全体 / art = イラストだけ
   battleNoMirror: boolean; // 対戦の相手を「ランダム」にしたとき、自分と同じデッキ (ミラー) を選ばない
+  jevCardTags: Record<string, Record<string, number>>; // Jev が分類したカードの分類 (カード名 → 質問の id → はい の確率)。1 枚につき 1 回だけ聞いて、使い回す (src/battle/jev-criteria.json の cards)
   battleStops: "always" | "smart"; // 対戦の優先権の止まり方。always = 毎回止まる / smart = 使えるものがあるときだけ (メインフェイズでは、必ず止まる)
 }
 
-export const DEFAULT_SETTINGS: Settings = { textLang: "en", cardLang: "en", sidebar: true, listArt: true, dashboardTab: true, currency: "USD", ai: DEFAULT_AI, keyRemove: "shift", keyMove: "mod", battleNoMirror: false, imageMode: "view", imageScope: "decks", imageKind: "both", battleStops: "smart", battleOpponent: "cpu", battleHistory: true, battleEffects: true };
+export const DEFAULT_SETTINGS: Settings = { jevCardTags: {}, textLang: "en", cardLang: "en", sidebar: true, listArt: true, dashboardTab: true, currency: "USD", ai: DEFAULT_AI, keyRemove: "shift", keyMove: "mod", battleNoMirror: false, imageMode: "view", imageScope: "decks", imageKind: "both", battleStops: "smart", battleOpponent: "cpu", battleHistory: true, battleEffects: true };
 
 // 設定の名前で、キーチェーンから取る (空・見つからないときは null)
 // 設定画面の部品: 大項目 (タブ) → 中項目 (折りたたみ) → 小項目 (1つの設定を描く関数)
@@ -378,6 +379,17 @@ export class SettingsTab extends PluginSettingTab {
                       await this.save();
                     }),
                   ),
+              (c) => {
+                const st = new Setting(el(c)).setName("対戦: Jev の判断を AI に渡す / Advise the AI").setDesc("対戦の相手を Claude などの AI にしたとき、Jev が、形勢・相手に止められそうか・手札に止める手段があるか などを分類して、AI への指示に添える (質問は src/battle/jev-criteria.json)。数や使えるマナは、コードが計算して渡す。最終判断は AI。比較: 添えた場合と添えない場合の AI の答えを比べて、履歴の裏側に残す (AI の呼び出しが 2 倍)。「対戦の相手」を Jev にしているときは、使わない。Jev のキーが要る。");
+                const row = st.controlEl.createDiv("mtg-seg");
+                for (const [v, label] of [["off", "使わない"], ["on", "渡す"], ["compare", "渡す + 比較"]] as ["off" | "on" | "compare", string][]) {
+                  row.createEl("button", { text: label, cls: v === ai.jev.advise ? "is-on" : "" }).addEventListener("click", async () => {
+                    ai.jev.advise = v;
+                    await this.save();
+                    this.display();
+                  });
+                }
+              },
               (c) => {
                 const st = new Setting(el(c)).setName("対戦: 聞き直す AI / Fallback AI").setDesc("Jev の自信が足りないときに、聞く AI (モデルは、「対戦の相手」の、その AI のモデル欄)。使わない: Jev の答えを、そのまま使う (いちばん安く速いが、判断が粗くなる)。");
                 const row = st.controlEl.createDiv("mtg-seg");

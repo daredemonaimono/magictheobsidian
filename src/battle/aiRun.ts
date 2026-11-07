@@ -1,5 +1,7 @@
 import { AI_SYSTEM, AskAi, aiActPrompt, aiAttackPrompt, aiAttackers, aiBlockPrompt, aiBlockers, aiDescribe, aiParse, matchIds, permLine, withMemo } from "./ai";
 import type { JevDecision } from "./jev";
+import type { Judged } from "./jevJudge";
+import type { Game, RuleBook } from "./state";
 import { attackersAt } from "./engine";
 import { BattleController } from "./play";
 
@@ -11,9 +13,23 @@ export interface JevDriver {
   block(state: string, attackers: { id: string; label: string }[], blockers: { id: string; label: string }[]): Promise<JevDecision>;
 }
 
+// Jev の判断を、AI に渡す道具 (Jev は、材料を出す。最終判断は AI)。画面 (main.ts) が、キーとモデルを入れて作る。mode = on (材料を添える) / compare (添えた場合と、添えない場合の答えを比べて、履歴の裏側に残す。AI の呼び出しは 2 倍)
+export interface JevAdvisor {
+  mode: "on" | "compare";
+  judge(w: "act" | "attack" | "block", g: Game, rules: RuleBook, ai: string): Promise<Judged>;
+}
+
+// 2 つの返事 (助言あり・なし) が、同じ行動か。act = 同じ番号 / attack = 同じ id の集合 / block = 同じ組の集合
+function sameReply(w: "act" | "attack" | "block", a: Record<string, unknown>, b: Record<string, unknown>): boolean {
+  const set = (v: unknown) => JSON.stringify((Array.isArray(v) ? v : []).map((x) => (typeof x === "object" ? `${(x as { blocker?: unknown }).blocker}>${(x as { attacker?: unknown }).attacker}` : String(x))).sort());
+  return w === "act" ? String(a.choice) === String(b.choice) : w === "attack" ? set(a.attackers) === set(b.attackers) : set(a.blocks) === set(b.blocks);
+}
+const brief = (w: "act" | "attack" | "block", r: Record<string, unknown>, opts: { id: number; label: string }[]): string =>
+  w === "act" ? opts[Number(r.choice)]?.label ?? `番号 ${String(r.choice)}` : w === "attack" ? `攻撃 [${((r.attackers as unknown[]) ?? []).join(", ")}]` : `ブロック [${((r.blocks as { blocker?: unknown; attacker?: unknown }[]) ?? []).map((x) => `${x.blocker}>${x.attacker}`).join(", ")}]`;
+
 // Claude の AI の、1回ぶんの判断 (画面 BattleView.driveAi と、テストが使う)。判断が要らない優先権はパスして、要る場面では API を呼んで、返事を実行する。
 // 戻り値: "none" = 判断が要らない (人の番) / "acted" = 1つ実行した (続きがあるかもしれない) / "failed" = 失敗した (以降は、雑魚 CPU の決まり。理由はログに)
-export async function aiStep(ctl: BattleController, ask: AskAi | undefined, ai: string, jev?: JevDriver): Promise<"none" | "acted" | "failed"> {
+export async function aiStep(ctl: BattleController, ask: AskAi | undefined, ai: string, jev?: JevDriver, advisor?: JevAdvisor): Promise<"none" | "acted" | "failed"> {
   if (!ctl.aiActive || ctl.game.over || ctl.pending) return "none";
   let w = ctl.aiWaiting();
   if (!w) {
@@ -29,6 +45,19 @@ export async function aiStep(ctl: BattleController, ask: AskAi | undefined, ai: 
   }
   const opts = w === "act" ? ctl.aiOptions() : [];
   const prompt = w === "act" ? aiActPrompt(g, rules, ai, opts) : w === "attack" ? aiAttackPrompt(g, rules, ai) : aiBlockPrompt(g, rules, ai);
+  // Jev の判断 (材料) を、AI への指示に添える。失敗しても、材料なしで続ける
+  let advice = "";
+  if (advisor && ask && !jev) {
+    try {
+      const a = await advisor.judge(w, g, rules, ai);
+      advice = `\n\n${a.text}`;
+      ctl.aiTokens.input += a.input;
+      ctl.aiTokens.output += a.output;
+      g.log.push(`相手 (AI) に、Jev の判断を渡した (${a.ms}ms · 入力 ${a.input} トークン)`);
+    } catch (e) {
+      g.log.push(`Jev の判断を、AI に渡せなかった (${(e as Error).message})。材料なしで続ける`);
+    }
+  }
   let problem = "";
   // 返事が使えなかったら (形が違う・できない行動)、理由を添えて、1回だけ聞き直す。それでもだめなら、この判断だけ雑魚 CPU の決まりで (次は、また Claude)
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -58,7 +87,7 @@ export async function aiStep(ctl: BattleController, ask: AskAi | undefined, ai: 
     }
     try {
       if (text === undefined && ask) {
-      const r = await ask(withMemo(AI_SYSTEM, ctl.aiMemo, ctl.aiDecks), attempt === 0 ? prompt : `${prompt}\n\n前の返事は使えませんでした (${problem})。選択肢の番号・id を確かめて、もう一度、JSON だけで答えてください。`);
+      const r = await ask(withMemo(AI_SYSTEM, ctl.aiMemo, ctl.aiDecks), attempt === 0 ? `${prompt}${advice}` : `${prompt}${advice}\n\n前の返事は使えませんでした (${problem})。選択肢の番号・id を確かめて、もう一度、JSON だけで答えてください。`);
       text = r.text;
       if (r.input !== undefined || r.output !== undefined) {
         ctl.aiTokens.input += r.input ?? 0;
@@ -79,6 +108,18 @@ export async function aiStep(ctl: BattleController, ask: AskAi | undefined, ai: 
     if (!reply) {
       problem = `JSON として読めない: ${text.slice(0, 60).replace(/\s+/g, " ")}`;
       continue;
+    }
+    // 比較: Jev の判断を添えなかったら、AI の答えが変わったか (履歴の裏側に残す。AI の学習 (デッキのメモ・判断の材料) を決める手がかり)
+    if (advisor?.mode === "compare" && advice && ask && attempt === 0) {
+      try {
+        const plain = await ask(withMemo(AI_SYSTEM, ctl.aiMemo, ctl.aiDecks), prompt);
+        ctl.aiTokens.input += plain.input ?? 0;
+        ctl.aiTokens.output += plain.output ?? 0;
+        const other = aiParse(plain.text);
+        if (other) ctl.aiNotes.push({ n: ctl.record.length, why: `[Jev比較] ${sameReply(w, reply, other) ? "同じ" : "変わった"} — 助言あり: ${brief(w, reply, opts)} / 助言なし: ${brief(w, other, opts)}` });
+      } catch {
+        /* 比較に失敗しても、本番の判断は続ける */
+      }
     }
     const why = typeof reply.why === "string" ? reply.why.trim() : "";
     let err: string | undefined;

@@ -7,12 +7,17 @@ import { ClaudeError, Http } from "./claude";
 export const JEV_URL = "https://api.typesafe.ai/v1/systemone";
 export const DEFAULT_JEV_MODEL = "jev-latest";
 
-export type JevQuestion = { type: "choice"; instructions: string; criteria: Record<string, string> } | { type: "noul"; instructions: string };
+// 質問の 3 種類 (docs.typesafe.ai / abacus.ai/help/route-llm/systemone): noul = はい/いいえ (criteria の true / false は、何を はい・いいえ とするか。省略できる) / choice = 選択肢のどれか / score = 低い順に並べた段階 (2〜10) のどれか
+export type JevQuestion =
+  | { type: "choice"; instructions: string; criteria: Record<string, string | null> }
+  | { type: "noul"; instructions: string; criteria?: { true?: string; false?: string } }
+  | { type: "score"; instructions: string; criteria: string[] };
 export interface JevAnswer {
   choice?: string; // choice: 選ばれた名前
   confidence?: number; // choice: 自信 (0〜1)
   probabilities?: Record<string, number>;
   noul?: number; // noul: はい の確率 (0〜1)
+  score?: number; // score: 段階の番号 (0 から。確率で重みづけした小数)
 }
 export interface JevResult {
   answers: Record<string, JevAnswer>;
@@ -24,7 +29,7 @@ export interface JevResult {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // 質問を送る。429 (レート制限)・529 (混雑) は、短く待って、2回まで、やり直す。それ以外の失敗は、ClaudeError (キーが無効など)
-export async function askJev(o: { apiKey: string; model: string; state: string; questions: Record<string, JevQuestion>; http: Http; now?: () => number; wait?: (ms: number) => Promise<void> }): Promise<JevResult> {
+export async function askJev(o: { apiKey: string; model: string; state: string | Record<string, unknown>; questions: Record<string, JevQuestion>; http: Http; now?: () => number; wait?: (ms: number) => Promise<void> }): Promise<JevResult> {
   const now = o.now ?? Date.now;
   const wait = o.wait ?? sleep;
   const body = JSON.stringify({ model: o.model, state: o.state, questions: o.questions });

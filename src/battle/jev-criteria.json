@@ -1,0 +1,162 @@
+{
+  "version": 1,
+  "about": "Jev (分類器) に聞く質問の定義。Jev は文章を読んで分類するだけで、数えたり計算したりは苦手なので、数・個数・差・使えるマナ・使える手札は、コードが先に計算して、state の facts に入れる。質問は、その facts と盤面を読ませる。instructions は文字どおりに読まれる (1 つの質問で、1 つだけ聞く)。境界は criteria に書く。scope: once = 1 回だけ聞く / each = 対象 (攻撃クリーチャー・手札のカードなど) ごとに聞く。{label} は、対象の説明に置き換わる。答えは、Jev の判断として AI に渡す (AI が最終判断する)",
+  "facts": {
+    "life": "プレイヤーごとのライフ ({you, opp})",
+    "lifeDiff": "自分のライフ − 相手のライフ (コードが計算)",
+    "turnsToKillOpp": "いまの攻撃クリーチャーのパワーの合計で、相手を倒せるまでのターン数 (コードが計算。倒せなければ null)",
+    "turnsToKillMe": "相手の攻撃クリーチャーで、自分が倒されるまでのターン数 (コードが計算。倒されなければ null)",
+    "board": "戦場のクリーチャー ({owner (you / opp), name, power, toughness, tapped, attacking, summoningSick, keywords})",
+    "availableMana": "いま払える自分のマナの数 (コードが、土地・マナ能力のタップを試して計算)",
+    "oppUntappedMana": "相手のアンタップ状態の土地・マナ源の数",
+    "handActions": "手札から、いま使える行動 ({card, cost, castable (コードが試して決める), tags})。tags は、カードごとの分類 (cards の質問の答え。カードごとに 1 回だけ聞いて、保存する)",
+    "abilities": "戦場にある、自分のマナ以外の起動型能力 ({card, label, usable})"
+  },
+  "cards": {
+    "about": "カード 1 枚ごとの分類。テキストを読む仕事なので、Jev に向く。カードごとに 1 回だけ聞いて、結果を保存する (毎ターンは聞かない)。state は、そのカードの名前・型・テキスト",
+    "questions": [
+      {
+        "id": "stopsAttacker",
+        "title": "攻撃を止められるか",
+        "type": "noul",
+        "scope": "each",
+        "instructions": "このカードのテキストは、相手の攻撃してくるクリーチャーを、1 体でも、止める・除去する・戦闘から外すために使えますか",
+        "criteria": {
+          "true": "クリーチャーを破壊する・追放する・手札に戻す・タップする・ダメージや修整で倒す・ブロックに加える・攻撃を無効にする・攻撃クリーチャーを対象にできる",
+          "false": "ライフを得る・カードを引く・マナを出す・自分のクリーチャーを強くするだけ・プレイヤーだけに効く・土地を探す"
+        }
+      },
+      {
+        "id": "stopsSpell",
+        "title": "呪文を止められるか",
+        "type": "noul",
+        "scope": "each",
+        "instructions": "このカードのテキストは、相手が唱えた呪文を打ち消す・追放する・無効にするために使えますか",
+        "criteria": {
+          "true": "呪文を打ち消す・スタックの呪文を追放する・呪文のコピーを作らせない",
+          "false": "呪文に関係しない効果だけ"
+        }
+      },
+      {
+        "id": "removesPermanent",
+        "title": "パーマネントを取り除けるか",
+        "type": "noul",
+        "scope": "each",
+        "instructions": "このカードのテキストは、相手のパーマネントを 1 つ、戦場から取り除くことができますか",
+        "criteria": {
+          "true": "破壊・追放・手札に戻す・生け贄に捧げさせる",
+          "false": "タップするだけ・修整するだけ・カウンターを置くだけ"
+        }
+      }
+    ]
+  },
+  "decisions": {
+    "attack": {
+      "about": "攻撃するか。state = { life, lifeDiff, turnsToKillOpp, turnsToKillMe, board, availableMana, oppUntappedMana, handActions }。各攻撃クリーチャーについて聞く",
+      "questions": [
+        {
+          "id": "ahead",
+          "title": "形勢",
+          "type": "score",
+          "scope": "once",
+          "instructions": "`life`、`lifeDiff`、`turnsToKillOpp`、`turnsToKillMe`、`board` を読んで、自分の側から見て、いまの形勢は、どのくらい有利ですか",
+          "criteria": [
+            "大きく不利 (先に倒されそう)",
+            "やや不利",
+            "互角",
+            "やや有利",
+            "大きく有利 (先に倒せそう)"
+          ]
+        },
+        {
+          "id": "raceWinner",
+          "title": "先に倒せるのは",
+          "type": "choice",
+          "scope": "once",
+          "instructions": "`turnsToKillOpp` と `turnsToKillMe` を比べて、このまま殴り合うと、先に相手のライフを 0 にするのはどちらですか",
+          "criteria": {
+            "me": "自分のほうが、少ないターンで倒せる (または、相手は倒せない)",
+            "opp": "相手のほうが、少ないターンで倒せる (または、自分は倒せない)",
+            "even": "同じターン数、または、どちらも倒せない"
+          }
+        },
+        {
+          "id": "attackerSafe",
+          "title": "ブロックで倒されそうか",
+          "type": "noul",
+          "scope": "each",
+          "instructions": "{label} を攻撃させたとき、相手の `board` のクリーチャーにブロックされて、割に合わない形で倒されそうですか",
+          "criteria": {
+            "true": "ブロックできるクリーチャーが、そのクリーチャーを倒せる (パワーが足りて、自分は生き残る)",
+            "false": "ブロックできるクリーチャーがいない、または、ブロックされても、倒されない・割に合う"
+          }
+        },
+        {
+          "id": "canBeStopped",
+          "title": "相手に止められそうか",
+          "type": "noul",
+          "scope": "each",
+          "instructions": "{label} の攻撃を、相手が、手札や戦場の能力で、止めてきそうですか。`oppUntappedMana` が 0 なら、止められない",
+          "criteria": {
+            "true": "相手に、アンタップの土地があり、戦場に、起動して攻撃を止められそうなものがある",
+            "false": "相手のアンタップの土地が無い、または、止められそうなものが見当たらない"
+          }
+        }
+      ]
+    },
+    "block": {
+      "about": "ブロックするか。state = { life, lifeDiff, turnsToKillMe, board, attackers, availableMana, handActions }",
+      "questions": [
+        {
+          "id": "lifeDanger",
+          "title": "ブロックしないとライフが危険か",
+          "type": "noul",
+          "scope": "once",
+          "instructions": "`life` と、攻撃してくるクリーチャーの `power` の合計を読んで、ブロックしないと、次のターンまでに、自分のライフが危険な量 (5 以下) になりますか",
+          "criteria": {
+            "true": "攻撃の合計ダメージを受けると、自分のライフが 5 以下になる",
+            "false": "受けても、ライフが 6 以上残る"
+          }
+        },
+        {
+          "id": "tradeWorth",
+          "title": "ブロックして割に合うか",
+          "type": "noul",
+          "scope": "each",
+          "instructions": "{label} をブロックして倒し合うのは、自分にとって割に合いますか",
+          "criteria": {
+            "true": "相手のクリーチャーのほうが強い・価値が高い、または、ブロックしても自分のクリーチャーは生き残る",
+            "false": "自分のクリーチャーのほうが価値が高い、または、倒されるだけで相手を倒せない"
+          }
+        }
+      ]
+    },
+    "act": {
+      "about": "メインフェイズなどで、何をするか。state = { life, board, availableMana, handActions }",
+      "questions": [
+        {
+          "id": "hasStopper",
+          "title": "止める手段が手札にあるか",
+          "type": "noul",
+          "scope": "once",
+          "instructions": "`handActions` の中に、`castable` が true で、`tags` に stopsAttacker を持つ行動はありますか",
+          "criteria": {
+            "true": "castable が true で、stopsAttacker のカードが、1 枚以上ある",
+            "false": "無い"
+          }
+        },
+        {
+          "id": "holdMana",
+          "title": "マナを残すべきか",
+          "type": "noul",
+          "scope": "once",
+          "instructions": "`availableMana` と `handActions` を読んで、いま呪文を唱えずに、相手のターンのために、マナを残しておくべきですか",
+          "criteria": {
+            "true": "手札に、インスタントや起動型能力で、相手のターンに使える castable な行動があり、そのマナが要る",
+            "false": "残しておく理由が無い"
+          }
+        }
+      ]
+    }
+  }
+}

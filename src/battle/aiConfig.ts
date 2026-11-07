@@ -25,14 +25,15 @@ export interface AiSettings {
   openaiBaseUrl: string; // OpenAI の欄の URL。互換 API (Ollama・LM Studio など) なら、その URL
   scenes: Record<Scene, SceneAi>;
   // Jev の設定 (対戦の判断だけ)。confidence = Jev の自信がこれ以上なら、その答えを使う (未満なら、fallback の AI に聞き直す)。fallback = 聞き直す AI (none なら、Jev の答えをそのまま使う)
-  jev: { confidence: number; fallback: TextProvider | "none" };
+  // advise = Jev の判断 (形勢・止められるか など。src/battle/jev-criteria.json) を、AI (Claude など) への指示に添える: off / on / compare (添えた場合と添えない場合の答えを比べて、履歴の裏側に残す。AI の呼び出しは 2 倍)
+  jev: { confidence: number; fallback: TextProvider | "none"; advise: "off" | "on" | "compare" };
 }
 
 const models = (claude: string): Record<Provider, string> => ({ claude, openai: "gpt-4o-mini", gemini: "gemini-2.5-flash", jev: "jev-latest" });
 export const DEFAULT_AI: AiSettings = {
   keys: { claude: "", openai: "", gemini: "", jev: "" },
   openaiBaseUrl: OPENAI_BASE,
-  jev: { confidence: 0.7, fallback: "claude" },
+  jev: { confidence: 0.7, fallback: "claude", advise: "off" },
   scenes: { battle: { provider: "claude", models: models("claude-sonnet-5-5") }, rules: { provider: "claude", models: models("claude-opus-5-5") }, nodes: { provider: "claude", models: models("claude-haiku-5-5") }, memo: { provider: "claude", models: models("claude-sonnet-5-5") } },
 };
 
@@ -48,7 +49,7 @@ export function migrateAi(d: any): AiSettings {
   const a = d?.ai;
   if (a && typeof a === "object") {
     for (const p of ["claude", "openai", "gemini", "jev"] as const) out.keys[p] = str(a.keys?.[p], "");
-    out.jev = { confidence: num(a.jev?.confidence, out.jev.confidence, 0.5, 1), fallback: isText(a.jev?.fallback) || a.jev?.fallback === "none" ? a.jev.fallback : out.jev.fallback };
+    out.jev = { confidence: num(a.jev?.confidence, out.jev.confidence, 0.5, 1), fallback: isText(a.jev?.fallback) || a.jev?.fallback === "none" ? a.jev.fallback : out.jev.fallback, advise: a.jev?.advise === "on" || a.jev?.advise === "compare" ? a.jev.advise : "off" };
     out.openaiBaseUrl = str(a.openaiBaseUrl, out.openaiBaseUrl);
     for (const [s] of SCENES) {
       const sc = a.scenes?.[s];

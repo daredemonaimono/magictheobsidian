@@ -1,7 +1,11 @@
 import { App, EventRef, Modal, Notice, Plugin, Setting, TFile, WorkspaceLeaf, normalizePath } from "obsidian";
 import { allNodes } from "./battle/registry";
-import { JevDriver } from "./battle/aiRun";
+import { JevAdvisor, JevDriver } from "./battle/aiRun";
 import { jevAct, jevAttack, jevBlock } from "./battle/jev";
+import { cardTagsOf, jevJudge, tagNames } from "./battle/jevJudge";
+import { jevFacts } from "./battle/jevFacts";
+import { aiAttackers, permLine } from "./battle/ai";
+import { attackersAt } from "./battle/engine";
 import { buildRuleTwoStage, unsupportedLines } from "./battle/build";
 import { DEFAULT_GLOSSARY, GLOSSARY_NOTE, OLD_GLOSSARY_NOTE } from "./battle/glossary";
 import { Kind, freeName, parseVersion, sortNewestFirst } from "./battle/history";
@@ -106,6 +110,7 @@ export default class MagicTheObsidian extends Plugin {
       listArt: d.listArt ?? DEFAULT_SETTINGS.listArt,
       dashboardTab: d.dashboardTab ?? DEFAULT_SETTINGS.dashboardTab,
       currency: d.currency ?? DEFAULT_SETTINGS.currency,
+      jevCardTags: d.jevCardTags && typeof d.jevCardTags === "object" && !Array.isArray(d.jevCardTags) ? d.jevCardTags : {},
       ai: migrateAi(d), // 昔の設定 (claudeKeySecret・battleModel など) も、ここで新しい形に移す
       battleStops: d.battleStops === "always" ? "always" : "smart",
       battleOpponent: d.battleOpponent === "passive" ? "passive" : d.battleOpponent === "claude" ? "claude" : "cpu",
@@ -123,6 +128,7 @@ export default class MagicTheObsidian extends Plugin {
     priceStore.rates = d.rates ?? {};
     const saveAll = () => this.saveData({ ...this.settings, prices: priceStore.prices, pricesUpdated: priceStore.updated, rates: priceStore.rates });
     priceStore.save = saveAll;
+    this.saveAllFn = saveAll;
     this.addSettingTab(
       new SettingsTab(this.app, this, this.settings, saveAll, () => {
         for (const l of this.deckLeaves()) if (l.view instanceof DeckView) l.view.rebuild();
@@ -132,7 +138,7 @@ export default class MagicTheObsidian extends Plugin {
       }, () => void this.preloadImages(false)),
     );
     this.registerView(DECK_VIEW, (leaf) => new DeckView(leaf, this.settings));
-    this.registerView(BATTLE_VIEW, (leaf) => new BattleView(leaf, () => this.battleSession, () => this.settings.battleStops, () => this.settings.battleOpponent, () => this.settings.battleEffects, () => this.makeAsk(), (b) => void this.saveBattle(b), () => this.ensureBattleSide(), () => this.battleJev()));
+    this.registerView(BATTLE_VIEW, (leaf) => new BattleView(leaf, () => this.battleSession, () => this.settings.battleStops, () => this.settings.battleOpponent, () => this.settings.battleEffects, () => this.makeAsk(), (b) => void this.saveBattle(b), () => this.ensureBattleSide(), () => this.battleJev(), () => this.jevAdvisor()));
     this.registerView(BATTLE_SIDE_VIEW, (leaf) => new BattleSideView(leaf));
     this.registerView(DASHBOARD_VIEW, (leaf) => new DashboardView(leaf, { collection: () => void this.openOrReveal(COLLECTION_VIEW), deck: () => void this.openOrReveal(DECKLIST_VIEW), cards: () => void this.openOrReveal(CARDS_VIEW) }));
     this.registerView(CARDS_VIEW, (leaf) => new CardsView(leaf, this.settings));
@@ -393,6 +399,30 @@ export default class MagicTheObsidian extends Plugin {
     return (system, messages) => runAi({ ai, scene, secret, http: obsidianHttp, system, messages });
   }
   // 対戦の相手が Jev のとき、判断を Jev に聞く道具 (キーが無ければ、無し)
+  private saveAllFn?: () => Promise<void>;
+  // Jev の判断を AI に渡す道具 (設定 ai.jev.advise が off でなく、Jev のキーがあり、「対戦の相手」が Jev でないとき)。カードの分類は、1 枚につき 1 回だけ聞いて、設定に保存して使い回す
+  private jevAdvisor(): JevAdvisor | undefined {
+    const ai = this.settings.ai;
+    if (ai.jev.advise === "off" || ai.scenes.battle.provider === "jev") return undefined;
+    const apiKey = secretKey(this.app, ai.keys.jev);
+    if (!apiKey) return undefined;
+    const base = { apiKey, model: ai.scenes.battle.models.jev, http: obsidianHttp };
+    return {
+      mode: ai.jev.advise,
+      judge: async (w, g, rules, p) => {
+        const tags = this.settings.jevCardTags;
+        const need = [...new Set(g.hands[p].filter((c) => !/\bLand\b/.test(c.typeLine) && !tags[c.name]).map((c) => c.name))];
+        if (need.length) {
+          const cards = (await Promise.all(need.map(async (name) => ({ name, text: await oracleEnglish(this.app, name) })))).filter((c) => c.text);
+          Object.assign(tags, await cardTagsOf({ ...base, cards }));
+          void this.saveAllFn?.();
+        }
+        const facts = jevFacts(g, rules, p, (name) => tagNames(tags[name]));
+        const items = w === "attack" ? aiAttackers(g, rules, p) : w === "block" ? attackersAt(g, p) : [];
+        return jevJudge({ ...base, decision: w, facts, items: items.map((x) => ({ id: x.id, label: permLine(g, x, rules) })) });
+      },
+    };
+  }
   private battleJev(): JevDriver | undefined {
     const ai = this.settings.ai;
     if (ai.scenes.battle.provider !== "jev") return undefined;
