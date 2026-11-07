@@ -125,10 +125,11 @@ export function loseLife(g: Game, p: PlayerId, n: number): void {
   if (q !== p && (g.speed?.[q] ?? 0) > 0 && (g.speed![q] ?? 0) < MAX_SPEED && g.speedTurn?.[q] !== g.turn) {
     g.speed![q]++;
     (g.speedTurn ??= {})[q] = g.turn;
-    g.log.push(`${q} の速度が ${g.speed![q]} になった${g.speed![q] === MAX_SPEED ? " (最高速度)" : ""}`);
+    g.log.push(`${g.speedBy?.[q] ?? "速度"}: ${whoLabel(q)}の速度が ${g.speed![q]} になった${g.speed![q] === MAX_SPEED ? " (最高速度)" : ""}`);
   }
 }
 export const MAX_SPEED = 4;
+const whoLabel = (p: PlayerId): string => (p === "you" ? "あなた" : p === "opp" ? "相手" : p);
 
 // ライフを得る (そのターンに得た量 gained も、数える)
 export function gainLife(g: Game, p: PlayerId, n: number): void {
@@ -179,6 +180,7 @@ export interface Game {
   activated?: Record<string, number>; // このターンに、起動型能力を起動した回数 (パーマネントの id:番号 / 手札のカードの id:h番号)。暴走防止 (AI は、同じ能力を 1 ターンに 3 回までしか選ばない)。ターンが替わると空
   discarded?: Record<PlayerId, number>; // このターンに捨てた・サイクリングしたカードの数 (手札から墓地へ。プレイヤーごと。ターンが替わると 0)
   speed?: Record<PlayerId, number>; // 速度 (Start your engines!。1〜4。無ければ 0)
+  speedBy?: Record<PlayerId, string>; // 速度を始めたカードの名前 (ログに出す)
   speedTurn?: Record<PlayerId, number>; // 速度を上げた最後のターン (自分のターンに 1 回まで)
   mayPlay?: { id: string; owner: PlayerId; until: "endOfTurn" | "yourNextEnd" | "later" }[]; // 追放して、そのあいだだけプレイしてよいカード (手札に置いて印を付ける。期限が来て、まだ手札にあれば、追放領域へ)
   lostLife?: Record<PlayerId, number>; // このターンに失ったライフの量 (プレイヤーごと。ターンが替わると 0)

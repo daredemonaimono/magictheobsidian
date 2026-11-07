@@ -248,7 +248,7 @@ button.mtg-color .mtg-sym { width: 20px; height: 20px; display: block; }
 .mtg-bt-pt .is-down { color: #ff5a5a; }
 .mtg-bt-pt.is-loyalty { background: #1b3a5a; }
 .mtg-bt-dmg { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); font-size: 26px; font-weight: 800; color: #fff; text-shadow: 0 0 8px #e22, 0 0 3px #000; pointer-events: none; }
-.mtg-bt-counters { position: absolute; left: 2px; bottom: 2px; background: #000b; color: #9f9; font-size: 9px; padding: 0 3px; border-radius: 3px; max-width: 70%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.mtg-bt-counters { position: absolute; left: 2px; bottom: 2px; background: #1b1300e6; color: #ffd45a; border: 1px solid #ffd45a; font-size: 11px; font-weight: 700; padding: 1px 4px; border-radius: 4px; max-width: 96%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 
 .mtg-bt-hand { position: absolute; left: 10%; right: 10%; bottom: -40px; height: calc(var(--hh) + 36px); display: flex; justify-content: center; align-items: flex-end; --ov: 0px; --cw: var(--hw); --ch: var(--hh); }
 .mtg-bt-hand .mtg-bt-card { margin-left: calc(-14px - var(--ov)); box-shadow: 0 6px 14px rgba(0, 0, 0, .5); transform-origin: 50% 140%; transform: rotate(calc(var(--i, 0) * 3deg)) translateY(calc(var(--i, 0) * var(--i, 0) * 2px)); }
@@ -492,3 +492,8 @@ button.mtg-color .mtg-sym { width: 20px; height: 20px; display: block; }
 .mtg-preview-art { position: relative; border-radius: 12px; overflow: hidden; line-height: 0; }
 .mtg-preview-art.is-foil::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(115deg, rgba(255,0,128,.35), rgba(255,200,0,.3) 25%, rgba(0,255,160,.3) 50%, rgba(0,160,255,.35) 75%, rgba(180,0,255,.35)); mix-blend-mode: color-dodge; opacity: .55; }
 .mtg-bt-card.is-exiled { outline: 2px dashed #7ab8ff; outline-offset: -2px; } /* 追放して、期限までプレイしてよいカード */
+.mtg-bt-speed { position: absolute; display: none; padding: 2px 8px; border-radius: 12px; background: #12202c; border: 1px solid #6cc6ff; color: #bfe6ff; font-size: 13px; font-weight: 700; }
+.mtg-bt-speed.is-on { display: block; }
+.mtg-bt-speed.is-max { background: #3a2a00; border-color: #ffd45a; color: #ffe38a; }
+.mtg-bt-speed.is-self { left: 84px; bottom: 86px; } .mtg-bt-speed.is-opp { right: 22px; top: 112px; }
+.mtg-bt-typenow { position: absolute; left: 2px; top: 2px; max-width: 96%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; background: #3a1500e6; color: #ffb27a; border: 1px solid #ff8a3d; font-size: 10px; font-weight: 700; padding: 0 4px; border-radius: 4px; pointer-events: none; }

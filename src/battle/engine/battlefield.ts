@@ -24,7 +24,8 @@ export function enterBattlefield(g: Game, card: GameCard, controller: PlayerId, 
   // 「エンジン始動!」: 速度が無ければ、1 から始まる
   if ((rules.get(card.name)?.abilities ?? []).some((a) => a.kind === "static" && a.body.some((c) => c.node === "startEngines")) && !(g.speed?.[controller] ?? 0)) {
     (g.speed ??= {})[controller] = 1;
-    g.log.push(`${controller} の速度が 1 になった`);
+    (g.speedBy ??= {})[controller] = card.name;
+    g.log.push(`${card.name}: ${controller === "you" ? "あなた" : controller === "opp" ? "相手" : controller}の速度が 1 になった`);
   }
   g.battlefield.push(perm);
   g.events.push({ type: "enters", perm, ...(opts.from ? { from: opts.from } : {}) });

@@ -24,6 +24,7 @@ export interface CardView {
   blocking: boolean;
   token: boolean;
   foil?: boolean; // フォイル (見た目だけ)
+  typeNow?: string; // 継続効果で、型が変わっているとき、いまの型 (「Mountain」など。印を付ける)
   exiled?: boolean; // 追放して、期限までプレイしてよいカード (手札にあるあいだ、印を付ける)
   prepared: boolean;
   sick: boolean; // 召喚酔い (このターンに出たクリーチャーで、速攻が無い)
@@ -42,6 +43,7 @@ export interface LandStack {
 export interface SideView {
   player: PlayerId;
   life: number;
+  speed?: number; // 速度 (Start your engines!)。無ければ出さない
   library: number;
   graveyard: number;
   graveyardTop?: CardView; // 墓地の一番上 (最後に置かれたもの)
@@ -85,6 +87,7 @@ function permView(g: Game, rules: RuleBook, p: Perm, imageOf: ImageOf, playable:
     id: p.id,
     name: now.name,
     typeLine: now.typeLine,
+    ...(now.typeLine !== p.card.typeLine ? { typeNow: (now.typeLine.split(/—|-/)[1] ?? now.typeLine).trim() || now.typeLine } : {}),
     ...(p.card.manaCost !== undefined ? { manaCost: p.card.manaCost } : {}),
     power: now.power,
     toughness: now.toughness,
@@ -115,6 +118,7 @@ export function sideView(g: Game, rules: RuleBook, player: PlayerId, imageOf: Im
   const out: SideView = {
     player,
     life: g.life[player],
+    ...(g.speed?.[player] ? { speed: g.speed[player] } : {}),
     library: g.libraries[player]?.length ?? 0,
     graveyard: g.graveyards[player]?.length ?? 0,
     exile: g.exile[player]?.length ?? 0,

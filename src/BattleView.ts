@@ -23,6 +23,7 @@ export const BATTLE_VIEW = "mtg-battle";
 const PHASES: [PhaseId, string][] = [["beginning", "開始"], ["main1", "戦闘前メイン"], ["combat", "戦闘"], ["main2", "戦闘後メイン"], ["ending", "最終"]];
 const MANA_COLORS = ["W", "U", "B", "R", "G", "A"] as const;
 const VIEWER = "you";
+const COUNTER_JA: Record<string, string> = { conqueror: "征服", stun: "麻痺", charge: "チャージ" }; // 画面に出すカウンターの名前 (無いものは、そのまま)
 
 interface Entry {
   el: HTMLElement;
@@ -56,6 +57,8 @@ export class BattleView extends ItemView {
     turn: HTMLElement;
     gfill: HTMLElement;
     selfLife: HTMLElement;
+    selfSpeed: HTMLElement;
+    oppSpeed: HTMLElement;
     oppLife: HTMLElement;
     piles: Record<string, HTMLElement>;
     mana: HTMLElement;
@@ -318,6 +321,8 @@ export class BattleView extends ItemView {
     stage.createDiv({ cls: "mtg-bt-avatar is-self" }).dataset.tid = VIEWER;
     const oppLife = stage.createDiv({ cls: "mtg-bt-life is-opp" });
     const selfLife = stage.createDiv({ cls: "mtg-bt-life is-self" });
+    const oppSpeed = stage.createDiv({ cls: "mtg-bt-speed is-opp" });
+    const selfSpeed = stage.createDiv({ cls: "mtg-bt-speed is-self" });
     const piles: Record<string, HTMLElement> = {};
     for (const key of ["opp-library", "opp-yard", "self-library", "self-yard"]) piles[key] = board.createDiv({ cls: `mtg-bt-deck is-${key}` }); // 盤面 (3D の面) の上に置く
     for (const [key, mine] of [["self-yard", true], ["opp-yard", false]] as const) piles[key].addEventListener("mouseenter", () => this.showYard(mine)); // 墓地にカーソルを合わせると、サイドバーに中身の一覧
@@ -344,7 +349,7 @@ export class BattleView extends ItemView {
     const log = side ? side.log : inner!.createDiv("mtg-bt-log");
     log.empty();
     delete log.dataset.sig;
-    this.ui = { stage, rows, hand, phase, step, turn, gfill, selfLife, oppLife, piles, mana, belt, banner, next, stack, preview, log };
+    this.ui = { stage, rows, hand, phase, step, turn, gfill, selfLife, oppLife, selfSpeed, oppSpeed, piles, mana, belt, banner, next, stack, preview, log };
   }
 
   // 画像の URL: カード名でノートを引いて、保存済みの URL を使う (新しい通信はしない)。無いカードは、名前と P/T の代わりの面
@@ -384,6 +389,12 @@ export class BattleView extends ItemView {
     this.sync(ui.hand, "hand", this.cardItems(m.self.hand, "hand"));
     this.setText(ui.selfLife, String(m.self.life), m.self.life);
     this.setText(ui.oppLife, String(m.opp.life), m.opp.life);
+    for (const [el, side] of [[ui.selfSpeed, m.self], [ui.oppSpeed, m.opp]] as const) {
+      el.toggleClass("is-on", !!side.speed);
+      el.toggleClass("is-max", (side.speed ?? 0) >= 4);
+      el.setText(side.speed ? `速度 ${side.speed}${side.speed >= 4 ? " 最高" : " / 4"}` : "");
+      el.setAttr("aria-label", "速度 (Start your engines!): 自分のターンに、相手がライフを失うと、1ターンに1回 1 上がる。4 が最高速度");
+    }
     this.paintPile(ui.piles["self-library"], m.self.library);
     this.paintPile(ui.piles["self-yard"], m.self.graveyard, m.self.graveyardTop);
     this.paintPile(ui.piles["opp-library"], m.opp.library);
@@ -1195,12 +1206,14 @@ export class BattleView extends ItemView {
     if (c.loyalty !== undefined) el.createDiv({ cls: "mtg-bt-pt is-loyalty", text: String(c.loyalty) });
     if (c.damage > 0) el.createDiv({ cls: "mtg-bt-dmg", text: String(c.damage) });
     const counters = Object.entries(c.counters).filter(([k, n]) => k !== "loyalty" && n > 0);
-    if (counters.length) el.createDiv({ cls: "mtg-bt-counters", text: counters.map(([k, n]) => `${k}×${n}`).join(" ") });
+    if (counters.length) el.createDiv({ cls: "mtg-bt-counters", text: counters.map(([k, n]) => `${COUNTER_JA[k] ?? k} ×${n}`).join("  "), attr: { title: counters.map(([k, n]) => `${COUNTER_JA[k] ?? k}カウンター ${n} 個`).join(" / ") } });
   }
 
   private face(el: HTMLElement, c: CardView) {
     if (c.image) el.createEl("img", { attr: { src: c.image, alt: c.name, loading: "lazy", draggable: "false" } });
     else el.createDiv({ cls: "mtg-bt-face", text: c.name });
+    // 継続効果で型が変わっているカード (Zhao の「Mountain になる」など): いまの型を、札の上に出す
+    if (c.typeNow) el.createDiv({ cls: "mtg-bt-typenow", text: c.typeNow, attr: { title: `いまの型: ${c.typeLine} (継続効果で変わっている)` } });
   }
 
   // 土地の山: 立っている土地は少しずつずらして重ね、タップした土地は、横向きに倒して、山の脇に並べる。2枚以上なら枚数を出す
