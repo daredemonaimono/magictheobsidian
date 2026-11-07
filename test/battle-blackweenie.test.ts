@@ -17,7 +17,7 @@ registerBuiltinNodes();
 // デッキ「黒単ウィニー」の、実際の Rules/ のノートを読んで、動くか確かめる
 const VAULT = "/Users/daredemonai/Documents/Westeros/MagicTheObsidian/Rules";
 const rules: RuleBook = { get: (c) => { try { return parseRule(readFileSync(`${VAULT}/${c}.md`, "utf-8")); } catch { return undefined; } } };
-const DONE = ["Timeline Culler", "Feed the Cycle", "Final Vengeance", "Faerie Dreamthief", "Forsaken Miner", "Snarling Gorehound", "Deep-Cavern Bat", "Gatekeeper of Malakir", "Thought-Stalker Warlock", "Strategic Betrayal", "Dark Knight's Greatsword", "Heraldic Banner", "Mudflat Village", "Swamp", "Intimidation Tactics", "Nowhere to Run"];
+const DONE = ["Timeline Culler", "Feed the Cycle", "Final Vengeance", "Faerie Dreamthief", "Forsaken Miner", "Snarling Gorehound", "Deep-Cavern Bat", "Gatekeeper of Malakir", "Thought-Stalker Warlock", "Strategic Betrayal", "Dark Knight's Greatsword", "Heraldic Banner", "Defiled Crypt - Cadaver Lab", "Mudflat Village", "Swamp", "Intimidation Tactics", "Nowhere to Run"];
 for (const name of DONE) {
   const r = rules.get(name);
   assert.ok(r, `${name}: ルールが読めない`);
@@ -279,5 +279,89 @@ const costly = (name: string, typeLine: string, manaCost: string, owner = "A") =
   enter(h, C("Foe", "Foe", "Creature — Ox", "B", { power: 5, toughness: 5 }), "B");
   h.hands["A"].push(C("FV", "Final Vengeance", "Sorcery"));
   assert.throws(() => castSpell(h, "A", "FV", { t: "Foe" }, rules), /生け贄に捧げるもの/, "生け贄が無いと、唱えられない");
+}
+// ---- 部屋 (Room): Defiled Crypt // Cadaver Lab。唱えた半分の扉が開く。閉じた扉は、ソーサリーのタイミングで、マナを払って開ける
+const room = (owner = "A") => C("DC", "Defiled Crypt - Cadaver Lab", "Enchantment — Room // Enchantment — Room", owner, { manaCost: "{3}{B}", cost2: "{B}", mv: 4 });
+{
+  // 扉 2 (Cadaver Lab): 開いたとき、自分の墓地のクリーチャー・カード 1 枚を手札に
+  const g = setup();
+  g.payManaCosts = true;
+  g.graveyards["A"].push(C("Dead", "Dead", "Creature — Bear"), C("Spell", "Spell", "Instant"));
+  g.hands["A"].push(room());
+  g.mana["A"] = 1;
+  g.pool["A"] = { B: 1 };
+  castSpell(g, "A", "DC", {}, rules, { door: 2 });
+  flushEvents(g, rules);
+  drain(g);
+  const r = g.battlefield.find((p) => p.id === "DC")!;
+  assert.deepEqual(r.flags, ["door2"], "扉 2 だけ開いている");
+  assert.deepEqual(g.hands["A"].map((c) => c.id), ["Dead"], "墓地のクリーチャーを手札に");
+  // 扉 1 を、ソーサリーのタイミングで開ける ({3}{B})。もう一度は開けられない
+  g.mana["A"] = 4;
+  g.pool["A"] = { B: 1 };
+  activateAbility(g, "A", "DC", 0, {}, rules);
+  drain(g);
+  assert.deepEqual(r.flags, ["door2", "door1"]);
+  assert.throws(() => activateAbility(g, "A", "DC", 0, {}, rules), /もう開いている/);
+  // 扉 1 (Defiled Crypt): 墓地からカードが離れるたび (1 ターンに 1 回) 2/2 のホラーのトークン
+  g.graveyards["A"].push(C("G1", "G1", "Instant"), C("G2", "G2", "Instant"));
+  g.mana["A"] = 2;
+  g.pool["A"] = { B: 1 };
+  g.events.push({ type: "moved", card: g.graveyards["A"][0], from: "graveyard", to: "hand" });
+  g.events.push({ type: "moved", card: g.graveyards["A"][1], from: "graveyard", to: "hand" });
+  flushEvents(g, rules);
+  drain(g);
+  assert.equal(g.battlefield.filter((p) => p.card.name === "Horror").length, 1, "1 ターンに 1 回");
+  g.turn++;
+  g.events.push({ type: "moved", card: g.graveyards["A"][0], from: "graveyard", to: "hand" });
+  flushEvents(g, rules);
+  drain(g);
+  assert.equal(g.battlefield.filter((p) => p.card.name === "Horror").length, 2, "次のターンは、また作れる");
+}
+{
+  // 扉 1 を唱えると、扉 1 だけ開く。墓地を離れるカード (move) でも、トークンが作られる。どちらの扉でも唱えられるか (tryAction)
+  const g = setup();
+  g.payManaCosts = true;
+  g.hands["A"].push(room());
+  g.mana["A"] = 1;
+  g.pool["A"] = { B: 1 };
+  assert.equal(tryAction(g, rules, "A", { kind: "cast", card: "DC" }), undefined, "{B} で、扉 2 だけでも唱えられる");
+  g.mana["A"] = 4;
+  g.pool["A"] = { B: 1 };
+  castSpell(g, "A", "DC", {}, rules, { door: 1 });
+  drain(g);
+  assert.deepEqual(g.battlefield.find((p) => p.id === "DC")!.flags, ["door1"]);
+  g.graveyards["A"].push(C("Dead", "Dead", "Creature — Bear"));
+  g.hands["A"].push(C("MV", "Mudflat Village", "Land"));
+  enter(g, C("MV2", "Mudflat Village", "Land"));
+  g.mana["A"] = 2;
+  g.pool["A"] = { B: 1 };
+  g.graveyards["A"].push(C("Bat", "Deep-Cavern Bat", "Creature — Bat"));
+  activateAbility(g, "A", "MV2", 2, { t: "Bat" }, rules);
+  drain(g);
+  assert.ok(g.battlefield.some((p) => p.card.name === "Horror"), "Mudflat Village で墓地から戻したので、トークン");
+}
+// Nowhere to Run: 護法は誘発しない (相手のクリーチャーを対象にしても)
+{
+  const g = setup();
+  const book: RuleBook = { get: (c) => (c === "Warded" ? { card: c, abilities: [{ kind: "static", body: [{ node: "ward", args: { amount: 2 } }] }] } : rules.get(c)) };
+  g.hands["A"].push(C("Bolt", "Bolt", "Instant"));
+  const withBook = (rb: RuleBook) => {
+    const x = setup();
+    enterBattlefield(x, C("W", "Warded", "Creature", "B", { power: 2, toughness: 2 }), "B", rb);
+    x.hands["A"].push(C("LS", "Lightning Strike", "Instant"));
+    return x;
+  };
+  const x = withBook(book);
+  castSpell(x, "A", "LS", { t: "W" }, book);
+  flushEvents(x, book);
+  assert.ok(x.stack.some((s) => s.card.name === "Warded"), "護法が誘発する (Nowhere to Run が無いとき)");
+  const y = withBook(book);
+  enterBattlefield(y, C("NR", "Nowhere to Run", "Enchantment"), "A", book);
+  y.events.length = 0;
+  castSpell(y, "A", "LS", { t: "W" }, book);
+  flushEvents(y, book);
+  assert.ok(!y.stack.some((s) => s.card.name === "Warded"), "Nowhere to Run: 護法は誘発しない");
+  assert.ok(g);
 }
 console.log("battle-blackweenie ok");

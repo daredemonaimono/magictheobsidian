@@ -2,7 +2,7 @@ import { characteristics } from "../continuous";
 import { NodeDef, Value } from "../node";
 import { defineNode as define } from "../registry";
 import { nextRandom } from "../rng";
-import { discardCards, drawCards, loseLife, putInGraveyard, Game, Perm, typeIn } from "../state";
+import { discardCards, drawCards, leftGraveyard, loseLife, putInGraveyard, Game, Perm, typeIn } from "../state";
 import { enterBattlefield, removeFromBattlefield, tryRegenerate } from "../engine/battlefield";
 import { enterBlocked, entersTapped } from "../engine/restrict";
 import { payManaCost } from "../engine/upkeep";
@@ -161,6 +161,7 @@ export function registerCards(): void {
           const c1 = takeCard(g, id)!;
           enterBattlefield(g, c1, c1.owner, ctx.rules, undefined, { from, tapped: a.tapped === true });
           g.log.push(`${c1.name} が戦場に出た`);
+          if (from === "graveyard") leftGraveyard(g, c1, "battlefield");
           continue;
         }
         const c = takeCard(g, id);
@@ -174,6 +175,7 @@ export function registerCards(): void {
         else if (a.to === "graveyard") putInGraveyard(g, c, from ?? "hand");
         else if (a.to === "top") g.libraries[c.owner].unshift(c);
         else g.libraries[c.owner].push(c);
+        if (from === "graveyard" && a.to !== "exile" && a.to !== "graveyard") leftGraveyard(g, c, a.to === "top" || a.to === "bottom" ? "library" : (a.to as "hand")); // 墓地を離れた (「墓地からカードが離れるたび」)
       }
       return {};
     },
@@ -468,6 +470,7 @@ export function registerCards(): void {
             g.graveyards[gy.owner] = g.graveyards[gy.owner].filter((c) => c !== gy);
             g.exile[gy.owner].push(gy);
             g.log.push(`${gy.name} を墓地から追放した`);
+            leftGraveyard(g, gy, "exile");
             n++;
             continue;
           }
@@ -482,7 +485,9 @@ export function registerCards(): void {
       const n = Number(a.count);
       if (g.graveyards[p].length < n) return { n: 0 };
       if (a.optional === true && !(g.decide?.may?.(g, p, "exile") ?? true)) return { n: 0 };
-      g.exile[p].push(...g.graveyards[p].splice(0, n));
+      const gone = g.graveyards[p].splice(0, n);
+      g.exile[p].push(...gone);
+      for (const c of gone) leftGraveyard(g, c, "exile");
       return { n };
     },
   });

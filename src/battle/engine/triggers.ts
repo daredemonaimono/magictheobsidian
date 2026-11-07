@@ -4,6 +4,7 @@ import { evalCondition, getNode } from "../registry";
 import { Game, GameCard, GameEvent, Perm, PlayerId, RuleBook, StackItem, splitIds, typeIn } from "../state";
 import { beforeReflexive, spellBody } from "./shared";
 import { stateBased } from "./battlefield";
+import { staticCalls, whoOk } from "./restrict";
 import { chooseTargets } from "./targets";
 import { applyUpkeepTaxes } from "./upkeep";
 
@@ -38,6 +39,7 @@ export function matchesEvent(g: Game, s: Perm, when: NodeCall, ev: GameEvent): b
     if (a.other === true && ev.perm === s) return false; // 「ほかの〜」
     if (typeof a.maxPower === "number" && (ev.perm.card.power ?? 0) + (ev.perm.counters?.["+1/+1"] ?? 0) > a.maxPower) return false; // パワーが N 以下 (カウンターまで)
   }
+  if (typeof a.door === "number" && (ev.type !== "unlock" || ev.door !== a.door)) return false; // unlock: どの扉か
   if (a.first === true && ((ev.type !== "attacks" && ev.type !== "targeted") || !ev.first)) return false; // attacks: その攻撃の宣言で、最初の 1 体 (「攻撃するたび」を、1 回だけ) / targeted: そのターンで最初
   if (a.by === "you" && (ev.type !== "targeted" || ev.by.controller !== s.controller)) return false; // targeted: 自分の呪文・能力の対象になったとき
   if (a.alone === true && (ev.type !== "attacks" || g.battlefield.some((x) => x !== ev.perm && x.attacking && x.controller === ev.perm.controller))) return false; // 単独で攻撃したとき
@@ -97,7 +99,7 @@ export function flushEvents(g: Game, rules: RuleBook): void {
     const ev = g.events.shift()!;
     if (ev.type === "targeted") {
       // 護法: 対象になったパーマネントが、すべての能力を失っていなければ、{N} を払わないかぎり打ち消す誘発が積まれる
-      if (ev.perm.controller !== ev.by.controller && !characteristics(g, ev.perm, rules).lostAbilities) {
+      if (ev.perm.controller !== ev.by.controller && !characteristics(g, ev.perm, rules).lostAbilities && !staticCalls(g, rules, "ignoreWard").some(({ source, call }) => whoOk(call.args.who, source.controller, ev.perm.controller))) {
         for (const ab of rules.get(ev.perm.card.name)?.abilities ?? []) {
           if (ab.kind !== "static") continue;
           for (const c of ab.body) {
@@ -145,6 +147,11 @@ export function flushEvents(g: Game, rules: RuleBook): void {
           const at = marker ? 1 : 0;
           const when = ab.body[at];
           if (ab.kind === "triggered" && when?.node === "when" && when.args.zone !== "graveyard" && matchesEvent(g, s, when, ev)) {
+            if (when.args.oncePerTurn === true) {
+              const key = `${s.id}|${(rules.get(s.card.name)?.abilities ?? []).indexOf(ab)}`;
+              if (g.onceTurn?.[key] === g.turn) continue;
+              (g.onceTurn ??= {})[key] = g.turn;
+            }
             if (when.args.once === true) {
               const key = `${s.id}|${(rules.get(s.card.name)?.abilities ?? []).indexOf(ab)}`;
               if (onceFired.has(key)) continue;

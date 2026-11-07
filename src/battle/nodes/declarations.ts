@@ -97,6 +97,18 @@ export function registerDeclarations(): void {
     run: (): Record<string, Value> => ({}),
   });
 
+  // 護法を無視する (継続効果)
+  node({
+    id: "ignoreWard",
+    title: "護法を無視する",
+    summary: "常在型能力。who=opponents のパーマネント(対戦相手のクリーチャーなど)の護法は、誘発しない(Nowhere to Run)。呪禁は、いまのエンジンでは、対象を制限しないので、書かなくてよい",
+    params: { who: { type: "string", choices: ["you", "opponents", "all"] } },
+    declaration: true,
+    only: ["static"],
+    outputs: {},
+    run: (): Record<string, Value> => ({}),
+  });
+
   // 墓地から唱えられる
   node({
     id: "castFromGraveyard",
@@ -256,9 +268,9 @@ export function registerDeclarations(): void {
     core: true,
     title: "どうなったら",
     summary:
-      "誘発型能力の最初に書く、誘発のきっかけ。event=cast / enters(from=graveyard) / leaves(to=graveyard=死亡) / moved(from=hand to=graveyard=捨てた) / damaged(combat=true) / attacks / blocks / targeted(by=you) / drew / crime(相手側を対象にした) / step(step=upkeep〜end)。zone=graveyard は墓地にあるあいだだけ。castFrom=graveyard は墓地から唱えて。絞り込み: who=you・opponents / type・notType / turn=yours・opponents / self=true / other=true(ほかの) / maxPower=N / alone / first(attacks は最初の1体、targeted はそのターン最初) / once(同じ宣言で1回) / requires=印(gainAbility)。eventPerm は引き金のもの",
+      "誘発型能力の最初に書く、誘発のきっかけ。event=cast / enters(from=graveyard) / leaves(to=graveyard=死亡) / moved(from=hand to=graveyard=捨てた・from=graveyard=墓地を離れた) / damaged(combat=true) / attacks / blocks / targeted(by=you) / drew / crime(相手側を対象に) / unlock(部屋の扉。door=1・2) / step(step=upkeep〜end)。zone=graveyard は墓地にあるあいだだけ。絞り込み: who=you・opponents / type・notType / turn=yours・opponents / self / other(ほかの) / maxPower=N / alone / first / once(同じ宣言で1回) / oncePerTurn / requires=印(gainAbility・扉の door1)。eventPerm は引き金のもの",
     params: {
-      event: { type: "string", required: true, choices: ["cast", "enters", "leaves", "moved", "damaged", "step", "attacks", "blocks", "targeted", "drew", "crime"] },
+      event: { type: "string", required: true, choices: ["cast", "enters", "leaves", "moved", "damaged", "step", "attacks", "blocks", "targeted", "drew", "crime", "unlock"] },
       combat: { type: "boolean" },
       hit: { type: "string", choices: ["creature", "player", "planeswalker"] },
       zone: { type: "string", choices: ["battlefield", "graveyard"] },
@@ -276,6 +288,8 @@ export function registerDeclarations(): void {
       once: { type: "boolean" },
       requires: { type: "string" },
       other: { type: "boolean" },
+      door: { type: "number", min: 1, max: 2 },
+      oncePerTurn: { type: "boolean" },
       maxPower: { type: "number" },
       by: { type: "string", choices: ["you"] },
     },
@@ -375,9 +389,9 @@ export function registerDeclarations(): void {
     id: "timing",
     core: true,
     title: "起動のタイミング",
-    summary: "起動型能力の起動の制限(能力の最初に書く)。sorcery=true なら、ソーサリーのタイミングだけ(装備など) / oncePerTurn=true なら、1ターンに1回だけ / oppLostLife=true なら、相手がこのターンにライフを失っているときだけ (Hired Claw)",
-    params: { sorcery: { type: "boolean" }, oncePerTurn: { type: "boolean" }, oppLostLife: { type: "boolean" } },
-    check: (a) => (a.sorcery !== undefined || a.oncePerTurn !== undefined || a.oppLostLife !== undefined ? null : "sorcery・oncePerTurn・oppLostLife のどれかが要る"),
+    summary: "起動型能力の起動の制限(能力の最初に書く)。sorcery=true なら、ソーサリーのタイミングだけ(装備など) / oncePerTurn=true なら、1ターンに1回だけ / oppLostLife=true なら、相手がこのターンにライフを失っているときだけ / lockedDoor=1・2 なら、その扉が閉じているときだけ(部屋)",
+    params: { sorcery: { type: "boolean" }, oncePerTurn: { type: "boolean" }, oppLostLife: { type: "boolean" }, lockedDoor: { type: "number", min: 1, max: 2 } },
+    check: (a) => (a.sorcery !== undefined || a.oncePerTurn !== undefined || a.oppLostLife !== undefined || a.lockedDoor !== undefined ? null : "sorcery・oncePerTurn・oppLostLife・lockedDoor のどれかが要る"),
     declaration: true,
     only: ["activated"],
     outputs: {},

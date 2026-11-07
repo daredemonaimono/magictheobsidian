@@ -2,11 +2,11 @@
 
 > このファイルは、自動で作られます (`src/battle/nodeDocs.ts`)。直接は書き換えません。ノードを足したら、`npm run docs:nodes` で更新します。ノードは、`src/battle/nodes/` の、カテゴリーごとのファイルにあります。
 
-全 102 個のノード、9 個の条件。
+全 104 個のノード、9 個の条件。
 
 目次: [宣言・コスト・条件](#宣言・コスト・条件) / [対象・数える・絞り込む](#対象・数える・絞り込む) / [カードの移動・ライブラリー・手札](#カードの移動・ライブラリー・手札) / [パーマネント・トークン・カウンター](#パーマネント・トークン・カウンター) / [ダメージ・ライフ・マナ・打ち消し](#ダメージ・ライフ・マナ・打ち消し) / [継続効果](#継続効果)
 
-## 宣言・コスト・条件 (31 個)
+## 宣言・コスト・条件 (32 個)
 
 ### `cost` コスト
 
@@ -57,6 +57,14 @@ Delve の宣言(呪文能力の最初に書く。引数なし)。唱えるとき
 常在型能力。このパーマネントが戦場に出るとき、色を 1 つ選ぶ。選んだ色は、affect color=chosen(その色のクリーチャーに及ぶ)・addMana color=chosen(その色のマナ)で使う
 
 - 引数: なし
+- 書ける能力: static
+- 宣言のノード (エンジンが読む。`if=` は付けられない)
+
+### `ignoreWard` 護法を無視する
+
+常在型能力。who=opponents のパーマネント(対戦相手のクリーチャーなど)の護法は、誘発しない(Nowhere to Run)。呪禁は、いまのエンジンでは、対象を制限しないので、書かなくてよい
+
+- 引数: `who`(string・you / opponents / all)
 - 書ける能力: static
 - 宣言のノード (エンジンが読む。`if=` は付けられない)
 
@@ -175,9 +183,9 @@ Storm の宣言(呪文能力の最初に書く。引数なし)。この呪文を
 
 ### `when` どうなったら
 
-誘発型能力の最初に書く、誘発のきっかけ。event=cast / enters(from=graveyard) / leaves(to=graveyard=死亡) / moved(from=hand to=graveyard=捨てた) / damaged(combat=true) / attacks / blocks / targeted(by=you) / drew / crime(相手側を対象にした) / step(step=upkeep〜end)。zone=graveyard は墓地にあるあいだだけ。castFrom=graveyard は墓地から唱えて。絞り込み: who=you・opponents / type・notType / turn=yours・opponents / self=true / other=true(ほかの) / maxPower=N / alone / first(attacks は最初の1体、targeted はそのターン最初) / once(同じ宣言で1回) / requires=印(gainAbility)。eventPerm は引き金のもの
+誘発型能力の最初に書く、誘発のきっかけ。event=cast / enters(from=graveyard) / leaves(to=graveyard=死亡) / moved(from=hand to=graveyard=捨てた・from=graveyard=墓地を離れた) / damaged(combat=true) / attacks / blocks / targeted(by=you) / drew / crime(相手側を対象に) / unlock(部屋の扉。door=1・2) / step(step=upkeep〜end)。zone=graveyard は墓地にあるあいだだけ。絞り込み: who=you・opponents / type・notType / turn=yours・opponents / self / other(ほかの) / maxPower=N / alone / first / once(同じ宣言で1回) / oncePerTurn / requires=印(gainAbility・扉の door1)。eventPerm は引き金のもの
 
-- 引数: `event`(string・必須・cast / enters / leaves / moved / damaged / step / attacks / blocks / targeted / drew / crime)、`combat`(boolean)、`hit`(string・creature / player / planeswalker)、`zone`(string・battlefield / graveyard)、`from`(string・library / hand / graveyard / stack / battlefield)、`to`(string・library / hand / graveyard / exile / battlefield)、`castFrom`(string)、`step`(string・upkeep / draw / main1 / combat / main2 / end)、`who`(string・you / opponents)、`type`(string)、`notType`(string)、`turn`(string・yours / opponents)、`self`(boolean)、`alone`(boolean)、`first`(boolean)、`once`(boolean)、`requires`(string)、`other`(boolean)、`maxPower`(number)、`by`(string・you)
+- 引数: `event`(string・必須・cast / enters / leaves / moved / damaged / step / attacks / blocks / targeted / drew / crime / unlock)、`combat`(boolean)、`hit`(string・creature / player / planeswalker)、`zone`(string・battlefield / graveyard)、`from`(string・library / hand / graveyard / stack / battlefield)、`to`(string・library / hand / graveyard / exile / battlefield)、`castFrom`(string)、`step`(string・upkeep / draw / main1 / combat / main2 / end)、`who`(string・you / opponents)、`type`(string)、`notType`(string)、`turn`(string・yours / opponents)、`self`(boolean)、`alone`(boolean)、`first`(boolean)、`once`(boolean)、`requires`(string)、`other`(boolean)、`door`(number)、`oncePerTurn`(boolean)、`maxPower`(number)、`by`(string・you)
 - 書ける能力: triggered
 - 宣言のノード (エンジンが読む。`if=` は付けられない)
 - 中心のノード (ルールを書かせるとき、いつも AI の指示に入る。ほかは、カードごとに選ぶ)
@@ -265,9 +273,9 @@ from(graveyard / library。graveyard|library のように並べられる)にあ�
 
 ### `timing` 起動のタイミング
 
-起動型能力の起動の制限(能力の最初に書く)。sorcery=true なら、ソーサリーのタイミングだけ(装備など) / oncePerTurn=true なら、1ターンに1回だけ / oppLostLife=true なら、相手がこのターンにライフを失っているときだけ (Hired Claw)
+起動型能力の起動の制限(能力の最初に書く)。sorcery=true なら、ソーサリーのタイミングだけ(装備など) / oncePerTurn=true なら、1ターンに1回だけ / oppLostLife=true なら、相手がこのターンにライフを失っているときだけ / lockedDoor=1・2 なら、その扉が閉じているときだけ(部屋)
 
-- 引数: `sorcery`(boolean)、`oncePerTurn`(boolean)、`oppLostLife`(boolean)
+- 引数: `sorcery`(boolean)、`oncePerTurn`(boolean)、`oppLostLife`(boolean)、`lockedDoor`(number)
 - 書ける能力: activated
 - 宣言のノード (エンジンが読む。`if=` は付けられない)
 - 中心のノード (ルールを書かせるとき、いつも AI の指示に入る。ほかは、カードごとに選ぶ)
@@ -535,7 +543,7 @@ cards(choose などの出力)の1枚ごとに、コントローラーが life �
 - 出力: `n`(number) (`as=名前` で受けて、`$名前` で渡す)
 - 言い方 (キー): 追放する、追放
 
-## パーマネント・トークン・カウンター (16 個)
+## パーマネント・トークン・カウンター (17 個)
 
 ### `tap` タップする
 
@@ -622,6 +630,12 @@ a と b(それぞれ target ノードの出力)のパーマネントのコント
 コントローラーが紋章を得る。紋章は戦場の外に残り続け、元のカードのルールの、emblem name=<同じ name> で始まる誘発型能力が働く
 
 - 引数: `name`(string・必須)
+
+### `unlockDoor` 扉を開ける
+
+対象の部屋 (self など) の、door=1・2 の扉を開ける(すでに開いていれば何も起きない)。開けると、when event=unlock door=N の誘発が働く。閉じた扉を開ける起動型能力は、timing lockedDoor=N と cost manaCost と使う
+
+- 引数: `target`(ref・必須)、`door`(number・必須)
 
 ### `gainAbility` 能力を得る
 

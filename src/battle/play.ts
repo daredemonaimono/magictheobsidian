@@ -458,6 +458,14 @@ export class BattleController {
     if (!alt || !card || !Number(alt.args.exile ?? 0)) return undefined;
     return { n: Number(alt.args.exile), cards: pitchable(this.game, this.me, card, alt).map((c) => ({ id: c.id, name: c.name })) };
   }
+  // 部屋 (Room): 唱える扉の選択肢 (2 つの扉。それぞれ、いま唱えられるか)
+  doorChoices(cardId: string): { door: 1 | 2; name: string; cost: string; usable: boolean }[] {
+    const card = this.game.hands[this.me].find((x) => x.id === cardId);
+    if (!card?.cost2) return [];
+    const names = card.name.split(/ - | \/\/ /);
+    const act: Action = { kind: "cast", card: cardId };
+    return ([[1, card.manaCost ?? ""], [2, card.cost2]] as [1 | 2, string][]).map(([door, cost]) => ({ door, name: names[door - 1] ?? `扉 ${door}`, cost, usable: tryWithMana(this.game, this.rules, this.me, act, autoTargets(slotsOf(this.game, this.rules, this.me, act)), { door }) === undefined }));
+  }
   kickChoices(cardId: string): { flag: "kicked" | "teamwork" | "alt"; cost: string }[] {
     const g = this.game;
     const card = g.hands[this.me].find((x) => x.id === cardId);

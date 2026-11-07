@@ -668,7 +668,7 @@ export class BattleView extends ItemView {
       ...(this.ctl && kind === "hand" ? { pick: () => this.pickHandAbility(c.id), use: () => {
         const why = this.ctl!.whyNot(c.id); // カードを選んだ時点で、使えない理由 (マナが足りません、など) を出す
         if (why) return this.toast(why);
-        this.askKick(c.name, this.ctl!.kickChoices(c.id), this.ctl!.canCastNormally(c.id), c.id, (cast0) => this.askOptions(c.id, c.name, cast0, (cast) => this.ask(c.name, this.ctl!.needsForCard(c.id), (t) => this.askMana(c.name, { kind: "cast", card: c.id }, t, cast, (ids) => this.run(() => this.ctl!.use(c.id, t, cast, ids))))));
+        this.askDoor(c.name, this.ctl!.doorChoices(c.id), (door) => this.askKick(c.name, this.ctl!.kickChoices(c.id), this.ctl!.canCastNormally(c.id), c.id, (cast00) => this.askOptions(c.id, c.name, door ? { ...cast00, door } : cast00, (cast) => this.ask(c.name, this.ctl!.needsForCard(c.id), (t) => this.askMana(c.name, { kind: "cast", card: c.id }, t, cast, (ids) => this.run(() => this.ctl!.use(c.id, t, cast, ids)))))));
       } } : {}),
       ...(this.ctl && kind === "perm" ? { use: () => this.useAbility(c.id), pick: () => this.pickAbility(c.id) } : {}),
     }));
@@ -890,6 +890,28 @@ export class BattleView extends ItemView {
   }
 
   // 追加コスト (キッカーなど) を払えるマナがあるとき、払うかを選ばせる (そのあとで、対象を選ぶ)。選べなければ (払えない・追加コストが無い)、聞かずに、払わない。Esc で取り消し
+  // 部屋 (Room): どちらの扉の半分を唱えるか。選んだ扉の番号を返す (部屋でなければ、聞かずに undefined)
+  private askDoor(name: string, doors: { door: 1 | 2; name: string; cost: string; usable: boolean }[], then: (door?: 1 | 2) => void) {
+    if (!doors.length) return then();
+    const box = this.ui.stage.createDiv("mtg-bt-ask");
+    this.askEl = box;
+    this.ui.stage.addClass("is-asking");
+    this.askCancel = () => {};
+    box.createDiv({ cls: "mtg-bt-asktitle", text: `${name}: どちらの扉を唱えますか?` });
+    const row = box.createDiv("mtg-bt-askrow");
+    for (const d of doors) {
+      const b = row.createEl("button", { cls: "mod-cta", text: `${d.name} (${d.cost})` });
+      b.disabled = !d.usable;
+      b.addEventListener("click", () => {
+        box.remove();
+        this.askEl = undefined;
+        this.askCancel = undefined;
+        this.ui.stage.removeClass("is-asking");
+        then(d.door);
+      });
+    }
+    box.createDiv({ cls: "mtg-bt-askhint", text: "Esc で取り消し (何も起きなかったことになる)" });
+  }
   private askKick(name: string, choices: { flag: "kicked" | "teamwork" | "alt"; cost: string }[], normalOk: boolean, cardId: string, then: (cast?: CastRecord) => void) {
     if (!choices.length) return then();
     const box = this.ui.stage.createDiv("mtg-bt-ask");

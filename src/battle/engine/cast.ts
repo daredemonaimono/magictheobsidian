@@ -2,7 +2,7 @@ import { activatedAbilities, characteristics, costReduction } from "../continuou
 import { CastRecord, NodeCall } from "../node";
 import { getNode } from "../registry";
 import { addCosts, emptyCost, ManaCost, parseManaCost } from "../mana";
-import { prepareAbilityOf, putInGraveyard, typeIn, Game, GameCard, PlayerId, RuleBook, StackItem } from "../state";
+import { leftGraveyard, prepareAbilityOf, putInGraveyard, typeIn, Game, GameCard, PlayerId, RuleBook, StackItem } from "../state";
 import { RuleError, UNRULED, isPermanentCard, live, resolveArgs, spellBody, staticKeywords, unruled } from "./shared";
 import { enterBattlefield, removeFromBattlefield } from "./battlefield";
 import { announceTargets, flushEvents } from "./triggers";
@@ -31,7 +31,10 @@ export function castSpell(g: Game, p: PlayerId, cardId: string, targets: Record<
   const body = skipped ? [] : spellBody(rules, card) ?? (rules.get(card.name) && isPermanentCard(card) ? [] : undefined); // 呪文能力の無いパーマネントも、ルールがあれば唱えられる
   if (!body) throw new RuleError(`呪文能力のルールが無い: ${card.name}`);
   castCore(g, p, card, body, targets, rules, cast, () => {
-    if (fromYard) g.graveyards[p] = g.graveyards[p].filter((c) => c !== card);
+    if (fromYard) {
+      g.graveyards[p] = g.graveyards[p].filter((c) => c !== card);
+      leftGraveyard(g, card, "stack");
+    }
     else g.hands[p] = g.hands[p].filter((c) => c !== card);
     delete card.exilePlay;
     if (skipped) g.log.push(`${card.name}: ${UNRULED}`);
@@ -41,7 +44,7 @@ export function castSpell(g: Game, p: PlayerId, cardId: string, targets: Record<
 // 呪文を唱える本体 (手札から・準備呪文のコピーで共通)。条件を確かめ、コストを払い、スタックに積む。afterPay = 払ったあとの、元の場所からの移動。copy = 呪文のコピー
 export function castCore(g: Game, p: PlayerId, card: GameCard, body: NodeCall[], targets: Record<string, string>, rules: RuleBook, cast: CastRecord, afterPay: () => void, copy = false): void {
   const item: StackItem = { id: card.id, card, controller: p, targets, cast, ...(copy ? { body, copy: true } : {}) };
-  const own = ownCost(card);
+  const own = ownCost(card, cast.door);
   const banned = castProblem(g, rules, p, card, cast.from ?? "hand");
   if (banned) throw new RuleError(banned);
   checkModes(body, cast, card.name);
@@ -95,6 +98,7 @@ export function castCore(g: Game, p: PlayerId, card: GameCard, body: NodeCall[],
             const gone = g.graveyards[p].slice(0, 3);
             g.graveyards[p] = g.graveyards[p].filter((c) => !gone.includes(c));
             g.exile[p].push(...gone);
+            for (const c of gone) leftGraveyard(g, c, "exile");
             g.log.push(`墓地の ${gone.map((c) => c.name).join("、")} を追放した (探索)`);
           }
         });
@@ -109,6 +113,7 @@ export function castCore(g: Game, p: PlayerId, card: GameCard, body: NodeCall[],
   for (const c of delved) {
     g.graveyards[p] = g.graveyards[p].filter((x) => x !== c);
     g.exile[c.owner].push(c);
+    leftGraveyard(g, c, "exile");
   }
   if (delved.length) g.log.push(`墓地の ${delved.length} 枚を追放した (Delve)`);
   if (g.payManaCosts) item.cast = { ...cast, colors: cost.spent?.colors ?? 0, paid: cost.spent?.mana ?? 0 };
@@ -137,8 +142,9 @@ export function castCore(g: Game, p: PlayerId, card: GameCard, body: NodeCall[],
 }
 
 // 呪文自身のマナコスト (マナコストが無いカードは、マナ総量ぶんの汎用)
-function ownCost(card: GameCard): ManaCost {
+function ownCost(card: GameCard, door?: 1 | 2): ManaCost {
   try {
+    if (door === 2 && card.cost2) return parseManaCost(card.cost2); // 部屋の 2 つ目の扉
     return card.manaCost !== undefined ? parseManaCost(card.manaCost) : { ...emptyCost(), generic: card.mv };
   } catch (e) {
     throw new RuleError(`${card.name}: ${(e as Error).message}`);
@@ -203,6 +209,7 @@ export function activateAbility(g: Game, p: PlayerId, permId: string, index: num
   if (cost.discardSelf) throw new RuleError(`${perm.card.name}: この能力は、手札から起動する (戦場からは起動できない)`);
   if (cost.exileSelf) throw new RuleError(`${perm.card.name}: この能力は、墓地から起動する (戦場からは起動できない)`);
   if ((timing?.args.sorcery === true || cost.isLoyalty) && !(p === g.active && (g.step === "main1" || g.step === "main2") && g.stack.length === 0)) throw new RuleError(`${perm.card.name}: ソーサリーのタイミングだけ起動できる (自分のメインフェイズで、スタックが空のとき)`);
+  if (typeof timing?.args.lockedDoor === "number" && perm.flags?.includes(`door${timing.args.lockedDoor}`)) throw new RuleError(`${perm.card.name}: 扉 ${timing.args.lockedDoor} は、もう開いている`);
   if (timing?.args.oncePerTurn === true && (g.activated?.[`${perm.id}:${index}`] ?? 0) >= 1) throw new RuleError(`${perm.card.name}: この能力は、1ターンに1回だけ起動できる`);
   if (timing?.args.oppLostLife === true && !g.players.some((q) => q !== p && (g.lostLife?.[q] ?? 0) > 0)) throw new RuleError(`${perm.card.name}: 相手がこのターンにライフを失っているときだけ起動できる`);
   const effects = ab.body.filter((c) => c.node !== "cost" && c.node !== "timing");

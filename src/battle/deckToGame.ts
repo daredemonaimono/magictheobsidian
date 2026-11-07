@@ -38,6 +38,7 @@ export function toGameCard(d: CardData, id: string, owner: string): GameCard {
     typeLine: d.typeLine.split(" // ")[0].trim(), // 前面の型行 (両面・冒険は、全体を渡すと、型の判定が混ざる)
     mv: d.cmc,
     ...(front ? { manaCost: front } : {}),
+    ...(/\bRoom\b/.test(d.typeLine) && d.manaCost.split(" // ")[1]?.trim() ? { cost2: d.manaCost.split(" // ")[1].trim() } : {}),
     ...(d.power !== undefined ? { power: num(d.power), toughness: num(d.toughness) } : {}),
     ...(d.keywords ? { keywords: d.keywords } : {}),
     colors: d.colors,

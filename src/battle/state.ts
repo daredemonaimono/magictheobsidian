@@ -13,6 +13,7 @@ export interface GameCard {
   name: string;
   typeLine: string;
   mv: number;
+  cost2?: string; // 部屋 (Room) の、もう 1 つの扉のマナコスト ("{B}")。manaCost は、最初の扉
   manaCost?: string; // マナコストの表記 ("{1}{U}{U}")。payManaCosts のとき、色まで払う。無ければ、マナ総量の数だけ (色なし)
   owner: PlayerId;
   flash?: boolean;
@@ -130,6 +131,11 @@ export function loseLife(g: Game, p: PlayerId, n: number): void {
   }
 }
 export const MAX_SPEED = 4;
+
+// カードが墓地を離れた (「墓地からカードが離れるたび」の誘発のため、moved を積む)
+export function leftGraveyard(g: Game, card: GameCard, to: Zone): void {
+  g.events.push({ type: "moved", card, from: "graveyard", to });
+}
 const whoLabel = (p: PlayerId): string => (p === "you" ? "あなた" : p === "opp" ? "相手" : p);
 
 // ライフを得る (そのターンに得た量 gained も、数える)
@@ -138,7 +144,7 @@ export function gainLife(g: Game, p: PlayerId, n: number): void {
   if (n > 0) (g.gained ??= {})[p] = (g.gained[p] ?? 0) + n;
 }
 
-export type GameEvent = { type: "cast"; player: PlayerId; card: GameCard } | { type: "enters"; perm: Perm; from?: Zone } | { type: "leaves"; perm: Perm; to?: Zone } | { type: "moved"; card: GameCard; from: Zone; to: Zone } | { type: "damaged"; source?: Perm; target: string; kind: "player" | "creature" | "planeswalker"; amount: number; combat: boolean } | { type: "step"; step: Step; player: PlayerId } | { type: "attacks"; perm: Perm; first?: boolean } | { type: "blocks"; perm: Perm } | { type: "targeted"; perm: Perm; by: StackItem; first?: boolean } | { type: "drew"; player: PlayerId } | { type: "crime"; player: PlayerId }; // targeted = パーマネントが、呪文・能力の対象になった (護法。first = コントローラー自身の呪文・能力の対象になった、そのターンで最初)。attacks の first = その攻撃の宣言で、最初の 1 体。drew = カードを引いた / crime = 犯罪を犯した (対戦相手・その持ち物・その墓地のカードを対象にした)
+export type GameEvent = { type: "cast"; player: PlayerId; card: GameCard } | { type: "enters"; perm: Perm; from?: Zone } | { type: "leaves"; perm: Perm; to?: Zone } | { type: "moved"; card: GameCard; from: Zone; to: Zone } | { type: "damaged"; source?: Perm; target: string; kind: "player" | "creature" | "planeswalker"; amount: number; combat: boolean } | { type: "step"; step: Step; player: PlayerId } | { type: "attacks"; perm: Perm; first?: boolean } | { type: "blocks"; perm: Perm } | { type: "targeted"; perm: Perm; by: StackItem; first?: boolean } | { type: "drew"; player: PlayerId } | { type: "crime"; player: PlayerId } | { type: "unlock"; perm: Perm; door: number }; // targeted = パーマネントが、呪文・能力の対象になった (護法。first = コントローラー自身の呪文・能力の対象になった、そのターンで最初)。attacks の first = その攻撃の宣言で、最初の 1 体。drew = カードを引いた / unlock = 部屋の扉を開けた / crime = 犯罪を犯した (対戦相手・その持ち物・その墓地のカードを対象にした)
 // 人の判断の差し替え口。無ければ決まった動きになる (shortcut: 判断の入力はまだ無い。入力の仕組みを作るときに置き換える)
 export interface Decider {
   discard?(g: Game, p: PlayerId, n: number, cleanup?: boolean): GameCard[] | undefined; // 捨てるカード
@@ -183,6 +189,7 @@ export interface Game {
   discarded?: Record<PlayerId, number>; // このターンに捨てた・サイクリングしたカードの数 (手札から墓地へ。プレイヤーごと。ターンが替わると 0)
   speed?: Record<PlayerId, number>; // 速度 (Start your engines!。1〜4。無ければ 0)
   held?: { card: string; by: string; owner: PlayerId }[]; // 「〜が戦場にあるあいだ追放しておく」カード (move untilLeaves)。by = 離れたら戻すパーマネントの id
+  onceTurn?: Record<string, number>; // 「1 ターンに 1 回だけ誘発」(when oncePerTurn): 誘発した最後のターン (パーマネントの id|能力の番号)
   speedBy?: Record<PlayerId, string>; // 速度を始めたカードの名前 (ログに出す)
   speedTurn?: Record<PlayerId, number>; // 速度を上げた最後のターン (自分のターンに 1 回まで)
   mayPlay?: { id: string; owner: PlayerId; until: "endOfTurn" | "yourNextEnd" | "later" }[]; // 追放して、そのあいだだけプレイしてよいカード (手札に置いて印を付ける。期限が来て、まだ手札にあれば、追放領域へ)

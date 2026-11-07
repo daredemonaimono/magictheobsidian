@@ -57,6 +57,7 @@ export interface NodeDef {
 // 枠の8項目 (結果の受け渡しは outputs / 各対戦相手は opponentsOf で実装。残りは型だけ。使うときに実装する)
 export type Duration = { until: "endOfTurn" | "whileAttached" | "forever" };
 export interface CastRecord {
+  door?: 1 | 2; // 部屋 (Room): どの扉の半分を唱えるか (無ければ 1)
   kicked?: boolean;
   teamwork?: boolean;
   alt?: boolean; // 別のコスト (altCost) で唱えた

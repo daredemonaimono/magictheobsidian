@@ -43,6 +43,11 @@ export const autoTargets = (slots: TargetSlot[]): Record<string, string> =>
 
 // 行動を試す。できれば undefined、できなければ理由。g は変えない。targets が無ければ、仮の対象で試す
 export function tryAction(g: Game, rules: RuleBook, p: PlayerId, a: Action, targets?: Record<string, string>, cast?: CastRecord): string | undefined {
+  // 部屋 (Room): 扉を選んでいなければ、どちらかの扉で唱えられれば、唱えられる
+  if (a.kind === "cast" && !cast?.door && g.hands[p]?.find((x) => x.id === a.card)?.cost2) {
+    const first = tryAction(g, rules, p, a, targets, { ...cast, door: 1 });
+    return first === undefined ? undefined : tryAction(g, rules, p, a, targets, { ...cast, door: 2 });
+  }
   const slots = slotsOf(g, rules, p, a);
   if (slots.some((x) => x.legal.length < x.min)) return NO_TARGET;
   const t = targets ?? autoTargets(slots);

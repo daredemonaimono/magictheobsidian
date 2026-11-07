@@ -196,6 +196,26 @@ export function registerPermanents(): void {
     },
   });
 
+  // 部屋 (Room) の扉を開ける。開けた扉の「この扉を開けたとき」(when event=unlock door=N) が誘発する
+  node({
+    id: "unlockDoor",
+    title: "扉を開ける",
+    summary: "対象の部屋 (self など) の、door=1・2 の扉を開ける(すでに開いていれば何も起きない)。開けると、when event=unlock door=N の誘発が働く。閉じた扉を開ける起動型能力は、timing lockedDoor=N と cost manaCost と使う",
+    params: { target: { type: "ref", required: true }, door: { type: "number", required: true, min: 1, max: 2 } },
+    outputs: {},
+    run: (ctx, a): Record<string, Value> => {
+      for (const id of idList(a.target)) {
+        const perm = ctx.game.battlefield.find((x) => x.id === id);
+        const flag = `door${a.door}`;
+        if (!perm || perm.flags?.includes(flag)) continue;
+        perm.flags = [...(perm.flags ?? []), flag];
+        ctx.game.events.push({ type: "unlock", perm, door: Number(a.door) });
+        ctx.game.log.push(`${perm.card.name}: 扉 ${a.door} を開けた`);
+      }
+      return {};
+    },
+  });
+
   // 能力を得る (印を付ける): 「〜の能力を得る」。誘発型能力は、when requires=印 と書いて、印があるときだけ働くようにする
   node({
     id: "gainAbility",

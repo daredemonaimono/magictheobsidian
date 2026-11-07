@@ -35,7 +35,11 @@ export function enterBattlefield(g: Game, card: GameCard, controller: PlayerId, 
     (g.speedBy ??= {})[controller] = card.name;
     g.log.push(`${card.name}: ${controller === "you" ? "あなた" : controller === "opp" ? "相手" : controller}の速度が 1 になった`);
   }
+  // 部屋 (Room): 唱えた半分の扉が、開いた状態で出る (もう一方は閉じたまま)。扉が開いたとき (unlock) の誘発もある
+  const door = card.cost2 ? cast?.door ?? 1 : undefined;
+  if (door) perm.flags = [...(perm.flags ?? []), `door${door}`];
   g.battlefield.push(perm);
+  if (door) g.events.push({ type: "unlock", perm, door });
   g.events.push({ type: "enters", perm, ...(opts.from ? { from: opts.from } : {}) });
 }
 
