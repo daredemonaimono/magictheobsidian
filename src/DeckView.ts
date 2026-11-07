@@ -12,7 +12,7 @@ import { loadCollection } from "./collection";
 import { formatPrice, priceOf, refreshPrices } from "./prices";
 import { ThumbnailModal, deckArtUrl } from "./ThumbnailModal";
 import { Settings } from "./settings";
-import { Board, Deck, emptyDeck, parseDeck, thumbnailKey, writeDeck } from "./deck";
+import { Board, Deck, addVariant, changeVariant, emptyDeck, parseDeck, takeOne, thumbnailKey, variantsOf, writeDeck } from "./deck";
 import { Printing, fetchById, fetchPrintingsLang, noArt, printingImageUrl } from "./scryfall";
 import { COLUMNS, groupOf, groupRank, isToken } from "./layout";
 import { Filters, Meta, Result, buildFilterBar, emptyFilters, isEmpty, searchAll } from "./search";
@@ -178,8 +178,10 @@ export class DeckView extends ItemView {
       if (noLegal.length) await updateLegality(this.app, noLegal).catch(() => failedCards++);
       const ids = new Set<string>();
       for (const [key, e] of entries) {
-        const id = (e.print && (await printingOf(this.app, key, e.print))?.id) || cardInfo(this.app, key)?.id;
-        if (id) ids.add(id);
+        for (const v of variantsOf(e)) {
+          const id = (v.print && (await printingOf(this.app, key, v.print))?.id) || cardInfo(this.app, key)?.id;
+          if (id) ids.add(id);
+        }
       }
       const failed = await refreshPrices([...ids]);
       this.meta.clear(); // 取り直した型・リーガルを読み直す
@@ -284,9 +286,13 @@ export class DeckView extends ItemView {
     }
     const need = new Map<string, { n: number; unit?: number }>();
     for (const [key, e] of [...this.deck.commander, ...this.deck.main, ...this.deck.side]) {
-      const id = (e.print && (await printingOf(this.app, key, e.print))?.id) || cardInfo(this.app, key)?.id;
-      const v = id ? priceOf(id, false, this.settings.currency) : undefined;
-      v === undefined ? missing++ : (total += v * e.n);
+      let v: number | undefined; // 行 (版・フォイル) ごとの価格。フォイルはフォイルの価格
+      for (const row of variantsOf(e)) {
+        const id = (row.print && (await printingOf(this.app, key, row.print))?.id) || cardInfo(this.app, key)?.id;
+        const price = id ? priceOf(id, !!row.foil, this.settings.currency) : undefined;
+        price === undefined ? (missing += 1) : (total += price * row.n);
+        v ??= price;
+      }
       const cur = need.get(key);
       need.set(key, { n: (cur?.n ?? 0) + e.n, unit: cur?.unit ?? v });
     }
@@ -410,14 +416,14 @@ export class DeckView extends ItemView {
     if (!this.rules().boards.includes(to)) return void new Notice("このフォーマットには、サイドボードが無い");
     const src = this.deck[from].get(key);
     if (!src) return;
-    src.n > 1 ? this.deck[from].set(key, { ...src, n: src.n - 1 }) : this.deck[from].delete(key);
+    const { rest, taken } = takeOne(src);
+    rest ? this.deck[from].set(key, rest) : this.deck[from].delete(key);
     const why = await this.violation(key, to); // 移す1枚を外した状態で、移した先に入れられるか
     if (why) {
       this.deck[from].set(key, src);
       return void new Notice(why);
     }
-    const dst = this.deck[to].get(key);
-    this.deck[to].set(key, { ...dst, n: (dst?.n ?? 0) + 1, print: dst?.print ?? src.print });
+    this.deck[to].set(key, addVariant(this.deck[to].get(key), taken)); // 絵・フォイルも一緒に移る
     await this.save();
   }
 
@@ -489,14 +495,18 @@ export class DeckView extends ItemView {
     }
     const m = this.deck[board];
     const e = m.get(key);
-    const n = Math.max(0, (e?.n ?? 0) + delta);
-    n ? m.set(key, { ...e, n }) : m.delete(key);
+    // 増やすのは、先頭の行 (主の版) に足す。減らすのは、最後の行から (絵違い・フォイルの行を先に減らす)
+    let next = e;
+    if (delta > 0) next = addVariant(e, { n: delta, print: e?.print, foil: e?.foil });
+    for (let k = 0; k < -delta && next; k++) next = takeOne(next).rest;
+    next ? m.set(key, next) : m.delete(key);
     await this.save();
   }
 
-  private async setPrint(key: string, print: string | undefined, board: Board) {
+  // vi 行目の、1 枚だけ (all なら全部) の版・フォイルを変える。同じ版・フォイルの行があれば、合流する
+  private async setVariant(key: string, board: Board, vi: number, patch: { print?: string | undefined; foil?: boolean }, all: boolean) {
     const e = this.deck[board].get(key);
-    if (e) this.deck[board].set(key, { ...e, print });
+    if (e) this.deck[board].set(key, changeVariant(e, vi, patch, all));
     await this.save();
   }
 
@@ -506,13 +516,14 @@ export class DeckView extends ItemView {
     const e = main.get(key);
     if (!e) return;
     if (this.deck.commander.size) return void new Notice("コマンダーは1体まで (今のコマンダーを先に解除する)");
-    e.n > 1 ? main.set(key, { ...e, n: e.n - 1 }) : main.delete(key);
+    const { rest, taken } = takeOne(e, 0);
+    rest ? main.set(key, rest) : main.delete(key);
     const why = await this.violation(key, "commander"); // メインから外した状態で、コマンダーとして入れられるか見る
     if (why) {
       main.set(key, e);
       return void new Notice(why);
     }
-    this.deck.commander.set(key, { n: 1, print: e.print });
+    this.deck.commander.set(key, addVariant(undefined, taken));
     await this.save();
   }
 
@@ -520,7 +531,7 @@ export class DeckView extends ItemView {
     const e = this.deck.commander.get(key);
     if (!e) return;
     this.deck.commander.delete(key);
-    this.deck.main.set(key, { n: (this.deck.main.get(key)?.n ?? 0) + 1, print: e.print });
+    this.deck.main.set(key, variantsOf(e).reduce<ReturnType<typeof addVariant> | undefined>((acc, v) => addVariant(acc, v), this.deck.main.get(key))!);
     await this.save();
   }
 
@@ -549,11 +560,13 @@ export class DeckView extends ItemView {
     const shown: Board[] = rules.hasCommander ? ["commander", "main", "token"] : [this.board, "token"];
     const cards = await Promise.all(
       shown.flatMap((board) =>
-        [...this.deck[board]].map(async ([key, { n: count, print }]) => {
-          const meta = await this.getMeta(key);
-          const image = (print && (await printingImage(this.app, key, print))) || meta?.image;
-          return { key, count, board, meta, image };
-        }),
+        [...this.deck[board]].flatMap(([key, e]) =>
+          variantsOf(e).map(async ({ n: count, print, foil }, vi) => {
+            const meta = await this.getMeta(key);
+            const image = (print && (await printingImage(this.app, key, print))) || meta?.image;
+            return { key, count, board, meta, image, vi, foil: !!foil, copies: count }; // 絵違い・フォイルは、行ごとに 1 つの札になる
+          }),
+        ),
       ),
     );
     if (seq !== this.stackSeq) return;
@@ -568,18 +581,23 @@ export class DeckView extends ItemView {
     for (const names of COLUMNS) {
       const column = this.el.stack.createDiv("mtg-col");
       for (const g of names) {
-        const items = groups.get(g)?.sort((a, b) => (a.meta?.cmc ?? 0) - (b.meta?.cmc ?? 0) || a.key.localeCompare(b.key));
+        const items = groups.get(g)?.sort((a, b) => (a.meta?.cmc ?? 0) - (b.meta?.cmc ?? 0) || a.key.localeCompare(b.key) || a.vi - b.vi);
         if (!items) continue;
         const col = column.createDiv("mtg-group");
         col.createEl("h4", { text: `${g} (${items.reduce((a, c) => a + c.count, 0)})` });
         for (const c of items) {
           const item = col.createDiv("mtg-item");
+          item.toggleClass("is-foil", c.foil);
           const img = c.image ? item.createEl("img", { attr: { alt: c.key } }) : undefined;
           setImg(img, c.image); // 保存済みの画像 (通信しない)。無ければ、読み込みと同時に保存する
           if (!img) item.createSpan({ text: c.key, cls: "mtg-name" });
           item.createSpan({ text: String(c.count), cls: "mtg-badge" });
           const ctl = item.createDiv("mtg-ctl");
-          imageButton(ctl, "イラスト変更").onclick = () => void this.pickPrint(c.key, c.board);
+          imageButton(ctl, "イラスト変更").onclick = () => void this.pickPrint(c.key, c.board, c.vi, c.copies);
+          // フォイル: コレクションと同じで、1 枚だけ切り替える (残りと別の行に分かれる)
+          const foil = iconButton(ctl, "sparkles", "foil 切替 (1枚)");
+          foil.toggleClass("is-on", c.foil);
+          foil.onclick = () => void this.setVariant(c.key, c.board, c.vi, { foil: !c.foil }, false);
           if (this.settings.textLang === "ja") wikiButton(ctl, c.key, cardInfo(this.app, c.key)?.nameLocal); // 日本語の設定のときだけ、MTG Wiki のページを開く
           // 統率者構築: 伝説のカードはコマンダーに指定できる。指定済みなら解除
           if (rules.hasCommander && (c.board === "commander" || c.meta?.typeLine.includes("Legendary"))) {
@@ -600,7 +618,7 @@ export class DeckView extends ItemView {
     }
   }
 
-  private async pickPrint(key: string, board: Board) {
+  private async pickPrint(key: string, board: Board, vi: number, copies: number) {
     let prints = await readPrintings(this.app, key);
     // ノートの標準の版 (scryfall_id) が表に無いとき (表が無い古いノートなど): その1枚を取って表に足す。持っている版が、選択肢に出る
     const own = cardInfo(this.app, key)?.id;
@@ -614,7 +632,7 @@ export class DeckView extends ItemView {
       }
     }
     const oracle = oracleIdOf(this.app, key);
-    const cur = this.deck[board].get(key)?.print?.split(" ")[2];
+    const cur = variantsOf(this.deck[board].get(key)!)[vi]?.print?.split(" ")[2];
     // 言語タブ: ある言語を開いたときに、その言語の版を取りに行って、ノートの表に足す
     const tabs = { langs: [...new Set([...prints.map((p) => p.lang), "en", this.settings.textLang])], first: cur ?? this.settings.textLang, load: async (lang: string) => {
       const all = oracle ? await fetchPrintingsLang(oracle, lang) : [];
@@ -623,7 +641,7 @@ export class DeckView extends ItemView {
       await addPrintings(this.app, key, good, bad);
       return { good, bad };
     } };
-    new PrintModal(this.app, key, prints, true, (p) => void this.setPrint(key, p, board), tabs).open();
+    new PrintModal(this.app, key, prints, true, (p, all) => void this.setVariant(key, board, vi, { print: p }, all ?? true), tabs, copies).open();
   }
 
   // ja = 設定した言語のカード名。無ければ英語名だけ出す
@@ -656,13 +674,24 @@ export interface PrintTabs {
   load: (lang: string) => Promise<{ good: Printing[]; bad: string[] }>; // 表に無い言語の版を取ってくる (bad = 画像が無い版の id)
 }
 export class PrintModal extends Modal {
-  constructor(app: App, private key: string, private prints: Printing[], private canReset: boolean, private onPick: (print?: string) => void, private tabs?: PrintTabs) {
+  constructor(app: App, private key: string, private prints: Printing[], private canReset: boolean, private onPick: (print?: string, all?: boolean) => void, private tabs?: PrintTabs, private copies = 1) {
     super(app);
   }
   onOpen() {
     this.setTitle(`${this.key} のイラスト`);
     this.modalEl.addClass("mtg-print-modal");
     // コレクションは版が必須なので「指定なし」は出さない
+    // 同じ行に 2 枚以上あるとき: 変えるのは「全部」か「1枚だけ」(1枚だけ = その 1 枚が別の行に分かれる)
+    let all = true;
+    if (this.copies > 1) {
+      const row = this.contentEl.createDiv("mtg-print-tabs");
+      const [bAll, bOne] = [row.createEl("button", { text: `全部 (${this.copies} 枚)` }), row.createEl("button", { text: "1枚だけ (絵違いとして分ける)" })];
+      const sync = () => (bAll.toggleClass("mod-cta", all), bOne.toggleClass("mod-cta", !all));
+      bAll.onclick = () => ((all = true), sync());
+      bOne.onclick = () => ((all = false), sync());
+      sync();
+    }
+    this.getAll = () => all;
     if (this.canReset) this.contentEl.createEl("button", { text: "最新のアートにする" }).onclick = () => this.pick();
     const bar = this.contentEl.createDiv("mtg-print-tabs");
     const grid = this.contentEl.createDiv("mtg-print-grid");
@@ -721,9 +750,10 @@ export class PrintModal extends Modal {
       void show(this.tabs.langs.includes(this.tabs.first) ? this.tabs.first : this.tabs.langs[0]);
     } else void show();
   }
+  private getAll: () => boolean = () => true;
   private pick(print?: string) {
     this.close();
-    this.onPick(print);
+    this.onPick(print, this.getAll());
   }
   onClose() {
     this.contentEl.empty();

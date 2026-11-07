@@ -1,6 +1,6 @@
 import { App, Modal, Notice, Setting, TFile, normalizePath } from "obsidian";
 import { CARD_DIR, ensureCardFile } from "./cards";
-import { Deck, emptyDeck, parseMoxfield } from "./deck";
+import { Deck, Entry, addVariant, emptyDeck, parseMoxfield, variantsOf } from "./deck";
 import { CREATABLE, FORMATS } from "./rules";
 import { fetchCard, fetchPrint, fileSafe } from "./scryfall";
 import { Settings } from "./settings";
@@ -43,7 +43,7 @@ export async function resolveDeck(app: App, settings: Settings, text: string): P
   for (const board of ["commander", "main", "side"] as const) {
     for (const [cardName, e] of parsed[board]) {
       const key = keys.get(cardName);
-      if (key) deck[board].set(key, e);
+      if (key) deck[board].set(key, variantsOf(e).reduce<Entry | undefined>((acc, v) => addVariant(acc, v), deck[board].get(key))!);
     }
   }
   new Notice(failed.length ? `取り込み完了。取得できなかった ${failed.length} 枚: ${failed.join(", ")}` : `取り込み完了: ${total} 種類`, failed.length ? 0 : 4000);

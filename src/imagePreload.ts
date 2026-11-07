@@ -1,7 +1,7 @@
 import { App } from "obsidian";
 import { cardImage, cardInfo, localCards, printingOf } from "./cards";
 import { loadCollection } from "./collection";
-import { DECK_DIR, parseDeck } from "./deck";
+import { DECK_DIR, parseDeck, variantsOf } from "./deck";
 import { preload } from "./imageCache";
 import { PreloadKind, PreloadScope } from "./imageKey";
 import { artCropUrl, printingImageUrl } from "./scryfall";
@@ -28,7 +28,7 @@ export async function preloadImages(app: App, scope: PreloadScope, kind: Preload
   } else {
     for (const f of app.vault.getMarkdownFiles().filter((x) => x.path.startsWith(`${DECK_DIR}/`))) {
       const deck = parseDeck(await app.vault.cachedRead(f));
-      for (const board of [deck.commander, deck.main, deck.side, deck.token]) for (const [key, e] of board) await add(key, e.print);
+      for (const board of [deck.commander, deck.main, deck.side, deck.token]) for (const [key, e] of board) for (const v of variantsOf(e)) await add(key, v.print);
     }
     for (const row of (await loadCollection(app)).values()) await add(row.card, row.print);
   }

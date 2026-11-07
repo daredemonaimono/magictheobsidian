@@ -22,6 +22,7 @@ export interface CardView {
   attacking: boolean;
   blocking: boolean;
   token: boolean;
+  foil?: boolean; // フォイル (見た目だけ)
   prepared: boolean;
   sick: boolean; // 召喚酔い (このターンに出たクリーチャーで、速攻が無い)
   keywords: string[];
@@ -66,6 +67,7 @@ const inHand = (c: GameCard, image?: string, playable = false): CardView => ({
   attacking: false,
   blocking: false,
   token: !!c.token,
+  ...(c.foil ? { foil: true } : {}),
   prepared: false,
   sick: false,
   keywords: [],
@@ -92,6 +94,7 @@ function permView(g: Game, rules: RuleBook, p: Perm, imageOf: ImageOf, playable:
     attacking: !!p.attacking,
     blocking: p.blocking !== undefined,
     token: !!p.card.token,
+    ...(p.card.foil ? { foil: true } : {}),
     prepared: p.prepared === true,
     sick: isSick(g, p, rules), // 召喚酔いの判定は、エンジンのもの
     keywords: now.keywords,

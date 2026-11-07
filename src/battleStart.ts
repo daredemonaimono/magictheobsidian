@@ -13,7 +13,7 @@ import { parseRule } from "./battle/ruleMd";
 import { CardRule } from "./battle/node";
 import { RuleBook } from "./battle/state";
 import { cardImage, cardInfo, deckVerdicts, printingImage } from "./cards";
-import { DECK_DIR, parseDeck } from "./deck";
+import { DECK_DIR, parseDeck, variantsOf } from "./deck";
 
 // 対戦を始めるための、vault (Decks/ Cards/ Rules/) の読み込み。読むだけで、書き換えない。組み立ては src/battle/deckToGame.ts (純粋な関数)
 const RULES_DIR = "Rules";
@@ -41,13 +41,22 @@ export async function loadDeckData(app: App, name: string): Promise<DeckData> {
   const fm = app.metadataCache.getFileCache(file)?.frontmatter;
   const deck = parseDeck(await app.vault.cachedRead(file));
   const artOf = async (key: string, print?: string) => (print ? await printingImage(app, key, print).catch(() => undefined) : undefined); // デッキで選んだ版の絵
-  const main = await Promise.all([...deck.main].map(async ([key, e]) => {
-    const info = cardInfo(app, key);
-    if (!info) throw new MatchError(`カードのノートが無い: ${key} (デッキ ${name})`);
-    const art = await artOf(key, e.print);
-    const data: CardData = { ...(art ? { art } : {}), name: key, typeLine: info.typeLine, cmc: info.cmc, manaCost: info.manaCost, power: info.power, toughness: info.toughness, keywords: info.keywords, colors: info.colors, loyalty: info.loyalty };
-    return { key, n: e.n, data };
-  }));
+  // 同じカードの絵違い・フォイルは、行ごとに別の項目になる (山札では、それぞれの絵・フォイルのカードが入る)
+  const main = (
+    await Promise.all(
+      [...deck.main].map(async ([key, e]) => {
+        const info = cardInfo(app, key);
+        if (!info) throw new MatchError(`カードのノートが無い: ${key} (デッキ ${name})`);
+        return Promise.all(
+          variantsOf(e).map(async (v) => {
+            const art = await artOf(key, v.print);
+            const data: CardData = { ...(art ? { art } : {}), ...(v.foil ? { foil: true } : {}), name: key, typeLine: info.typeLine, cmc: info.cmc, manaCost: info.manaCost, power: info.power, toughness: info.toughness, keywords: info.keywords, colors: info.colors, loyalty: info.loyalty };
+            return { key, n: v.n, data };
+          }),
+        );
+      }),
+    )
+  ).flat();
   const tokens = await Promise.all([...deck.token].flatMap(([key, e]) => {
     const info = cardInfo(app, key);
     return info ? [(async () => ({ name: info.name, typeLine: info.typeLine, power: info.power, toughness: info.toughness, art: (await artOf(key, e.print)) ?? (await cardImage(app, info.file)) }))()] : [];

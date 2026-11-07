@@ -1,5 +1,5 @@
 import assert from "node:assert";
-import { emptyDeck, foldCommander, parseDeck, parseMoxfield, writeDeck } from "../src/deck";
+import { addVariant, changeVariant, takeOne, variantsOf, emptyDeck, foldCommander, parseDeck, parseMoxfield, writeDeck } from "../src/deck";
 
 // 読み書き: 版の指定 (set 番号) を保ち、「動き方」など他の見出しには触らない
 const src = "---\nmtg: deck\n---\n\n## Main\n4 [[Lightning Bolt]] (m11 149)\n2 [[Mountain]]\n\n## Side\n\n## 動き方\nメモ\n";
@@ -24,10 +24,37 @@ assert.ok(!writeDeck("## Commander\n\n## Main\n", emptyDeck()).includes("## Side
 // セットの無い形式: 空行 (何行でも) から、サイドボード
 {
   const d = parseMoxfield("4 Hired Claw\n1 Kellan, Planar Trailblazer\n20 Mountain\n\n\n\n3 Magebane Lizard\n2 Abrade\n");
-  assert.deepEqual([...d.main], [["Hired Claw", { n: 4, print: undefined }], ["Kellan, Planar Trailblazer", { n: 1, print: undefined }], ["Mountain", { n: 20, print: undefined }]]);
+  assert.deepEqual([...d.main], [["Hired Claw", { n: 4 }], ["Kellan, Planar Trailblazer", { n: 1 }], ["Mountain", { n: 20 }]]);
   assert.deepEqual([...d.side.keys()], ["Magebane Lizard", "Abrade"]);
   assert.equal(parseMoxfield("Deck\n4 A\n\n4 B\nSideboard\n2 C").main.size, 2, "見出しのある形式では、空行は区切りにならない");
   assert.equal(parseMoxfield("4 A (M11) 1\n\nSIDEBOARD:\n2 C (M11) 2").side.size, 1, "Moxfield 形式 (空行 + SIDEBOARD:) は、今までどおり");
+}
+// 絵違い・フォイル: 同じカードの行を分けて持つ。n は合計
+{
+  const d = parseDeck("## Main\n2 [[Island]] (eld 250)\n1 [[Island]] (eld 251) *F*\n1 [[Island]] (eld 251) *F*\n3 [[Bolt]]\n");
+  const isl = d.main.get("Island")!;
+  assert.equal(isl.n, 4);
+  assert.deepEqual(variantsOf(isl), [{ n: 2, print: "eld 250", foil: undefined }, { n: 2, print: "eld 251", foil: true }], "同じ版・フォイルの行は、まとまる");
+  assert.equal(d.main.get("Bolt")!.n, 3);
+  const text = writeDeck("## Main\n\n## Side\n", d);
+  assert.ok(text.includes("2 [[Island]] (eld 250)\n2 [[Island]] (eld 251) *F*"), "書き出しは、行ごと。フォイルは *F*");
+  assert.deepEqual(parseDeck(text).main.get("Island"), isl, "書いて読み直しても同じ");
+  // 1 枚だけ版を変える / フォイルにする
+  let e = d.main.get("Bolt")!;
+  e = changeVariant(e, 0, { foil: true });
+  assert.deepEqual(variantsOf(e).map((v) => [v.n, !!v.foil]), [[2, false], [1, true]], "3 枚のうち 1 枚だけフォイル");
+  e = changeVariant(e, 0, { foil: true });
+  assert.deepEqual(variantsOf(e).map((v) => [v.n, !!v.foil]), [[1, false], [2, true]]);
+  e = changeVariant(e, 1, { foil: false }, true);
+  assert.deepEqual(variantsOf(e).map((v) => [v.n, !!v.foil]), [[3, false]], "全部戻すと、1 行にまとまる");
+  assert.equal(changeVariant({ n: 2, print: "a 1" }, 0, { print: "b 2" }, true).print, "b 2");
+  // 取り出す・足す
+  const t = takeOne(isl);
+  assert.equal(t.rest!.n, 3);
+  assert.deepEqual(t.taken, { n: 1, print: "eld 251", foil: true });
+  assert.equal(takeOne({ n: 1 }).rest, undefined, "最後の 1 枚を取ると、空");
+  assert.equal(addVariant(isl, { n: 1, print: "eld 250" }).n, 5);
+  assert.equal(addVariant(undefined, { n: 2 }).n, 2);
 }
 const m = parseMoxfield(`4 Bazaar of Baghdad (ARN) 70
 1 Chalice of the Void (TSR) 390

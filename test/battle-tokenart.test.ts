@@ -35,4 +35,11 @@ assert.equal(pickTokenArt(undefined, "Food", "Artifact — Food"), undefined);
 }
 // デッキで選んだ版の絵は、GameCard に載る
 assert.equal(toGameCard({ name: "Bolt", typeLine: "Instant", cmc: 1, manaCost: "{R}", colors: ["R"], art: "bolt.png" }, "x", "A").art, "bolt.png");
+// 絵違い・フォイルは、GameCard にそのまま載る (山札では、行ごとの絵・フォイルのカードが入る)
+{
+  const a = toGameCard({ name: "Island", typeLine: "Basic Land — Island", cmc: 0, manaCost: "", colors: [], art: "a.png", foil: true }, "i1", "A");
+  assert.equal(a.art, "a.png");
+  assert.equal(a.foil, true);
+  assert.equal(toGameCard({ name: "Island", typeLine: "Basic Land — Island", cmc: 0, manaCost: "", colors: [] }, "i2", "A").foil, undefined);
+}
 console.log("battle-tokenart ok");

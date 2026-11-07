@@ -16,6 +16,7 @@ export interface CardData {
   colors: string[];
   loyalty?: number;
   art?: string; // デッキで選んだ版の絵の URL
+  foil?: boolean; // デッキで、フォイルにしたカード (見た目だけ)
 }
 
 export interface DeckData {
@@ -42,6 +43,7 @@ export function toGameCard(d: CardData, id: string, owner: string): GameCard {
     colors: d.colors,
     ...(d.loyalty !== undefined ? { loyalty: d.loyalty } : {}),
     ...(d.art ? { art: d.art } : {}),
+    ...(d.foil ? { foil: true } : {}),
     owner,
   };
 }

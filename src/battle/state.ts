@@ -22,6 +22,7 @@ export interface GameCard {
   colors?: string[]; // 色 (W U B R G)
   loyalty?: number; // プレインズウォーカーの初期忠誠度 (戦場に出るとき loyalty カウンターとして置かれる)
   token?: boolean; // トークン (戦場を離れると消える)
+  foil?: boolean; // フォイル (見た目だけ)
   art?: string; // 絵の URL (デッキで選んだ版・トークン)。無ければ、カードのノートの絵
 }
 export interface StackItem {

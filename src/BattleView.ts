@@ -354,6 +354,11 @@ export class BattleView extends ItemView {
     // 絵はカード名で引く。デッキで選んだ版・トークンの絵があれば、それ (同じ名前なら、自分のデッキのものを先に)
     const art = new Map<string, string>();
     for (const c of [...cards].sort((a, b) => Number(a.owner !== VIEWER) - Number(b.owner !== VIEWER))) if (c.art && !art.has(c.name)) art.set(c.name, c.art);
+    for (const a of new Set(cards.flatMap((c) => (c.art ? [c.art] : [])))) {
+      if (this.tried.has(`art:${a}`)) continue;
+      this.tried.add(`art:${a}`);
+      void localUrl(a).then((u) => u && (this.urls.set(`art:${a}`, u), this.paint())); // 同じ名前でも、絵の違うカードは、絵ごとに引く
+    }
     const names = new Set<string>([...g.battlefield.map((p) => p.card.name), ...Object.values(g.hands).flat().map((c) => c.name), ...Object.values(g.graveyards).flat().map((c) => c.name), ...g.stack.map((s) => s.card.name), ...extra]);
     await Promise.all(
       [...names].filter((n) => !this.tried.has(`${n}|${art.get(n) ?? ""}`)).map(async (n) => {
@@ -368,7 +373,7 @@ export class BattleView extends ItemView {
 
   // ---- 描く (BoardModel を、差分だけ更新)
   private paint() {
-    const m = boardModel(this.game, this.rules, VIEWER, (c) => this.urls.get(c.name));
+    const m = boardModel(this.game, this.rules, VIEWER, (c) => (c.art && this.urls.get(`art:${c.art}`)) || this.urls.get(c.name)); // 絵違いは、その絵 (無ければ、名前で引いた絵)
     const ui = this.ui;
     this.sync(ui.rows["opp-lands"], "opp-lands", this.stackItems(m.opp.landStacks, false));
     this.sync(ui.rows["opp-others"], "opp-others", this.cardItems(m.opp.others, "opp"));
@@ -1178,7 +1183,7 @@ export class BattleView extends ItemView {
   // 1枚のカードの中身。画像があれば画像、無ければ名前の代わりの面。P/T と忠誠度は、あるものを両方出す
   private fill(el: HTMLElement, c: CardView) {
     el.className = "mtg-bt-card";
-    for (const [on, cls] of [[c.tapped, "is-tapped"], [c.attacking, "is-attacking"], [c.blocking, "is-blocking"], [c.sick, "is-sick"], [c.prepared, "is-prepared"], [c.token, "is-token"], [c.playable && !!this.ctl, "is-playable"]] as const) if (on) el.addClass(cls);
+    for (const [on, cls] of [[c.tapped, "is-tapped"], [c.attacking, "is-attacking"], [c.blocking, "is-blocking"], [c.sick, "is-sick"], [c.prepared, "is-prepared"], [c.token, "is-token"], [c.foil, "is-foil"], [c.playable && !!this.ctl, "is-playable"]] as const) if (on) el.addClass(cls);
     el.empty();
     this.face(el, c);
     if (c.power !== null && c.toughness !== null) {
