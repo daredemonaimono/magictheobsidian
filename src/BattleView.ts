@@ -213,6 +213,7 @@ export class BattleView extends ItemView {
     this.ctl = session && !session.replay ? new BattleController(game, rules, VIEWER, session.rng ?? Math.random, opp === "cpu" ? foe : undefined, opp === "claude" ? foe : undefined) : undefined; // リプレイのときは、操作できない (this.ctl 無し)・Claude の API も呼ばない
     if (this.ctl) {
       this.ctl.aiMemo = session?.oppMemo ?? ""; // 相手のデッキのメモ
+      this.ctl.aiShared = session?.shared ?? ""; // 共通ルール
       if (session?.opp && session.self) this.ctl.aiDecks = { mine: session.opp, foe: session.self };
     }
     this.lookSeen = this.game.handLook?.n ?? 0; // 開いたとき、前の「見た」は、出さない

@@ -42,6 +42,8 @@ import { preloadImages } from "./imagePreload";
 import { DEFAULT_SETTINGS, MOD_KEYS, Settings, SettingsTab, secretKey } from "./settings";
 import { Scene, aiLabel, aiReady, migrateAi, providerName, runAi } from "./battle/aiConfig";
 import { AskAi } from "./battle/ai";
+import { createAgentNote, loadAgentRules } from "./agentNote";
+import { sharedFor, withShared } from "./battle/agentRules";
 
 // 「メモ」はカード行の外なので、デッキ画面で枚数を変えても書き換わらない。統率戦だけコマンダー欄があり、サイドは無い
 const RULES_DIR = "Rules"; // カードの能力をノードで組んだ md (Cards/ と同じ並び。Obsidian の画面で手で直せる)
@@ -184,6 +186,7 @@ export default class MagicTheObsidian extends Plugin {
       void this.syncSidebar();
       window.setTimeout(() => void this.preloadImages(false), 8000); // 「先に保存」のときだけ。起動の直後を避けて、あとから、静かに
     });
+    this.addCommand({ id: "create-agent-note", name: "Rules: create the shared AI rules note (_agent.md)", callback: async () => new Notice((await createAgentNote(this.app)) ? "Rules/_agent.md を作った (どの AI も読む、共通ルール)" : "Rules/_agent.md は、すでにある") });
     this.addCommand({ id: "refresh-gaps", name: "Rules: refresh the missing-nodes list (from the current rules)", callback: () => void this.refreshGaps() });
     this.addCommand({ id: "cache-images", name: "Save card images (local cache, per settings)", callback: () => void this.preloadImages(true) });
 
@@ -403,6 +406,10 @@ export default class MagicTheObsidian extends Plugin {
     const f = this.askFor(scene);
     return f ? (system, user) => f(system, [{ role: "user", content: user }]) : undefined;
   }
+  // 共通ルール (メモの下書き) を、AI への指示に足した問い合わせ
+  private withSharedAsk(ask: AskAi | undefined, shared: string): AskAi | undefined {
+    return ask ? (system, user) => ask(withShared(system, shared), user) : undefined;
+  }
   private missingKeyNotice(scene: Scene) {
     new Notice(`設定の「AI の接続」で、${providerName(this.settings.ai.scenes[scene].provider)} の API キーを選んでください (Magic the Obsidian → AI の接続)`);
   }
@@ -471,7 +478,7 @@ export default class MagicTheObsidian extends Plugin {
         const f = fileOf(deck);
         return f ? editableMemo(await this.app.vault.read(f)) : "";
       },
-      this.makeAsk("memo"),
+      this.withSharedAsk(this.makeAsk("memo"), sharedFor(await loadAgentRules(this.app), "memo")),
       async (deck, text, mode) => {
         const f = fileOf(deck);
         if (!f) throw new Error(`デッキが見つからない: ${deck}`);
@@ -578,6 +585,7 @@ export default class MagicTheObsidian extends Plugin {
     if (!ask) return void this.missingKeyNotice("rules");
     await this.ensureRulesDir();
     const glossary = await this.readGlossary();
+    const shared = sharedFor(await loadAgentRules(this.app), "nodes"); // 共通ルール (Rules/_agent.md の、共通 + ノード作成)
     const select = this.askFor("nodes"); // 1段目 (ノードを選ぶ)。キーが無ければ、飛ばして、全ノードを渡す
     let made = 0;
     let over = 0;
@@ -593,6 +601,7 @@ export default class MagicTheObsidian extends Plugin {
           oracle,
           ruling,
           glossary,
+          shared,
           ask: async (system, messages) => (await ask(system, messages)).text,
           ...(select
             ? { askSelect: async (system: string, user: string) => (await select(system, [{ role: "user" as const, content: user }])).text }

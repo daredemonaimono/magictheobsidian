@@ -1,6 +1,8 @@
 import { App, TFile, normalizePath } from "obsidian";
 import { AskAi } from "./battle/ai";
 import { MulliganResult, aiMulligan, applyMulligan } from "./battle/aiMulligan";
+import { loadAgentRules } from "./agentNote";
+import { sharedFor } from "./battle/agentRules";
 import { cpuMulligan } from "./battle/cpu";
 import { applyOpening } from "./battle/engine";
 import { extractMemo } from "./battle/memo";
@@ -97,10 +99,11 @@ export async function startBattle(app: App, selfName: string, oppName: string, c
   const inputs = await loadMatchInputs(app, selfName, oppName);
   const seed = Math.floor(Math.random() * 2 ** 31);
   const oppMemo = await loadDeckMemo(app, oppName);
-  if (!ask) return { ...buildSession(inputs, selfName, oppName, seed, cpu), oppMemo };
+  const shared = sharedFor(await loadAgentRules(app), "battle"); // 共通ルール (Rules/_agent.md)
+  if (!ask) return { ...buildSession(inputs, selfName, oppName, seed, cpu), oppMemo, shared };
   // AI の相手のマリガンは、盤面を開いたあとに、裏で決める (API の待ちで、盤面が遅れないように)。終わるまで、自分のマリガンは聞かない (乱数の順番を、リプレイと同じにするため)
-  const s: BattleSession = { ...buildSession(inputs, selfName, oppName, seed, false, undefined, true), oppMemo };
-  s.pendingAi = aiMulliganOf(s, ask, oppMemo)
+  const s: BattleSession = { ...buildSession(inputs, selfName, oppName, seed, false, undefined, true), oppMemo, shared };
+  s.pendingAi = aiMulliganOf(s, ask, oppMemo, shared)
     .then((m) => {
       s.aiMulligan = m;
     })
@@ -111,8 +114,8 @@ export async function startBattle(app: App, selfName: string, oppName: string, c
     });
   return s;
 }
-async function aiMulliganOf(s: BattleSession, ask: AskAi, memo: string): Promise<MulliganResult> {
-  return aiMulligan(s.game, "opp", s.rng!, ask, memo, s.self && s.opp ? { mine: s.opp, foe: s.self } : undefined);
+async function aiMulliganOf(s: BattleSession, ask: AskAi, memo: string, shared: string): Promise<MulliganResult> {
+  return aiMulligan(s.game, "opp", s.rng!, ask, memo, s.self && s.opp ? { mine: s.opp, foe: s.self } : undefined, shared);
 }
 
 // 履歴のリプレイ: 記録と同じデッキ・種から初期状態を作る関数を持った、対戦のセッション (いまのデッキ・ルールのノートを読む)

@@ -12,8 +12,8 @@ export interface MulliganResult {
 
 const handText = (g: Game, p: PlayerId) => g.hands[p].map((c) => `${c.name} (${c.typeLine}, マナ総量 ${c.mv}, id:${c.id})`).join("\n");
 
-export async function aiMulligan(g: Game, p: PlayerId, rng: () => number, ask: AskAi, memo = "", decks?: { mine: string; foe: string }): Promise<MulliganResult> {
-  const system = withMemo(AI_SYSTEM, memo, decks);
+export async function aiMulligan(g: Game, p: PlayerId, rng: () => number, ask: AskAi, memo = "", decks?: { mine: string; foe: string }, shared = ""): Promise<MulliganResult> {
+  const system = withMemo(AI_SYSTEM, memo, decks, shared);
   let count = 0;
   let broken = false; // 返事が使えなかった: 以降は、雑魚 CPU の決まり
   const query = async (prompt: string): Promise<Record<string, unknown> | undefined> => {

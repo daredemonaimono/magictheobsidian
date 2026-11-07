@@ -61,6 +61,7 @@ export class BattleController {
 
   // ---- Claude の AI の相手 (段階7)。API を呼ぶのは画面。ここは、「いま AI の判断が要るか」と、判断の実行だけ (API は呼ばない)
   aiTokens = { input: 0, output: 0 }; // この対戦で、AI が使ったトークン数
+  aiShared = ""; // 共通ルール (Rules/_agent.md の、共通 + 対戦)。AI への指示に足す
   aiMemo = ""; // 相手のデッキの、持ち主のメモ (AI への指示に足す)
   aiDecks?: { mine: string; foe: string }; // AI のデッキと、対戦相手 (人) のデッキの名前
   aiDredgeCache = new Map<string, string[]>(); // 同じ状況 (内訳・N・墓地が同じ) の Dredge の答えを、使い回す (AI を呼ぶ回数を減らす)

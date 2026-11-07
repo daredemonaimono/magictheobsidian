@@ -44,7 +44,7 @@ async function answerAiQuestion(ctl: BattleController, ask: AskAi | undefined, a
   } else if (ask) {
     try {
       const prompt = `${aiDescribe(g, ctl.rules, ai)}\n\n${req.label ?? "選んでください"}\n選べるカード:\n${req.cards.map((c) => `${c.id}: ${c.name}`).join("\n")}\n\n選ぶカードの id を、最大 ${req.max} 枚、{"ids": ["id", ...], "why": "短い理由"} で答えてください。選ばない (ふつうに引く) なら、空の配列です。`;
-      const r = await ask(withMemo(AI_SYSTEM, ctl.aiMemo, ctl.aiDecks), prompt);
+      const r = await ask(withMemo(AI_SYSTEM, ctl.aiMemo, ctl.aiDecks, ctl.aiShared), prompt);
       ctl.aiTokens.input += r.input ?? 0;
       ctl.aiTokens.output += r.output ?? 0;
       const v = aiParse(r.text);
@@ -97,7 +97,7 @@ export async function aiStep(ctl: BattleController, ask: AskAi | undefined, ai: 
     let text: string | undefined;
     try {
       if (text === undefined) {
-      const r = await ask(withMemo(AI_SYSTEM, ctl.aiMemo, ctl.aiDecks), attempt === 0 ? `${prompt}${advice}` : `${prompt}${advice}\n\n前の返事は使えませんでした (${problem})。選択肢の番号・id を確かめて、もう一度、JSON だけで答えてください。`);
+      const r = await ask(withMemo(AI_SYSTEM, ctl.aiMemo, ctl.aiDecks, ctl.aiShared), attempt === 0 ? `${prompt}${advice}` : `${prompt}${advice}\n\n前の返事は使えませんでした (${problem})。選択肢の番号・id を確かめて、もう一度、JSON だけで答えてください。`);
       text = r.text;
       if (r.input !== undefined || r.output !== undefined) {
         ctl.aiTokens.input += r.input ?? 0;
@@ -122,7 +122,7 @@ export async function aiStep(ctl: BattleController, ask: AskAi | undefined, ai: 
     // 比較: 判断の材料を添えなかったら、AI の答えが変わったか (履歴の裏側に残す。AI の学習 (デッキのメモ・判断の材料) を決める手がかり)
     if (advisor?.mode === "compare" && advice && attempt === 0) {
       try {
-        const plain = await ask(withMemo(AI_SYSTEM, ctl.aiMemo, ctl.aiDecks), prompt);
+        const plain = await ask(withMemo(AI_SYSTEM, ctl.aiMemo, ctl.aiDecks, ctl.aiShared), prompt);
         ctl.aiTokens.input += plain.input ?? 0;
         ctl.aiTokens.output += plain.output ?? 0;
         const other = aiParse(plain.text);

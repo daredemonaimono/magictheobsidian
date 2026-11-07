@@ -1,3 +1,4 @@
+import { withShared } from "./agentRules";
 import { compactLog } from "./aiLog";
 import { Action, abilityLabels, actionsFor, autoTargets, manaOnly, slotsOf, tryAction, withAllMana } from "./actions";
 import { getNode } from "./registry";
@@ -120,10 +121,10 @@ id は、盤面の説明の「(id:〜)」の、〜の部分だけを、そのま
 
 // デッキのメモ (持ち主が書いた、そのデッキの動かし方) を、指示に足す。無ければ、そのまま (AI の自己判断)
 // decks = あなたのデッキと、対戦相手のデッキの名前: メモの「[[デッキ名]] が相手のときは〜」を、いまの対戦相手に合わせて読ませる
-export const withMemo = (system: string, memo?: string, decks?: { mine: string; foe: string }): string =>
+export const withMemo = (system: string, memo?: string, decks?: { mine: string; foe: string }, shared?: string): string =>
   memo?.trim()
-    ? `${system}\n\nあなたが使うデッキについて、持ち主が書いたメモです。マリガンの基準・立ち回り・コンボなどが書いてあれば、参考にしてください (書いていないことは、自分で判断してください)。${decks ? `\nあなたのデッキ: [[${decks.mine}]]。いまの対戦相手のデッキ: [[${decks.foe}]]${decks.mine === decks.foe ? " (同じデッキ同士: ミラー)" : ""}。メモに「[[デッキ名]] が相手のときは〜」とあれば、対戦相手のデッキに合うものだけ、使ってください。` : ""}\n${memo.trim()}`
-    : system;
+    ? `${withShared(system, shared)}\n\nあなたが使うデッキについて、持ち主が書いたメモです。マリガンの基準・立ち回り・コンボなどが書いてあれば、参考にしてください (書いていないことは、自分で判断してください)。${decks ? `\nあなたのデッキ: [[${decks.mine}]]。いまの対戦相手のデッキ: [[${decks.foe}]]${decks.mine === decks.foe ? " (同じデッキ同士: ミラー)" : ""}。メモに「[[デッキ名]] が相手のときは〜」とあれば、対戦相手のデッキに合うものだけ、使ってください。` : ""}\n${memo.trim()}`
+    : withShared(system, shared);
 
 export const aiActPrompt = (g: Game, rules: RuleBook, p: PlayerId, opts: AiOption[]): string => `${aiDescribe(g, rules, p)}\n\nあなたはいま優先権を持っています。選べる行動:\n${opts.map((o) => `${o.id}: ${o.label}`).join("\n")}\n\n番号を1つ選んでください。`;
 
