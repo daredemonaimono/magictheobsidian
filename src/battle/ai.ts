@@ -27,6 +27,20 @@ function nameOf(g: Game, p: PlayerId, id: string): string {
   return g.battlefield.find((x) => x.id === id)?.card.name ?? g.stack.find((s) => s.id === id)?.card.name ?? id;
 }
 
+// AI の安全策 (Forge の、暴走防止・コストの許容を参考): 同じ能力は、1 ターンに 3 回まで。ライフを払って、残りが 4 以下になる能力は、選ばない
+export const RUNAWAY_LIMIT = 3;
+export const SAFE_LIFE = 4;
+function unsafe(g: Game, rules: RuleBook, p: PlayerId, a: Action): boolean {
+  if (a.kind === "activate") {
+    const perm = g.battlefield.find((x) => x.id === a.perm);
+    const ab = perm && rules.get(perm.card.name)?.abilities.filter((x) => x.kind === "activated")[a.index];
+    const life = Number(ab?.body.find((c) => c.node === "cost")?.args.life ?? 0);
+    return (g.activated?.[`${a.perm}:${a.index}`] ?? 0) >= RUNAWAY_LIMIT || (life > 0 && g.life[p] - life <= SAFE_LIFE);
+  }
+  if (a.kind === "handAbility") return (g.activated?.[`${a.card}:h${a.index}`] ?? 0) >= RUNAWAY_LIMIT;
+  return false;
+}
+
 const MAX_TARGET_OPTIONS = 8; // 1つの行動で、対象ごとに別の選択肢にする上限
 
 // いまできる行動を、番号つきの選択肢にする。0 番は、いつも「何もしない」。対象を取る行動は、最初のスロットの対象ごとに分ける (残りのスロットは、仮の対象)
@@ -49,7 +63,7 @@ export function aiOptions(g: Game, rules: RuleBook, p: PlayerId): AiOption[] {
     if (a.kind === "activate") {
       const perm = g.battlefield.find((x) => x.id === a.perm);
       const ab = perm && rules.get(perm.card.name)?.abilities.filter((x) => x.kind === "activated")[a.index];
-      if (!perm || !ab || manaOnly(ab.body)) continue; // マナを出すだけの能力は、選択肢にしない
+      if (!perm || !ab || manaOnly(ab.body) || unsafe(g, rules, p, a)) continue; // マナを出すだけの能力と、暴走・ライフの危険がある能力は、選択肢にしない
       add(`能力を使う: ${perm.card.name} の ${abilityLabels(rules, perm.card.name)[a.index]}`, a);
     } else {
       const c = g.hands[p].find((x) => x.id === a.card);
@@ -60,7 +74,7 @@ export function aiOptions(g: Game, rules: RuleBook, p: PlayerId): AiOption[] {
   for (const c of g.hands[p]) {
     handAbilitiesOf(rules, c.name).forEach((ab, index) => {
       const action: Action = { kind: "handAbility", card: c.id, index };
-      if (tryAction(sim, rules, p, action) !== undefined) return;
+      if (tryAction(sim, rules, p, action) !== undefined || unsafe(g, rules, p, action)) return;
       const what = ab.body.filter((x) => x.node !== "cost" && x.node !== "timing").map((x) => getNode(x.node)?.title ?? x.node).join(" → ");
       add(`手札から起動: ${c.name} (${what})`, action);
     });

@@ -167,6 +167,7 @@ export function activateAbility(g: Game, p: PlayerId, permId: string, index: num
   const why = costProblem(g, p, cost, perm, tapIds, rules, undefined, x);
   if (why) throw new RuleError(`${perm.card.name}: ${why}`);
   payCost(g, p, cost, perm, tapIds, undefined, x);
+  (g.activated ??= {})[`${perm.id}:${index}`] = (g.activated[`${perm.id}:${index}`] ?? 0) + 1;
   g.serial++;
   if (effects.length && !cost.isLoyalty && effects.every((c) => c.node === "addMana")) {
     for (const call of effects) getNode(call.node)!.run!({ game: g, rules, item, vars: {}, call }, resolveArgs(call, {})!); // マナ能力はスタックを使わない
@@ -198,6 +199,7 @@ export function activateFromHand(g: Game, p: PlayerId, cardId: string, index: nu
   const why = costProblem(g, p, cost, undefined, [], rules);
   if (why) throw new RuleError(`${card.name}: ${why}`);
   payCost(g, p, cost, undefined, [], undefined);
+  (g.activated ??= {})[`${card.id}:h${index}`] = (g.activated[`${card.id}:h${index}`] ?? 0) + 1;
   g.hands[p] = g.hands[p].filter((c) => c !== card);
   putInGraveyard(g, card, "hand"); // コストで捨てる (捨てた数に数える)
   g.log.push(`${card.name} を手札から捨てて、能力を起動した`);

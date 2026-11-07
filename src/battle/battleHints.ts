@@ -75,6 +75,23 @@ function actionLines(g: Game, rules: RuleBook, p: PlayerId, opts: AiOption[]): s
     } else {
       const roles = a.kind === "cast" ? cardRoles(rules, g.hands[p].find((x) => x.id === a.card)?.name ?? "").all : a.kind === "activate" ? cardRoles(rules, g.battlefield.find((x) => x.id === a.perm)?.card.name ?? "").activated[a.index] ?? [] : abilityRoles(handAbilitiesOf(rules, g.hands[p].find((x) => x.id === a.card)?.name ?? "")[a.index] ?? { kind: "activated", body: [] });
       parts.push(`役割: ${roles.join("・") || "なし (ルールが無い・部品だけ)"}`);
+      // タイミング (Forge の AtOppEOT などを参考): インスタントは待てる・ソーサリーは自分のメインだけ
+      const src = a.kind === "cast" ? g.hands[p].find((x) => x.id === a.card) : undefined;
+      if (src) {
+        const instant = /\bInstant\b/.test(src.typeLine) || !!src.flash;
+        if (instant && roles.some((r) => ["cardAdvantage", "lifeGain", "boardGrowth", "mana"].includes(r))) parts.push("タイミング: インスタントなので、相手のターン終了時まで待てる (マナを残せる)");
+        else if (instant && roles.some((r) => ["removal", "damage", "counterSpell", "tempo"].includes(r))) parts.push("タイミング: インスタントなので、相手の行動 (呪文・攻撃宣言) に合わせて使える");
+        else if (/\bSorcery\b/.test(src.typeLine)) parts.push("タイミング: ソーサリーなので、自分のメインフェイズだけ");
+      }
+      // コストの注意 (Forge の willPayCosts を参考): ライフを払う・起動の回数
+      if (a.kind === "activate" || a.kind === "handAbility") {
+        const name = a.kind === "activate" ? g.battlefield.find((x) => x.id === a.perm)?.card.name : g.hands[p].find((x) => x.id === a.card)?.name;
+        const abs = a.kind === "activate" ? (rules.get(name ?? "")?.abilities.filter((x) => x.kind === "activated") ?? []) : handAbilitiesOf(rules, name ?? "");
+        const life = Number(abs[a.index]?.body.find((c) => c.node === "cost")?.args.life ?? 0);
+        if (life > 0) parts.push(`注意: ライフ ${life} を払う (${g.life[p]}→${g.life[p] - life})`);
+        const n = g.activated?.[a.kind === "activate" ? `${a.perm}:${a.index}` : `${a.card}:h${a.index}`] ?? 0;
+        if (n > 0) parts.push(`注意: このターン ${n} 回、起動した`);
+      }
       if (simulated < MAX_SIMULATED) {
         simulated++;
         const s = simulate(g, rules, p, o);

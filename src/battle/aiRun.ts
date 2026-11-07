@@ -58,7 +58,11 @@ async function answerAiQuestion(ctl: BattleController, ask: AskAi | undefined, a
     return "acted";
   }
   let ids: string[] = [];
-  if (ask) {
+  const cached = req.key ? ctl.aiDredgeCache.get(req.key) : undefined;
+  if (cached && cached.every((id) => req.cards.some((c) => c.id === id))) {
+    ids = cached; // 同じ状況の答えを使い回す (AI を呼ばない)
+    if (ids.length) g.log.push("相手 (AI) は、引くかわりに Dredge した");
+  } else if (ask) {
     try {
       const prompt = `${aiDescribe(g, ctl.rules, ai)}\n\n${req.label ?? "選んでください"}\n選べるカード:\n${req.cards.map((c) => `${c.id}: ${c.name}`).join("\n")}\n\n選ぶカードの id を、最大 ${req.max} 枚、{"ids": ["id", ...], "why": "短い理由"} で答えてください。選ばない (ふつうに引く) なら、空の配列です。`;
       const r = await ask(withMemo(AI_SYSTEM, ctl.aiMemo, ctl.aiDecks), prompt);
@@ -68,7 +72,8 @@ async function answerAiQuestion(ctl: BattleController, ask: AskAi | undefined, a
       const got = Array.isArray(v?.ids) ? matchIds(v!.ids as unknown[], req.cards).ids.slice(0, req.max) : [];
       if (got.length >= req.min) ids = got;
       if (typeof v?.why === "string" && v.why.trim()) ctl.aiNotes.push({ n: ctl.record.length, why: `${ids.length ? "Dredge する" : "Dredge しない"}: ${v.why.trim()}` });
-      g.log.push(`相手 (AI) は、${ids.length ? "引くかわりに Dredge した" : "Dredge しなかった"}`);
+      if (ids.length) g.log.push("相手 (AI) は、引くかわりに Dredge した"); // 「しなかった」は、連打になるので、出さない
+      if (req.key) ctl.aiDredgeCache.set(req.key, ids);
     } catch (e) {
       g.log.push(`相手 (AI) の Dredge の判断に失敗した (${(e as Error).message})。ふつうに引く`);
     }

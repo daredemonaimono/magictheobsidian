@@ -9,6 +9,8 @@ export function abilityRoles(ab: Ability): string[] {
   const roles = ab.body.flatMap((c) => getNode(c.node)?.roles ?? []);
   // 墓地にあるあいだ働く誘発型能力 (when zone=graveyard) は、墓地で働く
   if (ab.body.some((c) => c.node === "when" && c.args.zone === "graveyard")) roles.push("graveyardValue");
+  // 「ライブラリーから墓地に置かれたとき」に働く誘発 (Narcomoeba・Creeping Chill): 切削・Dredge で落とすと得 (millPayoff)
+  if (ab.body.some((c) => c.node === "when" && c.args.event === "moved" && c.args.from === "library" && c.args.zone === "graveyard")) roles.push("millPayoff");
   return uniq(roles);
 }
 

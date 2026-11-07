@@ -146,6 +146,7 @@ export interface Game {
   handLook?: { by: PlayerId; of: PlayerId; ids: string[]; n: number }; // 手札を見たとき (lookHand): だれが、だれの手札を、どのカードを見たか。n = 何回目か (画面が、新しい「見た」を見つける)
   restrictedMana: Record<PlayerId, { amount: number; color?: PoolKey; type?: string; notType?: string }[]>; // 使い道に制限のあるマナ (「クリーチャーでない呪文を唱えるためにしか使えない」)
   extraTurns?: PlayerId[]; // 追加のターン (次のターンの前に、順に取る)
+  activated?: Record<string, number>; // このターンに、起動型能力を起動した回数 (パーマネントの id:番号 / 手札のカードの id:h番号)。暴走防止 (AI は、同じ能力を 1 ターンに 3 回までしか選ばない)。ターンが替わると空
   discarded?: Record<PlayerId, number>; // このターンに捨てた・サイクリングしたカードの数 (手札から墓地へ。プレイヤーごと。ターンが替わると 0)
   gained?: Record<PlayerId, number>; // このターンに得たライフの量 (プレイヤーごと。ターンが替わると 0)
   delayed?: Delayed[]; // 遅延誘発 (あとのステップの開始時に積む)

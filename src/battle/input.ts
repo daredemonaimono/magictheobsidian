@@ -1,11 +1,12 @@
-import { Game, GameCard, Decider, PlayerId } from "./state";
+import { dredgeNote, dredgeVerdict, evalDredge } from "./dredgeEval";
+import { Game, GameCard, Decider, PlayerId, RuleBook } from "./state";
 import { NodeCall } from "./node";
 
 // 人の判断の入力待ち。エンジンは同期のまま。自分 (me) への質問で、まだ答えが無ければ NeedInput を投げ、画面が答えを集めて、最初からやり直す (エンジンは乱数を使わないので、同じ結果になる)。相手への質問は、これまでどおり既定の動き
 export type CardRef = { id: string; name: string };
 export type InputRequest =
   | { kind: "discard"; n: number; cards: CardRef[]; cleanup?: boolean } // 手札から n 枚捨てる。cleanup = クリンナップの手札の上限 (画面は、「残すカードを選ぶ」形にする)
-  | { kind: "choose"; min: number; max: number; cards: CardRef[]; label?: string; for?: PlayerId } // 見たカードから選ぶ。label = 画面に出す説明 (Dredge など)
+  | { kind: "choose"; min: number; max: number; cards: CardRef[]; label?: string; for?: PlayerId; key?: string } // 見たカードから選ぶ。label = 画面に出す説明 (Dredge など)
   | { kind: "order"; cards: CardRef[]; to: "top" | "bottom" } // ライブラリーの上・底に置く順番 (答えは、上から下へ並べた id)
   | { kind: "may"; what: string } // 「してもよい」
   | { kind: "pay"; n: number; why?: string } // 「支払わないかぎり」の支払い
@@ -22,7 +23,7 @@ const refs = (cs: GameCard[]): CardRef[] => cs.map((c) => ({ id: c.id, name: c.n
 
 // answers = これまでに集めた答え (質問の順)。足りなければ、次の質問で NeedInput
 // ai = AI の相手のプレイヤー。AI の Dredge の質問は、人には出さず (for = ai)、画面が AI (API) に聞いて、答えを足す (人への質問と、同じ仕組み)。AI が無ければ (雑魚 CPU など)、Dredge しない
-export function makeDecider(me: PlayerId, answers: Answer[], ai?: PlayerId): Decider {
+export function makeDecider(me: PlayerId, answers: Answer[], ai?: PlayerId, rules?: RuleBook): Decider {
   let i = 0;
   const next = (request: InputRequest): Answer => {
     if (i >= answers.length) throw new NeedInput(request);
@@ -41,11 +42,28 @@ export function makeDecider(me: PlayerId, answers: Answer[], ai?: PlayerId): Dec
       const got = ids(next({ kind: "choose", min: atMost ? 0 : n, max: n, cards: refs(from) }));
       return from.filter((c) => got.includes(c.id));
     },
-    dredge(_g, p, options) {
+    dredge(g, p, options0) {
       if (p !== me && p !== ai) return undefined;
-      const label = `引くかわりに Dredge する? ${options.map((o) => `${o.card.name} (Dredge ${o.n})`).join("・")}: 手札に戻すカードを選ぶ (選ばなければ、ふつうに引く)`;
-      const got = ids(next({ kind: "choose", min: 0, max: 1, cards: refs(options.map((o) => o.card)), label, ...(p === me ? {} : { for: p }) }));
-      return options.find((o) => got.includes(o.card.id))?.card;
+      if (p === me) {
+        const label = `引くかわりに Dredge する? ${options0.map((o) => `${o.card.name} (Dredge ${o.n})`).join("・")}: 手札に戻すカードを選ぶ (選ばなければ、ふつうに引く)`;
+        const got = ids(next({ kind: "choose", min: 0, max: 1, cards: refs(options0.map((o) => o.card)), label }));
+        return options0.find((o) => got.includes(o.card.id))?.card;
+      }
+      // AI: 機械的に危険な Dredge (ライブラリーが N 枚ちょうど: 次のドローで負ける) は、しない。できない Dredge は、そもそも候補に出ない。
+      // ノードの役割とデッキの内訳から確率を計算して (dredgeEval)、決まるものは機械的に決める (AI を呼ばない)。迷うときだけ、数字つきで、AI に聞く
+      const options = options0.filter((o) => g.libraries[p].length > o.n);
+      const evals = options.map((o) => ({ o, e: rules ? evalDredge(g, rules, p, o.n) : undefined }));
+      const yes = evals.filter((x) => x.e && dredgeVerdict(x.e) === "yes").sort((a, b) => a.o.n - b.o.n)[0];
+      if (yes) {
+        g.log.push(`相手 (AI) は、機械的に判断して、Dredge ${yes.o.n} (${yes.o.card.name}) をした: 落とすと得のカードが期待 ${yes.e!.expPayoff.toFixed(1)} 枚で、困るカードは無い`);
+        return yes.o.card;
+      }
+      const ask = evals.filter((x) => !x.e || dredgeVerdict(x.e) === "ask");
+      if (!ask.length) return undefined;
+      const label = `引くかわりに Dredge する? ${ask.map((x) => `${x.o.card.name} (Dredge ${x.o.n})`).join("・")}: 手札に戻すカードを選ぶ (選ばなければ、ふつうに引く)。${ask.map((x) => (x.e ? dredgeNote(x.e) : "")).join(" ")}`;
+      const key = `${ask.map((x) => `${x.o.card.name}:${x.o.n}:${x.e?.payoff ?? "?"}:${x.e?.lossy ?? "?"}`).join(",")}|gy:${g.graveyards[p].map((c) => c.name).sort().join(",")}`;
+      const got = ids(next({ kind: "choose", min: 0, max: 1, cards: refs(ask.map((x) => x.o.card)), label, key, for: p }));
+      return ask.find((x) => got.includes(x.o.card.id))?.o.card;
     },
     legend(_g, p, same) {
       if (p !== me) return undefined;

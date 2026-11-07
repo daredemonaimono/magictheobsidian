@@ -63,6 +63,7 @@ export class BattleController {
   aiTokens = { input: 0, output: 0 }; // この対戦で、AI が使ったトークン数
   aiMemo = ""; // 相手のデッキの、持ち主のメモ (AI への指示に足す)
   aiDecks?: { mine: string; foe: string }; // AI のデッキと、対戦相手 (人) のデッキの名前
+  aiDredgeCache = new Map<string, string[]>(); // 同じ状況 (内訳・N・墓地が同じ) の Dredge の答えを、使い回す (AI を呼ぶ回数を減らす)
   aiNotes: { n: number; why: string }[] = []; // AI が返した理由 (n = その行動が、記録の何件目になるか)。ログには出さず、履歴の裏側に残す
   private aiDone = new Set<string>(); // 攻撃・ブロックを、ターンごとに1回だけ聞く
   get aiActive(): boolean {
@@ -228,7 +229,7 @@ export class BattleController {
   // fn をコピーの局面で実行する。成功すれば元に書き戻す。質問が出たら、pending に置く
   private perform(label: string, fn: (g: Game) => void, answers: Answer[]): string | undefined {
     const copy = structuredClone({ ...this.game, decide: undefined }) as Game;
-    copy.decide = makeDecider(this.me, answers, this.ai);
+    copy.decide = makeDecider(this.me, answers, this.ai, this.rules);
     try {
       fn(copy);
     } catch (e) {
