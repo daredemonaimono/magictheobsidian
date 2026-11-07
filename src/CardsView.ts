@@ -20,7 +20,7 @@ export class CardsView extends ItemView {
   private grid!: HTMLElement;
   private refresh = debounce(() => void this.search(), 300, true);
 
-  constructor(leaf: WorkspaceLeaf, private settings: Settings) {
+  constructor(leaf: WorkspaceLeaf, private settings: Settings, private onPick?: (key: string) => void) {
     super(leaf);
   }
 
@@ -94,8 +94,9 @@ export class CardsView extends ItemView {
       if (this.settings.textLang === "ja") wikiButton(ctl, r.name, r.ja);
       // ローカルネーム・ローカルテキスト (設定した言語のカード名・効果テキスト) を手で直す。デッキ画面のプレビューと同じペン
       if (r.localKey) localPenButtons(this.app, this.settings, ctl, r.localKey, () => r.ja, { name: (local) => { r.ja = local; nameEl.setText(local ?? r.name); }, text: () => new Notice("効果テキストを保存した") });
-      // クリックでカードのノートを開く
+      // クリックで、右のサイドバーに、カードの情報 (ルールの設定・採用しているデッキ)。サイドバーが無い使い方のときは、カードのノートを開く
       cell.onclick = () => {
+        if (this.onPick && r.localKey) return this.onPick(r.localKey);
         const f = this.app.vault.getAbstractFileByPath(`${CARD_DIR}/${r.localKey}.md`);
         if (f instanceof TFile) void this.app.workspace.getLeaf(true).openFile(f);
       };

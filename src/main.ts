@@ -1,4 +1,4 @@
-import { App, EventRef, Modal, Notice, Plugin, Setting, TFile, WorkspaceLeaf, normalizePath } from "obsidian";
+import { App, EventRef, Modal, Notice, Platform, Plugin, Setting, TFile, WorkspaceLeaf, normalizePath } from "obsidian";
 import { allNodes } from "./battle/registry";
 import { AiAdvisor } from "./battle/aiRun";
 import { battleHints } from "./battle/battleHints";
@@ -16,7 +16,8 @@ import { BuildRulesModal } from "./BuildRulesModal";
 import { RestoreRuleModal } from "./RestoreRuleModal";
 import { RULE_EDITOR_VIEW, RuleEditorView } from "./RuleEditorView";
 import { ensureCardFile, localCards, oracleEnglish, updateLegality } from "./cards";
-import { DECK_DIR, foldCommander, writeDeck } from "./deck";
+import { DECK_DIR, foldCommander, parseDeck, writeDeck } from "./deck";
+import { CardRule } from "./battle/node";
 import { CREATABLE, FORMATS } from "./rules";
 import { ImportModal, resolveDeck } from "./import";
 import { CARDLIST_VIEW, CardListView } from "./CardListView";
@@ -28,6 +29,7 @@ import { SavedBattle, battleNote, battleNoteName, parseBattleNote } from "./batt
 import { findDeckFile, listDecks, startBattle, startReplay } from "./battleStart";
 import { DeckMemoDraftModal } from "./DeckMemoDraftModal";
 import { SelfPlayModal } from "./SelfPlayModal";
+import { CARDINFO_VIEW, CardInfoApi, CardInfoView } from "./CardInfoView";
 import { editableMemo, setMemo } from "./battle/memo";
 import { BattleHistoryModal } from "./BattleHistoryModal";
 import { COLLECTION_VIEW, CollectionView } from "./CollectionView";
@@ -48,7 +50,9 @@ import { sharedFor, withShared } from "./battle/agentRules";
 
 // 「メモ」はカード行の外なので、デッキ画面で枚数を変えても書き換わらない。統率戦だけコマンダー欄があり、サイドは無い
 const RULES_DIR = "Rules"; // カードの能力をノードで組んだ md (Cards/ と同じ並び。Obsidian の画面で手で直せる)
-const GAPS_NOTE = "_足りないノード.md"; // AI にルールを書かせて、書けなかった効果を、カードごとに残すノート (Rules/ の中。_ で始まる名前は、ルールとして読まない)
+const GAPS_NOTE = "_missing-nodes.md"; // (旧: _足りないノード.md。あれば、この名前に移す)
+const OLD_GAPS_NOTE = "_足りないノード.md";
+const GAPS_HEADER = "---\nmtg: gaps\n---\n\n# Missing nodes (unsupported effects in the rules)\n\nEffects that could not be written with the current nodes (the `## 未対応` lines of each rule, and effects the node-selection stage said it could not write). Useful as a request list for new nodes. After adding a node, rebuild that card's rule; the line disappears once it is fully supported.\n\n"; //  // AI にルールを書かせて、書けなかった効果を、カードごとに残すノート (Rules/ の中。_ で始まる名前は、ルールとして読まない)
 
 const deckTemplate = (format: string) =>
   `---\nmtg: deck\nformat: ${format}\ntags: [mtg/deck]\n---\n\n${format === "commander" ? "## Commander\n\n## Main\n" : "## Main\n\n## Side\n"}\n## メモ\n`;
@@ -108,6 +112,7 @@ export default class MagicTheObsidian extends Plugin {
       sidebar: d.sidebar ?? DEFAULT_SETTINGS.sidebar,
       listArt: d.listArt ?? DEFAULT_SETTINGS.listArt,
       dashboardTab: d.dashboardTab ?? DEFAULT_SETTINGS.dashboardTab,
+      hideLeftBar: d.hideLeftBar ?? DEFAULT_SETTINGS.hideLeftBar,
       currency: d.currency ?? DEFAULT_SETTINGS.currency,
       ai: migrateAi(d), // 昔の設定 (claudeKeySecret・battleModel など) も、ここで新しい形に移す
       battleStops: d.battleStops === "always" ? "always" : "smart",
@@ -132,13 +137,14 @@ export default class MagicTheObsidian extends Plugin {
         for (const l of this.app.workspace.getLeavesOfType(CARDLIST_VIEW)) if (l.view instanceof CardListView) l.view.refresh();
         this.prevCount = 0; // 次の同期で開き直す
         void this.syncSidebar();
-      }, () => void this.preloadImages(false)),
+      }, () => void this.preloadImages(false), () => this.applyLeftBar()),
     );
     this.registerView(DECK_VIEW, (leaf) => new DeckView(leaf, this.settings));
     this.registerView(BATTLE_VIEW, (leaf) => new BattleView(leaf, () => this.battleSession, () => this.settings.battleStops, () => this.settings.battleOpponent, () => this.settings.battleEffects, () => this.makeAsk(), (b) => void this.saveBattle(b), () => this.ensureBattleSide(), () => this.hintAdvisor()));
     this.registerView(BATTLE_SIDE_VIEW, (leaf) => new BattleSideView(leaf));
-    this.registerView(DASHBOARD_VIEW, (leaf) => new DashboardView(leaf, { collection: () => void this.openOrReveal(COLLECTION_VIEW), deck: () => void this.openOrReveal(DECKLIST_VIEW), cards: () => void this.openOrReveal(CARDS_VIEW) }));
-    this.registerView(CARDS_VIEW, (leaf) => new CardsView(leaf, this.settings));
+    this.registerView(DASHBOARD_VIEW, (leaf) => new DashboardView(leaf, { collection: () => void this.openOrReveal(COLLECTION_VIEW), deck: () => void this.openOrReveal(DECKLIST_VIEW), cards: () => void this.openOrReveal(CARDS_VIEW), pluginId: this.manifest.id }));
+    this.registerView(CARDS_VIEW, (leaf) => new CardsView(leaf, this.settings, (key) => void this.showCardInfo(key)));
+    this.registerView(CARDINFO_VIEW, (leaf) => new CardInfoView(leaf, this.cardInfoApi()));
     this.registerView(
       DECKLIST_VIEW,
       (leaf) =>
@@ -183,6 +189,7 @@ export default class MagicTheObsidian extends Plugin {
     // デッキ画面のメイン/サイドのタブを押したとき、サイドバーが畳まれていたら開く
     this.registerEvent((ws as unknown as { on(n: string, cb: () => void): EventRef }).on("mtg-show-list", () => void this.showList(ws.getActiveViewOfType(DeckView)?.leaf)));
     ws.onLayoutReady(() => {
+      this.applyLeftBar();
       this.dashboardIfEmpty(ws.getMostRecentLeaf());
       void this.syncSidebar();
       window.setTimeout(() => void this.preloadImages(false), 8000); // 「先に保存」のときだけ。起動の直後を避けて、あとから、静かに
@@ -245,6 +252,25 @@ export default class MagicTheObsidian extends Plugin {
     this.addCommand({ id: "battle-edit-rule", name: "Battle: edit rule nodes", callback: () => void this.openEditor() });
     this.addCommand({ id: "battle-restore-rule", name: "Battle: restore rule version", callback: () => void this.openRestore() });
     this.addCommand({ id: "battle-rules-coverage", name: "Battle: rules coverage", callback: () => void this.rulesCoverage() });
+    this.addCommand({
+      id: "toggle-left-bar",
+      name: "Toggle left sidebar (show/hide the file explorer)",
+      callback: async () => {
+        this.settings.hideLeftBar = !this.settings.hideLeftBar;
+        await this.saveData({ ...this.settings, prices: priceStore.prices, pricesUpdated: priceStore.updated, rates: priceStore.rates });
+        this.applyLeftBar();
+        new Notice(this.settings.hideLeftBar ? "左のバーを隠した" : "左のバーを表示した");
+      },
+    });
+    this.addCommand({
+      id: "card-info",
+      name: "Show card info (the open card note) in the right sidebar",
+      callback: () => {
+        const key = this.app.workspace.getActiveFile()?.path.match(/^Cards\/([^/]+)\.md$/)?.[1] ?? this.app.workspace.getActiveFile()?.path.match(new RegExp(`^${RULES_DIR}/([^/_][^/]*)\\.md$`))?.[1];
+        if (key) void this.showCardInfo(key);
+        else new Notice("Cards/<カード名>.md か Rules/<カード名>.md を開いてから実行してください");
+      },
+    });
     this.addCommand({ id: "open-dashboard", name: "Open dashboard", callback: () => void this.openOrReveal(DASHBOARD_VIEW) });
     this.addRibbonIcon("layout-dashboard", "Magic the Obsidian", () => void this.openOrReveal(DASHBOARD_VIEW));
     this.addCommand({
@@ -634,14 +660,84 @@ export default class MagicTheObsidian extends Plugin {
     new Notice(`AI のルール作成: 作った ${made} 枚 / 上書きした ${over} 枚 / 失敗 ${failed} 枚${fallback ? ` / 全ノードで、やり直した ${fallback} 枚` : ""}${gaps ? ` / 足りない効果あり ${gaps} 枚 (${RULES_DIR}/${GAPS_NOTE})` : ""}`);
   }
 
-  // Rules/_足りないノード.md を、いまのルールの「未対応」から、作り直す (ノードを足したあと、ルールを手で直したあとの、古い記録を消す)。AI は呼ばない
+  onunload() {
+    document.body.removeClass("mtg-hide-left-bar"); // プラグインを切ったら、左のバーは、元に戻す
+  }
+
+  // ---- カード情報 (右のサイドバー): ダッシュボードのカードを押すと、ルールの設定・採用しているデッキが見える
+  private cardInfoApi(): CardInfoApi {
+    return {
+      rule: async (key) => {
+        const f = this.app.vault.getAbstractFileByPath(normalizePath(`${RULES_DIR}/${key}.md`));
+        const md = f instanceof TFile ? await this.app.vault.read(f) : undefined;
+        let rule: CardRule | undefined;
+        try {
+          rule = md ? parseRule(md) : undefined;
+        } catch {
+          rule = undefined;
+        }
+        return { status: cardStatus(key, md), rule, hasNote: f instanceof TFile };
+      },
+      decks: async (key) => {
+        const out: { file: TFile; name: string; counts: { board: string; n: number }[] }[] = [];
+        const label: Record<string, string> = { commander: "Commander", main: "Main", side: "Side", token: "Token" };
+        for (const f of this.app.vault.getMarkdownFiles().filter((x) => x.path.startsWith(`${DECK_DIR}/`) && this.app.metadataCache.getFileCache(x)?.frontmatter?.mtg === "deck").sort((a, b) => a.basename.localeCompare(b.basename))) {
+          const deck = parseDeck(await this.app.vault.cachedRead(f));
+          const counts = (["commander", "main", "side", "token"] as const).flatMap((b) => (deck[b].get(key) ? [{ board: label[b], n: deck[b].get(key)!.n }] : []));
+          if (counts.length) out.push({ file: f, name: f.basename, counts });
+        }
+        return out;
+      },
+      openDeck: (file) => void this.openDeck(file),
+      openCardNote: (key) => {
+        const f = this.app.vault.getAbstractFileByPath(`Cards/${key}.md`);
+        if (f instanceof TFile) void this.app.workspace.getLeaf(true).openFile(f);
+      },
+      openRuleNote: (key) => {
+        const f = this.app.vault.getAbstractFileByPath(normalizePath(`${RULES_DIR}/${key}.md`));
+        if (f instanceof TFile) void this.app.workspace.getLeaf(true).openFile(f);
+      },
+      editRule: (key) => void this.app.workspace.getLeaf(true).setViewState({ type: RULE_EDITOR_VIEW, state: { card: key }, active: true }),
+      buildRule: (key) => (this.askFor("rules") ? void this.buildRulesFor([key]) : this.missingKeyNotice("rules")),
+    };
+  }
+
+  // 右のサイドバーに、カード情報を出す (すでにあれば、そのカードに切り替える)
+  async showCardInfo(key: string) {
+    const ws = this.app.workspace;
+    let leaf = ws.getLeavesOfType(CARDINFO_VIEW)[0];
+    if (!leaf) {
+      const right = ws.getRightLeaf(false);
+      if (!right) return;
+      await right.setViewState({ type: CARDINFO_VIEW, active: true });
+      leaf = right;
+    }
+    ws.revealLeaf(leaf);
+    if (leaf.view instanceof CardInfoView) await leaf.view.show(key);
+  }
+
+  // 左のバー (ファイル一覧) を隠す・戻す (パソコンのみ)。隠すときは、開いていれば、畳む
+  applyLeftBar() {
+    const hide = this.settings.hideLeftBar && Platform.isDesktop;
+    document.body.toggleClass("mtg-hide-left-bar", hide);
+    if (hide) this.app.workspace.leftSplit?.collapse();
+  }
+
+  // 旧い名前のノート (_足りないノード.md) があって、新しい名前 (_missing-nodes.md) が無ければ、名前を移す
+  private async migrateGapsNote() {
+    const oldFile = this.app.vault.getAbstractFileByPath(normalizePath(`${RULES_DIR}/${OLD_GAPS_NOTE}`));
+    if (oldFile instanceof TFile && !this.app.vault.getAbstractFileByPath(normalizePath(`${RULES_DIR}/${GAPS_NOTE}`))) await this.app.fileManager.renameFile(oldFile, normalizePath(`${RULES_DIR}/${GAPS_NOTE}`));
+  }
+
+  // Rules/_missing-nodes.md を、いまのルールの「未対応」から、作り直す (ノードを足したあと、ルールを手で直したあとの、古い記録を消す)。AI は呼ばない
   private async refreshGaps() {
     const entries: string[] = [];
     for (const f of this.app.vault.getMarkdownFiles().filter((x) => x.parent?.path === RULES_DIR && !x.basename.startsWith("_")).sort((a, b) => a.basename.localeCompare(b.basename))) {
       const lines = unsupportedLines(await this.app.vault.read(f));
       if (lines.length) entries.push(`- [[${f.basename}]]: ${lines.join(" / ").replace(/\n/g, " ")}`);
     }
-    const text = `---\nmtg: gaps\n---\n\n# 足りないノード (ルールの「未対応」)\n\nAI にルールを書かせたとき、書けなかった効果。ノードを足したら、そのカードのルールを、もう一度、書かせる。\n\n${entries.join("\n")}${entries.length ? "\n" : ""}`;
+    const text = `${GAPS_HEADER}${entries.join("\n")}${entries.length ? "\n" : ""}`;
+    await this.migrateGapsNote();
     const path = normalizePath(`${RULES_DIR}/${GAPS_NOTE}`);
     const f = this.app.vault.getAbstractFileByPath(path);
     if (f instanceof TFile) await this.app.vault.modify(f, text);
@@ -649,14 +745,15 @@ export default class MagicTheObsidian extends Plugin {
     new Notice(`足りないノードの一覧を作り直した: ${entries.length} 枚`);
   }
 
-  // 足りない効果 (ルールの「未対応」と、1段目が「書けなさそう」と答えたもの) を、Rules/_足りないノード.md に、カードごとに残す。次に作るノードの手がかり (ノードを足したら、そのカードを、もう一度、書かせる)。無ければ、そのカードの行を消す
+  // 足りない効果 (ルールの「未対応」と、1段目が「書けなさそう」と答えたもの) を、Rules/_missing-nodes.md に、カードごとに残す。次に作るノードの手がかり (ノードを足したら、そのカードを、もう一度、書かせる)。無ければ、そのカードの行を消す
   private async recordGaps(card: string, md: string, missing: string[]): Promise<boolean> {
     const lines = unsupportedLines(md);
+    await this.migrateGapsNote();
     const path = normalizePath(`${RULES_DIR}/${GAPS_NOTE}`);
     const f = this.app.vault.getAbstractFileByPath(path);
-    const old = f instanceof TFile ? await this.app.vault.read(f) : "---\nmtg: gaps\n---\n\n# 足りないノード (ルールの「未対応」)\n\nAI にルールを書かせたとき、書けなかった効果。ノードを足したら、そのカードのルールを、もう一度、書かせる。\n\n";
+    const old = f instanceof TFile ? await this.app.vault.read(f) : GAPS_HEADER;
     const keep = old.split("\n").filter((l) => !l.startsWith(`- [[${card}]]`));
-    const entry = lines.length || missing.length ? [`- [[${card}]]: ${[...lines, ...missing.map((x) => `(1段目) ${x}`)].join(" / ").replace(/\n/g, " ")}`] : [];
+    const entry = lines.length || missing.length ? [`- [[${card}]]: ${[...lines, ...missing.map((x) => `(stage 1) ${x}`)].join(" / ").replace(/\n/g, " ")}`] : [];
     const text = [...keep.filter((l, i, a) => !(l === "" && a[i - 1] === "")), ...entry].join("\n").replace(/\n+$/, "\n");
     if (text !== old) {
       if (f instanceof TFile) await this.app.vault.modify(f, text);

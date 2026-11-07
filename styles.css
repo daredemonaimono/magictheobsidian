@@ -498,3 +498,41 @@ button.mtg-color .mtg-sym { width: 20px; height: 20px; display: block; }
 .mtg-bt-speed.is-self { left: 84px; bottom: 86px; } .mtg-bt-speed.is-opp { right: 22px; top: 112px; }
 .mtg-bt-typenow { position: absolute; left: 2px; top: 2px; max-width: 96%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; background: #3a1500e6; color: #ffb27a; border: 1px solid #ff8a3d; font-size: 10px; font-weight: 700; padding: 0 4px; border-radius: 4px; pointer-events: none; }
 .mtg-bt-yardbtn { margin-left: auto; font-size: 11px; padding: 1px 8px; }
+
+/* 左のバー (ファイル一覧) を隠す (設定「左のバーを隠す」。パソコンのみ) */
+body.mtg-hide-left-bar .workspace-split.mod-left-split,
+body.mtg-hide-left-bar .sidebar-toggle-button.mod-left { display: none; }
+
+/* カード情報 (右のサイドバー) */
+.mtg-ci { padding: 12px; }
+.mtg-ci-empty { color: var(--text-muted); padding: 8px; }
+.mtg-ci-head { display: flex; gap: 10px; align-items: flex-start; }
+.mtg-ci-img { width: 110px; flex: none; }
+.mtg-ci-img img { width: 100%; border-radius: 8px; }
+.mtg-ci-name { font-weight: 700; font-size: var(--font-ui-medium); }
+.mtg-ci-btns { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
+.mtg-ci-text { white-space: pre-wrap; font-size: var(--font-ui-small); border: 1px solid var(--background-modifier-border); border-radius: 8px; padding: 8px 10px; max-height: 30vh; overflow: auto; }
+.mtg-ci h4 { margin: 14px 0 6px; }
+.mtg-ci-status { display: inline-block; padding: 1px 8px; border-radius: 10px; font-weight: 700; font-size: var(--font-ui-small); margin-bottom: 4px; }
+.mtg-ci-status.is-ok { background: #1f5d34; color: #c8f5d6; }
+.mtg-ci-status.is-partial { background: #6a5200; color: #ffe38a; }
+.mtg-ci-status.is-unbuilt, .mtg-ci-status.is-none { background: #6a1f1f; color: #ffd0d0; }
+.mtg-ci-ability { font-size: var(--font-ui-small); margin: 2px 0; }
+.mtg-ci-unsupported { font-size: var(--font-ui-small); color: #ffb27a; }
+.mtg-ci-roles { font-size: var(--font-ui-small); color: var(--text-muted); margin: 4px 0; }
+.mtg-ci-deckrow { display: flex; gap: 8px; align-items: baseline; padding: 4px 6px; border-radius: 6px; cursor: pointer; }
+.mtg-ci-deckrow:hover { background: var(--background-modifier-hover); }
+.mtg-ci-deckname { font-weight: 600; }
+
+/* ダッシュボード: 操作の入口・すべてのコマンド */
+.mtg-dash-hint { margin: 10px 0 0; }
+.mtg-dashboard h3 { margin: 22px 0 8px; }
+.mtg-dash-ops { display: flex; gap: 8px; flex-wrap: wrap; }
+.mtg-dash-ops button { height: auto; padding: 8px 14px; }
+.mtg-dash-key { margin-left: 8px; padding: 0 6px; border: 1px solid var(--background-modifier-border); border-radius: 4px; font-size: var(--font-ui-smaller); color: var(--text-muted); }
+.mtg-dash-allhead { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+.mtg-dash-allhead h3 { margin-right: auto; }
+.mtg-dash-cmds { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 4px 16px; }
+.mtg-dash-cmd { display: flex; align-items: center; gap: 8px; padding: 3px 0; border-bottom: 1px solid var(--background-modifier-border); }
+.mtg-dash-cmdname { flex: 1; font-size: var(--font-ui-small); }
+.mtg-dash-cmd button { padding: 0 10px; height: 24px; }
