@@ -1,4 +1,4 @@
-import { Action, abilityLabels, actionsFor, autoTargets, manaOnly, slotsOf, tryAction, tryWithMana, uselessMana, withAllMana } from "./actions";
+import { Action, abilityLabels, actionsFor, autoTargets, flexColors, manaOnly, slotsOf, tapManaSource, tryAction, tryWithMana, uselessMana, withAllMana } from "./actions";
 import { RuleError, TargetSlot, applyOpening, serumPowder, activateAbility, activateFromHand, handAbilitiesOf, attackersAt, canAttackWith, castSpell, pitchable, declareAttackers, declareBlockers, assignDamage, passPriority, playLand } from "./engine";
 import { AiOption, aiAttackers, aiBlockers, aiOptions } from "./ai";
 import { cpuAct, cpuAttack, cpuBlock, cpuDo, tapFor, tapOne } from "./cpu";
@@ -337,7 +337,7 @@ export class BattleController {
       if (i < 0 || tryAction(g, this.rules, this.me, { kind: "activate", perm: p.id, index: i }) !== undefined) continue;
       const ab = this.rules.get(p.card.name)!.abilities.filter((a) => a.kind === "activated")[i];
       const m = ab.body.find((c) => c.node === "addMana");
-      out.push({ id: p.id, name: p.card.name, label: `${Number(m?.args.amount ?? 1) > 1 ? Number(m?.args.amount) : ""}${String(m?.args.color ?? "C")}` });
+      out.push({ id: p.id, name: p.card.name, label: flexColors(this.rules, p.card.name) ?? `${Number(m?.args.amount ?? 1) > 1 ? Number(m?.args.amount) : ""}${String(m?.args.color ?? "C")}` }); // デュアルランドは、出せる色の集合 ("GU")
     }
     return out;
   }
@@ -359,12 +359,7 @@ export class BattleController {
     for (const id of ids) {
       const p = x.battlefield.find((q) => q.id === id);
       const i = p ? this.manaIndexOf(x, p) : -1;
-      if (!p || i < 0) return false;
-      try {
-        activateAbility(x, this.me, id, i, {}, this.rules);
-      } catch {
-        return false;
-      }
+      if (!p || i < 0 || !tapManaSource(x, this.rules, this.me, id, i)) return false;
     }
     return tryAction(x, this.rules, this.me, a, targets, cast) === undefined;
   }
@@ -372,7 +367,7 @@ export class BattleController {
     for (const id of ids ?? []) {
       const p = x.battlefield.find((q) => q.id === id && q.controller === this.me && !q.tapped);
       const i = p ? this.manaIndexOf(x, p) : -1;
-      if (p && i >= 0) activateAbility(x, this.me, id, i, {}, this.rules);
+      if (p && i >= 0) tapManaSource(x, this.rules, this.me, id, i);
     }
   }
 

@@ -1,4 +1,6 @@
 import { RuleError, TargetSlot, activateAbility, activateFromHand, castSpell, handAbilitiesOf, playLand, targetSlots } from "./engine";
+import { characteristics } from "./continuous";
+import { activationBlocked } from "./engine/restrict";
 import { CastRecord } from "./node";
 import { getNode } from "./registry";
 import { Game, PlayerId, RuleBook } from "./state";
@@ -75,11 +77,58 @@ export function tryWithMana(g: Game, rules: RuleBook, p: PlayerId, a: Action, ta
 
 // 何かできるか (優先権の止まり方「使えるものがあるときだけ」の判定)。土地・マナ・アーティファクトなど、カードの能力のマナ (マナだけの起動型能力) を全部使ったと仮定して、土地を出せる・唱えられる呪文・使える (マナ以外の) 能力があるか。g は変えない
 // マナだけの起動型能力を全部使った (と仮定した) コピーの局面。p に優先権がある。g は変えない
+// マナ能力が 2 つ以上あり、どれも「{T}: 1 色のマナ」だけの土地 (デュアルランド): 払うとき、その中の好きな色を出せる。出せる色の集合 (例 "GU")。それ以外は undefined
+export function flexColors(rules: RuleBook, cardName: string): string | undefined {
+  const abs = activatedOf(rules, cardName).filter((a) => manaOnly(a.body));
+  if (abs.length < 2) return undefined;
+  const cols: string[] = [];
+  for (const ab of abs) {
+    const costs = ab.body.filter((c) => c.node === "cost");
+    const mana = ab.body.filter((c) => c.node === "addMana");
+    const c0 = costs[0]?.args ?? {};
+    if (costs.length !== 1 || Object.keys(c0).some((k) => k !== "tap") || c0.tap !== true || mana.length !== 1) return undefined;
+    const a = mana[0].args;
+    if (a.amount !== 1 || typeof a.color !== "string" || !"WUBRG".includes(a.color) || a.spellType !== undefined || a.spellNotType !== undefined) return undefined;
+    cols.push(a.color);
+  }
+  return [...new Set(cols)].join("");
+}
+
+// マナを出せるパーマネントを、1 つタップして、マナを出す (使えたら真)。デュアルランドは、好きな色のマナ ("A:GU") を出す。それ以外は、index (無ければ、最初に使えるマナ能力) を起動する
+export function tapManaSource(g: Game, rules: RuleBook, p: PlayerId, permId: string, index = -1): boolean {
+  const perm = g.battlefield.find((x) => x.id === permId && x.controller === p);
+  if (!perm || perm.tapped) return false;
+  const flex = flexColors(rules, perm.card.name);
+  if (flex && !characteristics(g, perm, rules).lostAbilities && !activationBlocked(g, rules, perm, p)) {
+    perm.tapped = true;
+    g.mana[p] = (g.mana[p] ?? 0) + 1;
+    g.pool[p] ??= {};
+    const key = `A:${flex}` as keyof typeof g.pool[typeof p];
+    g.pool[p][key] = (g.pool[p][key] ?? 0) + 1;
+    return true;
+  }
+  const abs = activatedOf(rules, perm.card.name);
+  for (const i of index >= 0 ? [index] : abs.map((_, k) => k)) {
+    if (!abs[i] || !manaOnly(abs[i].body)) continue;
+    try {
+      activateAbility(g, p, perm.id, i, {}, rules);
+      return true;
+    } catch {
+      /* 使えない: 次へ */
+    }
+  }
+  return false;
+}
+
 export function withAllMana(g: Game, rules: RuleBook, p: PlayerId): Game {
   const copy = structuredClone({ ...g, decide: undefined }) as Game;
   copy.priority = p;
   for (const perm of copy.battlefield) {
     if (perm.controller !== p) continue;
+    if (flexColors(rules, perm.card.name)) {
+      tapManaSource(copy, rules, p, perm.id); // デュアルランド: 好きな色のマナ
+      continue;
+    }
     activatedOf(rules, perm.card.name).forEach((ab, index) => {
       if (!manaOnly(ab.body)) return;
       try {
