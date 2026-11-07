@@ -1,4 +1,4 @@
-import { characteristics, costReduction } from "../continuous";
+import { activatedAbilities, characteristics, costReduction } from "../continuous";
 import { CastRecord, NodeCall } from "../node";
 import { getNode } from "../registry";
 import { addCosts, emptyCost, ManaCost, parseManaCost } from "../mana";
@@ -154,10 +154,10 @@ export function activateAbility(g: Game, p: PlayerId, permId: string, index: num
   const perm = g.battlefield.find((x) => x.id === permId);
   if (!perm) throw new RuleError(`戦場に無い: ${permId}`);
   if (perm.controller !== p) throw new RuleError(`${p} のコントロールするパーマネントではない: ${permId}`);
-  if (characteristics(g, perm, rules).lostAbilities) throw new RuleError(`${perm.card.name}: すべての能力を失っているので、起動できない`); // 大鹿になった Mox など
+  const lostAll = characteristics(g, perm, rules).lostAbilities; // 大鹿になった Mox など: もとの能力は起動できない (継続効果で与えられた能力 staticMana だけ)
   if (g.priority !== p) throw new RuleError(`${p} は優先権を持っていない`);
-  const ab = rules.get(perm.card.name)?.abilities.filter((a) => a.kind === "activated")[index];
-  if (!ab) throw new RuleError(`起動型能力が無い: ${perm.card.name} (${index} 番目)`);
+  const ab = activatedAbilities(g, rules, perm)[index];
+  if (!ab) throw new RuleError(lostAll ? `${perm.card.name}: すべての能力を失っているので、起動できない` : `起動型能力が無い: ${perm.card.name} (${index} 番目)`);
   const timing = ab.body.find((c) => c.node === "timing");
   const cost = costOf(ab.body.filter((c) => c.node === "cost"));
   if (cost.discardSelf) throw new RuleError(`${perm.card.name}: この能力は、手札から起動する (戦場からは起動できない)`);

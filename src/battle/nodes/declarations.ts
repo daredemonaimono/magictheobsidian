@@ -82,6 +82,29 @@ export function registerDeclarations(): void {
     run: (): Record<string, Value> => ({}),
   });
 
+  // そうしたとき (反射誘発)
+  node({
+    id: "reflexive",
+    title: "そうしたとき",
+    summary: "「そうしたとき、〜」。if=$名前 を付けて、あとのノードを、新しい誘発型能力として、いまスタックに積む。対象 (target) は、このとき選ぶ(捨てたあとで選ぶ対象など)。ここまでの $名前 は、あとのノードには渡らない。Inti は、discard optional=true as=d → reflexive if=$d → target … → addCounter …",
+    params: {},
+    outputs: {},
+    only: ["triggered", "activated", "spell"],
+    run: (): Record<string, Value> => ({}),
+  });
+
+  // ライフを得られない (継続効果)
+  node({
+    id: "cantGainLife",
+    title: "ライフを得られない",
+    summary: "常在型能力。プレイヤーは、ライフを得られない(絆魂・ライフを得る効果も何も起きない)。who=all(全員。既定) / you(このパーマネントのコントローラー) / opponents (Sunspine Lynx)",
+    params: { who: { type: "string", choices: ["you", "opponents", "all"] } },
+    declaration: true,
+    only: ["static"],
+    outputs: {},
+    run: (): Record<string, Value> => ({}),
+  });
+
   // エンジン始動! (速度): 戦場に出たとき、速度が無ければ 1 から始まる
   node({
     id: "startEngines",
@@ -194,7 +217,7 @@ export function registerDeclarations(): void {
     core: true,
     title: "どうなったら",
     summary:
-      "誘発型能力の最初に書く、誘発のきっかけ。event=cast / enters(from=graveyard) / leaves(to=graveyard で死亡) / moved(from=library to=graveyard、from=hand to=graveyard=捨てた) / damaged(combat=true。hit=creature・player) / attacks / blocks / targeted(by=you で自分の呪文・能力の対象になった) / drew(引いた) / step(step=upkeep〜end)。zone=graveyard は墓地にあるあいだだけ。castFrom=graveyard は墓地から唱えて出たとき。絞り込み: who=you・opponents / type・notType / turn=yours・opponents / self=true / alone=true / first=true(attacks は宣言で最初の1体、targeted はそのターンで最初)。eventPerm は引き金のパーマネント",
+      "誘発型能力の最初に書く、誘発のきっかけ。event=cast / enters(from=graveyard) / leaves(to=graveyard で死亡) / moved(from=library to=graveyard、from=hand to=graveyard=捨てた) / damaged(combat=true) / attacks / blocks / targeted(by=you で自分の呪文・能力の) / drew / step(step=upkeep〜end)。zone=graveyard は墓地にあるあいだだけ。castFrom=graveyard は墓地から唱えて出たとき。絞り込み: who=you・opponents / type・notType / turn=yours・opponents / self=true / alone=true / first=true(attacks は宣言で最初の1体、targeted はそのターンで最初) / once=true(同じ攻撃の宣言で1回だけ) / requires=印(gainAbility の印)。eventPerm は引き金のもの",
     params: {
       event: { type: "string", required: true, choices: ["cast", "enters", "leaves", "moved", "damaged", "step", "attacks", "blocks", "targeted", "drew"] },
       combat: { type: "boolean" },
@@ -211,6 +234,8 @@ export function registerDeclarations(): void {
       self: { type: "boolean" },
       alone: { type: "boolean" },
       first: { type: "boolean" },
+      once: { type: "boolean" },
+      requires: { type: "string" },
       by: { type: "string", choices: ["you"] },
     },
     outputs: {},

@@ -1,4 +1,5 @@
 import { Action, flexColors, manaOnly, slotsOf, tapManaSource, tryAction } from "./actions";
+import { activatedAbilities } from "./continuous";
 import { abilityLabel } from "./abilityLabel";
 import { CastRecord } from "./node";
 import { characteristics } from "./continuous";
@@ -53,7 +54,7 @@ export function tapOne(g: Game, p: PlayerId, rules: RuleBook): boolean {
   for (const perm of g.battlefield) {
     if (perm.controller !== p || perm.tapped) continue;
     if (flexColors(rules, perm.card.name) && tapManaSource(g, rules, p, perm.id)) return true; // デュアルランド: 好きな色のマナ
-    const abs = rules.get(perm.card.name)?.abilities.filter((a) => a.kind === "activated") ?? [];
+    const abs = activatedAbilities(g, rules, perm);
     for (let i = 0; i < abs.length; i++) {
       const body = abs[i].body;
       if (!manaOnly(body)) continue;

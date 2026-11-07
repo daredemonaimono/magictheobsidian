@@ -2,7 +2,7 @@ import assert from "node:assert";
 import { readFileSync } from "node:fs";
 import { activateAbility, castSpell, passPriority } from "../src/battle/engine";
 import { advanceStep } from "../src/battle/engine/turn";
-import { characteristics } from "../src/battle/continuous";
+import { activatedAbilities, characteristics } from "../src/battle/continuous";
 import { enterBattlefield } from "../src/battle/engine/battlefield";
 import { flushEvents } from "../src/battle/engine/triggers";
 import { registerBuiltinNodes } from "../src/battle/nodes";
@@ -249,6 +249,10 @@ for (const [kw, dmg] of [[[], 2], [["flying"], 4]] as const) {
   enterBattlefield(g, C("K", "Kellan, Planar Trailblazer", "Legendary Creature — Human Faerie Scout", "A", { power: 2, toughness: 1 }), "A", rules);
   const k = g.battlefield.find((p) => p.id === "K")!;
   const act = (i: number) => { g.mana["A"] = 3; g.pool["A"] = { R: 1 }; activateAbility(g, "A", "K", i, {}, rules); drain(g); };
+  g.events.push({ type: "damaged", source: k, target: "B", kind: "player", amount: 2, combat: true });
+  flushEvents(g, rules);
+  drain(g);
+  assert.ok(!g.hands["A"].some((c) => c.exilePlay), "斥候のうちは、能力が無い");
   act(1);
   assert.ok(!characteristics(g, k, rules).typeLine.includes("Rogue"), "斥候のままなら、2 つ目は何も起きない");
   act(0);
@@ -260,6 +264,24 @@ for (const [kw, dmg] of [[[], 2], [["flying"], 4]] as const) {
   flushEvents(g, rules);
   drain(g);
   assert.ok(g.hands["A"].some((c) => c.exilePlay), "戦闘ダメージを与えたとき、追放してプレイできる");
+}
+// Zhao: 征服カウンターが載ると、基本でない土地は Mountain になり (ほかの能力を失い)、{T}: {R} を持つ
+{
+  const g = setup();
+  enterBattlefield(g, C("Z", "Zhao, the Moon Slayer", "Legendary Creature — Human Soldier", "A", { power: 2, toughness: 2 }), "A", rules);
+  enterBattlefield(g, C("RV", "Rockface Village", "Land", "B"), "B", rules);
+  const rv = g.battlefield.find((p) => p.id === "RV")!;
+  rv.tapped = false;
+  assert.equal(characteristics(g, rv, rules).typeLine, "Land", "カウンターが無いあいだは、そのまま");
+  g.battlefield.find((p) => p.id === "Z")!.counters = { conqueror: 1 };
+  assert.equal(characteristics(g, rv, rules).typeLine, "Land — Mountain");
+  g.active = "B";
+  g.priority = "B";
+  g.step = "main1";
+  const abs = activatedAbilities(g, rules, rv);
+  assert.equal(abs.length, 1, "もとの能力 3 つは失い、{T}: {R} だけ");
+  activateAbility(g, "B", "RV", 0, {}, rules);
+  assert.equal(g.mana["B"], 1);
 }
 // Magebane Lizard: 呪文を唱えたプレイヤーに、そのターンに唱えた、クリーチャーでない呪文の数のダメージ
 {
@@ -276,5 +298,55 @@ for (const [kw, dmg] of [[[], 2], [["flying"], 4]] as const) {
   flushEvents(g, rules);
   drain(g);
   assert.equal(g.life["B"], 17, "2 つ目: 2 点");
+}
+
+// ---- ライフを得られない・「で攻撃したとき」を 1 回・そうしたとき
+// Sunspine Lynx: だれもライフを得られない (効果も絆魂も)
+{
+  const g = setup();
+  g.hands["A"].push(C("GL", "Gain", "Instant"));
+  enterBattlefield(g, C("SL", "Sunspine Lynx", "Creature — Elemental Cat", "B", { power: 5, toughness: 4 }), "B", rules);
+  flushEvents(g, rules);
+  drain(g);
+  const book: RuleBook = { get: (c) => (c === "Gain" ? { card: c, abilities: [{ kind: "spell", body: [{ node: "gainLife", args: { player: "you", amount: 5 } }] }] } : rules.get(c)) };
+  const before = g.life["A"];
+  castSpell(g, "A", "GL", {}, book);
+  for (let i = 0; g.stack.length && i < 20; i++) passPriority(g, g.priority!, book);
+  assert.equal(g.life["A"], before, "ライフを得られない");
+}
+// Hired Claw: トカゲが 2 体攻撃しても、1 体につき 1 回ではなく、宣言で 1 回
+{
+  const g = setup();
+  enterBattlefield(g, C("HC", "Hired Claw", "Creature — Lizard Mercenary", "A", { power: 1, toughness: 2 }), "A", rules);
+  enterBattlefield(g, C("LZ", "Lizard", "Creature — Lizard", "A", { power: 1, toughness: 1 }), "A", rules);
+  for (const p of g.battlefield) { p.attacking = true; g.events.push({ type: "attacks", perm: p }); }
+  flushEvents(g, rules);
+  drain(g);
+  assert.equal(g.life["B"], 19, "宣言で 1 回");
+}
+// Inti: 捨てたあとで、攻撃しているクリーチャーを選ぶ。捨てなければ、何も起きない
+{
+  const g = setup();
+  lib(g, "A", 3);
+  enterBattlefield(g, C("IN", "Inti, Seneschal of the Sun", "Legendary Creature — Human Knight", "A", { power: 2, toughness: 2 }), "A", rules);
+  enterBattlefield(g, C("AT", "Attacker", "Creature — Bear", "A", { power: 2, toughness: 2 }), "A", rules);
+  const at = g.battlefield.find((p) => p.id === "AT")!;
+  at.attacking = true;
+  g.hands["A"].push(C("X", "X", "Instant"));
+  g.events.push({ type: "attacks", perm: at, first: true });
+  flushEvents(g, rules);
+  drain(g);
+  assert.equal(at.counters?.["+1/+1"], 1, "捨てて、攻撃しているクリーチャーに +1/+1");
+  assert.ok(characteristics(g, at, rules).keywords.includes("trample"));
+  const h = setup();
+  enterBattlefield(h, C("IN", "Inti, Seneschal of the Sun", "Legendary Creature — Human Knight", "A", { power: 2, toughness: 2 }), "A", rules);
+  const at2 = C("AT", "Attacker", "Creature — Bear", "A", { power: 2, toughness: 2 });
+  enterBattlefield(h, at2, "A", rules);
+  const p2 = h.battlefield.find((p) => p.id === "AT")!;
+  p2.attacking = true;
+  h.events.push({ type: "attacks", perm: p2 });
+  flushEvents(h, rules); // 手札が無い: 捨てない
+  drain(h);
+  assert.equal(p2.counters?.["+1/+1"], undefined, "捨てなければ、何も起きない");
 }
 console.log("battle-redaggro ok");

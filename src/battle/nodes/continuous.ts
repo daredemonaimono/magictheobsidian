@@ -14,14 +14,16 @@ export function registerContinuous(): void {
     id: "affect",
     core: true,
     title: "及ぶ先",
-    summary: "継続効果の常在型能力の最初に書く、効果が及ぶ先。who=attached(このパーマネントが付いているもの。装備・オーラ) / self(このパーマネント自身) / yours(自分のパーマネント) / all(すべて)。type・notType で型を絞る。turn=yours で、そのコントローラーのターンのあいだだけ(「自分のターンのあいだ、先制攻撃を持つ」)/ opponents で、相手のターンのあいだだけ。minSpeed=4 で、速度が 4 (最高速度) のあいだだけ",
-    params: { who: { type: "string", required: true, choices: ["attached", "self", "yours", "all"] }, type: { type: "string" }, notType: { type: "string" }, turn: { type: "string", choices: ["yours", "opponents"] }, minSpeed: { type: "number" } },
+    summary: "継続効果の常在型能力の最初に書く、効果が及ぶ先。who=attached(このパーマネントが付いているもの。装備・オーラ) / self(このパーマネント自身) / yours(自分のパーマネント) / all(すべて)。type・notType で型を絞る。turn=yours で、そのコントローラーのターンのあいだだけ(「自分のターンのあいだ、先制攻撃を持つ」)/ opponents で、相手のターンのあいだだけ。minSpeed=4 で最高速度のあいだだけ / ifCounter=カウンターの種類 で、このパーマネントにそれが載っているあいだだけ",
+    params: { who: { type: "string", required: true, choices: ["attached", "self", "yours", "all"] }, type: { type: "string" }, notType: { type: "string" }, turn: { type: "string", choices: ["yours", "opponents"] }, minSpeed: { type: "number" }, ifCounter: { type: "string" } },
     ...cont,
   });
 
   node({ id: "staticModify", title: "修整(継続)", summary: "及ぶ先が、+power/+toughness の修整を受ける(レイヤー7)", params: { power: { type: "number", required: true }, toughness: { type: "number", required: true } }, ...cont });
 
   node({ id: "staticGrant", title: "キーワードを与える(継続)", summary: "及ぶ先が、キーワード能力を持つ(レイヤー6)。prowess を与えると、果敢として働く", params: { keyword: { type: "string", required: true, choices: KEYWORDS } }, ...cont });
+
+  node({ id: "staticMana", title: "マナ能力を与える(継続)", summary: "及ぶ先が、「{T}: color のマナ 1 点を加える」を持つ(レイヤー6)。「基本でない土地は Mountain になる」(Zhao)は、setTypes types=\"Land — Mountain\" → loseAbilities → staticMana color=R", params: { color: { type: "string", required: true, choices: ["W", "U", "B", "R", "G", "C"] } }, ...cont });
 
   node({ id: "loseAbilities", title: "すべての能力を失う", summary: "及ぶ先が、すべての能力を失う(誘発型・起動型・常在型・キーワード。レイヤー6)", params: {}, ...cont });
 

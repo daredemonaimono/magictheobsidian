@@ -1,4 +1,5 @@
 import { characteristics } from "./continuous";
+import { lifeGainBlocked } from "./engine/restrict";
 import { Game, Perm, RuleBook, gainLife, loseLife } from "./state";
 
 // ダメージを与える (ダメージのノードと戦闘ダメージで共通)。source = ダメージの発生源のパーマネント (無ければ呪文など。キーワードは効かない)。
@@ -23,6 +24,6 @@ export function dealDamage(g: Game, rules: RuleBook, source: Perm | undefined, t
     if (/\bPlaneswalker\b/.test(type)) kind = "planeswalker";
     if (/\bPlaneswalker\b/.test(type)) p.counters = { ...p.counters, loyalty: Math.max(0, (p.counters?.loyalty ?? 0) - amount) };
   }
-  if (source && kw.includes("lifelink")) gainLife(g, source.controller, amount);
+  if (source && kw.includes("lifelink") && !lifeGainBlocked(g, rules, source.controller)) gainLife(g, source.controller, amount);
   if (kind) g.events.push({ type: "damaged", source, target: targetId, kind, amount, combat });
 }

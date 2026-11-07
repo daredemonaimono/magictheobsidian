@@ -1,4 +1,5 @@
 import { tryWithMana, withAllMana } from "./actions";
+import { activatedAbilities } from "./continuous";
 import { characteristics } from "./continuous";
 import { isSick } from "./engine";
 import { Game, PlayerId, RuleBook } from "./state";
@@ -33,8 +34,7 @@ export function battleFacts(g: Game, rules: RuleBook, p: PlayerId, tagsOf: (card
   const abilities = g.battlefield
     .filter((x) => x.controller === p)
     .flatMap((perm) =>
-      (rules.get(perm.card.name)?.abilities ?? [])
-        .filter((a) => a.kind === "activated")
+      activatedAbilities(g, rules, perm)
         .flatMap((ab, index) => (ab.body.some((c) => c.node === "addMana") && ab.body.every((c) => c.node === "addMana" || c.node === "cost") ? [] : [{ card: perm.card.name, label: ab.body.filter((c) => c.node !== "cost" && c.node !== "timing").map((c) => c.node).join(" → "), usable: tryWithMana(g, rules, p, { kind: "activate", perm: perm.id, index }) === undefined }])),
     );
   return {

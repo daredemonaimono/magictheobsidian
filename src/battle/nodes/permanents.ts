@@ -196,6 +196,22 @@ export function registerPermanents(): void {
     },
   });
 
+  // 能力を得る (印を付ける): 「〜の能力を得る」。誘発型能力は、when requires=印 と書いて、印があるときだけ働くようにする
+  node({
+    id: "gainAbility",
+    title: "能力を得る",
+    summary: "対象のパーマネントが、flag の印 (能力を得た印) を得る。カードのルールに when requires=<flag> で書いた誘発型能力が、その印があるあいだ働く(「〜になる。『〜したとき…』を得る」Kellan)",
+    params: { target: { type: "ref", required: true }, flag: { type: "string", required: true } },
+    outputs: {},
+    run: (ctx, a): Record<string, Value> => {
+      for (const id of idList(a.target)) {
+        const perm = ctx.game.battlefield.find((x) => x.id === id);
+        if (perm && !perm.flags?.includes(String(a.flag))) perm.flags = [...(perm.flags ?? []), String(a.flag)];
+      }
+      return {};
+    },
+  });
+
   // トークンを作る。戦場に出る(enters のイベントも出る)。戦場を離れると消える
   node({
     id: "createToken",

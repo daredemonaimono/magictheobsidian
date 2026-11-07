@@ -58,3 +58,9 @@ export const defenderOf = (g: Game, a: Perm): PlayerId | undefined => (a.attackT
 
 // 飛行は、飛行か到達でしかブロックできない (威嚇は、2体以上の組み合わせの決まりなので、ここでは見ない)
 export const evasionAllows = (attackerKw: string[], blockerKw: string[]): boolean => !attackerKw.includes("flying") || blockerKw.includes("flying") || blockerKw.includes("reach");
+
+// 「そうしたとき」(reflexive) の前までのノード。対象は、そこまでの分だけ、最初に選ぶ (あとの分は、新しい誘発のときに選ぶ)
+export const beforeReflexive = (body: NodeCall[]): NodeCall[] => {
+  const i = body.findIndex((c) => c.node === "reflexive");
+  return i < 0 ? body : body.slice(0, i);
+};

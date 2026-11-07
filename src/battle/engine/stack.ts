@@ -1,9 +1,10 @@
 import { NodeCall, RunCtx, Value } from "../node";
 import { evalCondition, getNode } from "../registry";
 import { Game, RuleBook, Step, putInGraveyard } from "../state";
-import { isPermanentCard, live, resolveArgs, spellBody } from "./shared";
+import { beforeReflexive, isPermanentCard, live, resolveArgs, spellBody } from "./shared";
+import { chooseTargets } from "./targets";
 import { enterBattlefield } from "./battlefield";
-import { flushEvents } from "./triggers";
+import { announceTargets, flushEvents } from "./triggers";
 
 // スタックの解決
 
@@ -16,7 +17,7 @@ export function resolveTop(g: Game, rules: RuleBook): void {
   const body = item.body ?? spellBody(rules, item.card) ?? [];
   const ctx = (call: NodeCall, vars: Record<string, Value>): RunCtx => ({ game: g, rules, item, vars, call });
   // 条件を満たす対象のノードのうち、1つでも対象が残っていれば解決する (残った対象にだけ効く)。選ばれなかったモードの対象は数えない
-  const targets = body.filter((c) => getNode(c.node)?.isTarget && (c.if === undefined || evalCondition(c.if, ctx(c, {}))));
+  const targets = beforeReflexive(body).filter((c) => getNode(c.node)?.isTarget && (c.if === undefined || evalCondition(c.if, ctx(c, {}))));
   const fizzled = targets.length > 0 && !targets.some((c) => getNode(c.node)!.run!(ctx(c, {}), resolveArgs(c, {})!).id !== undefined);
   if (fizzled) g.log.push(`${item.card.name}: 対象が無くなったので解決しない`);
   const permanent = !item.ability && isPermanentCard(item.card);
@@ -27,6 +28,17 @@ export function resolveTop(g: Game, rules: RuleBook): void {
   if (!fizzled) {
     const vars: Record<string, Value> = item.x !== undefined ? { X: item.x } : {}; // 起動時に選んだ X は、$X として参照できる
     for (const [i, call] of body.entries()) {
+      if (call.node === "reflexive") {
+        // 「そうしたとき」: 残りのノードを、新しい誘発として、いま積む (対象は、このとき選ぶ。ここまでの $名前 は、渡らない)。対象が足りなければ、積まれない
+        if (call.if !== undefined && !evalCondition(call.if, ctx(call, vars))) break;
+        g.serial++;
+        const next = { id: `${item.card.id}#${g.serial}`, card: item.card, controller: item.controller, targets: {}, cast: {}, body: body.slice(i + 1), ability: true, ...(item.source ? { source: item.source } : {}) };
+        if (chooseTargets(g, next, rules)) {
+          g.stack.push(next);
+          announceTargets(g, next, rules);
+        }
+        break;
+      }
       if (call.node === "delay" && call.if !== undefined && !evalCondition(call.if, ctx(call, vars))) break; // 条件を満たさない遅延は、残りも実行しない (ワープなど)
       if (call.node === "delay") {
         // 遅延誘発: 残りのノードを、次の、そのステップの開始時に回して、ここでは止める

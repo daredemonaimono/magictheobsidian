@@ -3,6 +3,7 @@ import { defineNode as define } from "../registry";
 import { spellBody, who as logWho } from "../engine/shared";
 import { dealDamage } from "../damage";
 import { spendGeneric } from "../mana";
+import { lifeGainBlocked } from "../engine/restrict";
 import { gainLife, loseLife, playersOf } from "../state";
 import { idList, playersFor, targetPlayer, who } from "./shared";
 
@@ -21,6 +22,10 @@ export function registerCombat(): void {
       outputs: {},
       run: (ctx, a): Record<string, Value> => {
         for (const p of playersFor(ctx, a)) {
+          if (sign > 0 && lifeGainBlocked(ctx.game, ctx.rules, p)) {
+            ctx.game.log.push(`${logWho(p)}は、ライフを得られない`);
+            continue;
+          }
           if (sign > 0) gainLife(ctx.game, p, Number(a.amount));
           else loseLife(ctx.game, p, Number(a.amount));
           if (Number(a.amount) > 0) ctx.game.log.push(`${logWho(p)}が ${a.amount} 点のライフを${sign > 0 ? "得た" : "失った"}`);

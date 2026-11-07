@@ -1,7 +1,7 @@
 import { CastRecord, NodeCall, RunCtx, Value } from "../node";
 import { checkCall, evalCondition, getNode } from "../registry";
 import { Game, RuleBook, StackItem } from "../state";
-import { RuleError, resolveArgs } from "./shared";
+import { RuleError, beforeReflexive, resolveArgs } from "./shared";
 
 // 対象 (合法な対象・選ぶ・検査・モード)
 
@@ -17,7 +17,7 @@ export interface TargetSlot {
 
 export function targetSlots(g: Game, rules: RuleBook, item: StackItem): TargetSlot[] {
   const out: TargetSlot[] = [];
-  for (const call of item.body ?? []) {
+  for (const call of beforeReflexive(item.body ?? [])) {
     const def = getNode(call.node);
     if (!def?.isTarget) continue;
     const ctx: RunCtx = { game: g, rules, item, vars: {}, call };
@@ -51,7 +51,7 @@ export function validate(g: Game, item: StackItem, body: NodeCall[], name: strin
     const bad = checkCall(call);
     if (bad) throw new RuleError(`${name}: ${bad}`);
   }
-  for (const call of body) {
+  for (const call of beforeReflexive(body)) {
     const def = getNode(call.node)!;
     const ctx: RunCtx = { game: g, rules, item, vars: {}, call, phase: "cast" };
     if (!def.isTarget || (call.if !== undefined && !evalCondition(call.if, ctx))) continue;

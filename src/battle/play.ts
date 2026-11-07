@@ -1,4 +1,5 @@
 import { Action, abilityLabels, actionsFor, autoTargets, flexColors, manaOnly, slotsOf, tapManaSource, tryAction, tryWithMana, uselessMana, withAllMana } from "./actions";
+import { activatedAbilities } from "./continuous";
 import { RuleError, TargetSlot, applyOpening, serumPowder, activateAbility, activateFromHand, handAbilitiesOf, attackersAt, canAttackWith, castSpell, pitchable, declareAttackers, declareBlockers, assignDamage, passPriority, playLand } from "./engine";
 import { AiOption, aiAttackers, aiBlockers, aiOptions } from "./ai";
 import { cpuAct, cpuAttack, cpuBlock, cpuDo, tapFor, tapOne } from "./cpu";
@@ -8,7 +9,7 @@ import { abilityLabel } from "./abilityLabel";
 import { CastRecord } from "./node";
 import { parseManaCost } from "./mana";
 import { getNode } from "./registry";
-import { Game, PlayerId, RuleBook } from "./state";
+import { Game, Perm, PlayerId, RuleBook } from "./state";
 
 // 記録の1件: 入口の呼び出し (op と引数) と、途中の質問への答え
 export interface RecordEntry {
@@ -327,8 +328,8 @@ export class BattleController {
   }
 
   // ---- 払うマナの選択。足りないマナを自動でタップするとき、タップする土地に選べる余地があれば、選ばせる
-  private manaIndexOf(g: Game, perm: { card: { name: string } }): number {
-    return this.rules.get(perm.card.name)?.abilities.filter((a) => a.kind === "activated").findIndex((a) => manaOnly(a.body)) ?? -1;
+  private manaIndexOf(g: Game, perm: Perm): number {
+    return activatedAbilities(g, this.rules, perm).findIndex((a) => manaOnly(a.body));
   }
   // マナを出せる自分のパーマネント (タップしていない・いま使える)。label = 出るマナ ("U" など)
   manaSources(g: Game = this.game): { id: string; name: string; label: string }[] {
@@ -337,7 +338,7 @@ export class BattleController {
       if (p.controller !== this.me || p.tapped) continue;
       const i = this.manaIndexOf(g, p);
       if (i < 0 || tryAction(g, this.rules, this.me, { kind: "activate", perm: p.id, index: i }) !== undefined) continue;
-      const ab = this.rules.get(p.card.name)!.abilities.filter((a) => a.kind === "activated")[i];
+      const ab = activatedAbilities(g, this.rules, p)[i];
       const m = ab.body.find((c) => c.node === "addMana");
       out.push({ id: p.id, name: p.card.name, label: flexColors(this.rules, p.card.name) ?? `${Number(m?.args.amount ?? 1) > 1 ? Number(m?.args.amount) : ""}${String(m?.args.color ?? "C")}` }); // デュアルランドは、出せる色の集合 ("GU")
     }
@@ -378,7 +379,7 @@ export class BattleController {
     const hints: string[] = [];
     for (const p of this.game.battlefield) {
       if (p.controller !== this.me) continue;
-      const defs = this.rules.get(p.card.name)?.abilities.filter((a) => a.kind === "activated") ?? [];
+      const defs = activatedAbilities(this.game, this.rules, p);
       const labels = abilityLabels(this.rules, p.card.name);
       defs.forEach((ab, index) => {
         const mana = ab.body.find((c) => c.node === "addMana");
@@ -504,7 +505,7 @@ export class BattleController {
 
   private abilityOf(permId: string, index: number) {
     const perm = this.game.battlefield.find((p) => p.id === permId && p.controller === this.me);
-    const ab = perm && this.rules.get(perm.card.name)?.abilities.filter((a) => a.kind === "activated")[index];
+    const ab = perm && activatedAbilities(this.game, this.rules, perm)[index];
     return { perm, ab };
   }
 
@@ -568,7 +569,7 @@ export class BattleController {
   abilities(permId: string): { index: number; label: string; usable: boolean }[] {
     const perm = this.game.battlefield.find((p) => p.id === permId && p.controller === this.me);
     if (!perm) return [];
-    const defs = this.rules.get(perm.card.name)?.abilities.filter((a) => a.kind === "activated") ?? [];
+    const defs = activatedAbilities(this.game, this.rules, perm);
     return abilityLabels(this.rules, perm.card.name).map((label, index) => ({ index, label, mana: !!defs[index] && manaOnly(defs[index].body), usable: tryAction(this.game, this.rules, this.me, { kind: "activate", perm: permId, index }) === undefined && !uselessMana(this.game, this.rules, this.me, { kind: "activate", perm: permId, index }) })).filter((a) => !a.mana).map(({ mana: _m, ...rest }) => rest); // マナを出すだけの能力は、手では使わない (カードを使うとき、自動で払う)
   }
 

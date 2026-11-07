@@ -70,9 +70,9 @@ export const NODE_ROLES: Record<string, string[]> = {
   tap: ["tempo"], untap: ["tempo"], modify: ["statChange"], becomes: ["control"], exchangeControl: ["control"], grant: ["boardGrowth"], prepareSpell: [], entersPrepared: [], prepare: [], attach: ["boardGrowth"],
   emblem: ["continuous"], createEmblem: ["continuous"], createToken: ["boardGrowth"], regenerate: ["protection"], addCounter: ["boardGrowth"],
   // ダメージ・ライフ・マナ・打ち消し
-  gainLife: ["lifeGain"], loseLife: ["lifeLoss"], lifeGained: [], lifeLost: [], startEngines: ["speed"], spellsCast: [], hasKeyword: [], hasType: [], castWith: [], damage: ["damage"], addMana: ["mana"], extraTurn: ["extraTurn"], copySpell: ["copy"], counter: ["counterSpell"],
+  gainLife: ["lifeGain"], loseLife: ["lifeLoss"], lifeGained: [], lifeLost: [], startEngines: ["speed"], gainAbility: ["boardGrowth"], cantGainLife: ["restriction"], reflexive: [], spellsCast: [], hasKeyword: [], hasType: [], castWith: [], damage: ["damage"], addMana: ["mana"], extraTurn: ["extraTurn"], copySpell: ["copy"], counter: ["counterSpell"],
   // 継続効果
-  affect: [], staticModify: ["continuous"], staticGrant: ["continuous"], loseAbilities: ["continuous"], setBaseStats: ["continuous"], setTypes: ["continuous"], setColors: ["continuous"], setName: ["continuous"], extraTriggers: ["continuous"],
+  affect: [], staticModify: ["continuous"], staticGrant: ["continuous"], staticMana: ["continuous"], loseAbilities: ["continuous"], setBaseStats: ["continuous"], setTypes: ["continuous"], setColors: ["continuous"], setName: ["continuous"], extraTriggers: ["continuous"],
 };
 
 // 組み込みのノードに、キーと言い回しを、取り付ける (ノードの定義に、直接書いてあるものは、そちらを優先)。表にあるのに、ノードが無い id は、書き間違い: 例外

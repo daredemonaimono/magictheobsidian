@@ -1,4 +1,5 @@
 import { Action, actionsFor, canRespond, manaOnly, withAllMana } from "./actions";
+import { activatedAbilities } from "./continuous";
 import { characteristics } from "./continuous";
 import { attackersAt, canAttackPerm, canBlock, isSick } from "./engine";
 import { abilityLabel } from "./abilityLabel";
@@ -211,7 +212,7 @@ export function boardModel(g: Game, rules: RuleBook, viewer: PlayerId, imageOf: 
   // 光らせる (操作できる) もの: 土地・マナ能力のマナを全部出せるとして、使える手札のカード・マナ以外の能力 (足りないぶんは、使うとき、自動でタップする) +
   // マナを出す能力 (土地のタップなど) は、光らせない: マナは、カードを使うとき、自動で払う
   const sim = withAllMana(g, rules, viewer);
-  const isMana = (a: Action) => a.kind === "activate" && ((x) => !!x && manaOnly(x.body))(rules.get(g.battlefield.find((p) => p.id === a.perm)?.card.name ?? "")?.abilities.filter((y) => y.kind === "activated")[a.index]);
+  const isMana = (a: Action) => a.kind === "activate" && ((x) => !!x && manaOnly(x.body))(((perm) => (perm ? activatedAbilities(g, rules, perm)[a.index] : undefined))(g.battlefield.find((p) => p.id === a.perm)));
   // 土地を出すのは、本物の局面で調べる (マナを出す能力を使った仮の局面では、スタックに何か積まれて、出せなくなることがある)
   // 本物の局面でできるもの (自分自身をタップする能力を含む) と、マナを全部出せばできるもの (マナを出す能力そのものは、除く)
   const can = new Set([...actionsFor(sim, rules, viewer).filter((a) => !isMana(a) && a.kind !== "land"), ...actionsFor(g, rules, viewer).filter((a) => a.kind === "land" || !isMana(a))].map((a) => (a.kind === "activate" ? a.perm : a.card)));

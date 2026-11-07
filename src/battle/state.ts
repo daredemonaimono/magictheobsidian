@@ -73,6 +73,7 @@ export interface Perm {
   prepared?: boolean; // 準備済 (準備呪文を、追放領域のコピーとして唱えられる。戦場を離れると消える)
   deathtouched?: boolean; // 接死のダメージを受けた (ターン終了時に消える)
   cast?: CastRecord; // 呪文として唱えられて出たとき、その記録 (キッカー・別のコスト)。誘発型能力の if=kicked / if=alt が見る
+  flags?: string[]; // 能力を得た印 (gainAbility)。when requires=印 の誘発型能力が、この印があるときだけ働く
   targetedTurn?: number; // 自分のコントローラーの呪文・能力の対象に、最後になったターン (果敢 Valiant の「そのターンで最初」)
   enteredTurn?: number; // 戦場に出たターン (Game.turn)。召喚酔いの判定
   attackTarget?: string; // 攻撃しているとき、攻撃先 (プレイヤー、またはプレインズウォーカーの id)

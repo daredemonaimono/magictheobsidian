@@ -1,4 +1,5 @@
 import { withShared } from "./agentRules";
+import { activatedAbilities } from "./continuous";
 import { compactLog } from "./aiLog";
 import { Action, abilityLabels, actionsFor, autoTargets, manaOnly, slotsOf, tryAction, withAllMana } from "./actions";
 import { getNode } from "./registry";
@@ -34,7 +35,7 @@ export const SAFE_LIFE = 4;
 function unsafe(g: Game, rules: RuleBook, p: PlayerId, a: Action): boolean {
   if (a.kind === "activate") {
     const perm = g.battlefield.find((x) => x.id === a.perm);
-    const ab = perm && rules.get(perm.card.name)?.abilities.filter((x) => x.kind === "activated")[a.index];
+    const ab = perm && activatedAbilities(g, rules, perm)[a.index];
     const life = Number(ab?.body.find((c) => c.node === "cost")?.args.life ?? 0);
     return (g.activated?.[`${a.perm}:${a.index}`] ?? 0) >= RUNAWAY_LIMIT || (life > 0 && g.life[p] - life <= SAFE_LIFE);
   }
@@ -63,7 +64,7 @@ export function aiOptions(g: Game, rules: RuleBook, p: PlayerId): AiOption[] {
     seen.add(key);
     if (a.kind === "activate") {
       const perm = g.battlefield.find((x) => x.id === a.perm);
-      const ab = perm && rules.get(perm.card.name)?.abilities.filter((x) => x.kind === "activated")[a.index];
+      const ab = perm && activatedAbilities(g, rules, perm)[a.index];
       if (!perm || !ab || manaOnly(ab.body) || unsafe(g, rules, p, a)) continue; // マナを出すだけの能力と、暴走・ライフの危険がある能力は、選択肢にしない
       add(`能力を使う: ${perm.card.name} の ${abilityLabels(rules, perm.card.name)[a.index]}`, a);
     } else {

@@ -59,3 +59,6 @@ export function entersTapped(g: Game, rules: RuleBook, card: GameCard, controlle
 export function enterBlocked(g: Game, rules: RuleBook, card: GameCard, zone: string): boolean {
   return staticCalls(g, rules, "cantEnter").some(({ call }) => String(call.args.from ?? "").split("|").includes(zone) && typeOk(call.args, card.typeLine));
 }
+
+// ライフを得られないか (cantGainLife)
+export const lifeGainBlocked = (g: Game, rules: RuleBook, p: PlayerId): boolean => staticCalls(g, rules, "cantGainLife").some(({ source, call }) => whoOk(call.args.who, source.controller, p));

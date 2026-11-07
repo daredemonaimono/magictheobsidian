@@ -1,4 +1,4 @@
-import { NodeCall } from "./node";
+import { Ability, NodeCall } from "./node";
 import { Game, GameCard, Perm, PlayerId, RuleBook, normKeyword, typeIn } from "./state";
 
 // 継続効果 (常在型能力・装備・オーラ): パーマネントの「いまの姿」を、保存せずに、そのつど計算する。
@@ -33,6 +33,7 @@ const continuous = (s: Perm, rules: RuleBook) => (rules.get(s.card.name)?.abilit
 
 function affects(g: Game, s: Perm, aff: NodeCall, p: Perm): boolean {
   if (p.emblem) return false; // 紋章は、継続効果の影響を受けない
+  if (typeof aff.args.ifCounter === "string" && !((s.counters?.[aff.args.ifCounter] ?? 0) > 0)) return false; // ifCounter: このパーマネントに、そのカウンターが載っているあいだだけ
   if (typeof aff.args.minSpeed === "number" && (g.speed?.[s.controller] ?? 0) < aff.args.minSpeed) return false; // minSpeed: 速度が、その値以上のあいだだけ (最高速度)
   if ((aff.args.turn === "yours" && g.active !== s.controller) || (aff.args.turn === "opponents" && g.active === s.controller)) return false; // turn: そのコントローラーのターン (opponents = 相手のターン) のあいだだけ
   switch (aff.args.who) {
@@ -58,6 +59,16 @@ function effectsOn(g: Game, p: Perm, rules: RuleBook): Eff[] {
   return g.battlefield
     .filter((o) => !losesAll(g, o, rules))
     .flatMap((o) => continuous(o, rules).filter((ab) => affects(g, o, ab.body[0], p)).flatMap((ab) => ab.body.slice(1).map((call) => ({ call, source: o }))));
+}
+
+// パーマネントの起動型能力 (カードの能力 + 継続効果で与えられたマナ能力 staticMana)。すべての能力を失っていれば、与えられたものだけ。index は、この並びの何番目か
+export function activatedAbilities(g: Game, rules: RuleBook, p: Perm): Ability[] {
+  const own = rules.get(p.card.name)?.abilities.filter((a) => a.kind === "activated") ?? [];
+  const granted = effectsOn(g, p, rules)
+    .filter((e) => e.call.node === "staticMana")
+    .map((e): Ability => ({ kind: "activated", body: [{ node: "cost", args: { tap: true } } as NodeCall, { node: "addMana", args: { amount: 1, color: String(e.call.args.color) } } as NodeCall] }));
+  if (!granted.length && !own.length) return own;
+  return [...(losesAll(g, p, rules) ? [] : own), ...granted];
 }
 
 // 常在型能力のキーワードの宣言 (affect の無い常在型能力の keyword ノード)

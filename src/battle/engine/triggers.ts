@@ -2,7 +2,7 @@ import { characteristics, extraTriggers } from "../continuous";
 import { NodeCall } from "../node";
 import { evalCondition, getNode } from "../registry";
 import { Game, GameCard, GameEvent, Perm, PlayerId, RuleBook, StackItem, splitIds, typeIn } from "../state";
-import { spellBody } from "./shared";
+import { beforeReflexive, spellBody } from "./shared";
 import { stateBased } from "./battlefield";
 import { chooseTargets } from "./targets";
 import { applyUpkeepTaxes } from "./upkeep";
@@ -19,6 +19,7 @@ export function matchesEvent(g: Game, s: Perm, when: NodeCall, ev: GameEvent): b
   if (ev.type === "step" && a.step !== ev.step) return false;
   // self=true: このパーマネント (カード) 自身のとき。step は、どの能力も自分のものなので、無視する。cast は、自分のものではない
   if (a.self === true && ev.type !== "step" && ev.type !== "drew" && (ev.type === "cast" || (ev.type === "moved" ? ev.card.id !== s.card.id : ev.type === "damaged" ? ev.source !== s : ev.perm !== s))) return false;
+  if (typeof a.requires === "string" && !s.flags?.includes(a.requires)) return false; // requires: 能力を得た印 (gainAbility) があるときだけ
   const subject: { controller: PlayerId; card?: GameCard } =
     ev.type === "cast" ? { controller: ev.player, card: ev.card } : ev.type === "step" || ev.type === "drew" ? { controller: ev.player } : ev.type === "moved" ? { controller: ev.card.owner, card: ev.card } : ev.type === "damaged" ? { controller: ev.source?.controller ?? "", ...(ev.source ? { card: ev.source.card } : {}) } : ev.perm;
   if (ev.type === "damaged" && ((a.combat === true && !ev.combat) || (typeof a.hit === "string" && a.hit !== ev.kind))) return false; // combat=true: 戦闘ダメージだけ。hit: ダメージを受けたもの (creature / player / planeswalker)
@@ -50,7 +51,7 @@ export const PROWESS: NodeCall[] = [
 // 呪文・能力が、対戦相手のパーマネントを対象にしたことを知らせる (護法)。スタックに積んだ直後に呼ぶ
 // 実際に対象になるのは、条件 (if=) を満たす対象のノード (選ばれなかったモード・キッカーされなかったときの対象は、数えない)。同じパーマネントを何度対象にしても、1回
 export function announceTargets(g: Game, item: StackItem, rules: RuleBook): void {
-  const body = item.body ?? spellBody(rules, item.card) ?? [];
+  const body = beforeReflexive(item.body ?? spellBody(rules, item.card) ?? []);
   const seen = new Set<string>();
   for (const call of body) {
     if (!getNode(call.node)?.isTarget) continue;
@@ -73,6 +74,7 @@ export function announceTargets(g: Game, item: StackItem, rules: RuleBook): void
 // shortcut: 誘発の順番 (APNAP) は決めず、戦場の順
 export function flushEvents(g: Game, rules: RuleBook): void {
   let added = false;
+  const onceFired = new Set<string>(); // once=true の誘発: 同じ flush (= 同じ攻撃の宣言など) で、1 回だけ
   const batch: StackItem[] = []; // 今回の flush で誘発したもの。最後に、APNAP の順番 (アクティブ・プレイヤーが先 = 下) で、スタックに積む
   const push = (s: Perm, body: NodeCall[], trigger?: string) => {
     for (let k = 0; k <= extraTriggers(g, s, rules); k++) {
@@ -124,7 +126,14 @@ export function flushEvents(g: Game, rules: RuleBook): void {
           if (marker ? s.emblem !== marker.args.name : s.emblem !== undefined) continue;
           const at = marker ? 1 : 0;
           const when = ab.body[at];
-          if (ab.kind === "triggered" && when?.node === "when" && when.args.zone !== "graveyard" && matchesEvent(g, s, when, ev)) push(s, ab.body.slice(at + 1), triggerOf(ev));
+          if (ab.kind === "triggered" && when?.node === "when" && when.args.zone !== "graveyard" && matchesEvent(g, s, when, ev)) {
+            if (when.args.once === true) {
+              const key = `${s.id}|${(rules.get(s.card.name)?.abilities ?? []).indexOf(ab)}`;
+              if (onceFired.has(key)) continue;
+              onceFired.add(key);
+            }
+            push(s, ab.body.slice(at + 1), triggerOf(ev));
+          }
         }
       }
       if (ev.type === "cast" && !s.emblem && ev.player === s.controller && now.keywords.includes("prowess") && !/\bcreature\b/i.test(ev.card.typeLine)) push(s, PROWESS);

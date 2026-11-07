@@ -1,4 +1,5 @@
 import { characteristics } from "../continuous";
+import { activatedAbilities } from "../continuous";
 import { spendGeneric } from "../mana";
 import { Game, PlayerId, RuleBook } from "../state";
 import { removeFromBattlefield } from "./battlefield";
@@ -12,7 +13,7 @@ import { staticCalls, typeOk, whoOk } from "./restrict";
 function tapOneSource(g: Game, p: PlayerId, rules: RuleBook): boolean {
   for (const perm of g.battlefield) {
     if (perm.controller !== p || perm.tapped) continue;
-    const abs = (rules.get(perm.card.name)?.abilities ?? []).filter((a) => a.kind === "activated");
+    const abs = activatedAbilities(g, rules, perm);
     for (let i = 0; i < abs.length; i++) {
       const body = abs[i].body;
       const manaOnly = body.some((c) => c.node === "addMana") && body.every((c) => c.node === "addMana" || c.node === "cost" || c.node === "timing") && !body.some((c) => c.node === "cost" && (c.args?.loyalty !== undefined || c.args?.loyaltyX === true));

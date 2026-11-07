@@ -1,4 +1,5 @@
 import { RuleError, TargetSlot, activateAbility, activateFromHand, castSpell, handAbilitiesOf, playLand, targetSlots } from "./engine";
+import { activatedAbilities } from "./continuous";
 import { characteristics } from "./continuous";
 import { activationBlocked } from "./engine/restrict";
 import { CastRecord } from "./node";
@@ -26,7 +27,7 @@ export function slotsOf(g: Game, rules: RuleBook, p: PlayerId, a: Action): Targe
     return card && ab ? targetSlots(g, rules, { id: card.id, card, controller: p, targets: {}, cast: {}, body: ab.body, ability: true, source: card.id }) : [];
   }
   const perm = g.battlefield.find((x) => x.id === a.perm);
-  const ab = perm && activatedOf(rules, perm.card.name)[a.index];
+  const ab = perm && activatedAbilities(g, rules, perm)[a.index];
   return perm && ab ? targetSlots(g, rules, { id: perm.id, card: perm.card, controller: p, targets: {}, cast: {}, body: ab.body, ability: true, source: perm.id }) : [];
 }
 
@@ -61,7 +62,7 @@ export function actionsFor(g: Game, rules: RuleBook, p: PlayerId): Action[] {
   for (const c of g.hands[p] ?? []) add(/\bLand\b/.test(c.typeLine) ? { kind: "land", card: c.id } : { kind: "cast", card: c.id });
   for (const perm of g.battlefield) {
     if (perm.controller !== p) continue;
-    activatedOf(rules, perm.card.name).forEach((_, index) => add({ kind: "activate", perm: perm.id, index }));
+    activatedAbilities(g, rules, perm).forEach((_, index) => add({ kind: "activate", perm: perm.id, index }));
   }
   return out;
 }
@@ -107,7 +108,7 @@ export function tapManaSource(g: Game, rules: RuleBook, p: PlayerId, permId: str
     g.pool[p][key] = (g.pool[p][key] ?? 0) + 1;
     return true;
   }
-  const abs = activatedOf(rules, perm.card.name);
+  const abs = activatedAbilities(g, rules, perm);
   for (const i of index >= 0 ? [index] : abs.map((_, k) => k)) {
     if (!abs[i] || !manaOnly(abs[i].body)) continue;
     try {
@@ -129,7 +130,7 @@ export function withAllMana(g: Game, rules: RuleBook, p: PlayerId): Game {
       tapManaSource(copy, rules, p, perm.id); // デュアルランド: 好きな色のマナ
       continue;
     }
-    activatedOf(rules, perm.card.name).forEach((ab, index) => {
+    activatedAbilities(g, rules, perm).forEach((ab, index) => {
       if (!manaOnly(ab.body)) return;
       try {
         activateAbility(copy, p, perm.id, index, {}, rules);
@@ -147,7 +148,7 @@ export function canRespond(g: Game, rules: RuleBook, p: PlayerId): boolean {
     if (a.kind === "cast" || a.kind === "land") return true; // 土地を出せるのも、できること
     if (a.kind !== "activate") return false;
     const perm = copy.battlefield.find((x) => x.id === a.perm);
-    const ab = perm && activatedOf(rules, perm.card.name)[a.index];
+    const ab = perm && activatedAbilities(g, rules, perm)[a.index];
     return !!ab && !manaOnly(ab.body);
   });
 }
@@ -159,7 +160,7 @@ export function manaUseful(g: Game, rules: RuleBook, p: PlayerId): boolean {
     if (a.kind === "cast") return true;
     if (a.kind !== "activate") return false;
     const perm = copy.battlefield.find((x) => x.id === a.perm);
-    const ab = perm && activatedOf(rules, perm.card.name)[a.index];
+    const ab = perm && activatedAbilities(g, rules, perm)[a.index];
     return !!ab && !manaOnly(ab.body);
   });
 }
@@ -168,7 +169,7 @@ export function manaUseful(g: Game, rules: RuleBook, p: PlayerId): boolean {
 export function uselessMana(g: Game, rules: RuleBook, p: PlayerId, a: Action): boolean {
   if (a.kind !== "activate") return false;
   const perm = g.battlefield.find((x) => x.id === a.perm);
-  const ab = perm && activatedOf(rules, perm.card.name)[a.index];
+  const ab = perm && activatedAbilities(g, rules, perm)[a.index];
   return !!ab && manaOnly(ab.body) && !manaUseful(g, rules, p);
 }
 

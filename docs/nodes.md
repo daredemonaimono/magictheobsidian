@@ -2,11 +2,11 @@
 
 > このファイルは、自動で作られます (`src/battle/nodeDocs.ts`)。直接は書き換えません。ノードを足したら、`npm run docs:nodes` で更新します。ノードは、`src/battle/nodes/` の、カテゴリーごとのファイルにあります。
 
-全 92 個のノード、9 個の条件。
+全 96 個のノード、9 個の条件。
 
 目次: [宣言・コスト・条件](#宣言・コスト・条件) / [対象・数える・絞り込む](#対象・数える・絞り込む) / [カードの移動・ライブラリー・手札](#カードの移動・ライブラリー・手札) / [パーマネント・トークン・カウンター](#パーマネント・トークン・カウンター) / [ダメージ・ライフ・マナ・打ち消し](#ダメージ・ライフ・マナ・打ち消し) / [継続効果](#継続効果)
 
-## 宣言・コスト・条件 (26 個)
+## 宣言・コスト・条件 (28 個)
 
 ### `cost` コスト
 
@@ -51,6 +51,21 @@ Delve の宣言(呪文能力の最初に書く。引数なし)。唱えるとき
 - 引数: `step`(string・必須・upkeep / draw / main1 / combat / main2 / end)
 - 言い方 (キー): 次の終了ステップの開始時に、あとで、遅延誘発
 - 書ける能力: triggered / activated / spell
+
+### `reflexive` そうしたとき
+
+「そうしたとき、〜」。if=$名前 を付けて、あとのノードを、新しい誘発型能力として、いまスタックに積む。対象 (target) は、このとき選ぶ(捨てたあとで選ぶ対象など)。ここまでの $名前 は、あとのノードには渡らない。Inti は、discard optional=true as=d → reflexive if=$d → target … → addCounter …
+
+- 引数: なし
+- 書ける能力: triggered / activated / spell
+
+### `cantGainLife` ライフを得られない
+
+常在型能力。プレイヤーは、ライフを得られない(絆魂・ライフを得る効果も何も起きない)。who=all(全員。既定) / you(このパーマネントのコントローラー) / opponents (Sunspine Lynx)
+
+- 引数: `who`(string・you / opponents / all)
+- 書ける能力: static
+- 宣言のノード (エンジンが読む。`if=` は付けられない)
 
 ### `startEngines` エンジン始動!
 
@@ -136,9 +151,9 @@ Storm の宣言(呪文能力の最初に書く。引数なし)。この呪文を
 
 ### `when` どうなったら
 
-誘発型能力の最初に書く、誘発のきっかけ。event=cast / enters(from=graveyard) / leaves(to=graveyard で死亡) / moved(from=library to=graveyard、from=hand to=graveyard=捨てた) / damaged(combat=true。hit=creature・player) / attacks / blocks / targeted(by=you で自分の呪文・能力の対象になった) / drew(引いた) / step(step=upkeep〜end)。zone=graveyard は墓地にあるあいだだけ。castFrom=graveyard は墓地から唱えて出たとき。絞り込み: who=you・opponents / type・notType / turn=yours・opponents / self=true / alone=true / first=true(attacks は宣言で最初の1体、targeted はそのターンで最初)。eventPerm は引き金のパーマネント
+誘発型能力の最初に書く、誘発のきっかけ。event=cast / enters(from=graveyard) / leaves(to=graveyard で死亡) / moved(from=library to=graveyard、from=hand to=graveyard=捨てた) / damaged(combat=true) / attacks / blocks / targeted(by=you で自分の呪文・能力の) / drew / step(step=upkeep〜end)。zone=graveyard は墓地にあるあいだだけ。castFrom=graveyard は墓地から唱えて出たとき。絞り込み: who=you・opponents / type・notType / turn=yours・opponents / self=true / alone=true / first=true(attacks は宣言で最初の1体、targeted はそのターンで最初) / once=true(同じ攻撃の宣言で1回だけ) / requires=印(gainAbility の印)。eventPerm は引き金のもの
 
-- 引数: `event`(string・必須・cast / enters / leaves / moved / damaged / step / attacks / blocks / targeted / drew)、`combat`(boolean)、`hit`(string・creature / player / planeswalker)、`zone`(string・battlefield / graveyard)、`from`(string・library / hand / graveyard / stack / battlefield)、`to`(string・library / hand / graveyard / exile / battlefield)、`castFrom`(string)、`step`(string・upkeep / draw / main1 / combat / main2 / end)、`who`(string・you / opponents)、`type`(string)、`notType`(string)、`turn`(string・yours / opponents)、`self`(boolean)、`alone`(boolean)、`first`(boolean)、`by`(string・you)
+- 引数: `event`(string・必須・cast / enters / leaves / moved / damaged / step / attacks / blocks / targeted / drew)、`combat`(boolean)、`hit`(string・creature / player / planeswalker)、`zone`(string・battlefield / graveyard)、`from`(string・library / hand / graveyard / stack / battlefield)、`to`(string・library / hand / graveyard / exile / battlefield)、`castFrom`(string)、`step`(string・upkeep / draw / main1 / combat / main2 / end)、`who`(string・you / opponents)、`type`(string)、`notType`(string)、`turn`(string・yours / opponents)、`self`(boolean)、`alone`(boolean)、`first`(boolean)、`once`(boolean)、`requires`(string)、`by`(string・you)
 - 書ける能力: triggered
 - 宣言のノード (エンジンが読む。`if=` は付けられない)
 - 中心のノード (ルールを書かせるとき、いつも AI の指示に入る。ほかは、カードごとに選ぶ)
@@ -482,7 +497,7 @@ cards(choose などの出力)の1枚ごとに、コントローラーが life �
 - 出力: `n`(number) (`as=名前` で受けて、`$名前` で渡す)
 - 言い方 (キー): 追放する、追放
 
-## パーマネント・トークン・カウンター (15 個)
+## パーマネント・トークン・カウンター (16 個)
 
 ### `tap` タップする
 
@@ -569,6 +584,12 @@ a と b(それぞれ target ノードの出力)のパーマネントのコント
 コントローラーが紋章を得る。紋章は戦場の外に残り続け、元のカードのルールの、emblem name=<同じ name> で始まる誘発型能力が働く
 
 - 引数: `name`(string・必須)
+
+### `gainAbility` 能力を得る
+
+対象のパーマネントが、flag の印 (能力を得た印) を得る。カードのルールに when requires=<flag> で書いた誘発型能力が、その印があるあいだ働く(「〜になる。『〜したとき…』を得る」Kellan)
+
+- 引数: `target`(ref・必須)、`flag`(string・必須)
 
 ### `createToken` トークンを作る
 
@@ -657,13 +678,13 @@ a と b(それぞれ target ノードの出力)のパーマネントのコント
 - 引数: `target`(ref・必須)、`unlessPay`(number)、`exile`(boolean)
 - 言い方 (キー): 打ち消す、カウンター (呪文を打ち消す)
 
-## 継続効果 (9 個)
+## 継続効果 (10 個)
 
 ### `affect` 及ぶ先
 
-継続効果の常在型能力の最初に書く、効果が及ぶ先。who=attached(このパーマネントが付いているもの。装備・オーラ) / self(このパーマネント自身) / yours(自分のパーマネント) / all(すべて)。type・notType で型を絞る。turn=yours で、そのコントローラーのターンのあいだだけ(「自分のターンのあいだ、先制攻撃を持つ」)/ opponents で、相手のターンのあいだだけ。minSpeed=4 で、速度が 4 (最高速度) のあいだだけ
+継続効果の常在型能力の最初に書く、効果が及ぶ先。who=attached(このパーマネントが付いているもの。装備・オーラ) / self(このパーマネント自身) / yours(自分のパーマネント) / all(すべて)。type・notType で型を絞る。turn=yours で、そのコントローラーのターンのあいだだけ(「自分のターンのあいだ、先制攻撃を持つ」)/ opponents で、相手のターンのあいだだけ。minSpeed=4 で最高速度のあいだだけ / ifCounter=カウンターの種類 で、このパーマネントにそれが載っているあいだだけ
 
-- 引数: `who`(string・必須・attached / self / yours / all)、`type`(string)、`notType`(string)、`turn`(string・yours / opponents)、`minSpeed`(number)
+- 引数: `who`(string・必須・attached / self / yours / all)、`type`(string)、`notType`(string)、`turn`(string・yours / opponents)、`minSpeed`(number)、`ifCounter`(string)
 - 書ける能力: static
 - 宣言のノード (エンジンが読む。`if=` は付けられない)
 - 中心のノード (ルールを書かせるとき、いつも AI の指示に入る。ほかは、カードごとに選ぶ)
@@ -681,6 +702,14 @@ a と b(それぞれ target ノードの出力)のパーマネントのコント
 及ぶ先が、キーワード能力を持つ(レイヤー6)。prowess を与えると、果敢として働く
 
 - 引数: `keyword`(string・必須・flying / hexproof / flash / haste / vigilance / trample / lifelink / deathtouch / firstStrike / doubleStrike / reach / menace / defender / prowess / indestructible)
+- 書ける能力: static
+- 宣言のノード (エンジンが読む。`if=` は付けられない)
+
+### `staticMana` マナ能力を与える(継続)
+
+及ぶ先が、「{T}: color のマナ 1 点を加える」を持つ(レイヤー6)。「基本でない土地は Mountain になる」(Zhao)は、setTypes types="Land — Mountain" → loseAbilities → staticMana color=R
+
+- 引数: `color`(string・必須・W / U / B / R / G / C)
 - 書ける能力: static
 - 宣言のノード (エンジンが読む。`if=` は付けられない)
 
