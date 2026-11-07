@@ -1,39 +1,19 @@
 import { AI_SYSTEM, AskAi, aiActPrompt, aiAttackPrompt, aiAttackers, aiBlockPrompt, aiBlockers, aiDescribe, aiParse, matchIds, permLine, withMemo } from "./ai";
-import type { JevDecision } from "./jev";
-import type { Judged } from "./jevJudge";
 import type { Game, RuleBook } from "./state";
 import type { AiOption } from "./ai";
 import { attackersAt } from "./engine";
 import { BattleController } from "./play";
 
-// Jev (選ぶだけの、速くて安いモデル) で判断する道具。画面 (main.ts) が、キーとモデルを入れて作る。confidence = この自信以上なら、Jev の答えを使う
-export interface JevDriver {
-  confidence: number;
-  act(state: string, options: { id: number; label: string }[]): Promise<JevDecision>;
-  attack(state: string, attackers: { id: string; label: string }[]): Promise<JevDecision>;
-  block(state: string, attackers: { id: string; label: string }[], blockers: { id: string; label: string }[]): Promise<JevDecision>;
+// 判断の材料 (コードが計算した行動の分析) を、AI に渡す道具。画面 (main.ts) が作る。mode = on (材料を添える) / compare (添えた場合と、添えない場合の答えを比べて、履歴の裏側に残す。AI の呼び出しは 2 倍)
+export interface Judged {
+  text: string; // AI への指示に添える文章
+  input: number;
+  output: number;
+  ms: number;
 }
-
-// Jev の判断を、AI に渡す道具 (Jev は、材料を出す。最終判断は AI)。画面 (main.ts) が、キーとモデルを入れて作る。mode = on (材料を添える) / compare (添えた場合と、添えない場合の答えを比べて、履歴の裏側に残す。AI の呼び出しは 2 倍)
-export interface JevAdvisor {
+export interface AiAdvisor {
   mode: "on" | "compare";
   judge(w: "act" | "attack" | "block", g: Game, rules: RuleBook, ai: string, opts?: AiOption[]): Promise<Judged>;
-}
-
-// 2 つの材料 (Jev の判断・コードの行動の分析) を、1 つにする。どちらかが compare なら compare。片方が失敗したら、もう片方だけ
-export function combineAdvisors(list: (JevAdvisor | undefined)[]): JevAdvisor | undefined {
-  const xs = list.filter((x): x is JevAdvisor => !!x);
-  if (!xs.length) return undefined;
-  if (xs.length === 1) return xs[0];
-  return {
-    mode: xs.some((x) => x.mode === "compare") ? "compare" : "on",
-    judge: async (w, g, rules, ai, opts) => {
-      const got = await Promise.allSettled(xs.map((x) => x.judge(w, g, rules, ai, opts)));
-      const ok = got.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
-      if (!ok.length) throw (got[0] as PromiseRejectedResult).reason;
-      return { text: ok.map((r) => r.text).join("\n\n"), input: ok.reduce((a, r) => a + r.input, 0), output: ok.reduce((a, r) => a + r.output, 0), ms: Math.max(...ok.map((r) => r.ms)) };
-    },
-  };
 }
 
 // 2 つの返事 (助言あり・なし) が、同じ行動か。act = 同じ番号 / attack = 同じ id の集合 / block = 同じ組の集合
@@ -81,7 +61,7 @@ async function answerAiQuestion(ctl: BattleController, ask: AskAi | undefined, a
   return "acted";
 }
 
-export async function aiStep(ctl: BattleController, ask: AskAi | undefined, ai: string, jev?: JevDriver, advisor?: JevAdvisor): Promise<"none" | "acted" | "failed"> {
+export async function aiStep(ctl: BattleController, ask: AskAi | undefined, ai: string, advisor?: AiAdvisor): Promise<"none" | "acted" | "failed"> {
   if (!ctl.aiActive || ctl.game.over) return "none";
   if (ctl.pending) return humanAsking(ctl) ? "none" : answerAiQuestion(ctl, ask, ai); // AI の相手への質問は、ここで答える
   let w = ctl.aiWaiting();
@@ -92,15 +72,15 @@ export async function aiStep(ctl: BattleController, ask: AskAi | undefined, ai: 
   }
   const g = ctl.game;
   const rules = ctl.rules;
-  if (!ask && !jev) {
+  if (!ask) {
     ctl.aiFail(w, "API キーが未設定");
     return "failed";
   }
   const opts = w === "act" ? ctl.aiOptions() : [];
   const prompt = w === "act" ? aiActPrompt(g, rules, ai, opts) : w === "attack" ? aiAttackPrompt(g, rules, ai) : aiBlockPrompt(g, rules, ai);
-  // Jev の判断 (材料) を、AI への指示に添える。失敗しても、材料なしで続ける
+  // 判断の材料 (行動の分析) を、AI への指示に添える。失敗しても、材料なしで続ける
   let advice = "";
-  if (advisor && ask && !jev) {
+  if (advisor) {
     try {
       const a = await advisor.judge(w, g, rules, ai, opts);
       advice = `\n\n${a.text}`;
@@ -115,31 +95,8 @@ export async function aiStep(ctl: BattleController, ask: AskAi | undefined, ai: 
   // 返事が使えなかったら (形が違う・できない行動)、理由を添えて、1回だけ聞き直す。それでもだめなら、この判断だけ雑魚 CPU の決まりで (次は、また Claude)
   for (let attempt = 0; attempt < 2; attempt++) {
     let text: string | undefined;
-    // 1回目は、Jev に聞く (速くて安い)。自信が足りない・失敗したときは、別の AI (ask) に聞き直す。聞き直す AI が無ければ、Jev の答えを、そのまま使う
-    if (attempt === 0 && jev) {
-      try {
-        const state = aiDescribe(g, rules, ai);
-        const d =
-          w === "act"
-            ? await jev.act(state, opts)
-            : w === "attack"
-              ? await jev.attack(state, aiAttackers(g, rules, ai).map((x) => ({ id: x.id, label: permLine(g, x, rules) })))
-              : await jev.block(state, attackersAt(g, ai).map((x) => ({ id: x.id, label: permLine(g, x, rules) })), aiBlockers(g, rules, ai).map((x) => ({ id: x.id, label: permLine(g, x, rules) })));
-        ctl.aiTokens.input += d.input;
-        ctl.aiTokens.output += d.output;
-        const usable = d.confidence >= jev.confidence || !ask;
-        g.log.push(`相手 (AI/jev): ${usable ? "採用" : "自信が足りないので、別の AI に聞く"} (自信 ${d.confidence.toFixed(2)} · ${d.ms}ms · 入力 ${d.input} トークン · この対戦の合計 ${ctl.aiTokens.input + ctl.aiTokens.output})`);
-        if (usable) text = JSON.stringify({ ...d.reply, why: d.note });
-      } catch (e) {
-        g.log.push(`相手 (AI/jev): 使えなかった (${(e as Error).message})${ask ? "。別の AI に聞く" : ""}`);
-        if (!ask) {
-          ctl.aiFail(w, (e as Error).message);
-          return "failed";
-        }
-      }
-    }
     try {
-      if (text === undefined && ask) {
+      if (text === undefined) {
       const r = await ask(withMemo(AI_SYSTEM, ctl.aiMemo, ctl.aiDecks), attempt === 0 ? `${prompt}${advice}` : `${prompt}${advice}\n\n前の返事は使えませんでした (${problem})。選択肢の番号・id を確かめて、もう一度、JSON だけで答えてください。`);
       text = r.text;
       if (r.input !== undefined || r.output !== undefined) {
@@ -162,8 +119,8 @@ export async function aiStep(ctl: BattleController, ask: AskAi | undefined, ai: 
       problem = `JSON として読めない: ${text.slice(0, 60).replace(/\s+/g, " ")}`;
       continue;
     }
-    // 比較: Jev の判断を添えなかったら、AI の答えが変わったか (履歴の裏側に残す。AI の学習 (デッキのメモ・判断の材料) を決める手がかり)
-    if (advisor?.mode === "compare" && advice && ask && attempt === 0) {
+    // 比較: 判断の材料を添えなかったら、AI の答えが変わったか (履歴の裏側に残す。AI の学習 (デッキのメモ・判断の材料) を決める手がかり)
+    if (advisor?.mode === "compare" && advice && attempt === 0) {
       try {
         const plain = await ask(withMemo(AI_SYSTEM, ctl.aiMemo, ctl.aiDecks), prompt);
         ctl.aiTokens.input += plain.input ?? 0;

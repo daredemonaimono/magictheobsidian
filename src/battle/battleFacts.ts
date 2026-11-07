@@ -3,9 +3,9 @@ import { characteristics } from "./continuous";
 import { isSick } from "./engine";
 import { Game, PlayerId, RuleBook } from "./state";
 
-// Jev に渡す「事実」。数・個数・差・使えるマナ・使える手札は、Jev が苦手なので、コードが先に計算して、state に入れる (定義: src/battle/jev-criteria.json の facts)。
+// AI への「行動の分析」に使う「事実」。数・個数・差・使えるマナ・使える手札は、コードが先に計算する。
 // 視点は p (AI): you = p、opp = 相手。純粋な関数 (g は変えない)
-export interface JevFacts {
+export interface BattleFacts {
   life: { you: number; opp: number };
   lifeDiff: number; // 自分 − 相手
   turnsToKillOpp: number | null; // いま攻撃できる (召喚酔いでない) 自分のクリーチャーのパワーの合計で、相手を倒せるまでのターン数 (倒せなければ null)
@@ -19,7 +19,7 @@ export interface JevFacts {
 
 const turns = (life: number, power: number): number | null => (power > 0 ? Math.max(1, Math.ceil(life / power)) : null);
 
-export function jevFacts(g: Game, rules: RuleBook, p: PlayerId, tagsOf: (cardName: string) => string[] = () => []): JevFacts {
+export function battleFacts(g: Game, rules: RuleBook, p: PlayerId, tagsOf: (cardName: string) => string[] = () => []): BattleFacts {
   const foe = g.players.find((x) => x !== p) ?? p;
   const board = g.battlefield.flatMap((perm) => {
     const c = characteristics(g, perm, rules);

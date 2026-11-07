@@ -1,12 +1,7 @@
 import { App, EventRef, Modal, Notice, Plugin, Setting, TFile, WorkspaceLeaf, normalizePath } from "obsidian";
 import { allNodes } from "./battle/registry";
-import { JevAdvisor, JevDriver, combineAdvisors } from "./battle/aiRun";
+import { AiAdvisor } from "./battle/aiRun";
 import { battleHints } from "./battle/battleHints";
-import { jevAct, jevAttack, jevBlock } from "./battle/jev";
-import { cardTagsOf, jevJudge, tagNames } from "./battle/jevJudge";
-import { jevFacts } from "./battle/jevFacts";
-import { aiAttackers, permLine } from "./battle/ai";
-import { attackersAt } from "./battle/engine";
 import { buildRuleTwoStage, unsupportedLines } from "./battle/build";
 import { DEFAULT_GLOSSARY, GLOSSARY_NOTE, OLD_GLOSSARY_NOTE } from "./battle/glossary";
 import { Kind, freeName, parseVersion, sortNewestFirst } from "./battle/history";
@@ -45,7 +40,7 @@ import { IMAGE_MODES, PRELOAD_KINDS, PRELOAD_SCOPES } from "./imageKey";
 import { initImageCache } from "./imageCache";
 import { preloadImages } from "./imagePreload";
 import { DEFAULT_SETTINGS, MOD_KEYS, Settings, SettingsTab, secretKey } from "./settings";
-import { Scene, aiLabel, aiReady, fallbackAi, migrateAi, providerName, runAi } from "./battle/aiConfig";
+import { Scene, aiLabel, aiReady, migrateAi, providerName, runAi } from "./battle/aiConfig";
 import { AskAi } from "./battle/ai";
 
 // 「メモ」はカード行の外なので、デッキ画面で枚数を変えても書き換わらない。統率戦だけコマンダー欄があり、サイドは無い
@@ -111,7 +106,6 @@ export default class MagicTheObsidian extends Plugin {
       listArt: d.listArt ?? DEFAULT_SETTINGS.listArt,
       dashboardTab: d.dashboardTab ?? DEFAULT_SETTINGS.dashboardTab,
       currency: d.currency ?? DEFAULT_SETTINGS.currency,
-      jevCardTags: d.jevCardTags && typeof d.jevCardTags === "object" && !Array.isArray(d.jevCardTags) ? d.jevCardTags : {},
       ai: migrateAi(d), // 昔の設定 (claudeKeySecret・battleModel など) も、ここで新しい形に移す
       battleStops: d.battleStops === "always" ? "always" : "smart",
       battleOpponent: d.battleOpponent === "passive" ? "passive" : d.battleOpponent === "claude" ? "claude" : "cpu",
@@ -129,7 +123,6 @@ export default class MagicTheObsidian extends Plugin {
     priceStore.rates = d.rates ?? {};
     const saveAll = () => this.saveData({ ...this.settings, prices: priceStore.prices, pricesUpdated: priceStore.updated, rates: priceStore.rates });
     priceStore.save = saveAll;
-    this.saveAllFn = saveAll;
     this.addSettingTab(
       new SettingsTab(this.app, this, this.settings, saveAll, () => {
         for (const l of this.deckLeaves()) if (l.view instanceof DeckView) l.view.rebuild();
@@ -139,7 +132,7 @@ export default class MagicTheObsidian extends Plugin {
       }, () => void this.preloadImages(false)),
     );
     this.registerView(DECK_VIEW, (leaf) => new DeckView(leaf, this.settings));
-    this.registerView(BATTLE_VIEW, (leaf) => new BattleView(leaf, () => this.battleSession, () => this.settings.battleStops, () => this.settings.battleOpponent, () => this.settings.battleEffects, () => this.makeAsk(), (b) => void this.saveBattle(b), () => this.ensureBattleSide(), () => this.battleJev(), () => combineAdvisors([this.hintAdvisor(), this.jevAdvisor()])));
+    this.registerView(BATTLE_VIEW, (leaf) => new BattleView(leaf, () => this.battleSession, () => this.settings.battleStops, () => this.settings.battleOpponent, () => this.settings.battleEffects, () => this.makeAsk(), (b) => void this.saveBattle(b), () => this.ensureBattleSide(), () => this.hintAdvisor()));
     this.registerView(BATTLE_SIDE_VIEW, (leaf) => new BattleSideView(leaf));
     this.registerView(DASHBOARD_VIEW, (leaf) => new DashboardView(leaf, { collection: () => void this.openOrReveal(COLLECTION_VIEW), deck: () => void this.openOrReveal(DECKLIST_VIEW), cards: () => void this.openOrReveal(CARDS_VIEW) }));
     this.registerView(CARDS_VIEW, (leaf) => new CardsView(leaf, this.settings));
@@ -394,55 +387,15 @@ export default class MagicTheObsidian extends Plugin {
   // 場面 (対戦の相手・ルールを書かせる・メモの下書き) の AI を呼ぶ関数。設定の、その場面の種類・モデル。キーが無い (互換 API の URL を変えていない OpenAI・Gemini・Claude) ときは undefined
   private askFor(scene: Scene): ((system: string, messages: { role: "user" | "assistant"; content: string }[]) => Promise<{ text: string; input?: number; output?: number }>) | undefined {
     const secret = (name: string) => secretKey(this.app, name);
-    // 場面の AI が Jev のとき、文章を作る (聞き直す) 相手は、設定の「聞き直す AI」(その種類のキー・モデルを使う)。無ければ、無し
-    const ai = this.settings.ai.scenes[scene].provider === "jev" ? fallbackAi(this.settings.ai, scene, secret) : this.settings.ai;
-    if (!ai || !aiReady(ai, scene, secret)) return undefined;
+    const ai = this.settings.ai;
+    if (!aiReady(ai, scene, secret)) return undefined;
     return (system, messages) => runAi({ ai, scene, secret, http: obsidianHttp, system, messages });
   }
-  // 対戦の相手が Jev のとき、判断を Jev に聞く道具 (キーが無ければ、無し)
-  private saveAllFn?: () => Promise<void>;
-  // Jev の判断を AI に渡す道具 (設定 ai.jev.advise が off でなく、Jev のキーがあり、「対戦の相手」が Jev でないとき)。カードの分類は、1 枚につき 1 回だけ聞いて、設定に保存して使い回す
-  // コードが計算した行動の分析を、AI に渡す道具 (API を呼ばない)。設定 ai.hints が off でなく、「対戦の相手」が Jev でないとき
-  private hintAdvisor(): JevAdvisor | undefined {
+  // コードが計算した行動の分析 (ノードの役割・コピーした局面での試し撃ち・攻撃とブロックの比べ合い) を、AI に渡す道具 (API を呼ばない)。設定 ai.hints が off でないとき
+  private hintAdvisor(): AiAdvisor | undefined {
     const ai = this.settings.ai;
-    if (ai.hints === "off" || ai.scenes.battle.provider === "jev") return undefined;
+    if (ai.hints === "off") return undefined;
     return { mode: ai.hints, judge: async (w, g, rules, p, opts) => ({ text: battleHints(w, g, rules, p, opts), input: 0, output: 0, ms: 0 }) };
-  }
-  private jevAdvisor(): JevAdvisor | undefined {
-    const ai = this.settings.ai;
-    if (ai.jev.advise === "off" || ai.scenes.battle.provider === "jev") return undefined;
-    const apiKey = secretKey(this.app, ai.keys.jev);
-    if (!apiKey) return undefined;
-    const base = { apiKey, model: ai.scenes.battle.models.jev, http: obsidianHttp };
-    return {
-      mode: ai.jev.advise,
-      judge: async (w, g, rules, p) => {
-        const tags = this.settings.jevCardTags;
-        const need = [...new Set(g.hands[p].filter((c) => !/\bLand\b/.test(c.typeLine) && !tags[c.name]).map((c) => c.name))];
-        if (need.length) {
-          const cards = (await Promise.all(need.map(async (name) => ({ name, text: await oracleEnglish(this.app, name) })))).filter((c) => c.text);
-          Object.assign(tags, await cardTagsOf({ ...base, cards }));
-          void this.saveAllFn?.();
-        }
-        const facts = jevFacts(g, rules, p, (name) => tagNames(tags[name]));
-        const items = w === "attack" ? aiAttackers(g, rules, p) : w === "block" ? attackersAt(g, p) : [];
-        return jevJudge({ ...base, decision: w, facts, items: items.map((x) => ({ id: x.id, label: permLine(g, x, rules) })) });
-      },
-    };
-  }
-  private battleJev(): JevDriver | undefined {
-    const ai = this.settings.ai;
-    if (ai.scenes.battle.provider !== "jev") return undefined;
-    const apiKey = secretKey(this.app, ai.keys.jev);
-    if (!apiKey) return undefined;
-    const model = ai.scenes.battle.models.jev;
-    const base = { apiKey, model, http: obsidianHttp };
-    return {
-      confidence: ai.jev.confidence,
-      act: (state, options) => jevAct({ ...base, state, options }),
-      attack: (state, attackers) => jevAttack({ ...base, state, attackers }),
-      block: (state, attackers, blockers) => jevBlock({ ...base, state, attackers, blockers }),
-    };
   }
   // 対戦の相手の AI (1 通の質問 → 返事)
   private makeAsk(scene: Scene = "battle"): AskAi | undefined {

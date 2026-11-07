@@ -1,5 +1,5 @@
 import { App, Notice, Platform, Plugin, PluginSettingTab, SecretComponent, Setting } from "obsidian";
-import { AiSettings, DEFAULT_AI, PROVIDERS, Provider, SCENES, Scene, TextProvider, providersFor } from "./battle/aiConfig";
+import { AiSettings, DEFAULT_AI, PROVIDERS, Provider, SCENES, Scene } from "./battle/aiConfig";
 import { CURRENCIES, updateRates } from "./prices";
 import { IMAGE_MODES, ImageMode, PRELOAD_KINDS, PRELOAD_SCOPES, PreloadKind, PreloadScope } from "./imageKey";
 import { cacheInfo, clearImageCache } from "./imageCache";
@@ -43,11 +43,10 @@ export interface Settings {
   imageScope: PreloadScope; // 「先に保存」の範囲。decks = デッキとコレクションのカード / all = Cards/ のカードすべて
   imageKind: PreloadKind; // 「先に保存」の種類。both = カード全体とイラスト / card = カード全体 / art = イラストだけ
   battleNoMirror: boolean; // 対戦の相手を「ランダム」にしたとき、自分と同じデッキ (ミラー) を選ばない
-  jevCardTags: Record<string, Record<string, number>>; // Jev が分類したカードの分類 (カード名 → 質問の id → はい の確率)。1 枚につき 1 回だけ聞いて、使い回す (src/battle/jev-criteria.json の cards)
-  battleStops: "always" | "smart"; // 対戦の優先権の止まり方。always = 毎回止まる / smart = 使えるものがあるときだけ (メインフェイズでは、必ず止まる)
+    battleStops: "always" | "smart"; // 対戦の優先権の止まり方。always = 毎回止まる / smart = 使えるものがあるときだけ (メインフェイズでは、必ず止まる)
 }
 
-export const DEFAULT_SETTINGS: Settings = { jevCardTags: {}, textLang: "en", cardLang: "en", sidebar: true, listArt: true, dashboardTab: true, currency: "USD", ai: DEFAULT_AI, keyRemove: "shift", keyMove: "mod", battleNoMirror: false, imageMode: "view", imageScope: "decks", imageKind: "both", battleStops: "smart", battleOpponent: "cpu", battleHistory: true, battleEffects: true };
+export const DEFAULT_SETTINGS: Settings = { textLang: "en", cardLang: "en", sidebar: true, listArt: true, dashboardTab: true, currency: "USD", ai: DEFAULT_AI, keyRemove: "shift", keyMove: "mod", battleNoMirror: false, imageMode: "view", imageScope: "decks", imageKind: "both", battleStops: "smart", battleOpponent: "cpu", battleHistory: true, battleEffects: true };
 
 // 設定の名前で、キーチェーンから取る (空・見つからないときは null)
 // 設定画面の部品: 大項目 (タブ) → 中項目 (折りたたみ) → 小項目 (1つの設定を描く関数)
@@ -139,7 +138,7 @@ export class SettingsTab extends PluginSettingTab {
             await this.save();
           }),
         );
-    const hint: Record<Provider, string> = { claude: "例: claude-haiku-5-5(安い)/ claude-sonnet-5-5 / claude-opus-5-5 / claude-fable-5-1(強い・高い)", openai: "例: gpt-4o-mini", gemini: "例: gemini-2.5-flash", jev: "jev-latest (最新の Jev。docs.typesafe.ai の「Models」で、名前を確かめられる)" };
+    const hint: Record<Provider, string> = { claude: "例: claude-haiku-5-5(安い)/ claude-sonnet-5-5 / claude-opus-5-5 / claude-fable-5-1(強い・高い)", openai: "例: gpt-4o-mini", gemini: "例: gemini-2.5-flash" };
 
     return [
       {
@@ -348,7 +347,6 @@ export class SettingsTab extends PluginSettingTab {
                     }),
                   ),
               (c) => keyRow(c, "gemini", "Gemini の API キー / Gemini API key", "Google。"),
-              (c) => keyRow(c, "jev", "Jev の API キー / Jev API key (TypeSafe)", "console.typesafe.ai で作る。Jev は、選ぶ仕事 (対戦の判断・ノードを選ぶ) だけに使える、速くて安いモデル。入力 100 万トークン 0.042 ドル。"),
             ],
           },
           {
@@ -359,7 +357,7 @@ export class SettingsTab extends PluginSettingTab {
               const sc = ai.scenes[scene as Scene];
               return [
                 (c: Ctx) =>
-                  toggles<Provider>(c, label, desc, providersFor(scene as Scene), sc.provider, async (v) => {
+                  toggles<Provider>(c, label, desc, PROVIDERS, sc.provider, async (v) => {
                     sc.provider = v;
                     await this.save();
                   }),
@@ -375,45 +373,6 @@ export class SettingsTab extends PluginSettingTab {
                     ),
               ];
             }),
-          },
-          {
-            id: "jev",
-            title: "Jev の使い方 / Jev options",
-            desc: "Jev (速くて安い、選ぶだけのモデル) を、「対戦の相手」「ノードを選ぶ」に選んだときの設定。Jev は、文章を作れないので、ルールを書かせる・メモの下書きには、選べない。",
-            items: [
-              (c) =>
-                new Setting(el(c))
-                  .setName("対戦: 自信のしきい値 / Confidence threshold")
-                  .setDesc("対戦の判断で、Jev の自信がこの値以上なら、Jev の答えを使う。未満なら、下の「聞き直す AI」に聞く。高いほど、慎重 (AI を呼ぶ回数が増える)。0.5〜1。")
-                  .addSlider((s) =>
-                    s.setLimits(0.5, 1, 0.05).setValue(ai.jev.confidence).setDynamicTooltip().onChange(async (v) => {
-                      ai.jev.confidence = v;
-                      await this.save();
-                    }),
-                  ),
-              (c) => {
-                const st = new Setting(el(c)).setName("対戦: Jev の判断を AI に渡す / Advise the AI").setDesc("対戦の相手を Claude などの AI にしたとき、Jev が、形勢・相手に止められそうか・手札に止める手段があるか などを分類して、AI への指示に添える (質問は src/battle/jev-criteria.json)。数や使えるマナは、コードが計算して渡す。最終判断は AI。比較: 添えた場合と添えない場合の AI の答えを比べて、履歴の裏側に残す (AI の呼び出しが 2 倍)。「対戦の相手」を Jev にしているときは、使わない。Jev のキーが要る。");
-                const row = st.controlEl.createDiv("mtg-seg");
-                for (const [v, label] of [["off", "使わない"], ["on", "渡す"], ["compare", "渡す + 比較"]] as ["off" | "on" | "compare", string][]) {
-                  row.createEl("button", { text: label, cls: v === ai.jev.advise ? "is-on" : "" }).addEventListener("click", async () => {
-                    ai.jev.advise = v;
-                    await this.save();
-                    this.display();
-                  });
-                }
-              },
-              (c) => {
-                const st = new Setting(el(c)).setName("対戦: 聞き直す AI / Fallback AI").setDesc("Jev の自信が足りないときに、聞く AI (モデルは、「対戦の相手」の、その AI のモデル欄)。使わない: Jev の答えを、そのまま使う (いちばん安く速いが、判断が粗くなる)。");
-                const row = st.controlEl.createDiv("mtg-seg");
-                for (const [v, label] of [["claude", "Claude"], ["openai", "OpenAI"], ["gemini", "Gemini"], ["none", "使わない"]] as [TextProvider | "none", string][]) {
-                  row.createEl("button", { text: label, cls: v === ai.jev.fallback ? "is-on" : "" }).addEventListener("click", async () => {
-                    ai.jev.fallback = v;
-                    await this.save();
-                    this.display();
-                  });
-                }
-              },
-            ],
           },
         ],
       },

@@ -42,7 +42,7 @@ export interface NodeDef {
   title: string; // 日本語名 (一覧・AI への指示の元)
   summary: string;
   roles?: string[]; // 役割 (このノードが、対戦で何をするか: removal・cardAdvantage・graveyardFill など)。AI への行動の分析に出る。部品 (対象・条件・計算) は []。src/battle/nodes/keys.ts の NODE_ROLES
-  keys?: string[]; // 日本語の言い方 (概念のキー。「謝罪」のように、同じ意味の言い方をまとめる)。Jev・AI への質問と、docs/nodes.md に出る (src/battle/nodes/keys.ts)
+  keys?: string[]; // 日本語の言い方 (概念のキー。「謝罪」のように、同じ意味の言い方をまとめる)。ルールを書かせる AI へのノード一覧と、docs/nodes.md に出る (src/battle/nodes/keys.ts)
   core?: boolean; // 毎回、AI への指示に入れる、中心のノード (ほぼ、どのカードでも使うもの)。それ以外は、カードごとに、選んで渡す (prompt.ts の selectPrompt)
   category: string; // 一覧 (docs/nodes.md) と、AI への指示で、まとめる区分 (src/battle/nodes/ の、どのファイルに書くか)
   params: Record<string, ParamDef>;

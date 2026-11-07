@@ -7,7 +7,7 @@ import { replay } from "./battle/replay";
 import { SavedBattle } from "./battle/saved";
 import { bump, focus } from "./battle/assignMath";
 import { AskAi } from "./battle/ai";
-import { JevAdvisor, JevDriver, aiStep, humanAsking } from "./battle/aiRun";
+import { AiAdvisor, aiStep, humanAsking } from "./battle/aiRun";
 import { BattleController, StopMode } from "./battle/play";
 import type { CastRecord } from "./battle/node";
 import { stackEffectText } from "./battle/stackText";
@@ -88,7 +88,7 @@ export class BattleView extends ItemView {
   private watcher?: ResizeObserver;
 
   // getSession = 対戦の局面 (無ければ、サンプルの局面)。対戦を始め直したときは、begin() で読み直す
-  constructor(leaf: WorkspaceLeaf, private getSession: () => BattleSession | undefined, private getStops: () => StopMode = () => "smart", private getOpp: () => "cpu" | "claude" | "passive" = () => "passive", private getFx: () => boolean = () => true, private getAsk: () => AskAi | undefined = () => undefined, private onSave: (b: SavedBattle) => void = () => {}, private getSide: () => Promise<{ preview: HTMLElement; log: HTMLElement } | undefined> = async () => undefined, private getJev: () => JevDriver | undefined = () => undefined, private getAdvisor: () => JevAdvisor | undefined = () => undefined) {
+  constructor(leaf: WorkspaceLeaf, private getSession: () => BattleSession | undefined, private getStops: () => StopMode = () => "smart", private getOpp: () => "cpu" | "claude" | "passive" = () => "passive", private getFx: () => boolean = () => true, private getAsk: () => AskAi | undefined = () => undefined, private onSave: (b: SavedBattle) => void = () => {}, private getSide: () => Promise<{ preview: HTMLElement; log: HTMLElement } | undefined> = async () => undefined, private getAdvisor: () => AiAdvisor | undefined = () => undefined) {
     super(leaf);
   }
 
@@ -713,7 +713,7 @@ export class BattleView extends ItemView {
       const ai = ctl.game.players.find((p) => p !== VIEWER)!;
       for (let n = 0; n < 40 && this.ctl === ctl && ctl.aiActive && !ctl.game.over && !humanAsking(ctl); n++) {
         if (ctl.aiWaiting()) this.thinkEl ??= this.ui.stage.createDiv({ cls: "mtg-bt-think", text: "相手 (AI) が考えている…" });
-        const r = await aiStep(ctl, this.getAsk(), ai, this.getJev(), this.getAdvisor());
+        const r = await aiStep(ctl, this.getAsk(), ai, this.getAdvisor());
         if (this.ctl !== ctl || r !== "acted" || humanAsking(ctl)) break; // 人への質問が出たら、答えると、AI の行動が最初からやり直される
         this.paint();
       }

@@ -2,7 +2,7 @@ import { AiOption, aiAttackers, aiBlockers } from "./ai";
 import { cpuDo } from "./cpu";
 import { characteristics } from "./continuous";
 import { attackersAt, handAbilitiesOf, passPriority } from "./engine";
-import { jevFacts } from "./jevFacts";
+import { battleFacts } from "./battleFacts";
 import { abilityRoles, cardRoles } from "./roles";
 import { Game, PlayerId, RuleBook } from "./state";
 
@@ -135,7 +135,7 @@ function blockLines(g: Game, rules: RuleBook, p: PlayerId): string[] {
 }
 
 export function battleHints(w: "act" | "attack" | "block", g: Game, rules: RuleBook, p: PlayerId, opts: AiOption[] = []): string {
-  const f = jevFacts(g, rules, p);
+  const f = battleFacts(g, rules, p);
   const facts = `ライフ差 ${f.lifeDiff >= 0 ? "+" : ""}${f.lifeDiff} / 相手を倒すまで ${f.turnsToKillOpp ?? "倒せない"} ターン / 自分が倒されるまで ${f.turnsToKillMe ?? "倒されない"} ターン / 使えるマナ ${f.availableMana} / 相手のアンタップの土地 ${f.oppUntappedMana}`;
   const lines = w === "act" ? actionLines(g, rules, p, opts) : w === "attack" ? attackLines(g, rules, p) : blockLines(g, rules, p);
   return `## 行動の分析 (コードが計算)\nカードのルール (ノード) から導いた役割と、コピーした局面での試し撃ちの結果です。参考にして、最終判断してください。\n計算済みの事実: ${facts}\n${lines.join("\n") || "(分析なし)"}`;
