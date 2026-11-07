@@ -1,5 +1,5 @@
 import assert from "node:assert";
-import { JevAdvisor, aiStep } from "../src/battle/aiRun";
+import { JevAdvisor, aiStep, combineAdvisors } from "../src/battle/aiRun";
 import { Ability, NodeCall } from "../src/battle/node";
 import { registerBuiltinNodes } from "../src/battle/nodes";
 import { BattleController } from "../src/battle/play";
@@ -64,7 +64,7 @@ const land = (user: string) => (user.match(/(\d+): 土地を出す/) ?? [])[1] ?
     await aiStep(c, ask, "opp", undefined, advisor("compare"));
     assert.equal(seen.length, 2);
     assert.ok(seen[0].includes("## Jev の判断") && !seen[1].includes("## Jev の判断"), "1 回目は助言あり、2 回目はなし");
-    assert.ok(c.aiNotes.some((n) => n.why.startsWith(`[Jev比較] ${label}`)), `比較の結果 (${label}) が、裏側に残る`);
+    assert.ok(c.aiNotes.some((n) => n.why.startsWith(`[材料の比較] ${label}`)), `比較の結果 (${label}) が、裏側に残る`);
     assert.ok(g.battlefield.some((p) => p.card.name === "Island"), "実行されるのは、助言ありの答え");
   }
   // Jev が失敗: 材料なしで、AI は動く
@@ -74,7 +74,7 @@ const land = (user: string) => (user.match(/(\d+): 土地を出す/) ?? [])[1] ?
     const ask = async (_s: string, user: string) => (seen.push(user), { text: `{"choice": ${land(user)}, "why": "x"}`, input: 1, output: 1 });
     assert.equal(await aiStep(c, ask, "opp", undefined, advisor("on", true)), "acted");
     assert.ok(!seen[0].includes("Jev の判断"));
-    assert.ok(g.log.some((l) => l.includes("Jev の判断を、AI に渡せなかった")), "失敗は、ログに");
+    assert.ok(g.log.some((l) => l.includes("判断の材料を、AI に渡せなかった")), "失敗は、ログに");
     assert.ok(g.battlefield.some((p) => p.card.name === "Island"));
   }
   // advisor が無ければ、いままでどおり
@@ -84,6 +84,19 @@ const land = (user: string) => (user.match(/(\d+): 土地を出す/) ?? [])[1] ?
     const ask = async (_s: string, user: string) => (seen.push(user), { text: `{"choice": 0, "why": "x"}`, input: 1, output: 1 });
     await aiStep(c, ask, "opp");
     assert.ok(seen.length === 1 && !seen[0].includes("Jev"));
+  }
+  // 2 つの材料を合わせる: 文章をつなぐ。片方が失敗しても、もう片方だけ。どちらかが compare なら compare
+  {
+    const a = advisor("on");
+    const b: JevAdvisor = { mode: "compare", judge: async () => ({ text: "## 行動の分析", input: 0, output: 0, ms: 3 }) };
+    const both = combineAdvisors([a, b])!;
+    assert.equal(both.mode, "compare");
+    const r = await both.judge("act", createGame(["you", "opp"]), rules, "opp");
+    assert.ok(r.text.includes("Jev の判断") && r.text.includes("行動の分析") && r.input === 200);
+    const flaky = combineAdvisors([advisor("on", true), b])!;
+    assert.equal((await flaky.judge("act", createGame(["you", "opp"]), rules, "opp")).text, "## 行動の分析", "片方が失敗しても、もう片方は使う");
+    assert.equal(combineAdvisors([undefined, undefined]), undefined);
+    assert.equal(combineAdvisors([a, undefined]), a);
   }
   console.log("battle-jevadvise ok");
 })();

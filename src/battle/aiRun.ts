@@ -2,6 +2,7 @@ import { AI_SYSTEM, AskAi, aiActPrompt, aiAttackPrompt, aiAttackers, aiBlockProm
 import type { JevDecision } from "./jev";
 import type { Judged } from "./jevJudge";
 import type { Game, RuleBook } from "./state";
+import type { AiOption } from "./ai";
 import { attackersAt } from "./engine";
 import { BattleController } from "./play";
 
@@ -16,7 +17,23 @@ export interface JevDriver {
 // Jev の判断を、AI に渡す道具 (Jev は、材料を出す。最終判断は AI)。画面 (main.ts) が、キーとモデルを入れて作る。mode = on (材料を添える) / compare (添えた場合と、添えない場合の答えを比べて、履歴の裏側に残す。AI の呼び出しは 2 倍)
 export interface JevAdvisor {
   mode: "on" | "compare";
-  judge(w: "act" | "attack" | "block", g: Game, rules: RuleBook, ai: string): Promise<Judged>;
+  judge(w: "act" | "attack" | "block", g: Game, rules: RuleBook, ai: string, opts?: AiOption[]): Promise<Judged>;
+}
+
+// 2 つの材料 (Jev の判断・コードの行動の分析) を、1 つにする。どちらかが compare なら compare。片方が失敗したら、もう片方だけ
+export function combineAdvisors(list: (JevAdvisor | undefined)[]): JevAdvisor | undefined {
+  const xs = list.filter((x): x is JevAdvisor => !!x);
+  if (!xs.length) return undefined;
+  if (xs.length === 1) return xs[0];
+  return {
+    mode: xs.some((x) => x.mode === "compare") ? "compare" : "on",
+    judge: async (w, g, rules, ai, opts) => {
+      const got = await Promise.allSettled(xs.map((x) => x.judge(w, g, rules, ai, opts)));
+      const ok = got.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
+      if (!ok.length) throw (got[0] as PromiseRejectedResult).reason;
+      return { text: ok.map((r) => r.text).join("\n\n"), input: ok.reduce((a, r) => a + r.input, 0), output: ok.reduce((a, r) => a + r.output, 0), ms: Math.max(...ok.map((r) => r.ms)) };
+    },
+  };
 }
 
 // 2 つの返事 (助言あり・なし) が、同じ行動か。act = 同じ番号 / attack = 同じ id の集合 / block = 同じ組の集合
@@ -49,13 +66,13 @@ export async function aiStep(ctl: BattleController, ask: AskAi | undefined, ai: 
   let advice = "";
   if (advisor && ask && !jev) {
     try {
-      const a = await advisor.judge(w, g, rules, ai);
+      const a = await advisor.judge(w, g, rules, ai, opts);
       advice = `\n\n${a.text}`;
       ctl.aiTokens.input += a.input;
       ctl.aiTokens.output += a.output;
-      g.log.push(`相手 (AI) に、Jev の判断を渡した (${a.ms}ms · 入力 ${a.input} トークン)`);
+      g.log.push(`相手 (AI) に、判断の材料を渡した (${a.ms}ms${a.input ? ` · 入力 ${a.input} トークン` : ""})`);
     } catch (e) {
-      g.log.push(`Jev の判断を、AI に渡せなかった (${(e as Error).message})。材料なしで続ける`);
+      g.log.push(`判断の材料を、AI に渡せなかった (${(e as Error).message})。材料なしで続ける`);
     }
   }
   let problem = "";
@@ -116,7 +133,7 @@ export async function aiStep(ctl: BattleController, ask: AskAi | undefined, ai: 
         ctl.aiTokens.input += plain.input ?? 0;
         ctl.aiTokens.output += plain.output ?? 0;
         const other = aiParse(plain.text);
-        if (other) ctl.aiNotes.push({ n: ctl.record.length, why: `[Jev比較] ${sameReply(w, reply, other) ? "同じ" : "変わった"} — 助言あり: ${brief(w, reply, opts)} / 助言なし: ${brief(w, other, opts)}` });
+        if (other) ctl.aiNotes.push({ n: ctl.record.length, why: `[材料の比較] ${sameReply(w, reply, other) ? "同じ" : "変わった"} — 助言あり: ${brief(w, reply, opts)} / 助言なし: ${brief(w, other, opts)}` });
       } catch {
         /* 比較に失敗しても、本番の判断は続ける */
       }

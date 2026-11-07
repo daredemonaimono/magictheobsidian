@@ -1,6 +1,7 @@
 import { App, EventRef, Modal, Notice, Plugin, Setting, TFile, WorkspaceLeaf, normalizePath } from "obsidian";
 import { allNodes } from "./battle/registry";
-import { JevAdvisor, JevDriver } from "./battle/aiRun";
+import { JevAdvisor, JevDriver, combineAdvisors } from "./battle/aiRun";
+import { battleHints } from "./battle/battleHints";
 import { jevAct, jevAttack, jevBlock } from "./battle/jev";
 import { cardTagsOf, jevJudge, tagNames } from "./battle/jevJudge";
 import { jevFacts } from "./battle/jevFacts";
@@ -138,7 +139,7 @@ export default class MagicTheObsidian extends Plugin {
       }, () => void this.preloadImages(false)),
     );
     this.registerView(DECK_VIEW, (leaf) => new DeckView(leaf, this.settings));
-    this.registerView(BATTLE_VIEW, (leaf) => new BattleView(leaf, () => this.battleSession, () => this.settings.battleStops, () => this.settings.battleOpponent, () => this.settings.battleEffects, () => this.makeAsk(), (b) => void this.saveBattle(b), () => this.ensureBattleSide(), () => this.battleJev(), () => this.jevAdvisor()));
+    this.registerView(BATTLE_VIEW, (leaf) => new BattleView(leaf, () => this.battleSession, () => this.settings.battleStops, () => this.settings.battleOpponent, () => this.settings.battleEffects, () => this.makeAsk(), (b) => void this.saveBattle(b), () => this.ensureBattleSide(), () => this.battleJev(), () => combineAdvisors([this.hintAdvisor(), this.jevAdvisor()])));
     this.registerView(BATTLE_SIDE_VIEW, (leaf) => new BattleSideView(leaf));
     this.registerView(DASHBOARD_VIEW, (leaf) => new DashboardView(leaf, { collection: () => void this.openOrReveal(COLLECTION_VIEW), deck: () => void this.openOrReveal(DECKLIST_VIEW), cards: () => void this.openOrReveal(CARDS_VIEW) }));
     this.registerView(CARDS_VIEW, (leaf) => new CardsView(leaf, this.settings));
@@ -401,6 +402,12 @@ export default class MagicTheObsidian extends Plugin {
   // 対戦の相手が Jev のとき、判断を Jev に聞く道具 (キーが無ければ、無し)
   private saveAllFn?: () => Promise<void>;
   // Jev の判断を AI に渡す道具 (設定 ai.jev.advise が off でなく、Jev のキーがあり、「対戦の相手」が Jev でないとき)。カードの分類は、1 枚につき 1 回だけ聞いて、設定に保存して使い回す
+  // コードが計算した行動の分析を、AI に渡す道具 (API を呼ばない)。設定 ai.hints が off でなく、「対戦の相手」が Jev でないとき
+  private hintAdvisor(): JevAdvisor | undefined {
+    const ai = this.settings.ai;
+    if (ai.hints === "off" || ai.scenes.battle.provider === "jev") return undefined;
+    return { mode: ai.hints, judge: async (w, g, rules, p, opts) => ({ text: battleHints(w, g, rules, p, opts), input: 0, output: 0, ms: 0 }) };
+  }
   private jevAdvisor(): JevAdvisor | undefined {
     const ai = this.settings.ai;
     if (ai.jev.advise === "off" || ai.scenes.battle.provider === "jev") return undefined;

@@ -48,6 +48,33 @@ export const NODE_KEYS: Record<string, { keys: string[] }> = {
   choose: { keys: ["選ぶ", "その中から選ぶ"] },
 };
 
+// ノードの「役割」: そのノードが、対戦で何をするか。カードの能力のノードの役割を集めると、そのカードの働き (除去・ドロー・墓地を肥やす…) が、コードだけで分かる。
+// AI への行動の分析 (候補ごとの「役割」) に出る。ノードを足すときは、ここに、役割を足す (無い部品 (対象・条件・計算) は []。足し忘れは、テストが見つける)。
+// removal = 相手のものを取り除く / counterSpell = 呪文を打ち消す / damage = ダメージ / lifeGain・lifeLoss = ライフ / cardAdvantage = 引く・探す / cardSelection = 見る・選ぶ /
+// discard = 捨てる / graveyardFill = 墓地に置く / graveyardValue = 墓地で働く / graveyardHate = 相手の墓地を邪魔する / zoneChange = カードを動かす / mana = マナ /
+// boardGrowth = 盤面を増やす・強くする / statChange = 修整 / tempo = タップ・アンタップ / control = コントロール・変身 / protection = 守る / sacrifice = 生け贄 /
+// handDisruption = 相手の手札に触れる / restriction = 制限 / costReduction = コスト軽減 / alternativeCost = 別のコスト / replacement = 置換 / opening = ゲーム開始時 /
+// extraTurn / copy / storm / continuous = 継続効果 / rulesException = ルールの例外
+export const NODE_ROLES: Record<string, string[]> = {
+  // 宣言・コスト・条件
+  cost: [], additionalCost: [], altCost: ["alternativeCost"], delve: ["alternativeCost"], storm: ["storm"], modes: [], when: [], keyword: [], timing: [], delay: [],
+  reduceCost: ["costReduction"], castLimit: ["restriction"], cantCast: ["restriction"], cantActivate: ["restriction"], entersTapped: ["restriction"], cantEnter: ["restriction"], upkeepTax: ["restriction"],
+  ward: ["protection"], untapDuring: ["tempo"], exileInstead: ["graveyardHate", "replacement"], ignoreLegendRule: ["rulesException"], startOnBattlefield: ["opening"], mulliganExile: ["opening"],
+  entersWith: ["boardGrowth"], dredge: ["graveyardValue", "replacement"],
+  // 対象・数える・絞り込む
+  target: [], select: [], countCards: [], statOf: [], counterCount: [], controllerOf: [], filter: [], spentColors: [], compare: [], math: [], eventPerm: [], self: [],
+  // カードの移動・ライブラリー・手札
+  draw: ["cardAdvantage"], discard: ["discard"], look: ["cardSelection"], lookHand: ["handDisruption"], shuffle: [], choose: [], move: ["zoneChange"], mill: ["graveyardFill"], zoneCards: [], drawnCards: [],
+  payOrMove: ["cardSelection"], bounce: ["removal"], sacrifice: ["sacrifice"], destroy: ["removal"], search: ["cardAdvantage"], exile: ["removal"],
+  // パーマネント・トークン・カウンター
+  tap: ["tempo"], untap: ["tempo"], modify: ["statChange"], becomes: ["control"], exchangeControl: ["control"], grant: ["boardGrowth"], prepareSpell: [], entersPrepared: [], prepare: [], attach: ["boardGrowth"],
+  emblem: ["continuous"], createEmblem: ["continuous"], createToken: ["boardGrowth"], regenerate: ["protection"], addCounter: ["boardGrowth"],
+  // ダメージ・ライフ・マナ・打ち消し
+  gainLife: ["lifeGain"], loseLife: ["lifeLoss"], lifeGained: [], damage: ["damage"], addMana: ["mana"], extraTurn: ["extraTurn"], copySpell: ["copy"], counter: ["counterSpell"],
+  // 継続効果
+  affect: [], staticModify: ["continuous"], staticGrant: ["continuous"], loseAbilities: ["continuous"], setBaseStats: ["continuous"], setTypes: ["continuous"], setColors: ["continuous"], setName: ["continuous"], extraTriggers: ["continuous"],
+};
+
 // 組み込みのノードに、キーと言い回しを、取り付ける (ノードの定義に、直接書いてあるものは、そちらを優先)。表にあるのに、ノードが無い id は、書き間違い: 例外
 export function applyNodeKeys(): void {
   const byId = new Map(allNodes().map((n) => [n.id, n]));
@@ -55,5 +82,10 @@ export function applyNodeKeys(): void {
     const def = byId.get(id);
     if (!def) throw new Error(`nodes/keys.ts: ノード ${id} が無い (id の書き間違い)`);
     def.keys ??= k.keys;
+  }
+  for (const [id, r] of Object.entries(NODE_ROLES)) {
+    const def = byId.get(id);
+    if (!def) throw new Error(`nodes/keys.ts: NODE_ROLES の ${id} が、ノードに無い (id の書き間違い)`);
+    def.roles ??= r;
   }
 }

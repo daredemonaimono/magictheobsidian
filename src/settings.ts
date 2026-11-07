@@ -282,6 +282,18 @@ export class SettingsTab extends PluginSettingTab {
                     await this.save();
                   },
                 ),
+              (c) =>
+                toggles<"off" | "on" | "compare">(
+                  c,
+                  "AI に、行動の分析を渡す / Action analysis for the AI",
+                  "対戦の相手が AI のとき、判断の材料を、指示に添える。カードのルール (ノード) から導いた役割 (除去・ドロー・墓地を肥やす…)・実行したあとの局面の試し撃ち・土地の色・攻撃とブロックの比べ合い。API は呼ばず、コードだけで計算する。比較: 添えた場合と添えない場合の AI の答えを比べて、履歴の裏側に残す (AI の呼び出しが 2 倍)。",
+                  [["off", "使わない"], ["on", "渡す"], ["compare", "渡す + 比較"]],
+                  ai.hints,
+                  async (v) => {
+                    ai.hints = v;
+                    await this.save();
+                  },
+                ),
               (c) => toggle(c, "ランダムでミラーを選ばない / No mirror on random", "対戦を始めるとき、相手のデッキを「ランダム」にした場合、自分と同じデッキ(ミラー)を選ばない。同じフォーマットのデッキが、自分のデッキだけのときは、ミラーになる。相手を自分で選んだときは、ミラーも選べる。", "battleNoMirror"),
             ],
           },
