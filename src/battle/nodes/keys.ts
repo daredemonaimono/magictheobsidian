@@ -29,6 +29,7 @@ export const NODE_KEYS: Record<string, { keys: string[] }> = {
   exileInstead: { keys: ["墓地に行くかわりに追放", "墓地に置かれるかわりに追放する"] },
   startOnBattlefield: { keys: ["ゲームの開始時に戦場に出してよい", "開始時の手札にあれば戦場に"] },
   mulliganExile: { keys: ["マリガンのかわりに手札を追放して引く", "マリガンできるとき手札を入れ替える"] },
+  ignoreLegendRule: { keys: ["伝説のルールを無視する", "伝説のルールは適用されない", "レジェンド・ルール"] },
   mill: { keys: ["墓地に置く (ライブラリーから)", "切削", "ミル", "ライブラリーの上から N 枚を墓地へ"] },
   shuffle: { keys: ["切る", "シャッフル"] },
   addMana: { keys: ["マナを加える", "マナ"] },

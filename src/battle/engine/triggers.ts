@@ -109,7 +109,7 @@ export function flushEvents(g: Game, rules: RuleBook): void {
     }
     if (ev.type === "leaves") for (const o of g.battlefield) if (o.attachedTo === ev.perm.id) delete o.attachedTo; // 付いていた先が離れたら、装備品・オーラは外れる (戻ってきても付き直さない)
     if (ev.type === "step" && ev.step === "upkeep") applyUpkeepTaxes(g, rules, ev.player); // 維持コスト (Energy Flux・The Tabernacle)
-    const sources = [...g.battlefield, ...(ev.type === "leaves" && !g.battlefield.includes(ev.perm) ? [ev.perm] : []), ...g.emblems];
+    const sources = [...g.battlefield, ...((ev.type === "leaves" || ev.type === "enters") && !g.battlefield.includes(ev.perm) ? [ev.perm] : []), ...g.emblems];
     for (const s of sources) {
       const now = characteristics(g, s, rules);
       if (!now.lostAbilities) {

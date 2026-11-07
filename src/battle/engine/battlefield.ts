@@ -1,6 +1,6 @@
 import { characteristics } from "../continuous";
 import { CastRecord } from "../node";
-import { entersTapped } from "./restrict";
+import { entersTapped, staticCalls, whoOk } from "./restrict";
 import { prepareAbilityOf, putInGraveyard, typeIn, Game, GameCard, Perm, PlayerId, RuleBook, Zone } from "../state";
 
 // 戦場に出る・離れる・状況起因処理
@@ -72,6 +72,27 @@ export function stateBased(g: Game, rules: RuleBook): void {
       if (dead) {
         removeFromBattlefield(g, p);
         changed = true;
+      }
+    }
+    // 伝説のルール: 同じプレイヤーが、同名の伝説のパーマネントを 2 つ以上コントロールしたら、1 つを選んで残し、ほかは墓地に置く (生け贄でも破壊でもない。「死んだ」の誘発は起きる)
+    for (const owner of g.players) {
+      const groups = new Map<string, Perm[]>();
+      const exempt = staticCalls(g, rules, "ignoreLegendRule"); // 伝説のルールを無視するカード (Mirror Gallery): 能力を失っていないもの
+      for (const x of g.battlefield) {
+        if (x.controller !== owner) continue;
+        if (exempt.some(({ source, call }) => (call.args.who === "self" ? source === x : whoOk(call.args.who, source.controller, owner)))) continue; // このパーマネントには、伝説のルールが働かない
+        const now = characteristics(g, x, rules);
+        if (/\bLegendary\b/.test(now.typeLine)) groups.set(now.name, [...(groups.get(now.name) ?? []), x]);
+      }
+      for (const [name, same] of groups) {
+        if (same.length < 2) continue;
+        const keep = g.decide?.legend?.(g, owner, same) ?? same[0];
+        for (const x of same) {
+          if (x === keep) continue;
+          g.log.push(`伝説のルール: ${name} が 2 体いるので、1 体を墓地に置いた`);
+          removeFromBattlefield(g, x);
+          changed = true;
+        }
       }
     }
   }

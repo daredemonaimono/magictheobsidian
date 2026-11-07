@@ -95,6 +95,17 @@ export function registerDeclarations(): void {
   });
 
   node({
+    id: "ignoreLegendRule",
+    title: "伝説のルールを無視する",
+    summary: "常在型能力。伝説のルール(同名の伝説のパーマネントは 1 つだけ)が、働かなくなる。who=all(だれのパーマネントにも。Mirror Gallery) / you(このパーマネントのコントローラーのものだけ) / opponents / self(このパーマネント自身だけ)。能力を失っていると、働かない",
+    params: { who: { type: "string", required: true, choices: ["all", "you", "opponents", "self"] } },
+    outputs: {},
+    declaration: true,
+    only: ["static"],
+    run: (): Record<string, Value> => ({}),
+  });
+
+  node({
     id: "startOnBattlefield",
     title: "開始時に戦場に出す",
     summary: "常在型能力。このカードが、ゲーム開始時の手札にあるなら、ゲームを戦場に出して始められる(Leyline of the Void)。マリガンが終わったあとに、戦場に出る",

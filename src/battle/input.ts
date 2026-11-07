@@ -46,6 +46,11 @@ export function makeDecider(me: PlayerId, answers: Answer[]): Decider {
       const got = ids(next({ kind: "choose", min: 0, max: 1, cards: refs(options.map((o) => o.card)), label }));
       return options.find((o) => got.includes(o.card.id))?.card;
     },
+    legend(_g, p, same) {
+      if (p !== me) return undefined;
+      const got = ids(next({ kind: "choose", min: 1, max: 1, cards: refs(same.map((x) => x.card)), label: `伝説のルール: ${same[0].card.name} が ${same.length} 体いる。残す 1 体を選ぶ (ほかは墓地に置かれる)` }));
+      return same.find((x) => got.includes(x.id));
+    },
     order(_g, p, cards, to) {
       if (p !== me || cards.length < 2) return undefined;
       const got = ids(next({ kind: "order", cards: refs(cards), to }));
