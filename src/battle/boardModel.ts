@@ -23,6 +23,7 @@ export interface CardView {
   blocking: boolean;
   token: boolean;
   foil?: boolean; // フォイル (見た目だけ)
+  exiled?: boolean; // 追放して、期限までプレイしてよいカード (手札にあるあいだ、印を付ける)
   prepared: boolean;
   sick: boolean; // 召喚酔い (このターンに出たクリーチャーで、速攻が無い)
   keywords: string[];
@@ -68,6 +69,7 @@ const inHand = (c: GameCard, image?: string, playable = false): CardView => ({
   blocking: false,
   token: !!c.token,
   ...(c.foil ? { foil: true } : {}),
+  ...(c.exilePlay ? { exiled: true } : {}),
   prepared: false,
   sick: false,
   keywords: [],

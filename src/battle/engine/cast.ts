@@ -26,6 +26,7 @@ export function castSpell(g: Game, p: PlayerId, cardId: string, targets: Record<
   if (!body) throw new RuleError(`呪文能力のルールが無い: ${card.name}`);
   castCore(g, p, card, body, targets, rules, cast, () => {
     g.hands[p] = g.hands[p].filter((c) => c !== card);
+    delete card.exilePlay;
     if (skipped) g.log.push(`${card.name}: ${UNRULED}`);
   });
 }
@@ -138,6 +139,7 @@ export function playLand(g: Game, p: PlayerId, cardId: string, rules: RuleBook):
   if (g.priority !== p || p !== g.active || (g.step !== "main1" && g.step !== "main2") || g.stack.length) throw new RuleError(`いまは土地を出せない (自分のメインフェイズで、スタックが空のときだけ)`);
   if (g.landsPlayed >= 1) throw new RuleError("このターンは、もう土地を出した");
   g.hands[p] = g.hands[p].filter((c) => c !== card);
+  delete card.exilePlay;
   g.landsPlayed++;
   if (unruled(g, rules, card)) g.log.push(`${card.name}: ${UNRULED}`);
   enterBattlefield(g, card, p, rules);
@@ -159,6 +161,8 @@ export function activateAbility(g: Game, p: PlayerId, permId: string, index: num
   const cost = costOf(ab.body.filter((c) => c.node === "cost"));
   if (cost.discardSelf) throw new RuleError(`${perm.card.name}: この能力は、手札から起動する (戦場からは起動できない)`);
   if ((timing?.args.sorcery === true || cost.isLoyalty) && !(p === g.active && (g.step === "main1" || g.step === "main2") && g.stack.length === 0)) throw new RuleError(`${perm.card.name}: ソーサリーのタイミングだけ起動できる (自分のメインフェイズで、スタックが空のとき)`);
+  if (timing?.args.oncePerTurn === true && (g.activated?.[`${perm.id}:${index}`] ?? 0) >= 1) throw new RuleError(`${perm.card.name}: この能力は、1ターンに1回だけ起動できる`);
+  if (timing?.args.oppLostLife === true && !g.players.some((q) => q !== p && (g.lostLife?.[q] ?? 0) > 0)) throw new RuleError(`${perm.card.name}: 相手がこのターンにライフを失っているときだけ起動できる`);
   const effects = ab.body.filter((c) => c.node !== "cost" && c.node !== "timing");
   const item: StackItem = { id: `${perm.id}#${g.serial + 1}`, card: perm.card, controller: p, targets, cast: {}, body: effects, ability: true, source: perm.id, ...(cost.loyaltyX ? { x, loyaltyX: true } : cost.isLoyalty ? { loyalty: cost.loyalty } : {}) };
   validate(g, item, ab.body, perm.card.name, rules);

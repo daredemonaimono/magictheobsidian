@@ -2,7 +2,7 @@ import { characteristics } from "../continuous";
 import { NodeDef, Value } from "../node";
 import { defineNode as define } from "../registry";
 import { nextRandom } from "../rng";
-import { discardCards, drawCards, putInGraveyard, Game, Perm, typeIn } from "../state";
+import { discardCards, drawCards, loseLife, putInGraveyard, Game, Perm, typeIn } from "../state";
 import { enterBattlefield, removeFromBattlefield, tryRegenerate } from "../engine/battlefield";
 import { enterBlocked, entersTapped } from "../engine/restrict";
 import { who as logWho } from "../engine/shared";
@@ -35,8 +35,8 @@ export function registerCards(): void {
     id: "discard",
     title: "捨てる",
     summary: "プレイヤーが手札を count 枚捨てる(捨てるカードは、そのプレイヤーが選ぶ)。player=you / opponents / target(draw と同じ)。count のかわりに cards(選んだカードの id。choose の出力)を書くと、そのカードを捨てさせる(「1枚選ぶ。そのプレイヤーはそれを捨てる」Grief)",
-    params: { player: who, target: targetPlayer, count: { type: "number", min: 0 }, cards: { type: "ref" } },
-    outputs: {},
+    params: { player: who, target: targetPlayer, count: { type: "number", min: 0 }, cards: { type: "ref" }, optional: { type: "boolean" } },
+    outputs: { n: "number" },
     check: (a) => (a.count !== undefined || a.cards !== undefined ? null : "count か cards が要る"),
     run: (ctx, a): Record<string, Value> => {
       const g = ctx.game;
@@ -51,8 +51,15 @@ export function registerCards(): void {
         }
         return {};
       }
-      for (const p of playersFor(ctx, a)) discardCards(g, p, Number(a.count));
-      return {};
+      let n = 0;
+      for (const p of playersFor(ctx, a)) {
+        // optional=true: 「捨ててもよい」。捨てるかを聞く (手札が無ければ聞かない)。捨てた枚数を n で出力する (「そうしたなら」は if=$名前)
+        if (a.optional === true && (!g.hands[p].length || !(g.decide?.may?.(g, p, `手札を ${a.count} 枚捨てますか?`) ?? true))) continue;
+        const before = g.hands[p].length;
+        discardCards(g, p, Number(a.count));
+        n += before - g.hands[p].length;
+      }
+      return { n };
     },
   });
 
@@ -186,6 +193,28 @@ export function registerCards(): void {
     },
   });
 
+  // ライブラリーの一番上を追放して、期限までプレイしてよい (手札に置いて、印を付ける。期限が来ても手札にあれば、追放される)
+  node({
+    id: "exilePlay",
+    title: "追放して、プレイしてよい",
+    summary: "コントローラーが、ライブラリーの一番上から count 枚(既定は1)を追放し、期限までのあいだ、プレイしてよい。duration=endOfTurn(このターン中) / yourNextEnd(自分の次の終了ステップまで)。実際には手札に置いて印を付ける(期限が来て、まだ手札にあれば追放される。shortcut: 手札の枚数にも数える)",
+    params: { count: { type: "number", min: 1 }, duration: { type: "string", required: true, choices: ["endOfTurn", "yourNextEnd"] } },
+    outputs: {},
+    run: (ctx, a): Record<string, Value> => {
+      const g = ctx.game;
+      const p = ctx.item.controller;
+      for (let i = 0; i < (typeof a.count === "number" ? a.count : 1); i++) {
+        const top = g.libraries[p].shift();
+        if (!top) break;
+        top.exilePlay = true;
+        g.hands[p].push(top);
+        (g.mayPlay ??= []).push({ id: top.id, owner: p, until: a.duration === "yourNextEnd" ? "yourNextEnd" : "endOfTurn" });
+        g.log.push(`${logWho(p)}は、ライブラリーの一番上の ${top.name} を追放した。${a.duration === "yourNextEnd" ? "次の終了ステップまで" : "このターン中"}、プレイしてよい`);
+      }
+      return {};
+    },
+  });
+
   // 手札に戻す。戦場のパーマネントを、持ち主の手札へ。対象が戦場に無ければ何もしない
   // プレイヤーの墓地・手札のカード (id の並び)
   node({
@@ -231,7 +260,7 @@ export function registerCards(): void {
         if (!c) continue;
         const can = g.life[p] >= Number(a.life);
         if (can && (g.decide?.may?.(g, p, `${c.name}: ${a.life} 点のライフを払って、手札に残しますか? (払わないと、ライブラリーの${a.to === "top" ? "一番上" : "一番下"}に置く)`) ?? false)) {
-          g.life[p] -= Number(a.life);
+          loseLife(g, p, Number(a.life));
           g.log.push(`${a.life} 点のライフを払って、${c.name} を手札に残した`);
         } else back.push(id);
       }

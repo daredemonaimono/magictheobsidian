@@ -2,7 +2,7 @@
 
 > このファイルは、自動で作られます (`src/battle/nodeDocs.ts`)。直接は書き換えません。ノードを足したら、`npm run docs:nodes` で更新します。ノードは、`src/battle/nodes/` の、カテゴリーごとのファイルにあります。
 
-全 85 個のノード、9 個の条件。
+全 87 個のノード、9 個の条件。
 
 目次: [宣言・コスト・条件](#宣言・コスト・条件) / [対象・数える・絞り込む](#対象・数える・絞り込む) / [カードの移動・ライブラリー・手札](#カードの移動・ライブラリー・手札) / [パーマネント・トークン・カウンター](#パーマネント・トークン・カウンター) / [ダメージ・ライフ・マナ・打ち消し](#ダメージ・ライフ・マナ・打ち消し) / [継続効果](#継続効果)
 
@@ -128,9 +128,9 @@ Storm の宣言(呪文能力の最初に書く。引数なし)。この呪文を
 
 ### `when` どうなったら
 
-誘発型能力の最初に書く、誘発のきっかけ。event=cast(呪文を唱えた) / enters(戦場に出た。from=graveyard で墓地から) / leaves(離れた。to=graveyard で死亡・exile・hand) / moved(カードがゾーンを移った。from=library to=graveyard など) / damaged(ダメージを与えた。combat=true で戦闘ダメージ。hit=creature・player。eventPerm はダメージを受けたもの) / attacks / blocks / step(ステップの開始時。step=upkeep・draw・main1・combat・main2・end)。zone=graveyard で、このカードが墓地にあるあいだだけ働く。enters で castFrom=graveyard は、墓地から唱えて出たとき。絞り込み: who=you・opponents / type・notType / turn=yours・opponents / self=true(このカード自身) / alone=true(attacks で単独)
+誘発型能力の最初に書く、誘発のきっかけ。event=cast / enters(from=graveyard) / leaves(to=graveyard で死亡) / moved(from=library to=graveyard、from=hand to=graveyard=捨てた) / damaged(combat=true。hit=creature・player) / attacks / blocks / targeted(by=you で自分の呪文・能力の対象になった) / drew(引いた) / step(step=upkeep〜end)。zone=graveyard は墓地にあるあいだだけ。castFrom=graveyard は墓地から唱えて出たとき。絞り込み: who=you・opponents / type・notType / turn=yours・opponents / self=true / alone=true / first=true(attacks は宣言で最初の1体、targeted はそのターンで最初)。eventPerm は引き金のパーマネント
 
-- 引数: `event`(string・必須・cast / enters / leaves / moved / damaged / step / attacks / blocks)、`combat`(boolean)、`hit`(string・creature / player / planeswalker)、`zone`(string・battlefield / graveyard)、`from`(string・library / hand / graveyard / stack / battlefield)、`to`(string・library / hand / graveyard / exile / battlefield)、`castFrom`(string)、`step`(string・upkeep / draw / main1 / combat / main2 / end)、`who`(string・you / opponents)、`type`(string)、`notType`(string)、`turn`(string・yours / opponents)、`self`(boolean)、`alone`(boolean)
+- 引数: `event`(string・必須・cast / enters / leaves / moved / damaged / step / attacks / blocks / targeted / drew)、`combat`(boolean)、`hit`(string・creature / player / planeswalker)、`zone`(string・battlefield / graveyard)、`from`(string・library / hand / graveyard / stack / battlefield)、`to`(string・library / hand / graveyard / exile / battlefield)、`castFrom`(string)、`step`(string・upkeep / draw / main1 / combat / main2 / end)、`who`(string・you / opponents)、`type`(string)、`notType`(string)、`turn`(string・yours / opponents)、`self`(boolean)、`alone`(boolean)、`first`(boolean)、`by`(string・you)
 - 書ける能力: triggered
 - 宣言のノード (エンジンが読む。`if=` は付けられない)
 - 中心のノード (ルールを書かせるとき、いつも AI の指示に入る。ほかは、カードごとに選ぶ)
@@ -218,9 +218,9 @@ from(graveyard / library。graveyard|library のように並べられる)にあ�
 
 ### `timing` 起動のタイミング
 
-起動型能力の起動のタイミングの制限(能力の最初に書く)。sorcery=true なら、ソーサリーのタイミングだけ(装備など)
+起動型能力の起動の制限(能力の最初に書く)。sorcery=true なら、ソーサリーのタイミングだけ(装備など) / oncePerTurn=true なら、1ターンに1回だけ / oppLostLife=true なら、相手がこのターンにライフを失っているときだけ (Hired Claw)
 
-- 引数: `sorcery`(boolean・必須)
+- 引数: `sorcery`(boolean)、`oncePerTurn`(boolean)、`oppLostLife`(boolean)
 - 書ける能力: activated
 - 宣言のノード (エンジンが読む。`if=` は付けられない)
 - 中心のノード (ルールを書かせるとき、いつも AI の指示に入る。ほかは、カードごとに選ぶ)
@@ -318,7 +318,7 @@ a と b を、op (add = a+b / sub = a−b / mul = a×b) で計算して、n と�
 - 出力: `id`(id) (`as=名前` で受けて、`$名前` で渡す)
 - 中心のノード (ルールを書かせるとき、いつも AI の指示に入る。ほかは、カードごとに選ぶ)
 
-## カードの移動・ライブラリー・手札 (16 個)
+## カードの移動・ライブラリー・手札 (17 個)
 
 ### `draw` 引く
 
@@ -332,7 +332,8 @@ a と b を、op (add = a+b / sub = a−b / mul = a×b) で計算して、n と�
 
 プレイヤーが手札を count 枚捨てる(捨てるカードは、そのプレイヤーが選ぶ)。player=you / opponents / target(draw と同じ)。count のかわりに cards(選んだカードの id。choose の出力)を書くと、そのカードを捨てさせる(「1枚選ぶ。そのプレイヤーはそれを捨てる」Grief)
 
-- 引数: `player`(string・必須・you / opponents / target)、`target`(ref)、`count`(number)、`cards`(ref)
+- 引数: `player`(string・必須・you / opponents / target)、`target`(ref)、`count`(number)、`cards`(ref)、`optional`(boolean)
+- 出力: `n`(number) (`as=名前` で受けて、`$名前` で渡す)
 - 言い方 (キー): 捨てる、ディスカード、手札を捨てる
 
 ### `look` ライブラリーの上を見る
@@ -380,6 +381,12 @@ cards(look / choose の出力)を、持ち主の to へ動かす。to=hand / gra
 - 引数: `player`(string・必須・you / opponents / target)、`target`(ref)、`count`(number・必須)
 - 出力: `id`(id) (`as=名前` で受けて、`$名前` で渡す)
 - 言い方 (キー): 墓地に置く (ライブラリーから)、切削、ミル、ライブラリーの上から N 枚を墓地へ
+
+### `exilePlay` 追放して、プレイしてよい
+
+コントローラーが、ライブラリーの一番上から count 枚(既定は1)を追放し、期限までのあいだ、プレイしてよい。duration=endOfTurn(このターン中) / yourNextEnd(自分の次の終了ステップまで)。実際には手札に置いて印を付ける(期限が来て、まだ手札にあれば追放される。shortcut: 手札の枚数にも数える)
+
+- 引数: `count`(number)、`duration`(string・必須・endOfTurn / yourNextEnd)
 
 ### `zoneCards` 墓地・手札のカード
 
@@ -548,7 +555,7 @@ a と b(それぞれ target ノードの出力)のパーマネントのコント
 - 引数: `target`(ref・必須)、`kind`(string・必須)、`count`(number・必須)
 - 言い方 (キー): カウンターを置く、+1/+1 カウンター
 
-## ダメージ・ライフ・マナ・打ち消し (8 個)
+## ダメージ・ライフ・マナ・打ち消し (9 個)
 
 ### `gainLife` ライフを得る
 
@@ -571,6 +578,13 @@ a と b(それぞれ target ノードの出力)のパーマネントのコント
 - 引数: `player`(string・必須・you / opponents)
 - 出力: `n`(number) (`as=名前` で受けて、`$名前` で渡す)
 - 言い方 (キー): このターンにライフを得た、ライフを得ていたら
+
+### `lifeLost` このターンに失ったライフ
+
+プレイヤー (player=you / opponents) が、このターンに失ったライフの量 (合計。ダメージ・ライフの支払いも含む) を、n として出力する。「相手がこのターンにライフを失っていたら」は、これを as= で受けて、compare op=ge b=1 と if=$名前
+
+- 引数: `player`(string・必須・you / opponents)
+- 出力: `n`(number) (`as=名前` で受けて、`$名前` で渡す)
 
 ### `damage` ダメージを与える
 
@@ -611,9 +625,9 @@ a と b(それぞれ target ノードの出力)のパーマネントのコント
 
 ### `affect` 及ぶ先
 
-継続効果の常在型能力の最初に書く、効果が及ぶ先。who=attached(このパーマネントが付いているもの。装備・オーラ) / self(このパーマネント自身) / yours(自分のパーマネント) / all(すべて)。type・notType で型を絞る
+継続効果の常在型能力の最初に書く、効果が及ぶ先。who=attached(このパーマネントが付いているもの。装備・オーラ) / self(このパーマネント自身) / yours(自分のパーマネント) / all(すべて)。type・notType で型を絞る。turn=yours で、そのコントローラーのターンのあいだだけ(「自分のターンのあいだ、先制攻撃を持つ」)/ opponents で、相手のターンのあいだだけ
 
-- 引数: `who`(string・必須・attached / self / yours / all)、`type`(string)、`notType`(string)
+- 引数: `who`(string・必須・attached / self / yours / all)、`type`(string)、`notType`(string)、`turn`(string・yours / opponents)
 - 書ける能力: static
 - 宣言のノード (エンジンが読む。`if=` は付けられない)
 - 中心のノード (ルールを書かせるとき、いつも AI の指示に入る。ほかは、カードごとに選ぶ)

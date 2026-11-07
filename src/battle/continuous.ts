@@ -31,8 +31,9 @@ const typeOk = (a: Record<string, unknown>, typeLine: string): boolean => {
 // 継続効果の常在型能力: 最初のノードが affect のもの
 const continuous = (s: Perm, rules: RuleBook) => (rules.get(s.card.name)?.abilities ?? []).filter((a) => a.kind === "static" && a.body[0]?.node === "affect");
 
-function affects(s: Perm, aff: NodeCall, p: Perm): boolean {
+function affects(g: Game, s: Perm, aff: NodeCall, p: Perm): boolean {
   if (p.emblem) return false; // 紋章は、継続効果の影響を受けない
+  if ((aff.args.turn === "yours" && g.active !== s.controller) || (aff.args.turn === "opponents" && g.active === s.controller)) return false; // turn: そのコントローラーのターン (opponents = 相手のターン) のあいだだけ
   switch (aff.args.who) {
     case "attached":
       return s !== p && s.attachedTo === p.id;
@@ -48,14 +49,14 @@ function affects(s: Perm, aff: NodeCall, p: Perm): boolean {
 // 他のパーマネントの継続効果で、すべての能力を失っているか (再帰はしない)
 function losesAll(g: Game, p: Perm, rules: RuleBook): boolean {
   if (p.becomes?.some((b) => b.lose)) return true;
-  return g.battlefield.some((o) => o !== p && continuous(o, rules).some((ab) => affects(o, ab.body[0], p) && ab.body.slice(1).some((c) => c.node === "loseAbilities")));
+  return g.battlefield.some((o) => o !== p && continuous(o, rules).some((ab) => affects(g, o, ab.body[0], p) && ab.body.slice(1).some((c) => c.node === "loseAbilities")));
 }
 
 // p に及ぶ継続効果 (能力を失っている発生源のものは除く)
 function effectsOn(g: Game, p: Perm, rules: RuleBook): Eff[] {
   return g.battlefield
     .filter((o) => !losesAll(g, o, rules))
-    .flatMap((o) => continuous(o, rules).filter((ab) => affects(o, ab.body[0], p)).flatMap((ab) => ab.body.slice(1).map((call) => ({ call, source: o }))));
+    .flatMap((o) => continuous(o, rules).filter((ab) => affects(g, o, ab.body[0], p)).flatMap((ab) => ab.body.slice(1).map((call) => ({ call, source: o }))));
 }
 
 // 常在型能力のキーワードの宣言 (affect の無い常在型能力の keyword ノード)

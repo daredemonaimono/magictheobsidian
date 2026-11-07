@@ -3,7 +3,7 @@ import { defineNode as define } from "../registry";
 import { spellBody, who as logWho } from "../engine/shared";
 import { dealDamage } from "../damage";
 import { spendGeneric } from "../mana";
-import { gainLife, playersOf } from "../state";
+import { gainLife, loseLife, playersOf } from "../state";
 import { idList, playersFor, targetPlayer, who } from "./shared";
 
 // ノード: ダメージ・ライフ・マナ・打ち消し
@@ -22,7 +22,7 @@ export function registerCombat(): void {
       run: (ctx, a): Record<string, Value> => {
         for (const p of playersFor(ctx, a)) {
           if (sign > 0) gainLife(ctx.game, p, Number(a.amount));
-          else ctx.game.life[p] += sign * Number(a.amount);
+          else loseLife(ctx.game, p, Number(a.amount));
           if (Number(a.amount) > 0) ctx.game.log.push(`${logWho(p)}が ${a.amount} 点のライフを${sign > 0 ? "得た" : "失った"}`);
         }
         return {};
@@ -39,6 +39,16 @@ export function registerCombat(): void {
     params: { player: { type: "string", required: true, choices: ["you", "opponents"] } },
     outputs: { n: "number" },
     run: (ctx, a): Record<string, Value> => ({ n: playersOf(ctx.game, ctx.item.controller, String(a.player)).reduce((s, p) => s + (ctx.game.gained?.[p] ?? 0), 0) }),
+  });
+
+  // このターンに失ったライフの量
+  node({
+    id: "lifeLost",
+    title: "このターンに失ったライフ",
+    summary: "プレイヤー (player=you / opponents) が、このターンに失ったライフの量 (合計。ダメージ・ライフの支払いも含む) を、n として出力する。「相手がこのターンにライフを失っていたら」は、これを as= で受けて、compare op=ge b=1 と if=$名前",
+    params: { player: { type: "string", required: true, choices: ["you", "opponents"] } },
+    outputs: { n: "number" },
+    run: (ctx, a): Record<string, Value> => ({ n: playersOf(ctx.game, ctx.item.controller, String(a.player)).reduce((s, p) => s + (ctx.game.lostLife?.[p] ?? 0), 0) }),
   });
 
   node({

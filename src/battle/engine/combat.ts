@@ -53,11 +53,11 @@ export function declareAttackers(g: Game, p: PlayerId, attackers: { id: string; 
     return { perm, target, vigilance: kw.includes("vigilance") };
   });
   if (new Set(picks.map((x) => x.perm.id)).size !== picks.length) throw new RuleError("同じクリーチャーを2回指定している");
-  for (const x of picks) {
+  for (const [k, x] of picks.entries()) {
     if (!x.vigilance) x.perm.tapped = true;
     x.perm.attacking = true;
     x.perm.attackTarget = x.target;
-    g.events.push({ type: "attacks", perm: x.perm });
+    g.events.push({ type: "attacks", perm: x.perm, ...(k === 0 ? { first: true } : {}) });
   }
   g.attackersDeclared = true;
   g.passes = [];

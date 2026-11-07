@@ -64,13 +64,13 @@ export const NODE_ROLES: Record<string, string[]> = {
   // 対象・数える・絞り込む
   target: [], select: [], countCards: [], statOf: [], counterCount: [], controllerOf: [], filter: [], spentColors: [], compare: [], math: [], eventPerm: [], self: [],
   // カードの移動・ライブラリー・手札
-  draw: ["cardAdvantage"], discard: ["discard"], look: ["cardSelection"], lookHand: ["handDisruption"], shuffle: [], choose: [], move: ["zoneChange"], mill: ["graveyardFill"], zoneCards: [], drawnCards: [],
+  draw: ["cardAdvantage"], exilePlay: ["cardAdvantage"], discard: ["discard"], look: ["cardSelection"], lookHand: ["handDisruption"], shuffle: [], choose: [], move: ["zoneChange"], mill: ["graveyardFill"], zoneCards: [], drawnCards: [],
   payOrMove: ["cardSelection"], bounce: ["removal"], sacrifice: ["sacrifice"], destroy: ["removal"], search: ["cardAdvantage"], exile: ["removal"],
   // パーマネント・トークン・カウンター
   tap: ["tempo"], untap: ["tempo"], modify: ["statChange"], becomes: ["control"], exchangeControl: ["control"], grant: ["boardGrowth"], prepareSpell: [], entersPrepared: [], prepare: [], attach: ["boardGrowth"],
   emblem: ["continuous"], createEmblem: ["continuous"], createToken: ["boardGrowth"], regenerate: ["protection"], addCounter: ["boardGrowth"],
   // ダメージ・ライフ・マナ・打ち消し
-  gainLife: ["lifeGain"], loseLife: ["lifeLoss"], lifeGained: [], damage: ["damage"], addMana: ["mana"], extraTurn: ["extraTurn"], copySpell: ["copy"], counter: ["counterSpell"],
+  gainLife: ["lifeGain"], loseLife: ["lifeLoss"], lifeGained: [], lifeLost: [], damage: ["damage"], addMana: ["mana"], extraTurn: ["extraTurn"], copySpell: ["copy"], counter: ["counterSpell"],
   // 継続効果
   affect: [], staticModify: ["continuous"], staticGrant: ["continuous"], loseAbilities: ["continuous"], setBaseStats: ["continuous"], setTypes: ["continuous"], setColors: ["continuous"], setName: ["continuous"], extraTriggers: ["continuous"],
 };

@@ -1,4 +1,4 @@
-import { Game, GameCard, ManaColor, PlayerId, Pool, PoolKey, typeIn } from "./state";
+import { Game, GameCard, ManaColor, PlayerId, Pool, PoolKey, loseLife, typeIn } from "./state";
 
 // マナコスト ("{2}{U}{U}") の読み取りと、マナの支払い。
 // マナの持ち方 (Game): mana = 使えるマナの合計 / pool = そのうち色のついたもの (W U B R G と、好きな色 A)。合計から pool を引いた残りは、無色のマナ。
@@ -179,7 +179,7 @@ export function trySpend(g: Game, p: PlayerId, cost: ManaCost, spell: GameCard |
     g.mana[p] = (g.mana[p] ?? 0) - (poolSum + colorlessAtStart - poolSumAfter - l.colorless);
     g.pool[p] = l.pool;
     if (l.life > 0) {
-      g.life[p] -= l.life;
+      loseLife(g, p, l.life);
       g.log.push(`${l.life} 点のライフを払った`);
     }
     if (opts.spent) {

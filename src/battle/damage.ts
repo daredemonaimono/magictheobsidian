@@ -1,5 +1,5 @@
 import { characteristics } from "./continuous";
-import { Game, Perm, RuleBook, gainLife } from "./state";
+import { Game, Perm, RuleBook, gainLife, loseLife } from "./state";
 
 // ダメージを与える (ダメージのノードと戦闘ダメージで共通)。source = ダメージの発生源のパーマネント (無ければ呪文など。キーワードは効かない)。
 // プレイヤー → ライフを失う / クリーチャー → ダメージが載る (接死の発生源なら、致死) / プレインズウォーカー → 忠誠度カウンターを取り除く。絆魂は、与えたダメージの分だけ、発生源のコントローラーがライフを得る
@@ -9,7 +9,7 @@ export function dealDamage(g: Game, rules: RuleBook, source: Perm | undefined, t
   const kw = source ? characteristics(g, source, rules).keywords : [];
   let kind: "player" | "creature" | "planeswalker" | undefined;
   if (g.players.includes(targetId)) {
-    g.life[targetId] -= amount;
+    loseLife(g, targetId, amount);
     kind = "player";
   } else {
     const p = g.battlefield.find((x) => x.id === targetId);

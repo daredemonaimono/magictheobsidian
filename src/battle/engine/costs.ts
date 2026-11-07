@@ -1,7 +1,7 @@
 import { characteristics } from "../continuous";
 import { NodeCall } from "../node";
 import { addCosts, describeCost, emptyCost, ManaCost, parseManaCost, SpendOpts, trySpend } from "../mana";
-import { Game, GameCard, Perm, PlayerId, RuleBook } from "../state";
+import { Game, GameCard, Perm, PlayerId, RuleBook, loseLife } from "../state";
 import { removeFromBattlefield } from "./battlefield";
 import { RuleError, isSick } from "./shared";
 
@@ -85,7 +85,7 @@ export function payCost(g: Game, p: PlayerId, cost: CostSpec, source: Perm | und
     g.log.push(`${source.card.name} から ${cost.removeCounter} カウンターを 1 個取り除いた`);
   }
   if (cost.life > 0) {
-    g.life[p] -= cost.life;
+    loseLife(g, p, cost.life);
     g.log.push(`${cost.life} 点のライフを払った`);
   }
   if (cost.tap && source) source.tapped = true;

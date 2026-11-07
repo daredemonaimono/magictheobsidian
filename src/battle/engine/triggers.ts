@@ -10,7 +10,7 @@ import { applyUpkeepTaxes } from "./upkeep";
 // 誘発型能力 (イベント → スタックに積む)
 
 // 誘発のもと (スタックの trigger に残す id): 唱えた呪文・カード・パーマネント。ステップには無い
-const triggerOf = (ev: GameEvent): string | undefined => (ev.type === "step" ? undefined : ev.type === "cast" || ev.type === "moved" ? ev.card.id : ev.type === "damaged" ? ev.target : ev.perm.id); // damaged は、ダメージを受けたもの
+const triggerOf = (ev: GameEvent): string | undefined => (ev.type === "step" || ev.type === "drew" ? undefined : ev.type === "cast" || ev.type === "moved" ? ev.card.id : ev.type === "damaged" ? ev.target : ev.perm.id); // damaged は、ダメージを受けたもの
 
 // 誘発型能力の最初のノード (when) が、このイベントに合うか。s = 能力の発生源のパーマネント (紋章を含む)
 export function matchesEvent(g: Game, s: Perm, when: NodeCall, ev: GameEvent): boolean {
@@ -18,9 +18,9 @@ export function matchesEvent(g: Game, s: Perm, when: NodeCall, ev: GameEvent): b
   if (a.event !== ev.type) return false;
   if (ev.type === "step" && a.step !== ev.step) return false;
   // self=true: このパーマネント (カード) 自身のとき。step は、どの能力も自分のものなので、無視する。cast は、自分のものではない
-  if (a.self === true && ev.type !== "step" && (ev.type === "cast" || (ev.type === "moved" ? ev.card.id !== s.card.id : ev.type === "damaged" ? ev.source !== s : ev.perm !== s))) return false;
+  if (a.self === true && ev.type !== "step" && ev.type !== "drew" && (ev.type === "cast" || (ev.type === "moved" ? ev.card.id !== s.card.id : ev.type === "damaged" ? ev.source !== s : ev.perm !== s))) return false;
   const subject: { controller: PlayerId; card?: GameCard } =
-    ev.type === "cast" ? { controller: ev.player, card: ev.card } : ev.type === "step" ? { controller: ev.player } : ev.type === "moved" ? { controller: ev.card.owner, card: ev.card } : ev.type === "damaged" ? { controller: ev.source?.controller ?? "", ...(ev.source ? { card: ev.source.card } : {}) } : ev.perm;
+    ev.type === "cast" ? { controller: ev.player, card: ev.card } : ev.type === "step" || ev.type === "drew" ? { controller: ev.player } : ev.type === "moved" ? { controller: ev.card.owner, card: ev.card } : ev.type === "damaged" ? { controller: ev.source?.controller ?? "", ...(ev.source ? { card: ev.source.card } : {}) } : ev.perm;
   if (ev.type === "damaged" && ((a.combat === true && !ev.combat) || (typeof a.hit === "string" && a.hit !== ev.kind))) return false; // combat=true: 戦闘ダメージだけ。hit: ダメージを受けたもの (creature / player / planeswalker)
   // どこから (from)・どこへ (to): moved は、そのまま。enters の from は、手札・スタックから出たなら stack。leaves の to は、離れたあとの行き先 (指定が無ければ墓地)
   const from = ev.type === "moved" ? ev.from : ev.type === "enters" ? ev.from ?? "stack" : undefined;
@@ -33,6 +33,8 @@ export function matchesEvent(g: Game, s: Perm, when: NodeCall, ev: GameEvent): b
     if (typeof a.type === "string" && !typeIn(subject.card.typeLine, a.type)) return false;
     if (typeof a.notType === "string" && typeIn(subject.card.typeLine, a.notType)) return false;
   }
+  if (a.first === true && ((ev.type !== "attacks" && ev.type !== "targeted") || !ev.first)) return false; // attacks: その攻撃の宣言で、最初の 1 体 (「攻撃するたび」を、1 回だけ) / targeted: そのターンで最初
+  if (a.by === "you" && (ev.type !== "targeted" || ev.by.controller !== s.controller)) return false; // targeted: 自分の呪文・能力の対象になったとき
   if (a.alone === true && (ev.type !== "attacks" || g.battlefield.some((x) => x !== ev.perm && x.attacking && x.controller === ev.perm.controller))) return false; // 単独で攻撃したとき
   if (a.turn === "yours" && g.active !== s.controller) return false;
   if (a.turn === "opponents" && g.active === s.controller) return false;
@@ -55,9 +57,12 @@ export function announceTargets(g: Game, item: StackItem, rules: RuleBook): void
     if (call.if !== undefined && !evalCondition(call.if, { game: g, rules, item, vars: {}, call })) continue;
     for (const id of splitIds(item.targets[call.as ?? ""] ?? "")) {
       const perm = g.battlefield.find((x) => x.id === id);
-      if (perm && perm.controller !== item.controller && !seen.has(perm.id)) {
+      if (perm && !seen.has(perm.id)) {
         seen.add(perm.id);
-        g.events.push({ type: "targeted", perm, by: item });
+        // 自分の呪文・能力の対象になったとき: そのターンで最初かを残す (果敢 Valiant)。護法は、相手のものだけ (誘発の側で見る)
+        const first = perm.controller === item.controller && perm.targetedTurn !== g.turn;
+        if (perm.controller === item.controller) perm.targetedTurn = g.turn;
+        g.events.push({ type: "targeted", perm, by: item, ...(first ? { first: true } : {}) });
       }
     }
   }
@@ -83,7 +88,7 @@ export function flushEvents(g: Game, rules: RuleBook): void {
     const ev = g.events.shift()!;
     if (ev.type === "targeted") {
       // 護法: 対象になったパーマネントが、すべての能力を失っていなければ、{N} を払わないかぎり打ち消す誘発が積まれる
-      if (!characteristics(g, ev.perm, rules).lostAbilities) {
+      if (ev.perm.controller !== ev.by.controller && !characteristics(g, ev.perm, rules).lostAbilities) {
         for (const ab of rules.get(ev.perm.card.name)?.abilities ?? []) {
           if (ab.kind !== "static") continue;
           for (const c of ab.body) {
@@ -95,7 +100,6 @@ export function flushEvents(g: Game, rules: RuleBook): void {
           }
         }
       }
-      continue;
     }
     if (ev.type === "step" && g.delayed?.some((d) => d.step === ev.step)) {
       // 遅延誘発: 予約したステップの開始時に積む (次の、そのステップ。だれのターンでも)

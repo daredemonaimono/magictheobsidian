@@ -45,6 +45,11 @@ export function heuristicDecider(me: PlayerId, rules: RuleBook): Decider {
       if (kind !== "search" && !foe) return undefined;
       return [...from].sort((a, b) => val(g, p, b) - val(g, p, a)).slice(0, n);
     },
+    // 「捨ててもよい」: 手札が 2 枚以下 (捨てると手札が尽きそう) なら、しない。ほかは、既定のまま
+    may(g, p, what) {
+      if (p === me || !/捨て/.test(what)) return undefined;
+      return g.hands[p].length > 2 ? undefined : false;
+    },
     order(g, p, cards, to) {
       if (p === me || to !== "top") return undefined;
       return [...cards].sort((a, b) => val(g, p, b) - val(g, p, a));

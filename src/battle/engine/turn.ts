@@ -1,5 +1,5 @@
 import { untapsDuring } from "../continuous";
-import { discardCards, drawCards, Game, PlayerId, RuleBook, untapPerm } from "../state";
+import { discardCards, drawCards, expireMayPlay, Game, PlayerId, RuleBook, untapPerm } from "../state";
 import { HAND_LIMIT, RuleError, STEPS, live, nextPlayer, who } from "./shared";
 import { flushEvents } from "./triggers";
 import { resolveTop } from "./stack";
@@ -19,6 +19,7 @@ export function emptyPools(g: Game): void {
 export function advanceStep(g: Game, rules: RuleBook): void {
   if (g.strictTurns) emptyPools(g); // ステップの終わりに、マナが消える
   if (g.step === "end") {
+    expireMayPlay(g, "endOfTurn"); // 「このターン中プレイしてよい」は、クリンナップの前に切れる
     if (g.strictTurns && g.hands[g.active].length > HAND_LIMIT) discardCards(g, g.active, g.hands[g.active].length - HAND_LIMIT, true); // クリンナップ: 手札を 7 枚まで
     for (const p of g.battlefield) if (p.mods) p.mods = p.mods.filter((m) => m.until !== "endOfTurn"); // ターン終了時までの効果が消える
     for (const p of g.battlefield) {
@@ -40,6 +41,7 @@ export function advanceStep(g: Game, rules: RuleBook): void {
     g.spellsBy = {};
     g.drawn = {};
     g.gained = {};
+    g.lostLife = {};
     g.discarded = {};
     g.activated = {};
     for (const p of g.battlefield) if (p.becomes) p.becomes = p.becomes.filter((b) => b.until !== "endOfTurn");
@@ -48,6 +50,7 @@ export function advanceStep(g: Game, rules: RuleBook): void {
     g.step = "upkeep";
     g.log.push(`ターン ${g.turn}: ${who(g.active)}のターン`);
   } else g.step = STEPS[STEPS.indexOf(g.step) + 1];
+  if (g.step === "end") expireMayPlay(g, "yourNextEnd"); // 「次の終了ステップまで」は、その終了ステップの開始時に切れる
   endCombat(g); // 戦闘ステップを出るとき、戦闘の状態を片づける (ふつうは、advanceCombat がすでに片づけている)
   if (g.step === "combat") {
     g.combatPhase = g.strictTurns ? "beginning" : "attackers"; // 厳密なターン: 戦闘開始ステップ (優先権の回) から。そうでなければ、攻撃クリーチャーを指定する段階から (指定が無ければ、そのまま次のステップへ進む)

@@ -87,8 +87,8 @@ export function makeDecider(me: PlayerId, answers: Answer[], ai?: PlayerId, rule
       const got = ids(next({ kind: "order", cards: refs(items.map((x) => ({ ...x.card, id: x.id }))), to: "stack" }));
       return got.flatMap((id) => items.find((x) => x.id === id) ?? []);
     },
-    may(_g, p, what) {
-      return p === me ? next({ kind: "may", what }) === true : undefined;
+    may(g, p, what) {
+      return p === me ? next({ kind: "may", what }) === true : h?.may?.(g, p, what);
     },
     pay(_g, p, n, why) {
       return p === me ? next({ kind: "pay", n, ...(why ? { why } : {}) }) === true : undefined;

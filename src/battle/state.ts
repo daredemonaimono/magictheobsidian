@@ -21,6 +21,7 @@ export interface GameCard {
   keywords?: string[];
   colors?: string[]; // 色 (W U B R G)
   loyalty?: number; // プレインズウォーカーの初期忠誠度 (戦場に出るとき loyalty カウンターとして置かれる)
+  exilePlay?: boolean; // 追放して、期限までプレイしてよいカード (exilePlay)。手札に置いてある
   token?: boolean; // トークン (戦場を離れると消える)
   foil?: boolean; // フォイル (見た目だけ)
   art?: string; // 絵の URL (デッキで選んだ版・トークン)。無ければ、カードのノートの絵
@@ -72,6 +73,7 @@ export interface Perm {
   prepared?: boolean; // 準備済 (準備呪文を、追放領域のコピーとして唱えられる。戦場を離れると消える)
   deathtouched?: boolean; // 接死のダメージを受けた (ターン終了時に消える)
   cast?: CastRecord; // 呪文として唱えられて出たとき、その記録 (キッカー・別のコスト)。誘発型能力の if=kicked / if=alt が見る
+  targetedTurn?: number; // 自分のコントローラーの呪文・能力の対象に、最後になったターン (果敢 Valiant の「そのターンで最初」)
   enteredTurn?: number; // 戦場に出たターン (Game.turn)。召喚酔いの判定
   attackTarget?: string; // 攻撃しているとき、攻撃先 (プレイヤー、またはプレインズウォーカーの id)
   blocked?: boolean; // 攻撃しているとき、ブロックされた (ブロッカーがいなくなっても、ブロックされたまま)
@@ -112,13 +114,19 @@ export function putInGraveyard(g: Game, card: GameCard, from: Zone): "graveyard"
 // 遅延誘発 (delay): あとのステップの開始時に、スタックに積む、残りのノード。source = もとの能力の発生源の id
 export interface Delayed { step: Step; card: GameCard; controller: PlayerId; source?: string; body: NodeCall[] }
 
+// ライフを失う (ダメージ・ライフの支払い・ライフを失う効果で共通。そのターンに失った量 lostLife も、数える)
+export function loseLife(g: Game, p: PlayerId, n: number): void {
+  g.life[p] -= n;
+  if (n > 0) (g.lostLife ??= {})[p] = (g.lostLife[p] ?? 0) + n;
+}
+
 // ライフを得る (そのターンに得た量 gained も、数える)
 export function gainLife(g: Game, p: PlayerId, n: number): void {
   g.life[p] += n;
   if (n > 0) (g.gained ??= {})[p] = (g.gained[p] ?? 0) + n;
 }
 
-export type GameEvent = { type: "cast"; player: PlayerId; card: GameCard } | { type: "enters"; perm: Perm; from?: Zone } | { type: "leaves"; perm: Perm; to?: Zone } | { type: "moved"; card: GameCard; from: Zone; to: Zone } | { type: "damaged"; source?: Perm; target: string; kind: "player" | "creature" | "planeswalker"; amount: number; combat: boolean } | { type: "step"; step: Step; player: PlayerId } | { type: "attacks"; perm: Perm } | { type: "blocks"; perm: Perm } | { type: "targeted"; perm: Perm; by: StackItem }; // targeted = パーマネントが、呪文・能力の対象になった (護法)
+export type GameEvent = { type: "cast"; player: PlayerId; card: GameCard } | { type: "enters"; perm: Perm; from?: Zone } | { type: "leaves"; perm: Perm; to?: Zone } | { type: "moved"; card: GameCard; from: Zone; to: Zone } | { type: "damaged"; source?: Perm; target: string; kind: "player" | "creature" | "planeswalker"; amount: number; combat: boolean } | { type: "step"; step: Step; player: PlayerId } | { type: "attacks"; perm: Perm; first?: boolean } | { type: "blocks"; perm: Perm } | { type: "targeted"; perm: Perm; by: StackItem; first?: boolean } | { type: "drew"; player: PlayerId }; // targeted = パーマネントが、呪文・能力の対象になった (護法。first = コントローラー自身の呪文・能力の対象になった、そのターンで最初)。attacks の first = その攻撃の宣言で、最初の 1 体。drew = カードを引いた
 // 人の判断の差し替え口。無ければ決まった動きになる (shortcut: 判断の入力はまだ無い。入力の仕組みを作るときに置き換える)
 export interface Decider {
   discard?(g: Game, p: PlayerId, n: number, cleanup?: boolean): GameCard[] | undefined; // 捨てるカード
@@ -160,6 +168,8 @@ export interface Game {
   effects?: { text: string; card?: string }[]; // スタックを使わない効果の発動 (Dredge・伝説のルール・置換効果)。画面が、スタックとは別に、一時的に表示する (最後の 30 件)
   activated?: Record<string, number>; // このターンに、起動型能力を起動した回数 (パーマネントの id:番号 / 手札のカードの id:h番号)。暴走防止 (AI は、同じ能力を 1 ターンに 3 回までしか選ばない)。ターンが替わると空
   discarded?: Record<PlayerId, number>; // このターンに捨てた・サイクリングしたカードの数 (手札から墓地へ。プレイヤーごと。ターンが替わると 0)
+  mayPlay?: { id: string; owner: PlayerId; until: "endOfTurn" | "yourNextEnd" }[]; // 追放して、そのあいだだけプレイしてよいカード (手札に置いて印を付ける。期限が来て、まだ手札にあれば、追放領域へ)
+  lostLife?: Record<PlayerId, number>; // このターンに失ったライフの量 (プレイヤーごと。ターンが替わると 0)
   gained?: Record<PlayerId, number>; // このターンに得たライフの量 (プレイヤーごと。ターンが替わると 0)
   delayed?: Delayed[]; // 遅延誘発 (あとのステップの開始時に積む)
   drawn?: Record<PlayerId, string[]>; // このターンに引いたカードの id (プレイヤーごと)
@@ -255,6 +265,7 @@ export function drawCards(g: Game, p: PlayerId, n: number, rules?: RuleBook): vo
     }
     g.hands[p].push(top);
     ((g.drawn ??= {})[p] ??= []).push(top.id);
+    g.events.push({ type: "drew", player: p }); // 「カードを引くたび」の誘発
   }
 }
 
@@ -269,3 +280,23 @@ export function discardCards(g: Game, p: PlayerId, n: number, cleanup = false): 
 
 // 準備呪文 (kind=prepare の能力) を持つカードか。持たないクリーチャーは、準備済になれない
 export const prepareAbilityOf = (rules: RuleBook, cardName: string) => rules.get(cardName)?.abilities.find((a) => a.kind === "prepare");
+
+// 期限が来た「追放してプレイしてよい」カードを、まだ手札にあれば、追放領域へ移す。endOfTurn = ターン終了時 (クリンナップの前) / yourNextEnd = その持ち主の終了ステップの開始時
+export function expireMayPlay(g: Game, kind: "endOfTurn" | "yourNextEnd"): void {
+  if (!g.mayPlay?.length) return;
+  const keep: NonNullable<Game["mayPlay"]> = [];
+  for (const m of g.mayPlay) {
+    if (m.until !== kind || (kind === "yourNextEnd" && g.active !== m.owner)) {
+      keep.push(m);
+      continue;
+    }
+    const card = g.hands[m.owner]?.find((c) => c.id === m.id);
+    if (card) {
+      g.hands[m.owner] = g.hands[m.owner].filter((c) => c !== card);
+      delete card.exilePlay;
+      g.exile[card.owner].push(card);
+      g.log.push(`${card.name}: プレイできる期限が過ぎて、追放されたままになった`);
+    }
+  }
+  g.mayPlay = keep;
+}

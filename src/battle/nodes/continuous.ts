@@ -14,8 +14,8 @@ export function registerContinuous(): void {
     id: "affect",
     core: true,
     title: "及ぶ先",
-    summary: "継続効果の常在型能力の最初に書く、効果が及ぶ先。who=attached(このパーマネントが付いているもの。装備・オーラ) / self(このパーマネント自身) / yours(自分のパーマネント) / all(すべて)。type・notType で型を絞る",
-    params: { who: { type: "string", required: true, choices: ["attached", "self", "yours", "all"] }, type: { type: "string" }, notType: { type: "string" } },
+    summary: "継続効果の常在型能力の最初に書く、効果が及ぶ先。who=attached(このパーマネントが付いているもの。装備・オーラ) / self(このパーマネント自身) / yours(自分のパーマネント) / all(すべて)。type・notType で型を絞る。turn=yours で、そのコントローラーのターンのあいだだけ(「自分のターンのあいだ、先制攻撃を持つ」)/ opponents で、相手のターンのあいだだけ",
+    params: { who: { type: "string", required: true, choices: ["attached", "self", "yours", "all"] }, type: { type: "string" }, notType: { type: "string" }, turn: { type: "string", choices: ["yours", "opponents"] } },
     ...cont,
   });
 
