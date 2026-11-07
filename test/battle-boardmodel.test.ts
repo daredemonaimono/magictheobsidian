@@ -150,9 +150,20 @@ const none = () => undefined;
   g.stack.push({ id: "s1", card: card("Bolt", "Instant"), controller: "B", targets: {}, cast: {} }, { id: "s2", card: card("Relic", "Artifact"), controller: "A", targets: {}, cast: {}, ability: true });
   const m = boardModel(g, noRules, "A", none);
   assert.deepEqual(m.stack, [
-    { id: "s1", name: "Bolt", controller: "opp", ability: false, typeLine: "Instant" }, // typeLine は、スタックの効果テキストのため (前提を足した)
-    { id: "s2", name: "Relic", controller: "self", ability: true, typeLine: "Artifact" },
+    { id: "s1", name: "Bolt", controller: "opp", ability: false, typeLine: "Instant", group: "Bolt|0||B|" }, // typeLine は、スタックの効果テキストのため (前提を足した)
+    { id: "s2", name: "Relic", controller: "self", ability: true, typeLine: "Artifact", group: "Relic|1||A|" },
   ]);
+  assert.equal(new Set(m.stack.map((x) => x.group)).size, 2, "別の項目は、別の group");
+}
+
+// 同じ誘発が複数積まれたら、group が同じ (画面は、1 枚にまとめて ×N と出す)。対象が違えば、別
+{
+  const g = createGame(["A", "B"]);
+  const amalgam = (id: string, targets: Record<string, string> = {}) => ({ id, card: card("Prized Amalgam", "Creature — Zombie"), controller: "B", targets, cast: {}, ability: true });
+  g.stack.push(amalgam("t1"), amalgam("t2"), amalgam("t3", { x: "Z" }));
+  const groups = boardModel(g, noRules, "A", none).stack.map((x) => x.group);
+  assert.equal(groups[0], groups[1], "同じ誘発は、同じ group");
+  assert.notEqual(groups[0], groups[2], "対象が違えば、別の group");
 }
 
 // マナ・プール: 無色は合計から色つきを引いた残り。負にならない

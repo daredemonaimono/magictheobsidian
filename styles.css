@@ -296,6 +296,7 @@ button.mtg-color .mtg-sym { width: 20px; height: 20px; display: block; }
 .mtg-bt-stackcard img { display: block; width: 100%; border-radius: 6%; border: 3px solid #4bb0ff; box-shadow: 0 6px 16px #000a; box-sizing: border-box; }
 .mtg-bt-stackcard.is-opp img { border-color: #e55; }
 .mtg-bt-stackcard .mtg-bt-face { padding: 20px 6px; background: #3a434b; border: 3px solid #4bb0ff; border-radius: 6px; text-align: center; font-weight: 700; }
+.mtg-bt-stackcount { position: absolute; top: -8px; right: -6px; z-index: 5; min-width: 24px; padding: 1px 7px; border-radius: 999px; background: #e0893a; color: #fff; font-weight: 800; font-size: 13px; text-align: center; box-shadow: 0 2px 8px #000a; pointer-events: none; }
 .mtg-bt-stackdetail { display: none; position: absolute; top: 100%; left: 0; width: clamp(150px, 15vw, 240px); margin-top: 3px; }
 .mtg-bt-stackcard.is-top .mtg-bt-stackdetail, .mtg-bt-stackcard:hover .mtg-bt-stackdetail { display: block; }
 .mtg-bt-stack:hover .mtg-bt-stackcard:not(:hover) .mtg-bt-stackdetail { display: none; }

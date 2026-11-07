@@ -156,6 +156,7 @@ export interface StackView {
   modes?: number[]; // 選んだモード
   label?: string; // 能力のとき、どの能力か ("+1: トークンを作る" / "−2: 手札に戻す" / "誘発: 引く")
   image?: string; // カードの画像 (呪文・能力の発生源)
+  group: string; // 同じ項目の印 (名前・能力かどうか・どの能力か・コントローラー・対象が同じ)。画面は、同じ印が並んだら、1 枚にまとめて ×N と出す (Prized Amalgam が 4 枚あると、誘発が 8 個、積まれるため)
 }
 // 自分が、いま選ぶ戦闘の指定 (攻撃クリーチャー / ブロック)。mine = 選べる自分のクリーチャー、attackers = ブロックできる攻撃クリーチャー
 export type AssignItem = { attacker: string; name: string; power: number; trample: boolean; blockers: { id: string; name: string; lethal: number }[]; defaults: Record<string, number> };
@@ -259,7 +260,7 @@ export function boardModel(g: Game, rules: RuleBook, viewer: PlayerId, imageOf: 
     idle: !g.over && !g.mulligan && g.priority === viewer && !choice && !canRespond(g, rules, viewer), // 戦闘の指定を選ぶときは、自動で進めない
     canNext: !g.over && !g.mulligan,
     nextLabel: g.stack.length ? "解決する" : "次へ",
-    stack: g.stack.map((s) => ({ id: s.id, name: s.card.name, controller: side(s.controller), ability: !!s.ability, typeLine: s.card.typeLine, ...(abilityLabel(s) ? { label: abilityLabel(s)! } : {}), ...loyaltyOf(s), ...(s.cast.modes?.length ? { modes: [...s.cast.modes] } : {}), ...(imageOf(s.card) !== undefined ? { image: imageOf(s.card)! } : {}) })),
+    stack: g.stack.map((s) => ({ group: `${s.card.name}|${s.ability ? 1 : 0}|${abilityLabel(s) ?? ""}|${s.controller}|${Object.values(s.targets).join(",")}`, id: s.id, name: s.card.name, controller: side(s.controller), ability: !!s.ability, typeLine: s.card.typeLine, ...(abilityLabel(s) ? { label: abilityLabel(s)! } : {}), ...loyaltyOf(s), ...(s.cast.modes?.length ? { modes: [...s.cast.modes] } : {}), ...(imageOf(s.card) !== undefined ? { image: imageOf(s.card)! } : {}) })),
     log: g.log.slice(-LOG_LINES),
   };
   if (g.mulligan) out.mulligan = { ...g.mulligan };
