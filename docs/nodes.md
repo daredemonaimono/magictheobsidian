@@ -2,17 +2,17 @@
 
 > このファイルは、自動で作られます (`src/battle/nodeDocs.ts`)。直接は書き換えません。ノードを足したら、`npm run docs:nodes` で更新します。ノードは、`src/battle/nodes/` の、カテゴリーごとのファイルにあります。
 
-全 104 個のノード、9 個の条件。
+全 116 個のノード、9 個の条件。
 
 目次: [宣言・コスト・条件](#宣言・コスト・条件) / [対象・数える・絞り込む](#対象・数える・絞り込む) / [カードの移動・ライブラリー・手札](#カードの移動・ライブラリー・手札) / [パーマネント・トークン・カウンター](#パーマネント・トークン・カウンター) / [ダメージ・ライフ・マナ・打ち消し](#ダメージ・ライフ・マナ・打ち消し) / [継続効果](#継続効果)
 
-## 宣言・コスト・条件 (32 個)
+## 宣言・コスト・条件 (36 個)
 
 ### `cost` コスト
 
-起動型能力のコスト(能力の最初に書く)。mana=払う汎用マナの数 / manaCost=色つきのマナコスト("{1}{U}") / tap=このパーマネントをタップ / sacrifice=このパーマネントを生け贄に捧げる / life=N点のライフを払う (フェッチランド) / tapCreatures=パワーの合計がこの値以上になるよう、自分のクリーチャーをタップ / loyalty=忠誠度を足す(+1 は loyalty=1、−2 は loyalty=-2。プレインズウォーカーの能力。ソーサリーのタイミングで1ターンに1回) / loyaltyX=true で −X(X は起動時に選び、効果の中で $X として参照する) / removeCounter=カウンターの種類(+1/+1 など)を 1 個取り除く / discardSelf=true で、このカードを手札から捨てる(手札から起動する能力: サイクリング。cost mana=2 discardSelf=true → draw) / exileSelf=true で、このカードを墓地から追放する(墓地から起動する能力)
+起動型能力のコスト(能力の最初に書く)。mana=汎用マナの数 / manaCost=色つき("{1}{U}") / tap=このパーマネントをタップ / sacrifice=このパーマネントを生け贄に / life=N点のライフ / tapCreatures=パワーの合計がこの値以上になるよう自分のクリーチャーをタップ / loyalty=忠誠度(+1 は loyalty=1、−2 は loyalty=-2。1ターンに1回・ソーサリー) / loyaltyX=true で −X(効果の中で $X) / removeCounter=カウンターの種類を 1 個取り除く / discardSelf=true でこのカードを手札から捨てる(サイクリング) / exileSelf=true で墓地から追放する / sacrificeOther=型(creature|artifact など)でほかのパーマネントを生け贄に(自分で選ぶ。sacrificeCount=枚数)
 
-- 引数: `mana`(number)、`manaCost`(string)、`tap`(boolean)、`sacrifice`(boolean)、`life`(number)、`tapCreatures`(number)、`loyalty`(number)、`loyaltyX`(boolean)、`removeCounter`(string)、`discardSelf`(boolean)、`exileSelf`(boolean)
+- 引数: `mana`(number)、`manaCost`(string)、`tap`(boolean)、`sacrifice`(boolean)、`life`(number)、`tapCreatures`(number)、`loyalty`(number)、`loyaltyX`(boolean)、`removeCounter`(string)、`discardSelf`(boolean)、`exileSelf`(boolean)、`sacrificeOther`(string)、`sacrificeCount`(number)
 - 書ける能力: activated
 - 宣言のノード (エンジンが読む。`if=` は付けられない)
 - 中心のノード (ルールを書かせるとき、いつも AI の指示に入る。ほかは、カードごとに選ぶ)
@@ -76,11 +76,43 @@ Delve の宣言(呪文能力の最初に書く。引数なし)。唱えるとき
 - 書ける能力: static
 - 宣言のノード (エンジンが読む。`if=` は付けられない)
 
+### `cantBeBlocked` ブロックされない
+
+常在型能力。このクリーチャーは、ブロックされない。exceptKeyword=flying なら、飛行を持つクリーチャーには、ブロックされる(「飛行を持つクリーチャーにしかブロックされない」)。byType=Wall なら、その型のクリーチャーにはブロックされない
+
+- 引数: `exceptKeyword`(string・flying / hexproof / flash / haste / vigilance / trample / lifelink / deathtouch / firstStrike / doubleStrike / reach / menace / defender / prowess / indestructible)、`byType`(string)
+- 書ける能力: static
+- 宣言のノード (エンジンが読む。`if=` は付けられない)
+
+### `cantAttack` 攻撃できない
+
+常在型能力。このクリーチャーは、攻撃できない
+
+- 引数: なし
+- 書ける能力: static
+- 宣言のノード (エンジンが読む。`if=` は付けられない)
+
+### `mustAttack` 攻撃しなければならない
+
+常在型能力。このクリーチャーは、毎ターン、攻撃できるなら、攻撃しなければならない(攻撃クリーチャーの指定に、自動で入る)
+
+- 引数: なし
+- 書ける能力: static
+- 宣言のノード (エンジンが読む。`if=` は付けられない)
+
 ### `cantBlock` ブロックできない
 
 常在型能力。このクリーチャーは、ブロックできない(Forsaken Miner)
 
 - 引数: なし
+- 書ける能力: static
+- 宣言のノード (エンジンが読む。`if=` は付けられない)
+
+### `modifyAmount` 量を変える (置換効果)
+
+常在型能力。what=tokens(作るトークンの数) / counters(置くカウンターの数) / damage(与えるダメージ) / lifegain(得るライフ) / draw(引く枚数)が、mult 倍になり、add 足される(例: 2 倍は mult=2、1 つ多くは add=1)。who=you(このパーマネントのコントローラーが受け取る・与えるもの)・opponents・all。Doubling Season・Hardened Scales・Furnace of Rath
+
+- 引数: `what`(string・必須・tokens / counters / damage / lifegain / draw)、`who`(string・you / opponents / all)、`mult`(number)、`add`(number)
 - 書ける能力: static
 - 宣言のノード (エンジンが読む。`if=` は付けられない)
 
@@ -280,7 +312,7 @@ from(graveyard / library。graveyard|library のように並べられる)にあ�
 - 宣言のノード (エンジンが読む。`if=` は付けられない)
 - 中心のノード (ルールを書かせるとき、いつも AI の指示に入る。ほかは、カードごとに選ぶ)
 
-## 対象・数える・絞り込む (16 個)
+## 対象・数える・絞り込む (19 個)
 
 ### `target` 対象
 
@@ -300,9 +332,30 @@ from(graveyard / library。graveyard|library のように並べられる)にあ�
 
 ### `countCards` 枚数を数える
 
-zone(hand / graveyard / library / battlefield)のカードの枚数を、n として出力する(who=you・opponents。type・notType で絞る)。「手札の枚数に等しい X」は、これを as= で受けて、count=$名前 に渡す
+zone(hand / graveyard / library / exile / battlefield)のカードの枚数を、n として出力する(who=you・opponents・all。type・notType・color・token=true で絞る)。「〜1つにつき」「〜の数に等しい」は、これを as= で受けて、count=$名前・amount=$名前・power=$名前 に渡す。常在型能力は、staticModify の perZone などで書く
 
-- 引数: `zone`(string・必須・hand / graveyard / library / battlefield)、`who`(string・you / opponents)、`type`(string)、`notType`(string)
+- 引数: `zone`(string・必須・hand / graveyard / library / exile / battlefield)、`who`(string・you / opponents / all)、`type`(string)、`notType`(string)、`color`(string・W / U / B / R / G)、`token`(boolean)
+- 出力: `n`(number) (`as=名前` で受けて、`$名前` で渡す)
+
+### `turnStat` このターンの出来事
+
+そのターンに起きたことの数を、n として出力する。stat=creaturesDied(死んだクリーチャーの数) / attacked(攻撃したなら 1) / landsPlayed(出した土地) / spellsCast(唱えた呪文) / cardsDrawn(引いたカード) / lifeGained / lifeLost。player=you・opponents・all。「このターンに攻撃していたなら」(raid)・「クリーチャーが死んでいたなら」(morbid)は、これを as= で受けて、compare op=ge b=1 と if=$名前
+
+- 引数: `stat`(string・必須・creaturesDied / attacked / landsPlayed / spellsCast / cardsDrawn / lifeGained / lifeLost)、`player`(string・必須・you / opponents / all)
+- 出力: `n`(number) (`as=名前` で受けて、`$名前` で渡す)
+
+### `graveyardTypes` 墓地のカードの種類の数
+
+プレイヤー (player=you / opponents) の墓地にあるカードの、カードタイプ(土地・クリーチャー・アーティファクト・エンチャント・インスタント・ソーサリー・プレインズウォーカー)の種類の数を、n として出力する。Delirium(4 種類以上)は、これを as= で受けて、compare op=ge b=4
+
+- 引数: `player`(string・必須・you / opponents)
+- 出力: `n`(number) (`as=名前` で受けて、`$名前` で渡す)
+
+### `lifeTotal` ライフの点数
+
+プレイヤー (player=you / opponents) のいまのライフの点数を、n として出力する(複数なら合計)。「あなたのライフの点数に等しい」「相手のライフが 10 以下なら」は、これを as= で受けて、amount=$名前 や compare に渡す
+
+- 引数: `player`(string・必須・you / opponents)
 - 出力: `n`(number) (`as=名前` で受けて、`$名前` で渡す)
 
 ### `statOf` 数値を読む
@@ -474,9 +527,9 @@ cards(look / choose の出力)を、持ち主の to へ動かす。to=hand / gra
 
 ### `playerRemoves` プレイヤーが選んで取り除く
 
-プレイヤー (player=you / opponents / target) が、自分がコントロールする type (例: creature) のパーマネントを count 体(既定は1)選んで、how=sacrifice(生け贄に捧げる) / exile(追放する)。選ぶのは、そのプレイヤー。無ければ何も起きない
+プレイヤー (player=you / opponents / target) が、自分がコントロールする type (例: creature) のパーマネントを count 体(既定は1)選んで、how=sacrifice(生け贄に捧げる) / exile(追放する) / bounce(持ち主の手札に戻す。「土地を 1 つ、手札に戻す」バウンスランド)。選ぶのは、そのプレイヤー。無ければ何も起きない
 
-- 引数: `player`(string・必須・you / opponents / target)、`target`(ref)、`type`(string)、`count`(number)、`how`(string・必須・sacrifice / exile)
+- 引数: `player`(string・必須・you / opponents / target)、`target`(ref)、`type`(string)、`count`(number)、`how`(string・必須・sacrifice / exile / bounce)
 - 出力: `n`(number) (`as=名前` で受けて、`$名前` で渡す)
 
 ### `exilePlay` 追放して、プレイしてよい
@@ -543,7 +596,7 @@ cards(choose などの出力)の1枚ごとに、コントローラーが life �
 - 出力: `n`(number) (`as=名前` で受けて、`$名前` で渡す)
 - 言い方 (キー): 追放する、追放
 
-## パーマネント・トークン・カウンター (17 個)
+## パーマネント・トークン・カウンター (22 個)
 
 ### `tap` タップする
 
@@ -631,6 +684,37 @@ a と b(それぞれ target ノードの出力)のパーマネントのコント
 
 - 引数: `name`(string・必須)
 
+### `copyPermanent` パーマネントのコピーを作る
+
+対象のパーマネントのコピーを、コントローラーのトークンとして count 個(既定は1)作る(Phyrexian Metamorph・Spark Double・Mockingbird。self にも使える)。名前・型・P/T・色・キーワードを写し、能力も、そのカードのルールから得る。作ったトークンの id を出力する
+
+- 引数: `target`(ref・必須)、`count`(number)
+- 出力: `id`(id) (`as=名前` で受けて、`$名前` で渡す)
+
+### `explore` 探検
+
+対象のクリーチャー (self など) が探検する: コントローラーのライブラリーの一番上を公開する。土地なら手札に加える。そうでなければ、そのクリーチャーに +1/+1 カウンターを置き、そのカードを墓地に置いてもよい(置かなければ、一番上に残る)。ライブラリーが空なら、カウンターだけ
+
+- 引数: `target`(ref・必須)
+
+### `amass` 集結 (アーミー)
+
+コントローラーが集結 N: 自分のアーミー(Army)に +1/+1 カウンターを count 個置く。アーミーがいなければ、黒の 0/0 のアーミー・トークンを作ってから置く
+
+- 引数: `count`(number・必須)
+
+### `connive` 暗躍 (connive)
+
+対象のクリーチャー (self など) が暗躍する: コントローラーが 1 枚引き、1 枚捨てる。捨てたカードが土地でなければ、そのクリーチャーに +1/+1 カウンターを置く
+
+- 引数: `target`(ref・必須)
+
+### `bolster` 増強 (bolster)
+
+コントローラーが増強 N: 自分のクリーチャーのうち、タフネスがいちばん小さいもの(同じなら先に出たもの)に、+1/+1 カウンターを count 個置く
+
+- 引数: `count`(number・必須)
+
 ### `unlockDoor` 扉を開ける
 
 対象の部屋 (self など) の、door=1・2 の扉を開ける(すでに開いていれば何も起きない)。開けると、when event=unlock door=N の誘発が働く。閉じた扉を開ける起動型能力は、timing lockedDoor=N と cost manaCost と使う
@@ -645,9 +729,9 @@ a と b(それぞれ target ノードの出力)のパーマネントのコント
 
 ### `createToken` トークンを作る
 
-コントローラーが、トークンのクリーチャーなどを count 個(既定は1)作る。name=名前 / types=型行(例: "Creature — Illusion") / power・toughness / colors=色(空白区切り。例: "U")
+コントローラーが、トークンのクリーチャーなどを count 個(既定は1)作る。name=名前 / types=型行(例: "Creature — Illusion") / power・toughness / colors=色(空白区切り。例: "U") / keywords=キーワード能力(空白区切り。例: "flying vigilance")。predefined=treasure・food・clue・blood のどれかなら、名前・型・能力は、決まったものになる(name・types は要らない)
 
-- 引数: `name`(string・必須)、`types`(string・必須)、`power`(number)、`toughness`(number)、`colors`(string)、`count`(number)
+- 引数: `name`(string)、`types`(string)、`power`(number)、`toughness`(number)、`colors`(string)、`keywords`(string)、`predefined`(string・treasure / food / clue / blood)、`count`(number)
 - 出力: `id`(id) (`as=名前` で受けて、`$名前` で渡す)
 - 言い方 (キー): トークンを作る、トークンを生成
 
@@ -744,9 +828,9 @@ a と b(それぞれ target ノードの出力)のパーマネントのコント
 
 ### `staticModify` 修整(継続)
 
-及ぶ先が、+power/+toughness の修整を受ける(レイヤー7)
+及ぶ先が、+power/+toughness の修整を受ける(レイヤー7)。perZone(battlefield / graveyard / hand / exile)を書くと、それに該当するカード 1 枚につき、その修整を受ける(「クリーチャー 1 体につき +1/+1」)。perWho=you・opponents・all / perType / perNotType / perColor / perToken で数えるものを絞る
 
-- 引数: `power`(number・必須)、`toughness`(number・必須)
+- 引数: `power`(number・必須)、`toughness`(number・必須)、`perZone`(string・battlefield / graveyard / hand / exile)、`perWho`(string・you / opponents / all)、`perType`(string)、`perNotType`(string)、`perColor`(string・W / U / B / R / G)、`perToken`(boolean)
 - 書ける能力: static
 - 宣言のノード (エンジンが読む。`if=` は付けられない)
 

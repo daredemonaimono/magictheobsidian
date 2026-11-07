@@ -1,4 +1,5 @@
 import { Ability, NodeCall } from "./node";
+import { countCardsOf } from "./nodes/targets";
 import { Game, GameCard, Perm, PlayerId, RuleBook, normKeyword, typeIn } from "./state";
 
 // 継続効果 (常在型能力・装備・オーラ): パーマネントの「いまの姿」を、保存せずに、そのつど計算する。
@@ -93,8 +94,11 @@ export function characteristics(g: Game, p: Perm, rules: RuleBook): Chars {
     power += plus + (p.mods ?? []).reduce((a, m) => a + m.power, 0);
     toughness += plus + (p.mods ?? []).reduce((a, m) => a + m.toughness, 0);
     for (const e of effs) if (e.call.node === "staticModify") {
-      power += Number(e.call.args.power);
-      toughness += Number(e.call.args.toughness);
+      const a = e.call.args;
+      // perZone: 数えたカード 1 枚につき (「クリーチャー 1 体につき +1/+1」)。数えるのは、この修整の発生源のコントローラーから見て
+      const k = typeof a.perZone === "string" ? countCardsOf(g, e.source.controller, { zone: a.perZone, who: a.perWho ?? "you", type: a.perType, notType: a.perNotType, color: a.perColor, token: a.perToken }) : 1;
+      power += Number(a.power) * k;
+      toughness += Number(a.toughness) * k;
     }
   }
   const kw = [

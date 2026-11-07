@@ -4,7 +4,7 @@ import { defineNode as define } from "../registry";
 import { nextRandom } from "../rng";
 import { discardCards, drawCards, leftGraveyard, loseLife, putInGraveyard, Game, Perm, typeIn } from "../state";
 import { enterBattlefield, removeFromBattlefield, tryRegenerate } from "../engine/battlefield";
-import { enterBlocked, entersTapped } from "../engine/restrict";
+import { enterBlocked, entersTapped, modAmount } from "../engine/restrict";
 import { payManaCost } from "../engine/upkeep";
 import { who as logWho } from "../engine/shared";
 import { findCard, idList, playersFor, takeCard, targetPlayer, who, zoneOf } from "./shared";
@@ -24,8 +24,9 @@ export function registerCards(): void {
     run: (ctx, a): Record<string, Value> => {
       if (a.optional === true && !(ctx.game.decide?.may?.(ctx.game, ctx.item.controller, `カードを ${Number(a.count)} 枚、追加で引きますか?`) ?? true)) return { n: 0 };
       for (const p of playersFor(ctx, a)) {
-        drawCards(ctx.game, p, Number(a.count), ctx.rules);
-        if (Number(a.count) > 0) ctx.game.log.push(`${logWho(p)}がカードを ${a.count} 枚引いた`);
+        const n = modAmount(ctx.game, ctx.rules, "draw", p, Number(a.count)); // 置換効果 (引く枚数を増やす)
+        drawCards(ctx.game, p, n, ctx.rules);
+        if (n > 0) ctx.game.log.push(`${logWho(p)}がカードを ${n} 枚引いた`);
       }
       return { n: Number(a.count) };
     },
@@ -222,8 +223,8 @@ export function registerCards(): void {
   node({
     id: "playerRemoves",
     title: "プレイヤーが選んで取り除く",
-    summary: "プレイヤー (player=you / opponents / target) が、自分がコントロールする type (例: creature) のパーマネントを count 体(既定は1)選んで、how=sacrifice(生け贄に捧げる) / exile(追放する)。選ぶのは、そのプレイヤー。無ければ何も起きない",
-    params: { player: who, target: targetPlayer, type: { type: "string" }, count: { type: "number", min: 1 }, how: { type: "string", required: true, choices: ["sacrifice", "exile"] } },
+    summary: "プレイヤー (player=you / opponents / target) が、自分がコントロールする type (例: creature) のパーマネントを count 体(既定は1)選んで、how=sacrifice(生け贄に捧げる) / exile(追放する) / bounce(持ち主の手札に戻す。「土地を 1 つ、手札に戻す」バウンスランド)。選ぶのは、そのプレイヤー。無ければ何も起きない",
+    params: { player: who, target: targetPlayer, type: { type: "string" }, count: { type: "number", min: 1 }, how: { type: "string", required: true, choices: ["sacrifice", "exile", "bounce"] } },
     outputs: { n: "number" },
     run: (ctx, a): Record<string, Value> => {
       const g = ctx.game;
@@ -238,12 +239,16 @@ export function registerCards(): void {
           const perm = options.find((x) => x.card === c);
           if (!perm || !g.battlefield.includes(perm)) continue;
           if (a.how === "sacrifice") removeFromBattlefield(g, perm);
-          else {
+          else if (a.how === "bounce") {
+            g.battlefield = g.battlefield.filter((x) => x !== perm);
+            if (!perm.card.token) g.hands[perm.card.owner].push(perm.card);
+            g.events.push({ type: "leaves", perm, to: "hand" });
+          } else {
             g.battlefield = g.battlefield.filter((x) => x !== perm);
             if (!perm.card.token) g.exile[perm.card.owner].push(perm.card);
             g.events.push({ type: "leaves", perm, to: "exile" });
           }
-          g.log.push(`${logWho(p)}は ${perm.card.name} を${a.how === "sacrifice" ? "生け贄に捧げた" : "追放した"}`);
+          g.log.push(`${logWho(p)}は ${perm.card.name} を${a.how === "sacrifice" ? "生け贄に捧げた" : a.how === "bounce" ? "手札に戻した" : "追放した"}`);
           n++;
         }
       }

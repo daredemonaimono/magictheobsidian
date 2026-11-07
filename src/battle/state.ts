@@ -190,6 +190,8 @@ export interface Game {
   speed?: Record<PlayerId, number>; // 速度 (Start your engines!。1〜4。無ければ 0)
   held?: { card: string; by: string; owner: PlayerId }[]; // 「〜が戦場にあるあいだ追放しておく」カード (move untilLeaves)。by = 離れたら戻すパーマネントの id
   onceTurn?: Record<string, number>; // 「1 ターンに 1 回だけ誘発」(when oncePerTurn): 誘発した最後のターン (パーマネントの id|能力の番号)
+  died?: Record<PlayerId, number>; // このターンに、プレイヤーごとに、死んだクリーチャーの数 (turnStat creaturesDied)
+  attacked?: Record<PlayerId, boolean>; // このターンに、攻撃したか (turnStat attacked)
   speedBy?: Record<PlayerId, string>; // 速度を始めたカードの名前 (ログに出す)
   speedTurn?: Record<PlayerId, number>; // 速度を上げた最後のターン (自分のターンに 1 回まで)
   mayPlay?: { id: string; owner: PlayerId; until: "endOfTurn" | "yourNextEnd" | "later" }[]; // 追放して、そのあいだだけプレイしてよいカード (手札に置いて印を付ける。期限が来て、まだ手札にあれば、追放領域へ)

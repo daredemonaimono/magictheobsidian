@@ -2,6 +2,7 @@ import { untapsDuring } from "../continuous";
 import { discardCards, drawCards, expireMayPlay, Game, PlayerId, RuleBook, untapPerm } from "../state";
 import { HAND_LIMIT, RuleError, STEPS, live, nextPlayer, who } from "./shared";
 import { flushEvents } from "./triggers";
+import { modAmount } from "./restrict";
 import { resolveTop } from "./stack";
 import { advanceCombat, endCombat } from "./combat";
 
@@ -42,6 +43,8 @@ export function advanceStep(g: Game, rules: RuleBook): void {
     g.castTypes = {};
     g.drawn = {};
     g.gained = {};
+    g.died = {};
+    g.attacked = {};
     g.lostLife = {};
     g.discarded = {};
     g.activated = {};
@@ -59,7 +62,7 @@ export function advanceStep(g: Game, rules: RuleBook): void {
     g.blockersDeclared = [];
   }
   if (g.strictTurns && g.step === "draw" && g.turn > 1) {
-    drawCards(g, g.active, 1, rules);
+    drawCards(g, g.active, modAmount(g, rules, "draw", g.active, 1), rules);
     g.log.push(`${who(g.active)}がカードを引いた`);
   } // ターンのドロー (ゲームの最初のターンは引かない)。「ドロー・ステップの開始時」の誘発より先
   g.priority = g.active;

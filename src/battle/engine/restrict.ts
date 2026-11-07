@@ -1,6 +1,6 @@
 import { characteristics } from "../continuous";
 import { NodeCall } from "../node";
-import { Game, GameCard, Perm, PlayerId, RuleBook, typeIn } from "../state";
+import { Game, GameCard, Perm, PlayerId, RuleBook, normKeyword, typeIn } from "../state";
 
 // 「できない」「かわりに」の枠: 戦場のパーマネントの、常在型能力 (affect の無いもの) に書かれた制限・置換を集めて、調べる。
 // 能力を失っているパーマネントの制限は、働かない。制限は、いまの戦場から、そのつど計算する (保存しない)
@@ -65,3 +65,28 @@ export const lifeGainBlocked = (g: Game, rules: RuleBook, p: PlayerId): boolean 
 
 // ブロックできないか (cantBlock: このクリーチャー自身の常在型能力。能力を失っていれば、働かない)
 export const cantBlockNow = (g: Game, rules: RuleBook, perm: Perm): boolean => (rules.get(perm.card.name)?.abilities ?? []).some((a) => a.kind === "static" && a.body.some((c) => c.node === "cantBlock")) && !characteristics(g, perm, rules).lostAbilities;
+
+// 量を変える置換効果 (modifyAmount): 「トークンを作るなら、2 倍」(Doubling Season・Parallel Lives)・「カウンターを置くなら、1 つ多く」(Hardened Scales)・「ダメージを与えるなら、2 倍」(Furnace of Rath)・「ライフを得るなら、2 倍」・「引くなら、2 倍」。
+// n = もとの量 (0 以下はそのまま)。p = その量の持ち主 (トークン・カウンター・ライフ・引く: 受け取る人 / ダメージ: 与える発生源のコントローラー)。複数あれば、倍にするものを先に、足すものを、あとで
+export function modAmount(g: Game, rules: RuleBook, what: "tokens" | "counters" | "damage" | "lifegain" | "draw", p: PlayerId, n: number): number {
+  if (!(n > 0)) return n;
+  const calls = staticCalls(g, rules, "modifyAmount").filter(({ source, call }) => call.args.what === what && whoOk(call.args.who, source.controller, p));
+  const mul = calls.reduce((a, { call }) => a * Number(call.args.mult ?? 1), 1);
+  const add = calls.reduce((a, { call }) => a + Number(call.args.add ?? 0), 0);
+  return n * mul + add;
+}
+
+// このクリーチャー自身の常在型能力 (能力を失っていれば、働かない)
+const selfStatic = (g: Game, rules: RuleBook, perm: Perm, node: string): NodeCall[] =>
+  characteristics(g, perm, rules).lostAbilities ? [] : (rules.get(perm.card.name)?.abilities ?? []).filter((a) => a.kind === "static").flatMap((a) => a.body).filter((c) => c.node === node);
+
+// ブロックできないか (cantBeBlocked: attacker は、ブロックされない。exceptKeyword=flying なら、飛行を持つクリーチャーには、ブロックされる。byType=Wall なら、その型のクリーチャーには、ブロックされない)
+export function blockForbidden(g: Game, rules: RuleBook, attacker: Perm, blocker: Perm): boolean {
+  return selfStatic(g, rules, attacker, "cantBeBlocked").some((c) => {
+    if (typeof c.args.byType === "string") return typeIn(characteristics(g, blocker, rules).typeLine, c.args.byType);
+    if (typeof c.args.exceptKeyword === "string") return !characteristics(g, blocker, rules).keywords.includes(normKeyword(c.args.exceptKeyword));
+    return true;
+  });
+}
+export const cantAttackNow = (g: Game, rules: RuleBook, perm: Perm): boolean => selfStatic(g, rules, perm, "cantAttack").length > 0;
+export const mustAttackNow = (g: Game, rules: RuleBook, perm: Perm): boolean => selfStatic(g, rules, perm, "mustAttack").length > 0;

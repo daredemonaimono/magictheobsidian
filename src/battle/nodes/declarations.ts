@@ -24,8 +24,8 @@ export function registerDeclarations(): void {
     id: "cost",
     core: true,
     title: "コスト",
-    summary: "起動型能力のコスト(能力の最初に書く)。mana=払う汎用マナの数 / manaCost=色つきのマナコスト(\"{1}{U}\") / tap=このパーマネントをタップ / sacrifice=このパーマネントを生け贄に捧げる / life=N点のライフを払う (フェッチランド) / tapCreatures=パワーの合計がこの値以上になるよう、自分のクリーチャーをタップ / loyalty=忠誠度を足す(+1 は loyalty=1、−2 は loyalty=-2。プレインズウォーカーの能力。ソーサリーのタイミングで1ターンに1回) / loyaltyX=true で −X(X は起動時に選び、効果の中で $X として参照する) / removeCounter=カウンターの種類(+1/+1 など)を 1 個取り除く / discardSelf=true で、このカードを手札から捨てる(手札から起動する能力: サイクリング。cost mana=2 discardSelf=true → draw) / exileSelf=true で、このカードを墓地から追放する(墓地から起動する能力)",
-    params: { mana: { type: "number", min: 0 }, manaCost: { type: "string" }, tap: { type: "boolean" }, sacrifice: { type: "boolean" }, life: { type: "number", min: 0 }, tapCreatures: { type: "number", min: 0 }, loyalty: { type: "number" }, loyaltyX: { type: "boolean" }, removeCounter: { type: "string" }, discardSelf: { type: "boolean" }, exileSelf: { type: "boolean" } },
+    summary: "起動型能力のコスト(能力の最初に書く)。mana=汎用マナの数 / manaCost=色つき(\"{1}{U}\") / tap=このパーマネントをタップ / sacrifice=このパーマネントを生け贄に / life=N点のライフ / tapCreatures=パワーの合計がこの値以上になるよう自分のクリーチャーをタップ / loyalty=忠誠度(+1 は loyalty=1、−2 は loyalty=-2。1ターンに1回・ソーサリー) / loyaltyX=true で −X(効果の中で $X) / removeCounter=カウンターの種類を 1 個取り除く / discardSelf=true でこのカードを手札から捨てる(サイクリング) / exileSelf=true で墓地から追放する / sacrificeOther=型(creature|artifact など)でほかのパーマネントを生け贄に(自分で選ぶ。sacrificeCount=枚数)",
+    params: { mana: { type: "number", min: 0 }, manaCost: { type: "string" }, tap: { type: "boolean" }, sacrifice: { type: "boolean" }, life: { type: "number", min: 0 }, tapCreatures: { type: "number", min: 0 }, loyalty: { type: "number" }, loyaltyX: { type: "boolean" }, removeCounter: { type: "string" }, discardSelf: { type: "boolean" }, exileSelf: { type: "boolean" }, sacrificeOther: { type: "string" }, sacrificeCount: { type: "number", min: 1 } },
     check: (a) => { try { if (typeof a.manaCost === "string") parseManaCost(a.manaCost); return null; } catch (e) { return (e as Error).message; } },
     outputs: {},
     declaration: true,
@@ -121,12 +121,56 @@ export function registerDeclarations(): void {
     run: (): Record<string, Value> => ({}),
   });
 
+  // 戦闘: ブロックされない・攻撃できない・攻撃しなければならない (このクリーチャー自身の継続効果)
+  node({
+    id: "cantBeBlocked",
+    title: "ブロックされない",
+    summary: "常在型能力。このクリーチャーは、ブロックされない。exceptKeyword=flying なら、飛行を持つクリーチャーには、ブロックされる(「飛行を持つクリーチャーにしかブロックされない」)。byType=Wall なら、その型のクリーチャーにはブロックされない",
+    params: { exceptKeyword: { type: "string", choices: KEYWORDS }, byType: { type: "string" } },
+    declaration: true,
+    only: ["static"],
+    outputs: {},
+    run: (): Record<string, Value> => ({}),
+  });
+  node({
+    id: "cantAttack",
+    title: "攻撃できない",
+    summary: "常在型能力。このクリーチャーは、攻撃できない",
+    params: {},
+    declaration: true,
+    only: ["static"],
+    outputs: {},
+    run: (): Record<string, Value> => ({}),
+  });
+  node({
+    id: "mustAttack",
+    title: "攻撃しなければならない",
+    summary: "常在型能力。このクリーチャーは、毎ターン、攻撃できるなら、攻撃しなければならない(攻撃クリーチャーの指定に、自動で入る)",
+    params: {},
+    declaration: true,
+    only: ["static"],
+    outputs: {},
+    run: (): Record<string, Value> => ({}),
+  });
+
   // 戦闘: ブロックできない (継続効果)
   node({
     id: "cantBlock",
     title: "ブロックできない",
     summary: "常在型能力。このクリーチャーは、ブロックできない(Forsaken Miner)",
     params: {},
+    declaration: true,
+    only: ["static"],
+    outputs: {},
+    run: (): Record<string, Value> => ({}),
+  });
+
+  // 量を変える置換効果
+  node({
+    id: "modifyAmount",
+    title: "量を変える (置換効果)",
+    summary: "常在型能力。what=tokens(作るトークンの数) / counters(置くカウンターの数) / damage(与えるダメージ) / lifegain(得るライフ) / draw(引く枚数)が、mult 倍になり、add 足される(例: 2 倍は mult=2、1 つ多くは add=1)。who=you(このパーマネントのコントローラーが受け取る・与えるもの)・opponents・all。Doubling Season・Hardened Scales・Furnace of Rath",
+    params: { what: { type: "string", required: true, choices: ["tokens", "counters", "damage", "lifegain", "draw"] }, who: { type: "string", choices: ["you", "opponents", "all"] }, mult: { type: "number", min: 1 }, add: { type: "number", min: 0 } },
     declaration: true,
     only: ["static"],
     outputs: {},

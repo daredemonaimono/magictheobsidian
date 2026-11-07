@@ -1,7 +1,7 @@
 import { characteristics } from "../continuous";
 import { NodeDef, Value } from "../node";
 import { defineNode as define } from "../registry";
-import { Perm, normKeyword, playersOf, typeIn } from "../state";
+import { Game, Perm, normKeyword, playersOf, typeIn } from "../state";
 import { KEYWORDS, filterParams, findCard, idList, matches, who } from "./shared";
 
 // ノード: 対象・数える・絞り込む
@@ -79,15 +79,50 @@ export function registerTargets(): void {
   node({
     id: "countCards",
     title: "枚数を数える",
-    summary: "zone(hand / graveyard / library / battlefield)のカードの枚数を、n として出力する(who=you・opponents。type・notType で絞る)。「手札の枚数に等しい X」は、これを as= で受けて、count=$名前 に渡す",
-    params: { zone: { type: "string", required: true, choices: ["hand", "graveyard", "library", "battlefield"] }, who: { type: "string", choices: ["you", "opponents"] }, type: { type: "string" }, notType: { type: "string" } },
+    summary: "zone(hand / graveyard / library / exile / battlefield)のカードの枚数を、n として出力する(who=you・opponents・all。type・notType・color・token=true で絞る)。「〜1つにつき」「〜の数に等しい」は、これを as= で受けて、count=$名前・amount=$名前・power=$名前 に渡す。常在型能力は、staticModify の perZone などで書く",
+    params: { zone: { type: "string", required: true, choices: ["hand", "graveyard", "library", "exile", "battlefield"] }, who: { type: "string", choices: ["you", "opponents", "all"] }, type: { type: "string" }, notType: { type: "string" }, color: { type: "string", choices: ["W", "U", "B", "R", "G"] }, token: { type: "boolean" } },
+    outputs: { n: "number" },
+    run: (ctx, a): Record<string, Value> => ({ n: countCardsOf(ctx.game, ctx.item.controller, a) }),
+  });
+
+  // そのターンの出来事を数える: 条件の語 (raid・morbid・「このターンに〜した」) に使う
+  node({
+    id: "turnStat",
+    title: "このターンの出来事",
+    summary: "そのターンに起きたことの数を、n として出力する。stat=creaturesDied(死んだクリーチャーの数) / attacked(攻撃したなら 1) / landsPlayed(出した土地) / spellsCast(唱えた呪文) / cardsDrawn(引いたカード) / lifeGained / lifeLost。player=you・opponents・all。「このターンに攻撃していたなら」(raid)・「クリーチャーが死んでいたなら」(morbid)は、これを as= で受けて、compare op=ge b=1 と if=$名前",
+    params: { stat: { type: "string", required: true, choices: ["creaturesDied", "attacked", "landsPlayed", "spellsCast", "cardsDrawn", "lifeGained", "lifeLost"] }, player: { type: "string", required: true, choices: ["you", "opponents", "all"] } },
     outputs: { n: "number" },
     run: (ctx, a): Record<string, Value> => {
       const g = ctx.game;
-      const who = playersOf(g, ctx.item.controller, a.who === "opponents" ? "opponents" : "you");
-      const cards = who.flatMap((p) => (a.zone === "battlefield" ? g.battlefield.filter((x) => x.controller === p).map((x) => x.card) : (a.zone === "hand" ? g.hands : a.zone === "graveyard" ? g.graveyards : g.libraries)[p] ?? []));
-      return { n: cards.filter((c) => (typeof a.type !== "string" || typeIn(c.typeLine, a.type)) && (typeof a.notType !== "string" || !typeIn(c.typeLine, a.notType))).length };
+      const ps = a.player === "all" ? g.players : playersOf(g, ctx.item.controller, String(a.player));
+      const sum = (f: (p: string) => number) => ps.reduce((s, p) => s + f(p), 0);
+      const n = a.stat === "creaturesDied" ? sum((p) => g.died?.[p] ?? 0) : a.stat === "attacked" ? sum((p) => (g.attacked?.[p] ? 1 : 0)) : a.stat === "landsPlayed" ? (ps.includes(g.active) ? g.landsPlayed : 0) : a.stat === "spellsCast" ? sum((p) => g.spellsBy?.[p] ?? 0) : a.stat === "cardsDrawn" ? sum((p) => g.drawn?.[p]?.length ?? 0) : a.stat === "lifeGained" ? sum((p) => g.gained?.[p] ?? 0) : sum((p) => g.lostLife?.[p] ?? 0);
+      return { n };
     },
+  });
+
+  // 墓地にあるカードの種類の数 (Delirium: 4 種類以上)
+  node({
+    id: "graveyardTypes",
+    title: "墓地のカードの種類の数",
+    summary: "プレイヤー (player=you / opponents) の墓地にあるカードの、カードタイプ(土地・クリーチャー・アーティファクト・エンチャント・インスタント・ソーサリー・プレインズウォーカー)の種類の数を、n として出力する。Delirium(4 種類以上)は、これを as= で受けて、compare op=ge b=4",
+    params: { player: { type: "string", required: true, choices: ["you", "opponents"] } },
+    outputs: { n: "number" },
+    run: (ctx, a): Record<string, Value> => {
+      const kinds = new Set<string>();
+      for (const p of playersOf(ctx.game, ctx.item.controller, String(a.player))) for (const c of ctx.game.graveyards[p] ?? []) for (const t of ["Land", "Creature", "Artifact", "Enchantment", "Instant", "Sorcery", "Planeswalker", "Battle"]) if (new RegExp(`\\b${t}\\b`).test(c.typeLine)) kinds.add(t);
+      return { n: kinds.size };
+    },
+  });
+
+  // 自分・相手のライフの合計 (「あなたのライフに等しい」「ライフが 10 以下なら」)
+  node({
+    id: "lifeTotal",
+    title: "ライフの点数",
+    summary: "プレイヤー (player=you / opponents) のいまのライフの点数を、n として出力する(複数なら合計)。「あなたのライフの点数に等しい」「相手のライフが 10 以下なら」は、これを as= で受けて、amount=$名前 や compare に渡す",
+    params: { player: { type: "string", required: true, choices: ["you", "opponents"] } },
+    outputs: { n: "number" },
+    run: (ctx, a): Record<string, Value> => ({ n: playersOf(ctx.game, ctx.item.controller, String(a.player)).reduce((s, p) => s + (ctx.game.life[p] ?? 0), 0) }),
   });
 
   // 対象のパーマネントの、パワー・タフネス・マナ総量 (いまの値。複数なら、合計) を、数として出す。「そのパワーに等しいライフ」は、追放・破壊の前に、これで読む (戦場を離れたあとは、読めない)
@@ -263,4 +298,11 @@ export function registerTargets(): void {
     outputs: { id: "id" },
     run: (ctx): Record<string, Value> => ({ id: ctx.item.source ?? "" }),
   });
+}
+
+// 枚数を数える (countCards と、常在型能力の staticModify perZone で共通)。who=you / opponents / all は、c (数える人) から見て。zone=battlefield は、パーマネントを数える
+export function countCardsOf(g: Game, c: string, a: { zone?: unknown; who?: unknown; type?: unknown; notType?: unknown; color?: unknown; token?: unknown }): number {
+  const who = a.who === "all" ? g.players : playersOf(g, c, a.who === "opponents" ? "opponents" : "you");
+  const cards = who.flatMap((p) => (a.zone === "battlefield" ? g.battlefield.filter((x) => x.controller === p).map((x) => x.card) : ((a.zone === "hand" ? g.hands : a.zone === "graveyard" ? g.graveyards : a.zone === "exile" ? g.exile : g.libraries)[p] ?? [])));
+  return cards.filter((x) => (typeof a.type !== "string" || typeIn(x.typeLine, a.type)) && (typeof a.notType !== "string" || !typeIn(x.typeLine, a.notType)) && (typeof a.color !== "string" || (x.colors ?? []).includes(a.color)) && (a.token !== true || !!x.token)).length;
 }

@@ -19,7 +19,7 @@ export function registerContinuous(): void {
     ...cont,
   });
 
-  node({ id: "staticModify", title: "修整(継続)", summary: "及ぶ先が、+power/+toughness の修整を受ける(レイヤー7)", params: { power: { type: "number", required: true }, toughness: { type: "number", required: true } }, ...cont });
+  node({ id: "staticModify", title: "修整(継続)", summary: "及ぶ先が、+power/+toughness の修整を受ける(レイヤー7)。perZone(battlefield / graveyard / hand / exile)を書くと、それに該当するカード 1 枚につき、その修整を受ける(「クリーチャー 1 体につき +1/+1」)。perWho=you・opponents・all / perType / perNotType / perColor / perToken で数えるものを絞る", params: { power: { type: "number", required: true }, toughness: { type: "number", required: true }, perZone: { type: "string", choices: ["battlefield", "graveyard", "hand", "exile"] }, perWho: { type: "string", choices: ["you", "opponents", "all"] }, perType: { type: "string" }, perNotType: { type: "string" }, perColor: { type: "string", choices: ["W", "U", "B", "R", "G"] }, perToken: { type: "boolean" } }, ...cont });
 
   node({ id: "staticGrant", title: "キーワードを与える(継続)", summary: "及ぶ先が、キーワード能力を持つ(レイヤー6)。prowess を与えると、果敢として働く", params: { keyword: { type: "string", required: true, choices: KEYWORDS } }, ...cont });
 

@@ -1,4 +1,5 @@
 import { App, TFile, normalizePath } from "obsidian";
+import { withBuiltinRules } from "./battle/builtinRules";
 import { AskAi } from "./battle/ai";
 import { MulliganResult, aiMulligan, applyMulligan } from "./battle/aiMulligan";
 import { loadAgentRules } from "./agentNote";
@@ -76,7 +77,7 @@ export async function loadRules(app: App, names: string[]): Promise<RuleBook> {
       /* 読めないルールは、無いものとして扱う */
     }
   }
-  return { get: (card) => map.get(card) };
+  return withBuiltinRules({ get: (card) => map.get(card) }); // Treasure・Food・Clue・Blood は、組み込み
 }
 
 export async function loadMatchInputs(app: App, selfName: string, oppName: string): Promise<{ self: DeckData; opp: DeckData; rules: RuleBook }> {

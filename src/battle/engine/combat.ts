@@ -1,5 +1,5 @@
 import { characteristics } from "../continuous";
-import { cantBlockNow } from "./restrict";
+import { blockForbidden, cantAttackNow, cantBlockNow, mustAttackNow } from "./restrict";
 import { dealDamage } from "../damage";
 import { Game, Perm, PlayerId, RuleBook } from "../state";
 import { RuleError, defenderOf, evasionAllows, isCreature, isSick, kwOf, live } from "./shared";
@@ -10,7 +10,7 @@ import { emptyPools } from "./turn";
 
 // p が、いま攻撃できるクリーチャーを持っているか (アンタップ・召喚酔いでない・防衛でない)。無ければ、対戦の画面は戦闘ステップを飛ばす
 export const canAttackPerm = (g: Game, x: Perm, rules: RuleBook): boolean => {
-  if (x.tapped || isSick(g, x, rules)) return false;
+  if (x.tapped || isSick(g, x, rules) || cantAttackNow(g, rules, x)) return false;
   const now = characteristics(g, x, rules);
   return /\bCreature\b/.test(now.typeLine) && !now.keywords.includes("defender");
 };
@@ -40,11 +40,14 @@ export function declareAttackers(g: Game, p: PlayerId, attackers: { id: string; 
   live(g);
   if (g.step !== "combat" || g.combatPhase !== "attackers" || g.attackersDeclared) throw new RuleError("いまは攻撃クリーチャーを指定できない (戦闘ステップの最初に、1回だけ)");
   if (p !== g.active) throw new RuleError("攻撃クリーチャーを指定できるのは、アクティブ・プレイヤーだけ");
+  // 「攻撃しなければならない」(mustAttack): 攻撃できるのに、指定に入っていないものは、足す
+  for (const x of g.battlefield) if (x.controller === p && mustAttackNow(g, rules, x) && canAttackPerm(g, x, rules) && !attackers.some((q) => q.id === x.id)) attackers = [...attackers, { id: x.id }];
   const picks = attackers.map((x) => {
     const perm = g.battlefield.find((q) => q.id === x.id);
     if (!perm || perm.controller !== p || !isCreature(g, perm, rules)) throw new RuleError(`攻撃できるクリーチャーではない: ${x.id}`);
     const kw = kwOf(g, perm, rules);
     if (perm.tapped) throw new RuleError(`タップしていて攻撃できない: ${perm.card.name}`);
+    if (cantAttackNow(g, rules, perm)) throw new RuleError(`攻撃できない: ${perm.card.name}`);
     if (kw.includes("defender")) throw new RuleError(`防衛を持っていて攻撃できない: ${perm.card.name}`);
     if (isSick(g, perm, rules)) throw new RuleError(`召喚酔いで攻撃できない: ${perm.card.name}`);
     const others = g.players.filter((o) => o !== p);
@@ -61,13 +64,14 @@ export function declareAttackers(g: Game, p: PlayerId, attackers: { id: string; 
     g.events.push({ type: "attacks", perm: x.perm, ...(k === 0 ? { first: true } : {}) });
   }
   g.attackersDeclared = true;
+  (g.attacked ??= {})[p] = true;
   g.passes = [];
   g.priority = p;
   flushEvents(g, rules);
 }
 
 // この blocker が、この attacker を (単独の決まりで) ブロックできるか。画面が、ブロックの選択が要るかを決めるのに使う (威嚇は、2体以上が要る: 呼び出し側が数える)
-export const canBlock = (g: Game, blocker: Perm, attacker: Perm, rules: RuleBook): boolean => !blocker.tapped && !cantBlockNow(g, rules, blocker) && isCreature(g, blocker, rules) && evasionAllows(kwOf(g, attacker, rules), kwOf(g, blocker, rules));
+export const canBlock = (g: Game, blocker: Perm, attacker: Perm, rules: RuleBook): boolean => !blocker.tapped && !cantBlockNow(g, rules, blocker) && !blockForbidden(g, rules, attacker, blocker) && isCreature(g, blocker, rules) && evasionAllows(kwOf(g, attacker, rules), kwOf(g, blocker, rules));
 
 // ブロックを指定する (防御側。ブロックの段階で、1回だけ。ブロックしなくても、空で呼んでよい)。blocks = [{ blocker, attacker }]。
 // 飛行は飛行か到達でしかブロックできず、威嚇は2体以上でないとブロックできない。不正なら RuleError で、何も変えない
@@ -86,6 +90,7 @@ export function declareBlockers(g: Game, p: PlayerId, blocks: { blocker: string;
     used.add(blocker.id);
     const ak = kwOf(g, attacker, rules);
     const bk = kwOf(g, blocker, rules);
+    if (blockForbidden(g, rules, attacker, blocker)) throw new RuleError(`ブロックされない: ${attacker.card.name} は、${blocker.card.name} にブロックされない`);
     if (!evasionAllows(ak, bk)) throw new RuleError(`飛行はブロックできない: ${blocker.card.name} → ${attacker.card.name}`);
     per.set(attacker.id, [...(per.get(attacker.id) ?? []), blocker.id]);
   }

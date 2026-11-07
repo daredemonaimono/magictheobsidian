@@ -47,6 +47,7 @@ export function enterBattlefield(g: Game, card: GameCard, controller: PlayerId, 
 export function removeFromBattlefield(g: Game, perm: Perm): void {
   g.battlefield = g.battlefield.filter((x) => x !== perm);
   const to = perm.card.token ? "graveyard" : putInGraveyard(g, perm.card, "battlefield");
+  if (/\bCreature\b/.test(perm.card.typeLine) && to === "graveyard") (g.died ??= {})[perm.controller] = (g.died?.[perm.controller] ?? 0) + 1; // このターンに死んだクリーチャー
   g.events.push({ type: "leaves", perm, to });
 }
 

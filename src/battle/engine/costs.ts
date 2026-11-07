@@ -1,7 +1,7 @@
 import { characteristics } from "../continuous";
 import { NodeCall } from "../node";
 import { addCosts, describeCost, emptyCost, ManaCost, parseManaCost, SpendOpts, trySpend } from "../mana";
-import { Game, GameCard, Perm, PlayerId, RuleBook, loseLife } from "../state";
+import { Game, GameCard, Perm, PlayerId, RuleBook, loseLife, typeIn } from "../state";
 import { removeFromBattlefield } from "./battlefield";
 import { RuleError, isSick } from "./shared";
 
@@ -16,6 +16,7 @@ export interface CostSpec {
   loyalty: number; // 忠誠度を足す量 (+1 は 1、−2 は −2)
   loyaltyX: boolean; // −X
   isLoyalty: boolean; // 忠誠度能力 (ソーサリーのタイミングで、1ターンに1回)
+  sacOther?: { type: string; count: number }; // ほかのパーマネントを生け贄に捧げる (自分で選ぶ): 型と数 (Ashnod's Altar の「クリーチャーを 1 体生け贄に捧げる」)
   exileSelf: boolean; // このカードを墓地から追放する (墓地から起動する能力: Faerie Dreamthief)
   discardSelf: boolean; // このカードを手札から捨てる (手札から起動する能力: サイクリング)
   removeCounter?: string; // 取り除くカウンターの種類 (1 個。Golgari Grave-Troll の +1/+1)
@@ -44,6 +45,7 @@ export const costOf = (calls: NodeCall[]): CostSpec => ({
   life: calls.reduce((a, c) => a + Number(c.args.life ?? 0), 0),
   discardSelf: calls.some((c) => c.args.discardSelf === true),
   exileSelf: calls.some((c) => c.args.exileSelf === true),
+  ...(calls.some((c) => typeof c.args.sacrificeOther === "string") ? { sacOther: { type: String(calls.find((c) => typeof c.args.sacrificeOther === "string")!.args.sacrificeOther), count: Math.max(1, Number(calls.find((c) => c.args.sacrificeCount !== undefined)?.args.sacrificeCount ?? 1)) } } : {}),
   removeCounter: calls.find((c) => typeof c.args.removeCounter === "string")?.args.removeCounter as string | undefined,
 });
 
@@ -60,6 +62,10 @@ export function costProblem(g: Game, p: PlayerId, cost: CostSpec, source: Perm |
   if (cost.life > 0 && g.life[p] < cost.life) return `ライフが足りない (${g.life[p]} / ${cost.life})`;
   if (cost.tap && (!source || source.tapped)) return "すでにタップされていて、タップできない";
   if (cost.tap && source && isSick(g, source, rules)) return "召喚酔いで、{T} のコストを払えない";
+  if (cost.sacOther) {
+    const options = g.battlefield.filter((x) => x.controller === p && x !== source && typeIn(characteristics(g, x, rules).typeLine, cost.sacOther!.type));
+    if (options.length < cost.sacOther.count) return `生け贄に捧げるもの (${cost.sacOther.type}) が足りない (${options.length} / ${cost.sacOther.count})`;
+  }
   if (cost.tapCreatures > 0) {
     if (new Set(tapIds).size !== tapIds.length) return "同じクリーチャーを2回選んでいる";
     let power = 0;
@@ -89,6 +95,19 @@ export function payCost(g: Game, p: PlayerId, cost: CostSpec, source: Perm | und
   if (cost.life > 0) {
     loseLife(g, p, cost.life);
     g.log.push(`${cost.life} 点のライフを払った`);
+  }
+  if (cost.sacOther) {
+    // ほかのパーマネントを生け贄に捧げる: 捧げるものは、そのプレイヤーが選ぶ (AI・CPU は、弱いものから)
+    const options = g.battlefield.filter((x) => x.controller === p && x !== source && typeIn(x.card.typeLine, cost.sacOther!.type));
+    const cards = options.map((x) => x.card);
+    const picked = (g.decide?.choose?.(g, p, cards, cost.sacOther.count, false, "sacrifice") ?? cards.slice(0, cost.sacOther.count)).filter((c) => cards.includes(c)).slice(0, cost.sacOther.count);
+    for (const c of picked) {
+      const perm = options.find((x) => x.card === c);
+      if (perm) {
+        g.log.push(`${perm.card.name} を生け贄に捧げた (コスト)`);
+        removeFromBattlefield(g, perm);
+      }
+    }
   }
   if (cost.tap && source) source.tapped = true;
   if (cost.tapCreatures > 0) for (const id of tapIds) g.battlefield.find((x) => x.id === id)!.tapped = true;

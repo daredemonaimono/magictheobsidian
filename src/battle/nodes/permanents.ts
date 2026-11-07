@@ -1,10 +1,13 @@
 import { NodeDef, Value } from "../node";
+import { characteristics } from "../continuous";
+import { modAmount } from "../engine/restrict";
 import { pickTokenArt } from "../tokenArt";
+const PREDEFINED: Record<string, { name: string; types: string }> = { treasure: { name: "Treasure", types: "Artifact — Treasure" }, food: { name: "Food", types: "Artifact — Food" }, clue: { name: "Clue", types: "Artifact — Clue" }, blood: { name: "Blood", types: "Artifact — Blood" } };
 const artOf = (art?: string) => (art ? { art } : {});
 import { defineNode as define } from "../registry";
 import { who as logWho } from "../engine/shared";
 import { parseManaCost } from "../mana";
-import { prepareAbilityOf, GameCard, Perm, untapPerm } from "../state";
+import { discardCards, drawCards, putInGraveyard, prepareAbilityOf, GameCard, Perm, untapPerm } from "../state";
 import { KEYWORDS, cont, idList } from "./shared";
 
 // ノード: パーマネント・トークン・カウンター
@@ -196,6 +199,135 @@ export function registerPermanents(): void {
     },
   });
 
+  // パーマネントのコピー (トークンとして): 対象のパーマネントのコピーを、コントローラーのトークンとして作る。名前・型・P/T・色・キーワードを写す (能力は、同じ名前のルールから)。カウンター・修整は、写さない
+  node({
+    id: "copyPermanent",
+    title: "パーマネントのコピーを作る",
+    summary: "対象のパーマネントのコピーを、コントローラーのトークンとして count 個(既定は1)作る(Phyrexian Metamorph・Spark Double・Mockingbird。self にも使える)。名前・型・P/T・色・キーワードを写し、能力も、そのカードのルールから得る。作ったトークンの id を出力する",
+    params: { target: { type: "ref", required: true }, count: { type: "number", min: 1 } },
+    outputs: { id: "id" },
+    run: (ctx, a): Record<string, Value> => {
+      const g = ctx.game;
+      const p = ctx.item.controller;
+      const made: string[] = [];
+      for (const id of idList(a.target)) {
+        const src = g.battlefield.find((x) => x.id === id);
+        if (!src) continue;
+        const n = modAmount(g, ctx.rules, "tokens", p, typeof a.count === "number" ? a.count : 1);
+        for (let i = 0; i < n; i++) {
+          g.serial++;
+          const now = characteristics(g, src, ctx.rules);
+          const card: GameCard = { ...src.card, id: `token#${g.serial}`, token: true, owner: p, typeLine: now.typeLine, ...(now.power !== null ? { power: src.card.power ?? now.power } : {}), keywords: [...src.card.keywords ?? []] };
+          const perm: Perm = { id: card.id, card, controller: p, enteredTurn: g.turn };
+          g.battlefield.push(perm);
+          g.events.push({ type: "enters", perm });
+          g.log.push(`${logWho(p)}が ${card.name} のコピー (トークン) を作った`);
+          made.push(card.id);
+        }
+      }
+      return { id: made.join(",") };
+    },
+  });
+
+  // 探検 (explore): 一番上を公開して、土地なら手札に。そうでなければ +1/+1 カウンター (カードは、墓地に置いてもよい)
+  node({
+    id: "explore",
+    title: "探検",
+    summary: "対象のクリーチャー (self など) が探検する: コントローラーのライブラリーの一番上を公開する。土地なら手札に加える。そうでなければ、そのクリーチャーに +1/+1 カウンターを置き、そのカードを墓地に置いてもよい(置かなければ、一番上に残る)。ライブラリーが空なら、カウンターだけ",
+    params: { target: { type: "ref", required: true } },
+    outputs: {},
+    run: (ctx, a): Record<string, Value> => {
+      const g = ctx.game;
+      const p = ctx.item.controller;
+      for (const id of idList(a.target)) {
+        const perm = g.battlefield.find((x) => x.id === id);
+        if (!perm) continue;
+        const top = g.libraries[p][0];
+        g.log.push(`${perm.card.name} が探検した${top ? ` (${top.name})` : ""}`);
+        if (top && /\bLand\b/.test(top.typeLine)) {
+          g.libraries[p].shift();
+          g.hands[p].push(top);
+          continue;
+        }
+        perm.counters = { ...perm.counters, "+1/+1": (perm.counters?.["+1/+1"] ?? 0) + modAmount(g, ctx.rules, "counters", perm.controller, 1) };
+        if (top && (g.decide?.may?.(g, p, `${top.name} を墓地に置きますか? (置かなければ、一番上に残る)`) ?? false)) {
+          g.libraries[p].shift();
+          putInGraveyard(g, top, "library");
+        }
+      }
+      return {};
+    },
+  });
+
+  // 集結 (amass N): アーミーに +1/+1 カウンターを N 個。アーミーがいなければ、0/0 のアーミー・トークンを作る
+  node({
+    id: "amass",
+    title: "集結 (アーミー)",
+    summary: "コントローラーが集結 N: 自分のアーミー(Army)に +1/+1 カウンターを count 個置く。アーミーがいなければ、黒の 0/0 のアーミー・トークンを作ってから置く",
+    params: { count: { type: "number", required: true, min: 1 } },
+    outputs: {},
+    run: (ctx, a): Record<string, Value> => {
+      const g = ctx.game;
+      const p = ctx.item.controller;
+      let army = g.battlefield.find((x) => x.controller === p && /\bArmy\b/.test(x.card.typeLine));
+      if (!army) {
+        g.serial++;
+        const card: GameCard = { id: `token#${g.serial}`, name: "Army", typeLine: "Creature — Army", mv: 0, owner: p, token: true, power: 0, toughness: 0, colors: ["B"] };
+        army = { id: card.id, card, controller: p, enteredTurn: g.turn };
+        g.battlefield.push(army);
+        g.events.push({ type: "enters", perm: army });
+        g.log.push(`${logWho(p)}が Army (トークン) を作った`);
+      }
+      const n = modAmount(g, ctx.rules, "counters", p, Number(a.count));
+      army.counters = { ...army.counters, "+1/+1": (army.counters?.["+1/+1"] ?? 0) + n };
+      g.log.push(`${army.card.name} に +1/+1 カウンターを ${n} 個置いた (集結)`);
+      return {};
+    },
+  });
+
+  // 暗躍 (connive): 1 枚引いて、1 枚捨てる。捨てたのが土地でなければ、+1/+1 カウンター
+  node({
+    id: "connive",
+    title: "暗躍 (connive)",
+    summary: "対象のクリーチャー (self など) が暗躍する: コントローラーが 1 枚引き、1 枚捨てる。捨てたカードが土地でなければ、そのクリーチャーに +1/+1 カウンターを置く",
+    params: { target: { type: "ref", required: true } },
+    outputs: {},
+    run: (ctx, a): Record<string, Value> => {
+      const g = ctx.game;
+      const p = ctx.item.controller;
+      for (const id of idList(a.target)) {
+        const perm = g.battlefield.find((x) => x.id === id);
+        if (!perm) continue;
+        drawCards(g, p, 1, ctx.rules);
+        const before = new Set(g.graveyards[p].map((c) => c.id));
+        discardCards(g, p, 1);
+        const gone = g.graveyards[p].find((c) => !before.has(c.id));
+        g.log.push(`${perm.card.name} が暗躍した${gone ? ` (${gone.name} を捨てた)` : ""}`);
+        if (gone && !/\bLand\b/.test(gone.typeLine)) perm.counters = { ...perm.counters, "+1/+1": (perm.counters?.["+1/+1"] ?? 0) + modAmount(g, ctx.rules, "counters", perm.controller, 1) };
+      }
+      return {};
+    },
+  });
+
+  // 増強 (bolster N): タフネスのいちばん小さい自分のクリーチャーに +1/+1 カウンター
+  node({
+    id: "bolster",
+    title: "増強 (bolster)",
+    summary: "コントローラーが増強 N: 自分のクリーチャーのうち、タフネスがいちばん小さいもの(同じなら先に出たもの)に、+1/+1 カウンターを count 個置く",
+    params: { count: { type: "number", required: true, min: 1 } },
+    outputs: {},
+    run: (ctx, a): Record<string, Value> => {
+      const g = ctx.game;
+      const mine = g.battlefield.filter((x) => x.controller === ctx.item.controller && /\bCreature\b/.test(characteristics(g, x, ctx.rules).typeLine));
+      const weakest = mine.reduce<Perm | undefined>((m, x) => (!m || (characteristics(g, x, ctx.rules).toughness ?? 0) < (characteristics(g, m, ctx.rules).toughness ?? 0) ? x : m), undefined);
+      if (!weakest) return {};
+      const n = modAmount(g, ctx.rules, "counters", weakest.controller, Number(a.count));
+      weakest.counters = { ...weakest.counters, "+1/+1": (weakest.counters?.["+1/+1"] ?? 0) + n };
+      g.log.push(`${weakest.card.name} に +1/+1 カウンターを ${n} 個置いた (増強)`);
+      return {};
+    },
+  });
+
   // 部屋 (Room) の扉を開ける。開けた扉の「この扉を開けたとき」(when event=unlock door=N) が誘発する
   node({
     id: "unlockDoor",
@@ -236,25 +368,29 @@ export function registerPermanents(): void {
   node({
     id: "createToken",
     title: "トークンを作る",
-    summary: "コントローラーが、トークンのクリーチャーなどを count 個(既定は1)作る。name=名前 / types=型行(例: \"Creature — Illusion\") / power・toughness / colors=色(空白区切り。例: \"U\")",
-    params: { name: { type: "string", required: true }, types: { type: "string", required: true }, power: { type: "number" }, toughness: { type: "number" }, colors: { type: "string" }, count: { type: "number", min: 1 } },
+    summary: "コントローラーが、トークンのクリーチャーなどを count 個(既定は1)作る。name=名前 / types=型行(例: \"Creature — Illusion\") / power・toughness / colors=色(空白区切り。例: \"U\") / keywords=キーワード能力(空白区切り。例: \"flying vigilance\")。predefined=treasure・food・clue・blood のどれかなら、名前・型・能力は、決まったものになる(name・types は要らない)",
+    params: { name: { type: "string" }, types: { type: "string" }, power: { type: "number" }, toughness: { type: "number" }, colors: { type: "string" }, keywords: { type: "string" }, predefined: { type: "string", choices: ["treasure", "food", "clue", "blood"] }, count: { type: "number", min: 1 } },
+    check: (a) => (a.predefined !== undefined || (a.name !== undefined && a.types !== undefined) ? null : "name と types (または predefined) が要る"),
     outputs: { id: "id" },
     run: (ctx, a): Record<string, Value> => {
       const g = ctx.game;
       const p = ctx.item.controller;
       const made: string[] = []; // 作ったトークンの id (出力。「それに付ける」Dark Knight's Greatsword)
-      for (let i = 0; i < (typeof a.count === "number" ? a.count : 1); i++) {
+      const nTokens = modAmount(g, ctx.rules, "tokens", p, typeof a.count === "number" ? a.count : 1); // 置換効果 (トークンを倍にする)
+      for (let i = 0; i < nTokens; i++) {
         g.serial++;
+        const pre = typeof a.predefined === "string" ? PREDEFINED[a.predefined] : undefined; // Treasure・Food・Clue・Blood: 決まった名前・型 (能力は、同じ名前のルールから)
         const card: GameCard = {
           id: `token#${g.serial}`,
-          name: String(a.name),
-          typeLine: String(a.types),
+          name: pre?.name ?? String(a.name),
+          typeLine: pre?.types ?? String(a.types),
           mv: 0,
           owner: p,
           token: true,
           ...(typeof a.power === "number" ? { power: a.power } : {}),
           ...(typeof a.toughness === "number" ? { toughness: a.toughness } : {}),
           ...(typeof a.colors === "string" ? { colors: a.colors.split(/[\s,]+/).filter(Boolean) } : {}),
+          ...(typeof a.keywords === "string" ? { keywords: a.keywords.split(/[\s,]+/).filter(Boolean) } : {}),
           ...artOf(pickTokenArt(g.tokenArt?.[p], String(a.name), String(a.types), typeof a.power === "number" ? a.power : undefined, typeof a.toughness === "number" ? a.toughness : undefined)),
         };
         const perm: Perm = { id: card.id, card, controller: p, enteredTurn: g.turn };
@@ -295,8 +431,9 @@ export function registerPermanents(): void {
         const p = ctx.game.battlefield.find((y) => y.id === x);
         if (p) {
           p.counters ??= {};
-          p.counters[String(a.kind)] = (p.counters[String(a.kind)] ?? 0) + Number(a.count);
-          ctx.game.log.push(`${p.card.name} に ${a.kind} カウンターを ${a.count} 個置いた`);
+          const n = modAmount(ctx.game, ctx.rules, "counters", p.controller, Number(a.count)); // 置換効果 (カウンターを多く置く)
+          p.counters[String(a.kind)] = (p.counters[String(a.kind)] ?? 0) + n;
+          ctx.game.log.push(`${p.card.name} に ${a.kind} カウンターを ${n} 個置いた`);
         }
       }
       return {};
