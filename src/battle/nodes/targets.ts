@@ -15,7 +15,7 @@ export function registerTargets(): void {
     core: true,
     title: "対象",
     summary:
-      "対象を決める。zone=stack + kind=spell(スタックの呪文) / zone=battlefield + kind=permanent(戦場のパーマネント) / zone=player + kind=player(プレイヤー。draw や discard の player=target と使う) / zone=graveyard + kind=card(墓地のカード。type=creature などで絞る。controller=you は、自分の墓地) / zone=any + kind=any(「any target」。プレイヤー・クリーチャー・プレインズウォーカー。damage と使う)。" +
+      "対象を決める。zone=stack + kind=spell(スタックの呪文) / zone=battlefield + kind=permanent(戦場のパーマネント) / zone=player + kind=player(プレイヤー。draw や discard の player=target と使う。controller=opponents で対戦相手) / zone=graveyard + kind=card(墓地のカード。type=creature などで絞る。controller=you は、自分の墓地) / zone=any + kind=any(「any target」。プレイヤー・クリーチャー・プレインズウォーカー。damage と使う)。" +
       "type=型 / notType=その型でない / mv=マナ総量 / controller=you(この呪文のコントローラーのもの)・opponents(それ以外) / attacking=攻撃中か / tapped=タップ状態 で絞る。min / max = 対象の数(既定は1。「1体か2体」は min=1 max=2、「最大1つ」は min=0 max=1)",
     params: {
       zone: { type: "string", required: true, choices: ["stack", "battlefield", "player", "any", "graveyard"] },
@@ -35,7 +35,7 @@ export function registerTargets(): void {
       if (strict && (list.length < min || list.length > max || new Set(list).size !== list.length)) return {};
       const g = ctx.game;
       const legal = (id: string): boolean => {
-        if (a.zone === "player" && a.kind === "player") return g.players.includes(id); // プレイヤーは型・マナ総量で絞らない
+        if (a.zone === "player" && a.kind === "player") return g.players.includes(id) && (typeof a.controller !== "string" || (a.controller === "you") === (id === ctx.item.controller)); // プレイヤーは、型・マナ総量では絞らない。controller=you / opponents だけで絞る (「対象の対戦相手」)
         if (a.zone === "any" && a.kind === "any" && g.players.includes(id)) return true;
         if (a.zone === "graveyard" && a.kind === "card") {
           const c = Object.values(g.graveyards).flat().find((x) => x.id === id); // 墓地のカード (controller は、墓地の持ち主)
