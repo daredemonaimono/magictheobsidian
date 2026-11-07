@@ -143,7 +143,7 @@ export default class MagicTheObsidian extends Plugin {
     this.registerView(BATTLE_VIEW, (leaf) => new BattleView(leaf, () => this.battleSession, () => this.settings.battleStops, () => this.settings.battleOpponent, () => this.settings.battleEffects, () => this.makeAsk(), (b) => void this.saveBattle(b), () => this.ensureBattleSide(), () => this.hintAdvisor()));
     this.registerView(BATTLE_SIDE_VIEW, (leaf) => new BattleSideView(leaf));
     this.registerView(DASHBOARD_VIEW, (leaf) => new DashboardView(leaf, { collection: () => void this.openOrReveal(COLLECTION_VIEW), deck: () => void this.openOrReveal(DECKLIST_VIEW), cards: () => void this.openOrReveal(CARDS_VIEW), pluginId: this.manifest.id }));
-    this.registerView(CARDS_VIEW, (leaf) => new CardsView(leaf, this.settings, (key) => void this.showCardInfo(key)));
+    this.registerView(CARDS_VIEW, (leaf) => new CardsView(leaf, this.settings, (key) => void this.showCardInfo(key, true)));
     this.registerView(CARDINFO_VIEW, (leaf) => new CardInfoView(leaf, this.cardInfoApi()));
     this.registerView(
       DECKLIST_VIEW,
@@ -402,6 +402,14 @@ export default class MagicTheObsidian extends Plugin {
       sides.forEach((l) => l.detach());
       if (shown) ws.rightSplit.collapse();
     }
+    // カード情報 (カードのタブから開いたもの): カードのタブが無くなったら、サイドバーも閉じる (デッキ構築のサイドバーと同じ)
+    const infos = ws.getLeavesOfType(CARDINFO_VIEW);
+    if (this.cardInfoFromCards && infos.length && !ws.getLeavesOfType(CARDS_VIEW).length) {
+      const shown = infos.some((l) => l.view.containerEl.isShown());
+      infos.forEach((l) => l.detach());
+      if (shown) ws.rightSplit.collapse();
+    }
+    if (!infos.length) this.cardInfoFromCards = false;
     const count = ws.getLeavesOfType(DECK_VIEW).length;
     const lists = ws.getLeavesOfType(CARDLIST_VIEW);
     if (!this.settings.sidebar || count === 0) {
@@ -703,7 +711,8 @@ export default class MagicTheObsidian extends Plugin {
   }
 
   // 右のサイドバーに、カード情報を出す (すでにあれば、そのカードに切り替える)
-  async showCardInfo(key: string) {
+  private cardInfoFromCards = false; // カードのタブから開いたか (そうなら、カードのタブを閉じたとき、一緒に閉じる)
+  async showCardInfo(key: string, fromCards = false) {
     const ws = this.app.workspace;
     let leaf = ws.getLeavesOfType(CARDINFO_VIEW)[0];
     if (!leaf) {
@@ -712,6 +721,7 @@ export default class MagicTheObsidian extends Plugin {
       await right.setViewState({ type: CARDINFO_VIEW, active: true });
       leaf = right;
     }
+    this.cardInfoFromCards = fromCards; // 最後に、どこから開いたか (コマンドから開いたら、カードのタブとは、無関係)
     ws.revealLeaf(leaf);
     if (leaf.view instanceof CardInfoView) await leaf.view.show(key);
   }
