@@ -46,8 +46,41 @@ const brief = (w: "act" | "attack" | "block", r: Record<string, unknown>, opts: 
 
 // Claude の AI の、1回ぶんの判断 (画面 BattleView.driveAi と、テストが使う)。判断が要らない優先権はパスして、要る場面では API を呼んで、返事を実行する。
 // 戻り値: "none" = 判断が要らない (人の番) / "acted" = 1つ実行した (続きがあるかもしれない) / "failed" = 失敗した (以降は、雑魚 CPU の決まり。理由はログに)
+// 人への質問が出ているか (AI の相手への質問 (for) は、人の質問ではない)
+export const humanAsking = (ctl: BattleController): boolean => !!ctl.pending && !(ctl.pending.request.kind === "choose" && ctl.pending.request.for);
+
+// AI の相手への質問 (エンジンの途中: Dredge など) に、答える。API (ask) に聞いて、カードの id を選ばせる。使えない返事・失敗は、「選ばない」(Dredge しない)。答えは、記録に残る (リプレイで再生される)
+async function answerAiQuestion(ctl: BattleController, ask: AskAi | undefined, ai: string): Promise<"acted"> {
+  const g = ctl.game;
+  const req = ctl.pending!.request;
+  if (req.kind !== "choose") {
+    ctl.answer([]);
+    return "acted";
+  }
+  let ids: string[] = [];
+  if (ask) {
+    try {
+      const prompt = `${aiDescribe(g, ctl.rules, ai)}\n\n${req.label ?? "選んでください"}\n選べるカード:\n${req.cards.map((c) => `${c.id}: ${c.name}`).join("\n")}\n\n選ぶカードの id を、最大 ${req.max} 枚、{"ids": ["id", ...], "why": "短い理由"} で答えてください。選ばない (ふつうに引く) なら、空の配列です。`;
+      const r = await ask(withMemo(AI_SYSTEM, ctl.aiMemo, ctl.aiDecks), prompt);
+      ctl.aiTokens.input += r.input ?? 0;
+      ctl.aiTokens.output += r.output ?? 0;
+      const v = aiParse(r.text);
+      const got = Array.isArray(v?.ids) ? matchIds(v!.ids as unknown[], req.cards).ids.slice(0, req.max) : [];
+      if (got.length >= req.min) ids = got;
+      if (typeof v?.why === "string" && v.why.trim()) ctl.aiNotes.push({ n: ctl.record.length, why: `${ids.length ? "Dredge する" : "Dredge しない"}: ${v.why.trim()}` });
+      g.log.push(`相手 (AI) は、${ids.length ? "引くかわりに Dredge した" : "Dredge しなかった"}`);
+    } catch (e) {
+      g.log.push(`相手 (AI) の Dredge の判断に失敗した (${(e as Error).message})。ふつうに引く`);
+    }
+  }
+  if (ids.length < req.min) ids = req.cards.slice(0, req.min).map((c) => c.id);
+  ctl.answer(ids);
+  return "acted";
+}
+
 export async function aiStep(ctl: BattleController, ask: AskAi | undefined, ai: string, jev?: JevDriver, advisor?: JevAdvisor): Promise<"none" | "acted" | "failed"> {
-  if (!ctl.aiActive || ctl.game.over || ctl.pending) return "none";
+  if (!ctl.aiActive || ctl.game.over) return "none";
+  if (ctl.pending) return humanAsking(ctl) ? "none" : answerAiQuestion(ctl, ask, ai); // AI の相手への質問は、ここで答える
   let w = ctl.aiWaiting();
   if (!w) {
     ctl.aiAuto(); // 判断が要らない優先権は、パス

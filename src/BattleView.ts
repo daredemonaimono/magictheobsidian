@@ -7,7 +7,7 @@ import { replay } from "./battle/replay";
 import { SavedBattle } from "./battle/saved";
 import { bump, focus } from "./battle/assignMath";
 import { AskAi } from "./battle/ai";
-import { JevAdvisor, JevDriver, aiStep } from "./battle/aiRun";
+import { JevAdvisor, JevDriver, aiStep, humanAsking } from "./battle/aiRun";
 import { BattleController, StopMode } from "./battle/play";
 import type { CastRecord } from "./battle/node";
 import { stackEffectText } from "./battle/stackText";
@@ -673,15 +673,15 @@ export class BattleView extends ItemView {
   private thinkEl?: HTMLElement;
   private async driveAi() {
     const ctl = this.ctl;
-    if (!ctl?.aiActive || this.aiBusy || this.game.mulligan || ctl.pending) return; // 人への質問が出ている間は、人の番
+    if (!ctl?.aiActive || this.aiBusy || this.game.mulligan || humanAsking(ctl)) return; // 人への質問が出ている間は、人の番
     this.aiBusy = true;
     this.ui.next.disabled = true;
     try {
       const ai = ctl.game.players.find((p) => p !== VIEWER)!;
-      for (let n = 0; n < 40 && this.ctl === ctl && ctl.aiActive && !ctl.game.over && !ctl.pending; n++) {
+      for (let n = 0; n < 40 && this.ctl === ctl && ctl.aiActive && !ctl.game.over && !humanAsking(ctl); n++) {
         if (ctl.aiWaiting()) this.thinkEl ??= this.ui.stage.createDiv({ cls: "mtg-bt-think", text: "相手 (AI) が考えている…" });
         const r = await aiStep(ctl, this.getAsk(), ai, this.getJev(), this.getAdvisor());
-        if (this.ctl !== ctl || r !== "acted" || ctl.pending) break; // 人への質問が出たら、答えると、AI の行動が最初からやり直される
+        if (this.ctl !== ctl || r !== "acted" || humanAsking(ctl)) break; // 人への質問が出たら、答えると、AI の行動が最初からやり直される
         this.paint();
       }
     } finally {
@@ -885,7 +885,7 @@ export class BattleView extends ItemView {
     this.askEl = undefined;
     this.ui.stage.removeClass("is-asking");
     const req = this.ctl?.pending?.request;
-    if (!req) return;
+    if (!req || (req.kind === "choose" && req.for)) return; // AI の相手への質問は、人には出さない (driveAi が AI に聞く)
     this.ui.stage.addClass("is-asking"); // 画像を読む間も、後ろの操作を止める
     if (req.kind === "discard" || req.kind === "choose" || req.kind === "order") await this.loadImages(req.cards.map((c) => c.name));
     if (req.kind === "target") await this.loadImages(req.choices.map((c) => c.name));

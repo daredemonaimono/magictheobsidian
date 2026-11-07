@@ -1,7 +1,8 @@
 import { compactLog } from "./aiLog";
-import { Action, abilityLabels, actionsFor, autoTargets, manaOnly, slotsOf, withAllMana } from "./actions";
+import { Action, abilityLabels, actionsFor, autoTargets, manaOnly, slotsOf, tryAction, withAllMana } from "./actions";
+import { getNode } from "./registry";
 import { characteristics } from "./continuous";
-import { attackersAt, canAttackPerm } from "./engine";
+import { attackersAt, canAttackPerm, handAbilitiesOf } from "./engine";
 import { Game, Perm, PlayerId, RuleBook } from "./state";
 
 // Claude の AI の相手 (段階7)。この中は、API を呼ばない (純粋な関数)。盤面と選択肢を文章にして、返事を読み取るだけ。呼ぶのは画面 (BattleView)、実行はコントローラー (BattleController.ai*)
@@ -54,6 +55,15 @@ export function aiOptions(g: Game, rules: RuleBook, p: PlayerId): AiOption[] {
       const c = g.hands[p].find((x) => x.id === a.card);
       if (c) add(`${a.kind === "land" ? "土地を出す" : "唱える"}: ${c.name} (マナ総量 ${c.mv})`, a);
     }
+  }
+  // 手札から起動する能力 (サイクリングなど。actionsFor の一覧には入らない: 人の画面と AI だけが使う)
+  for (const c of g.hands[p]) {
+    handAbilitiesOf(rules, c.name).forEach((ab, index) => {
+      const action: Action = { kind: "handAbility", card: c.id, index };
+      if (tryAction(sim, rules, p, action) !== undefined) return;
+      const what = ab.body.filter((x) => x.node !== "cost" && x.node !== "timing").map((x) => getNode(x.node)?.title ?? x.node).join(" → ");
+      add(`手札から起動: ${c.name} (${what})`, action);
+    });
   }
   return out;
 }

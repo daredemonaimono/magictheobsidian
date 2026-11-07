@@ -228,7 +228,7 @@ export class BattleController {
   // fn をコピーの局面で実行する。成功すれば元に書き戻す。質問が出たら、pending に置く
   private perform(label: string, fn: (g: Game) => void, answers: Answer[]): string | undefined {
     const copy = structuredClone({ ...this.game, decide: undefined }) as Game;
-    copy.decide = makeDecider(this.me, answers);
+    copy.decide = makeDecider(this.me, answers, this.ai);
     try {
       fn(copy);
     } catch (e) {

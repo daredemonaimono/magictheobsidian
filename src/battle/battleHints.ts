@@ -1,9 +1,9 @@
 import { AiOption, aiAttackers, aiBlockers } from "./ai";
 import { cpuDo } from "./cpu";
 import { characteristics } from "./continuous";
-import { attackersAt, passPriority } from "./engine";
+import { attackersAt, handAbilitiesOf, passPriority } from "./engine";
 import { jevFacts } from "./jevFacts";
-import { cardRoles } from "./roles";
+import { abilityRoles, cardRoles } from "./roles";
 import { Game, PlayerId, RuleBook } from "./state";
 
 // AI への「行動の分析」: コードだけで計算する (API を呼ばない・トークンは、文章の長さだけ)。
@@ -73,7 +73,7 @@ function actionLines(g: Game, rules: RuleBook, p: PlayerId, opts: AiOption[]): s
       const cols = c ? colorsOfLand(rules, c.name) : [];
       parts.push(`土地。出せる色: ${cols.join("・") || "無色"}`, `手札の呪文に要る色: ${need.join("・") || "なし"} / 場の土地が出せる色: ${[...have].join("・") || "なし"}${missing.length ? ` / 足りない色: ${missing.join("・")}${cols.some((x) => missing.includes(x)) ? " (この土地で補える)" : ""}` : ""}`);
     } else {
-      const roles = a.kind === "cast" ? cardRoles(rules, g.hands[p].find((x) => x.id === a.card)?.name ?? "").all : a.kind === "activate" ? cardRoles(rules, g.battlefield.find((x) => x.id === a.perm)?.card.name ?? "").activated[a.index] ?? [] : cardRoles(rules, g.hands[p].find((x) => x.id === a.card)?.name ?? "").activated[a.index] ?? [];
+      const roles = a.kind === "cast" ? cardRoles(rules, g.hands[p].find((x) => x.id === a.card)?.name ?? "").all : a.kind === "activate" ? cardRoles(rules, g.battlefield.find((x) => x.id === a.perm)?.card.name ?? "").activated[a.index] ?? [] : abilityRoles(handAbilitiesOf(rules, g.hands[p].find((x) => x.id === a.card)?.name ?? "")[a.index] ?? { kind: "activated", body: [] });
       parts.push(`役割: ${roles.join("・") || "なし (ルールが無い・部品だけ)"}`);
       if (simulated < MAX_SIMULATED) {
         simulated++;

@@ -5,7 +5,7 @@ import { NodeCall } from "./node";
 export type CardRef = { id: string; name: string };
 export type InputRequest =
   | { kind: "discard"; n: number; cards: CardRef[]; cleanup?: boolean } // 手札から n 枚捨てる。cleanup = クリンナップの手札の上限 (画面は、「残すカードを選ぶ」形にする)
-  | { kind: "choose"; min: number; max: number; cards: CardRef[]; label?: string } // 見たカードから選ぶ。label = 画面に出す説明 (Dredge など)
+  | { kind: "choose"; min: number; max: number; cards: CardRef[]; label?: string; for?: PlayerId } // 見たカードから選ぶ。label = 画面に出す説明 (Dredge など)
   | { kind: "order"; cards: CardRef[]; to: "top" | "bottom" } // ライブラリーの上・底に置く順番 (答えは、上から下へ並べた id)
   | { kind: "may"; what: string } // 「してもよい」
   | { kind: "pay"; n: number; why?: string } // 「支払わないかぎり」の支払い
@@ -21,7 +21,8 @@ export class NeedInput extends Error {
 const refs = (cs: GameCard[]): CardRef[] => cs.map((c) => ({ id: c.id, name: c.name }));
 
 // answers = これまでに集めた答え (質問の順)。足りなければ、次の質問で NeedInput
-export function makeDecider(me: PlayerId, answers: Answer[]): Decider {
+// ai = AI の相手のプレイヤー。AI の Dredge の質問は、人には出さず (for = ai)、画面が AI (API) に聞いて、答えを足す (人への質問と、同じ仕組み)。AI が無ければ (雑魚 CPU など)、Dredge しない
+export function makeDecider(me: PlayerId, answers: Answer[], ai?: PlayerId): Decider {
   let i = 0;
   const next = (request: InputRequest): Answer => {
     if (i >= answers.length) throw new NeedInput(request);
@@ -41,9 +42,9 @@ export function makeDecider(me: PlayerId, answers: Answer[]): Decider {
       return from.filter((c) => got.includes(c.id));
     },
     dredge(_g, p, options) {
-      if (p !== me) return undefined;
+      if (p !== me && p !== ai) return undefined;
       const label = `引くかわりに Dredge する? ${options.map((o) => `${o.card.name} (Dredge ${o.n})`).join("・")}: 手札に戻すカードを選ぶ (選ばなければ、ふつうに引く)`;
-      const got = ids(next({ kind: "choose", min: 0, max: 1, cards: refs(options.map((o) => o.card)), label }));
+      const got = ids(next({ kind: "choose", min: 0, max: 1, cards: refs(options.map((o) => o.card)), label, ...(p === me ? {} : { for: p }) }));
       return options.find((o) => got.includes(o.card.id))?.card;
     },
     legend(_g, p, same) {
