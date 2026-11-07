@@ -1,7 +1,8 @@
 import assert from "node:assert";
 import { readFileSync } from "node:fs";
 import { activateAbility, activateFromGraveyard, castSpell, declareBlockers, passPriority } from "../src/battle/engine";
-import { tryAction } from "../src/battle/actions";
+import { tapFor } from "../src/battle/cpu";
+import { tryAction, tryWithMana } from "../src/battle/actions";
 import { advanceStep } from "../src/battle/engine/turn";
 import { enterBattlefield } from "../src/battle/engine/battlefield";
 import { flushEvents } from "../src/battle/engine/triggers";
@@ -363,5 +364,27 @@ const room = (owner = "A") => C("DC", "Defiled Crypt - Cadaver Lab", "Enchantmen
   flushEvents(y, book);
   assert.ok(!y.stack.some((s) => s.card.name === "Warded"), "Nowhere to Run: 護法は誘発しない");
   assert.ok(g);
+}
+// ---- Mudflat Village: クリーチャー呪文には、黒のマナが出る (制限つき)。自動で払うときも、使う能力を、唱える呪文に合わせて選ぶ
+{
+  const g = setup();
+  g.payManaCosts = true;
+  enter(g, C("MV", "Mudflat Village", "Land"));
+  g.hands["A"].push(C("Gh", "Snarling Gorehound", "Creature — Dog", "A", { manaCost: "{B}", mv: 1, power: 1, toughness: 1 }), C("IT", "Intimidation Tactics", "Sorcery", "A", { manaCost: "{B}", mv: 1 }));
+  assert.equal(tryWithMana(g, rules, "A", { kind: "cast", card: "Gh" }), undefined, "クリーチャー呪文の {B} は、Mudflat Village の黒で払える");
+  assert.notEqual(tryWithMana(g, rules, "A", { kind: "cast", card: "IT" }), undefined, "クリーチャーでない呪文の {B} は、払えない (制限つきのマナ)");
+  tapFor(g, rules, "A", { kind: "cast", card: "Gh" });
+  assert.equal(tryAction(g, rules, "A", { kind: "cast", card: "Gh" }), undefined, "自動でタップして、黒のマナが出た");
+  castSpell(g, "A", "Gh", {}, rules);
+  assert.ok(g.stack.some((s) => s.card.name === "Snarling Gorehound"), "クリーチャーを唱えられた");
+  // 無色の呪文 (汎用) は、無色のマナでも払える
+  const h = setup();
+  h.payManaCosts = true;
+  enter(h, C("MV", "Mudflat Village", "Land"));
+  h.hands["A"].push(C("SG", "Soul-Guide Lantern", "Artifact", "A", { manaCost: "{1}", mv: 1 }));
+  assert.equal(tryWithMana(h, rules, "A", { kind: "cast", card: "SG" }), undefined);
+  tapFor(h, rules, "A", { kind: "cast", card: "SG" });
+  castSpell(h, "A", "SG", {}, rules);
+  assert.ok(h.stack.some((s) => s.card.name === "Soul-Guide Lantern"), "アーティファクトも唱えられた");
 }
 console.log("battle-blackweenie ok");

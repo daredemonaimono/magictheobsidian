@@ -1,4 +1,4 @@
-import { Action, abilityLabels, actionsFor, autoTargets, flexColors, manaOnly, slotsOf, tapManaSource, tryAction, tryWithMana, uselessMana, withAllMana } from "./actions";
+import { Action, Want, abilityLabels, actionsFor, autoTargets, flexColors, manaOnly, manaOrder, slotsOf, tapManaSource, tryAction, tryWithMana, uselessMana, wantOf, withAllMana } from "./actions";
 import { activatedAbilities } from "./continuous";
 import { RuleError, TargetSlot, applyOpening, serumPowder, activateAbility, activateFromGraveyard, activateFromHand, graveyardAbilitiesOf, handAbilitiesOf, attackersAt, canAttackWith, castSpell, pitchable, declareAttackers, declareBlockers, assignDamage, passPriority, playLand } from "./engine";
 import { AiOption, aiAttackers, aiBlockers, aiOptions } from "./ai";
@@ -328,8 +328,8 @@ export class BattleController {
   }
 
   // ---- 払うマナの選択。足りないマナを自動でタップするとき、タップする土地に選べる余地があれば、選ばせる
-  private manaIndexOf(g: Game, perm: Perm): number {
-    return activatedAbilities(g, this.rules, perm).findIndex((a) => manaOnly(a.body));
+  private manaIndexOf(g: Game, perm: Perm, want?: Want): number {
+    return manaOrder(activatedAbilities(g, this.rules, perm), want)[0] ?? -1; // 必要な色・唱える呪文に合う、マナ能力
   }
   // マナを出せる自分のパーマネント (タップしていない・いま使える)。label = 出るマナ ("U" など)
   manaSources(g: Game = this.game): { id: string; name: string; label: string }[] {
@@ -352,24 +352,27 @@ export class BattleController {
     if (new Set(src.map((s) => `${s.name}|${s.label}`)).size < 2) return undefined; // 全部同じ種類 (島だけ、など): どれでも同じ
     const x = structuredClone({ ...g, decide: undefined }) as Game;
     let k = 0;
-    while (tryAction(x, this.rules, this.me, a, targets, cast) !== undefined && tapOne(x, this.me, this.rules)) k++;
+    const want = wantOf(x, this.me, a, cast);
+    while (tryAction(x, this.rules, this.me, a, targets, cast) !== undefined && tapOne(x, this.me, this.rules, want)) k++;
     if (tryAction(x, this.rules, this.me, a, targets, cast) !== undefined || k >= src.length) return undefined; // 払えない / 全部タップが要る
     return src;
   }
   // 選んだマナ源 (ids) をタップすれば、払えるか
   payableWith(a: Action, targets: Record<string, string> | undefined, cast: CastRecord | undefined, ids: string[]): boolean {
     const x = structuredClone({ ...this.game, decide: undefined }) as Game;
+    const want = wantOf(x, this.me, a, cast);
     for (const id of ids) {
       const p = x.battlefield.find((q) => q.id === id);
-      const i = p ? this.manaIndexOf(x, p) : -1;
+      const i = p ? this.manaIndexOf(x, p, want) : -1;
       if (!p || i < 0 || !tapManaSource(x, this.rules, this.me, id, i)) return false;
     }
     return tryAction(x, this.rules, this.me, a, targets, cast) === undefined;
   }
-  private tapChosen(x: Game, ids: string[] | undefined) {
+  private tapChosen(x: Game, ids: string[] | undefined, a?: Action, cast?: CastRecord) {
+    const want = wantOf(x, this.me, a, cast);
     for (const id of ids ?? []) {
       const p = x.battlefield.find((q) => q.id === id && q.controller === this.me && !q.tapped);
-      const i = p ? this.manaIndexOf(x, p) : -1;
+      const i = p ? this.manaIndexOf(x, p, want) : -1;
       if (p && i >= 0) tapManaSource(x, this.rules, this.me, id, i);
     }
   }
@@ -427,7 +430,7 @@ export class BattleController {
     }
     const act: Action = { kind: "cast", card: cardId };
     const t = autoTargets(slotsOf(this.game, this.rules, this.me, act));
-    const sim = withAllMana(this.game, this.rules, this.me);
+    const sim = withAllMana(this.game, this.rules, this.me, wantOf(this.game, this.me, act));
     let best = -1;
     for (let x = 0; x <= 20; x++) {
       if (tryAction(sim, this.rules, this.me, act, t, { ...cast, x }) === undefined) best = x;
@@ -441,7 +444,7 @@ export class BattleController {
     if (!card?.manaCost || !this.game.payManaCosts || !/\/P\}/.test(card.manaCost)) return false;
     const act: Action = { kind: "cast", card: cardId };
     const t = autoTargets(slotsOf(this.game, this.rules, this.me, act));
-    const sim = withAllMana(this.game, this.rules, this.me);
+    const sim = withAllMana(this.game, this.rules, this.me, wantOf(this.game, this.me, act));
     const byLife = tryAction(sim, this.rules, this.me, act, t, { phyLife: true }) === undefined;
     sim.life[this.me] = 1; // ライフでは払えない局面にして、マナだけで払えるか
     return byLife && tryAction(sim, this.rules, this.me, act, t, {}) === undefined;
@@ -473,7 +476,7 @@ export class BattleController {
     if (!card || !body) return [];
     const act: Action = { kind: "cast", card: cardId };
     const t = autoTargets(slotsOf(g, this.rules, this.me, act));
-    const sim = withAllMana(g, this.rules, this.me); // 土地・マナ能力のマナを全部出せるとして、払えるか (足りないマナは、唱えるとき、自動でタップする)
+    const sim = withAllMana(g, this.rules, this.me, wantOf(g, this.me, act)); // 土地・マナ能力のマナを全部出せるとして、払えるか (足りないマナは、唱えるとき、自動でタップする)
     const altCall = this.altOf(cardId);
     const altOk = !!altCall && tryAction(sim, this.rules, this.me, act, t, { alt: true }) === undefined;
     const altChoice: { flag: "alt"; cost: string }[] = altOk ? [{ flag: "alt", cost: describeAlt(altCall!.args) }] : [];
@@ -504,7 +507,7 @@ export class BattleController {
       x.log.push(`あなたが ${card.name} を${land ? "出した" : cast?.alt ? "別のコストで唱えた" : cast?.kicked ? "キッカーを払って唱えた" : cast?.teamwork ? "チームワークで唱えた" : "唱えた"}`);
       if (land) playLand(x, this.me, cardId, this.rules);
       else {
-        this.tapChosen(x, tapIds); // 選んだ土地を、先にタップ (選ばなければ、自動)
+        this.tapChosen(x, tapIds, a, cast); // 選んだ土地を、先にタップ (選ばなければ、自動)
         tapFor(x, this.rules, this.me, a, t, cast);
         castSpell(x, this.me, cardId, t, this.rules, cast);
       }

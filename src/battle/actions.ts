@@ -4,7 +4,8 @@ import { characteristics } from "./continuous";
 import { activationBlocked } from "./engine/restrict";
 import { CastRecord } from "./node";
 import { getNode } from "./registry";
-import { Game, PlayerId, RuleBook } from "./state";
+import { parseManaCost } from "./mana";
+import { Game, PlayerId, RuleBook, typeIn } from "./state";
 
 // いまできる行動の一覧 (対戦の画面・CPU・AI が使う)。判定は、エンジンの本物の入口を、コピーした局面で試し撃ちして決める (エンジンと食い違わない)
 export type Action = { kind: "land"; card: string } | { kind: "cast"; card: string } | { kind: "activate"; perm: string; index: number } | { kind: "handAbility"; card: string; index: number } | { kind: "yardAbility"; card: string; index: number } | { kind: "yardCast"; card: string }; // yardAbility / yardCast = 墓地から起動する・唱える。人の画面だけが使う (actionsFor の一覧には入れない)
@@ -86,7 +87,7 @@ export const manaOnly = (body: { node: string; args?: Record<string, unknown> }[
 
 // いま (本物の局面で) できなければ、土地・マナ能力のマナを全部出せるとして、できるか。いまできるなら、本物の局面で決める (自分自身をタップする能力 (Wasteland の生け贄など) が、仮の局面で、タップ済みになって、できなくなるのを避ける)。できれば undefined、できなければ理由
 export function tryWithMana(g: Game, rules: RuleBook, p: PlayerId, a: Action, targets?: Record<string, string>, cast?: CastRecord): string | undefined {
-  return tryAction(g, rules, p, a, targets, cast) === undefined ? undefined : tryAction(withAllMana(g, rules, p), rules, p, a, targets, cast);
+  return tryAction(g, rules, p, a, targets, cast) === undefined ? undefined : tryAction(withAllMana(g, rules, p, wantOf(g, p, a, cast)), rules, p, a, targets, cast);
 }
 
 // 何かできるか (優先権の止まり方「使えるものがあるときだけ」の判定)。土地・マナ・アーティファクトなど、カードの能力のマナ (マナだけの起動型能力) を全部使ったと仮定して、土地を出せる・唱えられる呪文・使える (マナ以外の) 能力があるか。g は変えない
@@ -108,8 +109,49 @@ export function flexColors(rules: RuleBook, cardName: string): string | undefine
   return [...new Set(cols)].join("");
 }
 
+// これから払う行動が、要るもの: 色 (WUBRG) と、唱える呪文の型。マナ能力が 2 つ以上ある土地 (Mudflat Village: 無色 / クリーチャー呪文だけの黒) で、どれを使うか決めるため
+export interface Want {
+  colors: string[];
+  typeLine?: string; // 唱える呪文の型行。能力を起動するとき (呪文でないとき) は無い: 制限つきのマナ (呪文を唱えるためにしか使えない) は、使えない
+  ability?: boolean;
+}
+export function wantOf(g: Game, p: PlayerId, a?: Action, cast?: CastRecord): Want | undefined {
+  if (!a) return undefined;
+  const colorsOf = (cost?: string): string[] => {
+    try {
+      return cost ? Object.entries(parseManaCost(cost).colors).filter(([k, n]) => "WUBRG".includes(k) && Number(n ?? 0) > 0).map(([k]) => k) : [];
+    } catch {
+      return [];
+    }
+  };
+  if (a.kind === "cast" || a.kind === "yardCast") {
+    const card = (a.kind === "cast" ? g.hands[p] : g.graveyards[p])?.find((x) => x.id === a.card);
+    if (!card) return undefined;
+    return { colors: colorsOf(cast?.door === 2 && card.cost2 ? card.cost2 : card.manaCost), typeLine: card.typeLine };
+  }
+  return { colors: [], ability: true };
+}
+
+// マナ能力 (マナだけの起動型能力) を、使う順に並べた index。必要な色を出せるもの → 無色 → 要らない色。制限つきのマナ (spellType / spellNotType) は、その呪文を唱えるときだけ。唱える呪文が分からなければ、制限つきも使う
+export function manaOrder(abs: { body: { node: string; args?: Record<string, unknown> }[] }[], want?: Want): number[] {
+  const scored: [number, number][] = [];
+  abs.forEach((ab, i) => {
+    if (!manaOnly(ab.body)) return;
+    const m = ab.body.find((c) => c.node === "addMana")?.args ?? {};
+    const restricted = typeof m.spellType === "string" || typeof m.spellNotType === "string";
+    if (restricted && want) {
+      if (want.ability || !want.typeLine) return; // 能力の起動には使えない
+      if ((typeof m.spellType === "string" && !typeIn(want.typeLine, m.spellType)) || (typeof m.spellNotType === "string" && typeIn(want.typeLine, m.spellNotType))) return; // この呪文には使えない
+    }
+    const color = typeof m.color === "string" && "WUBRG".includes(m.color) ? m.color : undefined;
+    const needed = !!color && (!want || want.colors.includes(color));
+    scored.push([needed ? 0 : color ? 2 : 1, i]);
+  });
+  return scored.sort((x, y) => x[0] - y[0] || x[1] - y[1]).map(([, i]) => i);
+}
+
 // マナを出せるパーマネントを、1 つタップして、マナを出す (使えたら真)。デュアルランドは、好きな色のマナ ("A:GU") を出す。それ以外は、index (無ければ、最初に使えるマナ能力) を起動する
-export function tapManaSource(g: Game, rules: RuleBook, p: PlayerId, permId: string, index = -1): boolean {
+export function tapManaSource(g: Game, rules: RuleBook, p: PlayerId, permId: string, index = -1, want?: Want): boolean {
   const perm = g.battlefield.find((x) => x.id === permId && x.controller === p);
   if (!perm || perm.tapped) return false;
   const flex = flexColors(rules, perm.card.name);
@@ -122,7 +164,7 @@ export function tapManaSource(g: Game, rules: RuleBook, p: PlayerId, permId: str
     return true;
   }
   const abs = activatedAbilities(g, rules, perm);
-  for (const i of index >= 0 ? [index] : abs.map((_, k) => k)) {
+  for (const i of index >= 0 ? [index] : manaOrder(abs, want)) {
     if (!abs[i] || !manaOnly(abs[i].body)) continue;
     try {
       activateAbility(g, p, perm.id, i, {}, rules);
@@ -134,7 +176,7 @@ export function tapManaSource(g: Game, rules: RuleBook, p: PlayerId, permId: str
   return false;
 }
 
-export function withAllMana(g: Game, rules: RuleBook, p: PlayerId): Game {
+export function withAllMana(g: Game, rules: RuleBook, p: PlayerId, want?: Want): Game {
   const copy = structuredClone({ ...g, decide: undefined }) as Game;
   copy.priority = p;
   for (const perm of copy.battlefield) {
@@ -143,14 +185,15 @@ export function withAllMana(g: Game, rules: RuleBook, p: PlayerId): Game {
       tapManaSource(copy, rules, p, perm.id); // デュアルランド: 好きな色のマナ
       continue;
     }
-    activatedAbilities(g, rules, perm).forEach((ab, index) => {
-      if (!manaOnly(ab.body)) return;
+    const abs = activatedAbilities(g, rules, perm);
+    for (const index of manaOrder(abs, want)) {
       try {
         activateAbility(copy, p, perm.id, index, {}, rules);
+        break; // 1 つのパーマネントは、1 回しかタップできない (複数のマナ能力があっても、使うのは 1 つ)
       } catch {
-        /* 使えないものは、飛ばす */
+        /* 使えないものは、次へ */
       }
-    });
+    }
   }
   return copy;
 }

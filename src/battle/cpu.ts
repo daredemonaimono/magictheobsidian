@@ -1,4 +1,4 @@
-import { Action, flexColors, manaOnly, slotsOf, tapManaSource, tryAction } from "./actions";
+import { Action, Want, flexColors, manaOrder, slotsOf, tapManaSource, tryAction, wantOf } from "./actions";
 import { activatedAbilities } from "./continuous";
 import { abilityLabel } from "./abilityLabel";
 import { CastRecord } from "./node";
@@ -50,14 +50,12 @@ export function cpuMulligan(g: Game, p: PlayerId, rng: () => number): number {
 const who = (g: Game, p: PlayerId) => (g.players.indexOf(p) === 0 ? "あなた" : "相手");
 
 // マナだけの起動型能力で、まだタップしていないものを1つ使う (使えたら真)
-export function tapOne(g: Game, p: PlayerId, rules: RuleBook): boolean {
+export function tapOne(g: Game, p: PlayerId, rules: RuleBook, want?: Want): boolean {
   for (const perm of g.battlefield) {
     if (perm.controller !== p || perm.tapped) continue;
     if (flexColors(rules, perm.card.name) && tapManaSource(g, rules, p, perm.id)) return true; // デュアルランド: 好きな色のマナ
     const abs = activatedAbilities(g, rules, perm);
-    for (let i = 0; i < abs.length; i++) {
-      const body = abs[i].body;
-      if (!manaOnly(body)) continue;
+    for (const i of manaOrder(abs, want)) {
       try {
         activateAbility(g, p, perm.id, i, {}, rules);
         return true;
@@ -90,7 +88,8 @@ function pickTargets(g: Game, rules: RuleBook, p: PlayerId, card: GameCard): Rec
 // 行動を、必要なぶんだけ土地・マナ能力をタップして、実行する (Claude の AI も使う)。できなければ RuleError
 // 行動ができるようになるまで、土地・マナ能力を1つずつタップする (足りなければ、できるだけ)。人が「カードを選んでから、足りないマナを自動で払う」ときも使う。shortcut: タップする順番は、並んでいる順 (色は見ない。多色のデッキでは、要らない色を出すことがある)
 export function tapFor(g: Game, rules: RuleBook, p: PlayerId, a: Action, targets?: Record<string, string>, cast?: CastRecord): void {
-  while (tryAction(g, rules, p, a, targets, cast) !== undefined && tapOne(g, p, rules));
+  const want = wantOf(g, p, a, cast);
+  while (tryAction(g, rules, p, a, targets, cast) !== undefined && tapOne(g, p, rules, want));
 }
 
 export function cpuDo(g: Game, rules: RuleBook, p: PlayerId, a: Action, targets?: Record<string, string>): void {
@@ -132,9 +131,9 @@ export function cpuAct(g: Game, rules: RuleBook, p: PlayerId): "land" | "cast" |
     if (!targets) continue;
     // 土地・マナ能力を全部使えば払えるか (コピーで確かめる)。払えなければ、1つもタップしない
     const sim = structuredClone({ ...g, decide: undefined }) as Game;
-    while (tryAction(sim, rules, p, { kind: "cast", card: card.id }, targets) !== undefined && tapOne(sim, p, rules));
+    while (tryAction(sim, rules, p, { kind: "cast", card: card.id }, targets) !== undefined && tapOne(sim, p, rules, wantOf(sim, p, { kind: "cast", card: card.id })));
     if (tryAction(sim, rules, p, { kind: "cast", card: card.id }, targets) !== undefined) continue;
-    while (tryAction(g, rules, p, { kind: "cast", card: card.id }, targets) !== undefined && tapOne(g, p, rules));
+    while (tryAction(g, rules, p, { kind: "cast", card: card.id }, targets) !== undefined && tapOne(g, p, rules, wantOf(g, p, { kind: "cast", card: card.id })));
     g.log.push(`${who(g, p)}が ${card.name} を唱えた`);
     castSpell(g, p, card.id, targets, rules);
     return "cast";
