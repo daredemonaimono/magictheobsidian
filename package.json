@@ -1,6 +1,6 @@
 {
   "name": "magictheobsidian",
-  "version": "0.145.5",
+  "version": "0.145.6",
   "description": "Obsidian plugin: Magic: The Gathering deck building and playtesting inside Obsidian.",
   "main": "main.js",
   "scripts": {

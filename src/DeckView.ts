@@ -13,7 +13,7 @@ import { formatPrice, priceOf, refreshPrices } from "./prices";
 import { ThumbnailModal, deckArtUrl } from "./ThumbnailModal";
 import { Settings } from "./settings";
 import { Board, Deck, emptyDeck, parseDeck, thumbnailKey, writeDeck } from "./deck";
-import { Printing, fetchById, fetchPrintingsLang, printingImageUrl } from "./scryfall";
+import { Printing, fetchById, fetchPrintingsLang, noArt, printingImageUrl } from "./scryfall";
 import { COLUMNS, groupOf, groupRank, isToken } from "./layout";
 import { Filters, Meta, Result, buildFilterBar, emptyFilters, isEmpty, searchAll } from "./search";
 
@@ -617,9 +617,11 @@ export class DeckView extends ItemView {
     const cur = this.deck[board].get(key)?.print?.split(" ")[2];
     // 言語タブ: ある言語を開いたときに、その言語の版を取りに行って、ノートの表に足す
     const tabs = { langs: [...new Set([...prints.map((p) => p.lang), "en", this.settings.textLang])], first: cur ?? this.settings.textLang, load: async (lang: string) => {
-      const got = oracle ? await fetchPrintingsLang(oracle, lang) : [];
-      await addPrintings(this.app, key, got);
-      return got;
+      const all = oracle ? await fetchPrintingsLang(oracle, lang) : [];
+      const good = all.filter((p) => !noArt(p));
+      const bad = all.filter(noArt).map((p) => p.id); // その言語の画像が無い版は、表にも置かない (あれば外す)
+      await addPrintings(this.app, key, good, bad);
+      return { good, bad };
     } };
     new PrintModal(this.app, key, prints, true, (p) => void this.setPrint(key, p, board), tabs).open();
   }
@@ -651,7 +653,7 @@ export class DeckView extends ItemView {
 export interface PrintTabs {
   langs: string[]; // タブにする言語
   first: string; // 最初に開く言語
-  load: (lang: string) => Promise<Printing[]>; // 表に無い言語の版を取ってくる
+  load: (lang: string) => Promise<{ good: Printing[]; bad: string[] }>; // 表に無い言語の版を取ってくる (bad = 画像が無い版の id)
 }
 export class PrintModal extends Modal {
   constructor(app: App, private key: string, private prints: Printing[], private canReset: boolean, private onPick: (print?: string) => void, private tabs?: PrintTabs) {
@@ -666,6 +668,13 @@ export class PrintModal extends Modal {
     const grid = this.contentEl.createDiv("mtg-print-grid");
     const loaded = new Set(this.prints.map((p) => p.lang));
     const LANG_NAME: Record<string, string> = { en: "英語", ja: "日本語", ko: "韓国語", zhs: "簡体字中国語", zht: "繁体字中国語", fr: "フランス語", de: "ドイツ語", es: "スペイン語", it: "イタリア語", pt: "ポルトガル語", ru: "ロシア語", ph: "ファイレクシア語" };
+    const refresh = async (lang: string) => {
+      const got = await this.tabs!.load(lang).catch(() => ({ good: [] as Printing[], bad: [] as string[] }));
+      loaded.add(lang);
+      this.prints = this.prints.filter((p) => !got.bad.includes(p.id));
+      const ids = new Set(this.prints.map((p) => p.id));
+      this.prints.push(...got.good.filter((p) => !ids.has(p.id)));
+    };
     const show = async (lang?: string) => {
       bar.querySelectorAll("button").forEach((b) => b.toggleClass("mod-cta", b.dataset.lang === lang));
       if (lang && !loaded.has(lang) && this.tabs) {
@@ -676,10 +685,7 @@ export class PrintModal extends Modal {
         fetchBtn.onclick = async () => {
           fetchBtn.disabled = true;
           fetchBtn.setText("取得中…");
-          const got = await this.tabs!.load(lang).catch(() => []);
-          loaded.add(lang);
-          const ids = new Set(this.prints.map((p) => p.id));
-          this.prints.push(...got.filter((p) => !ids.has(p.id)));
+          await refresh(lang);
           await show(lang);
         };
         return;
@@ -691,9 +697,7 @@ export class PrintModal extends Modal {
         again.onclick = async () => {
           again.disabled = true;
           again.setText("取得中…");
-          const got = await this.tabs!.load(lang).catch(() => []);
-          const ids = new Set(this.prints.map((p) => p.id));
-          this.prints.push(...got.filter((p) => !ids.has(p.id)));
+          await refresh(lang);
           await show(lang);
         };
       }

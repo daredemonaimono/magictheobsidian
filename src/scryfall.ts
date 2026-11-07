@@ -121,7 +121,11 @@ export interface Printing {
   rarity: string;
   released_at: string;
   lang: string;
+  image_status?: string; // 通信で取ったときだけ (表には保存しない)。placeholder / missing = その言語の画像が無い (代わりの画像が出る)
 }
+
+// その言語の画像が無い版 (Scryfall が、英語の画像に「Localized Image Not Available」を重ねた代わりの画像を出す)
+export const noArt = (p: Printing): boolean => p.image_status === "placeholder" || p.image_status === "missing";
 
 // 全収録を新しい順に。ページ分割されるので next_page を辿る。
 // 英語以外は、その言語の版だけ。無ければ英語にする
@@ -137,10 +141,10 @@ export async function fetchPrintings(card: ScryfallCard, lang = "en"): Promise<P
     return out;
   };
   if (lang !== "en") {
-    const found = await fetchPrintingsLang(card.oracle_id, lang);
+    const found = (await fetchPrintingsLang(card.oracle_id, lang)).filter((p) => !noArt(p));
     if (found.length) return found;
   }
-  return get(card.prints_search_uri);
+  return (await get(card.prints_search_uri)).filter((p) => !noArt(p));
 }
 
 // ある言語の版だけ (なければ空)。版の選択の言語タブが、タブを開いたときに取りに行く

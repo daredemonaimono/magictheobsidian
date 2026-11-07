@@ -13,4 +13,7 @@ assert.equal(mergePrintings(out, [p]), out);
 const q = { ...p, id: "11111111-1111-1111-1111-111111111111", lang: "ja" };
 const out2 = mergePrintings(out, [q]);
 assert.ok(out2.indexOf(q.id) > out2.indexOf(p.id, out2.indexOf("## Printings")));
+// 画像が無い版 (drop) は、表から外す
+const out3 = mergePrintings(out2, [], [q.id]);
+assert.ok(!out3.includes(q.id) && out3.includes(p.id));
 console.log("printings-merge ok");
