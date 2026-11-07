@@ -28,3 +28,18 @@ export function cardRoles(rules: RuleBook, cardName: string): CardRoles {
     all: uniq(abs.flatMap(abilityRoles)),
   };
 }
+
+// 役割の重み (AI・CPU の機械的な判断の元): 大きいほど、手元に残したい・先に出したい・先に除去したい。負は、手放してよい (墓地で働くカードは、捨てても損しない)。
+// カード名・デッキごとの値ではなく、ノードの役割だけから決める。ノードに新しい役割を付けたら、ここに重みを足す (無い役割は 0)
+export const ROLE_WEIGHT: Record<string, number> = {
+  extraTurn: 5,
+  removal: 4, counterSpell: 4, control: 4,
+  cardAdvantage: 3,
+  damage: 2, handDisruption: 2, boardGrowth: 2, evasion: 2, copy: 2, replacement: 2,
+  tempo: 1, graveyardHate: 1, lifeGain: 1, mana: 1, cardSelection: 1, continuous: 1, protection: 1, restriction: 1, costReduction: 1, speed: 1, storm: 1, alternativeCost: 1,
+  graveyardValue: -3, millPayoff: -4,
+};
+export const roleValue = (roles: string[]): number => roles.reduce((s, r) => s + (ROLE_WEIGHT[r] ?? 0), 0);
+
+// 重みを 0 と決めた役割 (どちらとも言えない)。新しい役割を足したら、ROLE_WEIGHT か、ここに入れる (テストが見張る)
+export const NEUTRAL_ROLES = ["zoneChange", "opening", "colorChoice", "discard", "lifeLoss", "graveyardFill", "sacrifice", "rulesException", "statChange", "emblem", "createToken"];

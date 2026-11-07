@@ -3,7 +3,7 @@ import { cpuDo } from "./cpu";
 import { characteristics } from "./continuous";
 import { attackersAt, handAbilitiesOf, passPriority } from "./engine";
 import { battleFacts } from "./battleFacts";
-import { abilityRoles, cardRoles } from "./roles";
+import { abilityRoles, cardRoles, roleValue } from "./roles";
 import { Game, PlayerId, RuleBook } from "./state";
 
 // AI への「行動の分析」: コードだけで計算する (API を呼ばない・トークンは、文章の長さだけ)。
@@ -74,7 +74,7 @@ function actionLines(g: Game, rules: RuleBook, p: PlayerId, opts: AiOption[]): s
       parts.push(`土地。出せる色: ${cols.join("・") || "無色"}`, `手札の呪文に要る色: ${need.join("・") || "なし"} / 場の土地が出せる色: ${[...have].join("・") || "なし"}${missing.length ? ` / 足りない色: ${missing.join("・")}${cols.some((x) => missing.includes(x)) ? " (この土地で補える)" : ""}` : ""}`);
     } else {
       const roles = a.kind === "cast" ? cardRoles(rules, g.hands[p].find((x) => x.id === a.card)?.name ?? "").all : a.kind === "activate" ? cardRoles(rules, g.battlefield.find((x) => x.id === a.perm)?.card.name ?? "").activated[a.index] ?? [] : abilityRoles(handAbilitiesOf(rules, g.hands[p].find((x) => x.id === a.card)?.name ?? "")[a.kind === "handAbility" ? a.index : 0] ?? { kind: "activated", body: [] });
-      parts.push(`役割: ${roles.join("・") || "なし (ルールが無い・部品だけ)"}`);
+      parts.push(`役割: ${roles.join("・") || "なし (ルールが無い・部品だけ)"}${roles.length ? ` (役割の重み: ${roleValue(roles) >= 0 ? "+" : ""}${roleValue(roles)}。除去・打ち消し・カードを増やすなどが高く、墓地で働くものは低い)` : ""}`);
       // タイミング (Forge の AtOppEOT などを参考): インスタントは待てる・ソーサリーは自分のメインだけ
       const src = a.kind === "cast" ? g.hands[p].find((x) => x.id === a.card) : undefined;
       if (src) {

@@ -1,5 +1,5 @@
 import { NodeCall } from "./node";
-import { cardRoles } from "./roles";
+import { cardRoles, roleValue } from "./roles";
 import { Decider, Game, GameCard, Perm, PlayerId, RuleBook, StackItem, statsOf } from "./state";
 
 // AI・CPU の、エンジン途中の判断 (捨てる・選ぶ・対象・順番・伝説のルール) の既定。ノードの役割から、機械的にそれらしく選ぶ (API は呼ばない)。
@@ -12,17 +12,15 @@ const ownedLands = (g: Game, p: PlayerId) => g.battlefield.filter((x) => x.contr
 export function cardValue(g: Game, p: PlayerId, c: GameCard, rules: RuleBook): number {
   if (isLand(c)) return ownedLands(g, p) < 4 ? 10 : 1; // 土地が足りなければ高く、十分なら低い
   const r = cardRoles(rules, c.name).all;
-  let v = 3 + c.mv * 0.3 + (c.power ?? 0) * 0.3;
-  if (r.includes("graveyardValue") || r.includes("millPayoff")) v -= 4; // 墓地で働く: 捨てても損しない
-  if (r.includes("removal") || r.includes("counterSpell")) v += 4;
-  if (r.includes("cardAdvantage")) v += 3;
-  return v;
+  return 3 + c.mv * 0.3 + (c.power ?? 0) * 0.3 + roleValue(r); // 役割の重み (除去・打ち消し・カードを増やす・回避・置換など)。墓地で働くものは、負 (捨てても損しない)
 }
 
 const strength = (x: Perm) => {
   const s = statsOf(x);
   return (s ? s.power + s.toughness : 0) + Object.values(x.counters ?? {}).reduce((a, b) => a + b, 0) * 0.1 + x.card.mv * 0.01;
 };
+// 戦場のものの価値: 強さ + 役割の重みの半分 (回避・置換効果・除去などを持つものは、強さが同じでも、価値が高い)
+const worthOf = (rules: RuleBook, x: Perm) => strength(x) + roleValue(cardRoles(rules, x.card.name).all) / 2;
 const best = <T,>(xs: T[], f: (x: T) => number): T | undefined => xs.reduce<T | undefined>((a, x) => (a === undefined || f(x) > f(a) ? x : a), undefined);
 
 const HOSTILE = ["playerRemoves", "destroy", "exile", "bounce", "damage", "counter", "tap", "discard", "loseLife", "mill", "lookHand", "sacrifice"];
@@ -43,7 +41,7 @@ export function heuristicDecider(me: PlayerId, rules: RuleBook): Decider {
       if (p === me) return undefined;
       if (kind === "sacrifice") {
         // 自分のパーマネントを 1 つ選んで取り除く: いちばん価値の低いもの (弱いものから)
-        const worth = (c: GameCard) => { const perm = g.battlefield.find((x) => x.card === c); return perm ? strength(perm) : 0; };
+        const worth = (c: GameCard) => { const perm = g.battlefield.find((x) => x.card === c); return perm ? worthOf(rules, perm) : 0; };
         return [...from].sort((a, b) => worth(a) - worth(b)).slice(0, n);
       }
       const foe = from.length > 0 && from.every((c) => c.owner !== p);
@@ -61,7 +59,7 @@ export function heuristicDecider(me: PlayerId, rules: RuleBook): Decider {
     },
     legend(_g, p, same) {
       if (p === me) return undefined;
-      return same.reduce((a, x) => (strength(x) > strength(a) ? x : a));
+      return same.reduce((a, x) => (worthOf(rules, x) > worthOf(rules, a) ? x : a));
     },
     target(g, item: StackItem, call, legal) {
       if (item.controller === me) return undefined;
@@ -78,7 +76,7 @@ export function heuristicDecider(me: PlayerId, rules: RuleBook): Decider {
       if (!pool.length) return undefined;
       const score = (id: string): number => {
         const perm = g.battlefield.find((x) => x.id === id);
-        if (perm) return strength(perm);
+        if (perm) return worthOf(rules, perm);
         const inGy = Object.values(g.graveyards).flat().find((c) => c.id === id);
         if (inGy) return val(g, mine, inGy) + (isCreature(inGy) ? 5 : 0) + (inGy.power ?? 0);
         const idx = g.stack.findIndex((s) => s.id === id);
