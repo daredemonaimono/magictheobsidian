@@ -85,12 +85,19 @@ export interface Perm {
 // カードがいる場所 (ゾーン)。moved / enters / leaves のイベントで、どこからどこへ動いたかを表す
 export type Zone = "library" | "hand" | "graveyard" | "battlefield" | "stack" | "exile";
 // カードを墓地に置く (持ち主の墓地へ)。「墓地に置かれた」(moved) を積む。from = どこから
+// スタックを使わない効果が起きたことを、画面の表示用に残す (ログとは別。スタックとは区別して出す)
+export function announceEffect(g: Game, text: string, card?: string): void {
+  (g.effects ??= []).push({ text, ...(card ? { card } : {}) });
+  if (g.effects.length > 30) g.effects.splice(0, g.effects.length - 30);
+}
+
 // 置換: 戦場に exileInstead のパーマネントがあれば、墓地に行くかわりに追放される (Leyline of the Void・Rest in Peace)。行き先 ("graveyard" / "exile") を返す
 export function putInGraveyard(g: Game, card: GameCard, from: Zone): "graveyard" | "exile" {
   const hit = g.battlefield.some((p) => p.exileInstead && (p.exileInstead === "all" || (p.exileInstead === "opponents" ? card.owner !== p.controller : card.owner === p.controller)));
   if (hit) {
     g.exile[card.owner].push(card);
     g.log.push(`${card.name} は、墓地に行くかわりに追放された`);
+    announceEffect(g, `置換: ${card.name} は、墓地に行くかわりに追放された`, card.name);
     g.events.push({ type: "moved", card, from, to: "exile" });
     return "exile";
   }
@@ -146,6 +153,7 @@ export interface Game {
   handLook?: { by: PlayerId; of: PlayerId; ids: string[]; n: number }; // 手札を見たとき (lookHand): だれが、だれの手札を、どのカードを見たか。n = 何回目か (画面が、新しい「見た」を見つける)
   restrictedMana: Record<PlayerId, { amount: number; color?: PoolKey; type?: string; notType?: string }[]>; // 使い道に制限のあるマナ (「クリーチャーでない呪文を唱えるためにしか使えない」)
   extraTurns?: PlayerId[]; // 追加のターン (次のターンの前に、順に取る)
+  effects?: { text: string; card?: string }[]; // スタックを使わない効果の発動 (Dredge・伝説のルール・置換効果)。画面が、スタックとは別に、一時的に表示する (最後の 30 件)
   activated?: Record<string, number>; // このターンに、起動型能力を起動した回数 (パーマネントの id:番号 / 手札のカードの id:h番号)。暴走防止 (AI は、同じ能力を 1 ターンに 3 回までしか選ばない)。ターンが替わると空
   discarded?: Record<PlayerId, number>; // このターンに捨てた・サイクリングしたカードの数 (手札から墓地へ。プレイヤーごと。ターンが替わると 0)
   gained?: Record<PlayerId, number>; // このターンに得たライフの量 (プレイヤーごと。ターンが替わると 0)
@@ -226,10 +234,13 @@ export function drawCards(g: Game, p: PlayerId, n: number, rules?: RuleBook): vo
     const chosen = options.length ? g.decide?.dredge?.(g, p, options) : undefined;
     const pick = options.find((o) => o.card === chosen);
     if (pick) {
-      for (const c of g.libraries[p].splice(0, pick.n)) putInGraveyard(g, c, "library");
+      const milled = g.libraries[p].splice(0, pick.n);
+      for (const c of milled) putInGraveyard(g, c, "library");
       g.graveyards[p] = g.graveyards[p].filter((c) => c !== pick.card);
       g.hands[p].push(pick.card);
-      g.log.push(`${p === "you" ? "あなた" : p === "opp" ? "相手" : p}は、引くかわりに Dredge ${pick.n}: ${pick.card.name} を手札に戻した`);
+      // どの Dredge か分かるように、カード名・N・落ちたカードを残す (Dredge は置換効果なので、スタックは使わない)
+      announceEffect(g, `Dredge ${pick.n}: ${pick.card.name} (上から ${milled.length} 枚を墓地へ)`, pick.card.name);
+      g.log.push(`${p === "you" ? "あなた" : p === "opp" ? "相手" : p}は、引くかわりに Dredge ${pick.n} (${pick.card.name}) をした: 上から ${milled.length} 枚 (${milled.map((c) => c.name).join("、") || "なし"}) を墓地に置いて、${pick.card.name} を手札に戻した`);
       continue;
     }
     const top = g.libraries[p].shift();

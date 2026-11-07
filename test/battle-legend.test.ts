@@ -27,6 +27,7 @@ const ids = (g: Game) => g.battlefield.map((p) => p.id);
   assert.deepEqual(ids(g), ["Old"]);
   assert.deepEqual(g.graveyards["A"].map((c) => c.id), ["New"], "墓地に置かれる");
   assert.ok(g.log.some((l) => l.includes("伝説のルール")), "ログに残る");
+  assert.ok(g.effects?.some((e) => e.text.includes("伝説のルール")), "効果の発動として、画面に出る");
 }
 // 選べる: 新しいほうを残す
 {

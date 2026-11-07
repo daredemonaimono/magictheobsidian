@@ -40,6 +40,7 @@ const ids = (cs: GameCard[]) => cs.map((c) => c.id);
   discardCards(g, "B", 1);
   assert.deepEqual(ids(g.graveyards["B"]), [], "相手の捨てたカードは、墓地に行かない");
   assert.equal(g.exile["B"].length, 1, "追放される");
+  assert.ok(g.effects?.some((e) => e.text.startsWith("置換:")), "置換の発動が、画面に出る");
   g.libraries["B"] = [card("Top", "Creature", "B"), card("Next", "Creature", "B")];
   g.hands["A"].push(card("Mill", "Sorcery"));
   castSpell(g, "A", "Mill", {}, book);

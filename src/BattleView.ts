@@ -216,6 +216,9 @@ export class BattleView extends ItemView {
       if (session?.opp && session.self) this.ctl.aiDecks = { mine: session.opp, foe: session.self };
     }
     this.lookSeen = this.game.handLook?.n ?? 0; // 開いたとき、前の「見た」は、出さない
+    this.effectSeen = this.game.effects?.length ?? 0; // 前の効果の表示も、出さない
+    this.pendingEffects = [];
+    this.effectsEl = undefined;
     this.tried.clear();
     this.askEl = undefined;
     this.targeting = undefined;
@@ -384,6 +387,7 @@ export class BattleView extends ItemView {
     this.paintGauge(m);
     this.paintFx(m);
     this.paintHandLook();
+    this.paintEffects();
     if (m.over) this.saveHistory(); // 勝敗が付いたとき
     this.fit();
     this.syncCombat(m);
@@ -391,6 +395,35 @@ export class BattleView extends ItemView {
   }
 
   // 相手の手札を見たとき (lookHand): 相手の手札のカードを、表向きで、前 (盤面の上) に並べて見せる。クリックか Esc で閉じる (ゆっくり見られる。放っておいても、30秒で消える)
+  // スタックを使わない効果の発動 (Dredge・伝説のルール・置換効果): スタックの「解決する」ではなく、「確認」のボタンつきで、スタックの上に出す。確認を押すまで、残る (ゲームの進行は止めない)
+  private effectSeen = 0;
+  private pendingEffects: { text: string; card?: string }[] = [];
+  private effectsEl?: HTMLElement;
+  private paintEffects() {
+    const list = this.game.effects ?? [];
+    if (list.length < this.effectSeen) {
+      this.effectSeen = 0; // 新しい対戦・戻る操作: 追いつく
+      this.pendingEffects = [];
+    }
+    this.pendingEffects.push(...list.slice(this.effectSeen));
+    this.effectSeen = list.length;
+    if (this.pendingEffects.length > 6) this.pendingEffects.splice(0, this.pendingEffects.length - 6);
+    this.renderEffects();
+  }
+  private renderEffects() {
+    if (!this.effectsEl?.isConnected) this.effectsEl = this.ui.stage.createDiv("mtg-bt-effects");
+    const el = this.effectsEl;
+    el.empty();
+    for (const e of this.pendingEffects) {
+      const row = el.createDiv("mtg-bt-effect");
+      row.createSpan({ text: `効果: ${e.text}` });
+      row.createEl("button", { text: "確認", cls: "mod-cta" }).addEventListener("click", () => {
+        this.pendingEffects = this.pendingEffects.filter((x) => x !== e);
+        this.renderEffects();
+      });
+    }
+    el.toggleClass("is-on", this.pendingEffects.length > 0);
+  }
   private lookSeen = 0;
   private paintHandLook() {
     const h = this.game.handLook;
@@ -1248,24 +1281,22 @@ export class BattleView extends ItemView {
     if (el.dataset.sig === sig) return;
     el.dataset.sig = sig;
     el.empty();
-    // 一番上 (次に解決されるもの) は、カードの画像を大きく (効果を読んで、応答できるように)。能力なら、どの能力かも。残りは、1行ずつ
-    [...m.stack].reverse().forEach((s, i) => {
-      if (i === 0) {
-        const big = el.createDiv({ cls: `mtg-bt-stackcard is-${s.controller}` });
-        big.dataset.tid = s.id;
-        if (s.image) big.createEl("img", { attr: { src: s.image, alt: s.name, draggable: "false" } });
-        else big.createDiv({ cls: "mtg-bt-face", text: s.name });
-        big.createDiv({ cls: "mtg-bt-stacklabel", text: s.label ? `${s.name} の能力 ${s.label}` : s.ability ? `${s.name} の能力` : `${s.controller === "self" ? "あなた" : "相手"}の呪文` });
-        // 効果テキスト (カードのノートから。忠誠度能力は、使った能力だけ。モードは、選んだモードだけ)
-        const body = big.createDiv("mtg-bt-stacktext");
-        const fill = (text: string) => body.setText(stackEffectText(text, { typeLine: s.typeLine, loyalty: s.loyalty, loyaltyX: s.loyaltyX, modes: s.modes }));
-        const cached = this.stackTexts.get(s.name);
-        if (cached !== undefined) fill(cached);
-        else void cardText(this.app, s.name).catch(() => "").then((t) => { this.stackTexts.set(s.name, t); if (body.isConnected) fill(t); });
-        return;
-      }
-      const row = el.createDiv({ cls: `mtg-bt-stackitem is-${s.controller}`, text: `${s.ability ? "能力: " : ""}${s.name}` });
-      row.dataset.tid = s.id;
+    // 古いものが左、新しいもの (次に解決されるもの) が右。カードが右へ重なっていく。カーソルを合わせたカードは、前面に出る。効果の説明 (能力ならどの能力か・効果テキスト) は、一番上のカードと、カーソルを合わせたカードに出る
+    m.stack.forEach((s, i) => {
+      const card = el.createDiv({ cls: `mtg-bt-stackcard is-${s.controller}${i === m.stack.length - 1 ? " is-top" : ""}` });
+      card.dataset.tid = s.id;
+      card.setCssStyles({ zIndex: String(i + 1) });
+      if (s.image) card.createEl("img", { attr: { src: s.image, alt: s.name, draggable: "false" } });
+      else card.createDiv({ cls: "mtg-bt-face", text: s.name });
+      const detail = card.createDiv("mtg-bt-stackdetail");
+      detail.createDiv({ cls: "mtg-bt-stacklabel", text: s.label ? `${s.name} の能力 ${s.label}` : s.ability ? `${s.name} の能力` : `${s.controller === "self" ? "あなた" : "相手"}の呪文` });
+      // 効果テキスト (カードのノートから。忠誠度能力は、使った能力だけ。モードは、選んだモードだけ)
+      const body = detail.createDiv("mtg-bt-stacktext");
+      const fill = (text: string) => body.setText(stackEffectText(text, { typeLine: s.typeLine, loyalty: s.loyalty, loyaltyX: s.loyaltyX, modes: s.modes }));
+      const cached = this.stackTexts.get(s.name);
+      if (cached !== undefined) fill(cached);
+      else void cardText(this.app, s.name).catch(() => "").then((t) => { this.stackTexts.set(s.name, t); if (body.isConnected) fill(t); });
+      card.addEventListener("mouseenter", () => void this.showPreview(s.name));
     });
     el.toggleClass("is-on", m.stack.length > 0);
   }

@@ -1,7 +1,7 @@
 import { characteristics } from "../continuous";
 import { CastRecord } from "../node";
 import { entersTapped, staticCalls, whoOk } from "./restrict";
-import { prepareAbilityOf, putInGraveyard, typeIn, Game, GameCard, Perm, PlayerId, RuleBook, Zone } from "../state";
+import { announceEffect, prepareAbilityOf, putInGraveyard, typeIn, Game, GameCard, Perm, PlayerId, RuleBook, Zone } from "../state";
 
 // 戦場に出る・離れる・状況起因処理
 
@@ -45,6 +45,7 @@ export function tryRegenerate(g: Game, perm: Perm): boolean {
   delete perm.blockedBy;
   delete perm.attackTarget;
   g.log.push(`${perm.card.name} は再生した`);
+  announceEffect(g, `再生: ${perm.card.name}`, perm.card.name);
   return true;
 }
 
@@ -90,6 +91,7 @@ export function stateBased(g: Game, rules: RuleBook): void {
         for (const x of same) {
           if (x === keep) continue;
           g.log.push(`伝説のルール: ${name} が 2 体いるので、1 体を墓地に置いた`);
+          announceEffect(g, `伝説のルール: ${name} を 1 体、墓地に置いた`, name);
           removeFromBattlefield(g, x);
           changed = true;
         }

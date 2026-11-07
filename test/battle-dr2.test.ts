@@ -52,6 +52,8 @@ const pick = (...order: (string | undefined)[]) => {
   assert.deepEqual(ids(g.graveyards["A"]), ["l1", "l2", "l3"], "上から 3 枚が墓地");
   assert.deepEqual(ids(g.libraries["A"]), ["l4", "l5"]);
   assert.deepEqual(p.asked, [["Imp:3"]]);
+  assert.ok(g.effects?.some((e) => /Dredge 3: Imp/.test(e.text)), "スタックとは別に、効果の発動が残る (画面が一時的に出す)");
+  assert.ok(g.log.some((l) => /Dredge 3 \(Imp\)/.test(l) && l.includes("l1、l2、l3") && l.includes("Imp を手札に戻した")), "どの Dredge か (カード名・N・落ちたカード) が、ログに残る");
   assert.ok(!(g.drawn?.["A"] ?? []).includes("Imp"), "引いたカードには数えない");
 }
 // 選ばなければ、ふつうに引く
