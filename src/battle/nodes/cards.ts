@@ -120,7 +120,7 @@ export function registerCards(): void {
       const options = idList(a.from).flatMap((id) => findCard(g, id) ?? []);
       const n = Math.min(Number(a.count), options.length);
       // shortcut: 既定は、ちょうど指定の枚数なら先頭から、atMost なら1枚も選ばない。判断の入力を作るときに置き換える
-      const picked = (g.decide?.choose?.(g, ctx.item.controller, options, n, a.atMost === true) ?? (a.atMost === true ? [] : options.slice(0, n))).filter((c) => options.includes(c)).slice(0, n);
+      const picked = (g.decide?.choose?.(g, ctx.item.controller, options, n, a.atMost === true, "choose") ?? (a.atMost === true ? [] : options.slice(0, n))).filter((c) => options.includes(c)).slice(0, n);
       return { id: picked.map((c) => c.id).join(",") };
     },
   });
@@ -314,7 +314,7 @@ export function registerCards(): void {
       const options = g.libraries[p].filter((c) => (typeof a.type !== "string" || typeIn(c.typeLine, a.type)) && (typeof a.name !== "string" || c.name === a.name) && !(a.to === "battlefield" && enterBlocked(g, ctx.rules, c, "library"))); // Grafdigger's Cage
       const n = Math.min(typeof a.count === "number" ? a.count : 1, options.length);
       // 選ぶのは、探す人。入力が無い (相手・自動) ときは、先頭から。断る (0 枚) こともできる
-      const picked = (g.decide?.choose?.(g, p, options, n, true) ?? options.slice(0, n)).filter((c) => options.includes(c)).slice(0, n);
+      const picked = (g.decide?.choose?.(g, p, options, n, true, "search") ?? options.slice(0, n)).filter((c) => options.includes(c)).slice(0, n);
       for (const c of picked) {
         g.libraries[p] = g.libraries[p].filter((x) => x !== c);
         if (a.to === "hand") g.hands[p].push(c);

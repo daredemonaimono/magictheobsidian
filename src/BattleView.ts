@@ -952,7 +952,7 @@ export class BattleView extends ItemView {
       const count = head.createSpan();
       const sync = () => {
         if (req.kind === "order") {
-          count.setText(`ライブラリーの${req.to === "top" ? "上" : "底"}に置く順番: 上にしたいカードから、順にクリック (${picked.size} / ${max})`);
+          count.setText(`${req.to === "stack" ? "同時の誘発を解決する順番: 先に解決したいものから" : `ライブラリーの${req.to === "top" ? "上" : "底"}に置く順番: 上にしたいカードから`}、順にクリック (${picked.size} / ${max})`);
           [...picked].forEach((id, i) => tileOf.get(id)?.setAttr("data-n", String(i + 1)));
           for (const [id, t] of tileOf) if (!picked.has(id)) t.removeAttribute("data-n");
           ok.disabled = picked.size !== max;

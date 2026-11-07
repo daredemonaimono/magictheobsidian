@@ -122,8 +122,9 @@ export interface Decider {
   discard?(g: Game, p: PlayerId, n: number, cleanup?: boolean): GameCard[] | undefined; // 捨てるカード
   may?(g: Game, p: PlayerId, what: string): boolean | undefined; // 「してもよい」をするか (既定はする)
   pay?(g: Game, p: PlayerId, n: number, why?: string): boolean | undefined; // 「支払わないかぎり」を払うか
-  choose?(g: Game, p: PlayerId, from: GameCard[], n: number, atMost?: boolean): GameCard[] | undefined; // 選ぶカード (look / choose)
+  choose?(g: Game, p: PlayerId, from: GameCard[], n: number, atMost?: boolean, kind?: "choose" | "search"): GameCard[] | undefined; // 選ぶカード (look / choose)
   order?(g: Game, p: PlayerId, cards: GameCard[], to: "top" | "bottom"): GameCard[] | undefined; // ライブラリーの上・底に置く順番 (上から下へ。既定は、並んでいる順)
+  orderTriggers?(g: Game, p: PlayerId, items: StackItem[]): StackItem[] | undefined; // 同じプレイヤーの、同時の誘発の順番 (先に解決する順。既定は、見つけた順の逆 = 見つけたものが下)
   legend?(g: Game, p: PlayerId, same: Perm[]): Perm | undefined; // 伝説のルール: 同名の伝説のパーマネントのうち、残す 1 つ (ほかは墓地へ。無ければ、先に出ていたもの)
   dredge?(g: Game, p: PlayerId, options: { card: GameCard; n: number }[]): GameCard | undefined; // 引くかわりに Dredge するカード (しないなら undefined)
   target?(g: Game, item: StackItem, call: NodeCall, legal: string[]): string[] | undefined; // 誘発型能力の対象 (誘発時に選ぶ。既定は合法な対象の先頭から)

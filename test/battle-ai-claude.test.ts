@@ -29,9 +29,17 @@ assert.equal(seen!.headers["anthropic-version"], "2023-06-01");
 assert.equal(seen!.headers["content-type"], "application/json");
 assert.equal(seen!.body.model, "claude-opus-5-5");
 assert.equal(seen!.body.max_tokens, 16000);
-assert.equal(seen!.body.system, "sys");
+assert.deepEqual(seen!.body.system, [{ type: "text", text: "sys", cache_control: { type: "ephemeral" } }], "固定の system は、キャッシュする");
 assert.deepEqual(seen!.body.messages, [{ role: "user", content: "hi" }]);
 assert.ok(!("temperature" in seen!.body) && !("thinking" in seen!.body), "サンプリング引数と thinking は送らない");
+
+// キャッシュの使用量: 読み込み・書き込みも、入力に数える (内訳も返す)
+{
+  let u: { input: number; output: number; cacheRead?: number; cacheWrite?: number } | undefined;
+  const withUsage: Http = async () => ({ status: 200, json: { stop_reason: "end_turn", content: [{ type: "text", text: "A" }], usage: { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 2000, cache_creation_input_tokens: 300 } } });
+  await askClaude({ apiKey: KEY, model: "m", system: "sys", messages: [{ role: "user", content: "hi" }], http: withUsage, onUsage: (x) => (u = x) });
+  assert.deepEqual(u, { input: 2310, output: 5, cacheRead: 2000, cacheWrite: 300 });
+}
 
 // エラー (Review Focus 1)
 await fails(reply(401, { error: { message: "invalid x-api-key" } }), "APIキーが無効");

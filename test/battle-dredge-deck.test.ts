@@ -53,6 +53,8 @@ const has = (g: Game, name: string) => g.battlefield.some((p) => p.card.name ===
   assert.ok(req && req.kind === "choose" && /Dredge 5/.test(req.label ?? "") && req.cards[0].name === "Stinkweed Imp", "引く前に、Dredge の質問が出る");
   const before = g.hands["you"].length;
   ctl.answer(["Stinkweed Imp"]);
+  const ord = ctl.pending?.request; // 違う誘発が同時に 2 つ (Narcomoeba・Creeping Chill): 解決する順番を聞かれる (見つけた順の逆 = これまでの順で答える)
+  if (ord?.kind === "order" && ord.to === "stack") ctl.answer(ord.cards.map((c) => c.id).reverse());
   drain(g); // 掘った Narcomoeba・Creeping Chill の誘発を、解決する
   assert.deepEqual(names(g.hands["you"]).filter((n) => n === "Stinkweed Imp"), ["Stinkweed Imp"], "Imp が手札に戻った");
   assert.equal(g.hands["you"].length, before + 1, "引くかわりなので、手札は 1 枚だけ増える");

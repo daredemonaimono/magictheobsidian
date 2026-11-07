@@ -137,10 +137,16 @@ export function flushEvents(g: Game, rules: RuleBook): void {
     stateBased(g, rules); // 誘発の効果が積まれる前に起きた変化も、落ち着かせる
   }
   // 誘発の順番 (APNAP): アクティブ・プレイヤーのものを先に積み (下)、非アクティブ・プレイヤーのものを、あとに積む (上。先に解決される)。同じプレイヤーのものは、見つけた順
-  // shortcut: 同じプレイヤーの誘発の順番は、そのプレイヤーが選べない (戦場の順)
-  for (const item of [...batch.filter((x) => x.controller === g.active), ...batch.filter((x) => x.controller !== g.active)]) {
-    g.stack.push(item);
-    announceTargets(g, item, rules);
+  // 同じプレイヤーの誘発の順番は、そのプレイヤーが選ぶ (g.decide.orderTriggers。人だけ。既定は、見つけた順)
+  const byPlayer = (p: string) => batch.filter((x) => x.controller === p);
+  for (const p of [g.active, ...g.players.filter((x) => x !== g.active)]) {
+    const mine = byPlayer(p);
+    const order = mine.length > 1 ? g.decide?.orderTriggers?.(g, p, mine) : undefined; // 先に解決する順
+    const pushOrder = order && order.length === mine.length ? [...order].reverse() : mine; // 積む順 (最後に積んだものが、上)
+    for (const item of pushOrder) {
+      g.stack.push(item);
+      announceTargets(g, item, rules);
+    }
   }
   if (added) g.passes = []; // 優先権は動かさない (唱えた・起動した本人が、積まれた誘発にも応答できる。解決のあとは、アクティブ・プレイヤーに戻る)
 }

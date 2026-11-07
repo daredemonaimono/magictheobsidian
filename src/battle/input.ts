@@ -1,13 +1,14 @@
 import { dredgeNote, dredgeVerdict, evalDredge } from "./dredgeEval";
 import { Game, GameCard, Decider, PlayerId, RuleBook } from "./state";
 import { NodeCall } from "./node";
+import { heuristicDecider } from "./aiDefaults";
 
 // 人の判断の入力待ち。エンジンは同期のまま。自分 (me) への質問で、まだ答えが無ければ NeedInput を投げ、画面が答えを集めて、最初からやり直す (エンジンは乱数を使わないので、同じ結果になる)。相手への質問は、これまでどおり既定の動き
 export type CardRef = { id: string; name: string };
 export type InputRequest =
   | { kind: "discard"; n: number; cards: CardRef[]; cleanup?: boolean } // 手札から n 枚捨てる。cleanup = クリンナップの手札の上限 (画面は、「残すカードを選ぶ」形にする)
   | { kind: "choose"; min: number; max: number; cards: CardRef[]; label?: string; for?: PlayerId; key?: string } // 見たカードから選ぶ。label = 画面に出す説明 (Dredge など)
-  | { kind: "order"; cards: CardRef[]; to: "top" | "bottom" } // ライブラリーの上・底に置く順番 (答えは、上から下へ並べた id)
+  | { kind: "order"; cards: CardRef[]; to: "top" | "bottom" | "stack" } // ライブラリーの上・底に置く順番 / stack = 同時の誘発を解決する順番 (答えは、上から下へ並べた id)
   | { kind: "may"; what: string } // 「してもよい」
   | { kind: "pay"; n: number; why?: string } // 「支払わないかぎり」の支払い
   | { kind: "target"; card: string; min: number; max: number; choices: CardRef[] }; // 誘発型能力の対象 (名前つき。画面は、まだ起きていない局面のものを、盤面ではなく、一覧で選ばせる)
@@ -30,15 +31,18 @@ export function makeDecider(me: PlayerId, answers: Answer[], ai?: PlayerId, rule
     return answers[i++];
   };
   const ids = (a: Answer): string[] => (Array.isArray(a) ? a : []);
+  const h = rules ? heuristicDecider(me, rules) : undefined; // 人以外 (AI・CPU) の、機械的な既定 (ノードの役割から)
   return {
     discard(g: Game, p, n, cleanup) {
       const hand = g.hands[p];
-      if (p !== me || hand.length <= n) return undefined; // 全部捨てるなら、聞かない
+      if (p !== me) return h?.discard?.(g, p, n, cleanup);
+      if (hand.length <= n) return undefined; // 全部捨てるなら、聞かない
       const got = ids(next({ kind: "discard", n, cards: refs(hand), ...(cleanup ? { cleanup: true } : {}) }));
       return hand.filter((c) => got.includes(c.id));
     },
-    choose(g, p, from, n, atMost) {
-      if (p !== me || from.length === 0 || (!atMost && from.length <= n)) return undefined;
+    choose(g, p, from, n, atMost, kind) {
+      if (p !== me) return h?.choose?.(g, p, from, n, atMost, kind);
+      if (from.length === 0 || (!atMost && from.length <= n)) return undefined;
       const got = ids(next({ kind: "choose", min: atMost ? 0 : n, max: n, cards: refs(from) }));
       return from.filter((c) => got.includes(c.id));
     },
@@ -65,15 +69,23 @@ export function makeDecider(me: PlayerId, answers: Answer[], ai?: PlayerId, rule
       const got = ids(next({ kind: "choose", min: 0, max: 1, cards: refs(ask.map((x) => x.o.card)), label, key, for: p }));
       return ask.find((x) => got.includes(x.o.card.id))?.o.card;
     },
-    legend(_g, p, same) {
-      if (p !== me) return undefined;
+    legend(g, p, same) {
+      if (p !== me) return h?.legend?.(g, p, same);
       const got = ids(next({ kind: "choose", min: 1, max: 1, cards: refs(same.map((x) => x.card)), label: `伝説のルール: ${same[0].card.name} が ${same.length} 体いる。残す 1 体を選ぶ (ほかは墓地に置かれる)` }));
       return same.find((x) => got.includes(x.id));
     },
-    order(_g, p, cards, to) {
-      if (p !== me || cards.length < 2) return undefined;
+    order(g, p, cards, to) {
+      if (p !== me) return cards.length < 2 ? undefined : h?.order?.(g, p, cards, to);
+      if (cards.length < 2) return undefined;
       const got = ids(next({ kind: "order", cards: refs(cards), to }));
       return got.flatMap((id) => cards.find((c) => c.id === id) ?? []);
+    },
+    orderTriggers(_g, p, items) {
+      if (p !== me || items.length < 2) return undefined;
+      const same = (a: typeof items[0], b: typeof items[0]) => a.card.name === b.card.name && JSON.stringify(a.body) === JSON.stringify(b.body) && JSON.stringify(a.targets) === JSON.stringify(b.targets);
+      if (items.every((x) => same(x, items[0]))) return undefined; // 同じものばかりなら、順番に意味は無い
+      const got = ids(next({ kind: "order", cards: refs(items.map((x) => ({ ...x.card, id: x.id }))), to: "stack" }));
+      return got.flatMap((id) => items.find((x) => x.id === id) ?? []);
     },
     may(_g, p, what) {
       return p === me ? next({ kind: "may", what }) === true : undefined;
@@ -85,7 +97,8 @@ export function makeDecider(me: PlayerId, answers: Answer[], ai?: PlayerId, rule
       const a = call.args as Record<string, unknown>;
       const min = typeof a.min === "number" ? a.min : 1;
       const max = typeof a.max === "number" ? a.max : Math.max(1, min);
-      if (item.controller !== me || legal.length <= min) return undefined;
+      if (item.controller !== me) return legal.length <= min ? undefined : h?.target?.(g, item, call, legal);
+      if (legal.length <= min) return undefined;
       const name = (id: string): string => (g.players.includes(id) ? (id === me ? "あなた" : "相手") : g.battlefield.find((p) => p.id === id)?.card.name ?? g.stack.find((s) => s.id === id)?.card.name ?? id);
       return ids(next({ kind: "target", card: item.card.name, min, max, choices: legal.map((id) => ({ id, name: name(id) })) }));
     },

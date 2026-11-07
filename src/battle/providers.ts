@@ -6,6 +6,8 @@ export interface ProviderReply {
   text: string;
   input?: number;
   output?: number;
+  cacheRead?: number; // Claude のキャッシュから読んだ入力トークン (input に含む)
+  cacheWrite?: number;
 }
 
 export const OPENAI_BASE = "https://api.openai.com/v1";

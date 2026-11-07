@@ -82,7 +82,7 @@ export async function runAi(o: { ai: AiSettings; scene: Scene; secret: (name: st
   if (!aiReady(o.ai, o.scene, o.secret)) throw new ClaudeError(`${providerName(sc.provider)} の API キーが未設定`);
   if (sc.provider === "openai") return askOpenAI({ apiKey: key, baseUrl: o.ai.openaiBaseUrl, model, system: o.system, user: "", messages: o.messages, http: o.http });
   if (sc.provider === "gemini") return askGemini({ apiKey: key, model, system: o.system, user: "", messages: o.messages, http: o.http });
-  let usage: { input: number; output: number } | undefined;
+  let usage: { input: number; output: number; cacheRead?: number; cacheWrite?: number } | undefined;
   const text = await askClaude({ apiKey: key, model, system: o.system, messages: o.messages, http: o.http, onUsage: (u) => (usage = u) });
   return { text, ...(usage ?? {}) };
 }
