@@ -2,7 +2,7 @@ import { App, Modal, Notice, Setting, TFile, normalizePath } from "obsidian";
 import { CARD_DIR, ensureCardFile } from "./cards";
 import { Deck, emptyDeck, parseMoxfield } from "./deck";
 import { CREATABLE, FORMATS } from "./rules";
-import { fetchPrint, fileSafe } from "./scryfall";
+import { fetchCard, fetchPrint, fileSafe } from "./scryfall";
 import { Settings } from "./settings";
 
 // Moxfield 形式のテキストを、Cards/ のファイル名をキーにした Deck にする。
@@ -12,7 +12,7 @@ export async function resolveDeck(app: App, settings: Settings, text: string): P
   const parsed = parseMoxfield(text);
   const total = parsed.main.size + parsed.side.size + parsed.commander.size;
   if (!total) {
-    new Notice("読み取れる行が無い (例: 4 Lightning Bolt (M11) 149)");
+    new Notice("読み取れる行が無い (例: 4 Lightning Bolt (M11) 149 / 4 Lightning Bolt)");
     return null;
   }
 
@@ -27,8 +27,9 @@ export async function resolveDeck(app: App, settings: Settings, text: string): P
       if (existing instanceof TFile) {
         keys.set(cardName, existing.basename);
       } else {
-        const [set, no] = e.print!.split(" ");
-        keys.set(cardName, (await ensureCardFile(app, await fetchPrint(set, no), settings)).basename);
+        const [set, no] = e.print?.split(" ") ?? [];
+        const card = set && no ? await fetchPrint(set, no) : await fetchCard(cardName); // セットの無い行は、名前で探す (版は指定なし)
+        keys.set(cardName, (await ensureCardFile(app, card, settings)).basename);
         await new Promise((r) => setTimeout(r, 100)); // Scryfall の負荷配慮
       }
     } catch {

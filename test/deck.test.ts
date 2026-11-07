@@ -21,6 +21,14 @@ assert.ok(!writeDeck("## Main\n\n## Side\n", emptyDeck()).includes("Commander"))
 assert.ok(!writeDeck("## Commander\n\n## Main\n", emptyDeck()).includes("## Side"));
 
 // Moxfield 形式: 版 (set 番号)、SIDEBOARD:、COMMANDER: 欄 (空行まで)
+// セットの無い形式: 空行 (何行でも) から、サイドボード
+{
+  const d = parseMoxfield("4 Hired Claw\n1 Kellan, Planar Trailblazer\n20 Mountain\n\n\n\n3 Magebane Lizard\n2 Abrade\n");
+  assert.deepEqual([...d.main], [["Hired Claw", { n: 4, print: undefined }], ["Kellan, Planar Trailblazer", { n: 1, print: undefined }], ["Mountain", { n: 20, print: undefined }]]);
+  assert.deepEqual([...d.side.keys()], ["Magebane Lizard", "Abrade"]);
+  assert.equal(parseMoxfield("Deck\n4 A\n\n4 B\nSideboard\n2 C").main.size, 2, "見出しのある形式では、空行は区切りにならない");
+  assert.equal(parseMoxfield("4 A (M11) 1\n\nSIDEBOARD:\n2 C (M11) 2").side.size, 1, "Moxfield 形式 (空行 + SIDEBOARD:) は、今までどおり");
+}
 const m = parseMoxfield(`4 Bazaar of Baghdad (ARN) 70
 1 Chalice of the Void (TSR) 390
 1 Strip Mine (ATQ) 82b

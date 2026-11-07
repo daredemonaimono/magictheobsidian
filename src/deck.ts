@@ -58,21 +58,27 @@ export function writeDeck(content: string, deck: Deck): string {
 // Moxfield / MTGO 形式: `4 Card Name (SET) 123`。"SIDEBOARD:" 以降がサイド。
 // MAYBEBOARD などサイド以外の見出しは読み飛ばす。key はカード名 (Cards/ のファイル名とは限らない)
 const MOX_LINE = /^(\d+)x?\s+(.+?)\s+\(([A-Za-z0-9]+)\)\s+(\S+)/;
+// セットの無い行: `4 Lightning Bolt` (版は指定なし)
+const PLAIN_LINE = /^(\d+)x?\s+(.+)$/;
 
 export function parseMoxfield(text: string): Deck {
   const deck = emptyDeck();
   let cur: Board | null = "main";
+  let headed = false; // DECK: などの見出しがあるデッキ (見出しの無いデッキだけ、空行がサイドの区切りになる)
   for (const raw of text.split("\n")) {
     const line = raw.trim();
     if (!line && cur === "commander") cur = "main"; // COMMANDER: 欄は空行まで
-    else if (/^sideboard:?$/i.test(line)) cur = "side";
+    else if (!line && cur === "main" && !headed && deck.main.size) cur = "side"; // 見出しの無い形式: メインのあとの空行 (何行でも) から、サイド
+    else if (/^sideboard:?$/i.test(line)) (cur = "side"), (headed = true);
     else if (/^(maybeboard|considering|tokens?)\b/i.test(line)) cur = null;
     else if (/^commander:?$/i.test(line)) cur = "commander";
-    else if (/^(deck|mainboard|companion):?$/i.test(line)) cur = "main";
+    else if (/^(deck|mainboard|companion):?$/i.test(line)) (cur = "main"), (headed = true);
     const m = cur && line.match(MOX_LINE);
-    if (!cur || !m) continue;
-    const prev = deck[cur].get(m[2]);
-    deck[cur].set(m[2], { n: (prev?.n ?? 0) + Number(m[1]), print: prev?.print ?? `${m[3].toLowerCase()} ${m[4]}` });
+    const plain = cur && !m ? line.match(PLAIN_LINE) : null;
+    if (!cur || (!m && !plain)) continue;
+    const [n, name, print] = m ? [m[1], m[2], `${m[3].toLowerCase()} ${m[4]}`] : [plain![1], plain![2].trim(), undefined];
+    const prev = deck[cur].get(name);
+    deck[cur].set(name, { n: (prev?.n ?? 0) + Number(n), print: prev?.print ?? print });
   }
   return deck;
 }
