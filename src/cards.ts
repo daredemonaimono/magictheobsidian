@@ -94,7 +94,7 @@ export async function readPrintings(app: App, key: string): Promise<Printing[]> 
     .filter((l) => l.startsWith("| "))
     .map((l) => l.slice(2, -2).split(" | "))
     .filter((c) => /^[0-9a-f-]{36}$/.test(c[4] ?? ""))
-    .map(([set, collector_number, rarity, released_at, id, lang]) => ({ set, collector_number, rarity, released_at, id, lang }));
+    .map(([set, collector_number, rarity, released_at, id, lang]) => ({ set, collector_number, rarity, released_at, id, lang: lang || "en" })); // 古いノートは言語の列が無い: 英語として扱う
   printingsCache.set(f.path, { mtime: f.stat.mtime, prints });
   return prints;
 }

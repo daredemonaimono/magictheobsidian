@@ -13,7 +13,7 @@ import { formatPrice, priceOf, refreshPrices } from "./prices";
 import { ThumbnailModal, deckArtUrl } from "./ThumbnailModal";
 import { Settings } from "./settings";
 import { Board, Deck, emptyDeck, parseDeck, thumbnailKey, writeDeck } from "./deck";
-import { Printing, fetchPrintingsLang, printingImageUrl } from "./scryfall";
+import { Printing, fetchById, fetchPrintingsLang, printingImageUrl } from "./scryfall";
 import { COLUMNS, groupOf, groupRank, isToken } from "./layout";
 import { Filters, Meta, Result, buildFilterBar, emptyFilters, isEmpty, searchAll } from "./search";
 
@@ -601,7 +601,17 @@ export class DeckView extends ItemView {
   }
 
   private async pickPrint(key: string, board: Board) {
-    const prints = await readPrintings(this.app, key);
+    let prints = await readPrintings(this.app, key);
+    // ノートの標準の版 (scryfall_id) が表に無いとき (表が無い古いノートなど): その1枚を取って表に足す。持っている版が、選択肢に出る
+    const own = cardInfo(this.app, key)?.id;
+    if (own && !prints.some((p) => p.id === own)) {
+      try {
+        await addPrintings(this.app, key, [(await fetchById(own)) as unknown as Printing]);
+        prints = await readPrintings(this.app, key);
+      } catch {
+        /* 取れなくても、選択画面は開く */
+      }
+    }
     const oracle = oracleIdOf(this.app, key);
     const cur = this.deck[board].get(key)?.print?.split(" ")[2];
     // 言語タブ: ある言語を開いたときに、その言語の版を取りに行って、ノートの表に足す
@@ -650,7 +660,7 @@ export class PrintModal extends Modal {
     this.setTitle(`${this.key} のイラスト`);
     this.modalEl.addClass("mtg-print-modal");
     // コレクションは版が必須なので「指定なし」は出さない
-    if (this.canReset) this.contentEl.createEl("button", { text: "指定なし (標準に戻す)" }).onclick = () => this.pick();
+    if (this.canReset) this.contentEl.createEl("button", { text: "最新のアートにする" }).onclick = () => this.pick();
     const bar = this.contentEl.createDiv("mtg-print-tabs");
     const grid = this.contentEl.createDiv("mtg-print-grid");
     const loaded = new Set(this.prints.map((p) => p.lang));
@@ -674,6 +684,18 @@ export class PrintModal extends Modal {
         return;
       }
       grid.empty();
+      // 取得済みの言語: 持っている版を出し、取り直したいときの「再取得」ボタンを上に出す
+      if (lang && this.tabs) {
+        const again = grid.createEl("button", { text: `${LANG_NAME[lang] ?? lang}版を再取得する`, cls: "mtg-print-again" });
+        again.onclick = async () => {
+          again.disabled = true;
+          again.setText("取得中…");
+          const got = await this.tabs!.load(lang).catch(() => []);
+          const ids = new Set(this.prints.map((p) => p.id));
+          this.prints.push(...got.filter((p) => !ids.has(p.id)));
+          await show(lang);
+        };
+      }
       const list = lang ? this.prints.filter((p) => p.lang === lang) : this.prints;
       if (!list.length) grid.createDiv({ text: "この言語の版は無い", cls: "mtg-dim" });
       for (const p of list) {
