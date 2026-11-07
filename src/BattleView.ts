@@ -275,7 +275,7 @@ export class BattleView extends ItemView {
         const look = this.ui?.stage.querySelector(".mtg-bt-handlook");
         if (look) return look.remove(); // 相手の手札の表示を閉じる
         if (this.askEl) this.cancelAsk();
-        else if (this.targeting) this.endTargeting(); // 途中でやめるのは Esc だけ
+        else if (this.targeting) this.endTargeting(); // 途中でやめるのは Esc か、選んだ対象をもう一度クリックして 0 にする
         else this.closeMenu();
       });
       this.registerDomEvent(this.contentEl, "click", (e) => {
@@ -1101,6 +1101,7 @@ export class BattleView extends ItemView {
     if (at >= 0) picks.splice(at, 1);
     else if (picks.length < t.slots[t.i].max) picks.push(el.dataset.tid!);
     else return;
+    if (at >= 0 && t.i === 0 && !picks.length) return this.endTargeting(); // 選んだ対象をもう一度クリックして、0 に戻したら、取りやめ (「次へ」に戻る)。Esc と同じ
     this.paintTargeting();
   }
   private confirmTarget() {
