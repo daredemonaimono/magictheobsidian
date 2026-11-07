@@ -39,6 +39,7 @@ export function advanceStep(g: Game, rules: RuleBook): void {
     g.landsPlayed = 0;
     g.spellsCast = 0;
     g.spellsBy = {};
+    g.castTypes = {};
     g.drawn = {};
     g.gained = {};
     g.lostLife = {};

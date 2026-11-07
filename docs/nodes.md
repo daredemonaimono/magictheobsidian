@@ -2,11 +2,11 @@
 
 > このファイルは、自動で作られます (`src/battle/nodeDocs.ts`)。直接は書き換えません。ノードを足したら、`npm run docs:nodes` で更新します。ノードは、`src/battle/nodes/` の、カテゴリーごとのファイルにあります。
 
-全 87 個のノード、9 個の条件。
+全 92 個のノード、9 個の条件。
 
 目次: [宣言・コスト・条件](#宣言・コスト・条件) / [対象・数える・絞り込む](#対象・数える・絞り込む) / [カードの移動・ライブラリー・手札](#カードの移動・ライブラリー・手札) / [パーマネント・トークン・カウンター](#パーマネント・トークン・カウンター) / [ダメージ・ライフ・マナ・打ち消し](#ダメージ・ライフ・マナ・打ち消し) / [継続効果](#継続効果)
 
-## 宣言・コスト・条件 (25 個)
+## 宣言・コスト・条件 (26 個)
 
 ### `cost` コスト
 
@@ -51,6 +51,14 @@ Delve の宣言(呪文能力の最初に書く。引数なし)。唱えるとき
 - 引数: `step`(string・必須・upkeep / draw / main1 / combat / main2 / end)
 - 言い方 (キー): 次の終了ステップの開始時に、あとで、遅延誘発
 - 書ける能力: triggered / activated / spell
+
+### `startEngines` エンジン始動!
+
+常在型能力。このパーマネントが戦場に出たとき、自分に速度が無ければ、速度が 1 から始まる。速度は、自分のターンに相手がライフを失うと、1 ターンに 1 回 1 上がる(最高 4)。「最高速度のあいだ〜」は、affect minSpeed=4 と書く
+
+- 引数: なし
+- 書ける能力: static
+- 宣言のノード (エンジンが読む。`if=` は付けられない)
 
 ### `exileInstead` 墓地に行くかわりに追放
 
@@ -225,7 +233,7 @@ from(graveyard / library。graveyard|library のように並べられる)にあ�
 - 宣言のノード (エンジンが読む。`if=` は付けられない)
 - 中心のノード (ルールを書かせるとき、いつも AI の指示に入る。ほかは、カードごとに選ぶ)
 
-## 対象・数える・絞り込む (12 個)
+## 対象・数える・絞り込む (16 個)
 
 ### `target` 対象
 
@@ -286,6 +294,34 @@ from(look / choose などの出力)のカードのうち、type(| は または)
 - 引数: なし
 - 出力: `n`(number) (`as=名前` で受けて、`$名前` で渡す)
 - 書ける能力: spell
+
+### `hasKeyword` キーワードを持つか
+
+対象のクリーチャー(複数なら先頭)が、いま keyword を持っているかを、ok として出力する。as= で受けて、if=$名前 (否定は if=!$名前)。「飛行を持つなら 2 倍」(Cut Propulsion)は、hasKeyword keyword=flying
+
+- 引数: `target`(ref・必須)、`keyword`(string・必須・flying / hexproof / flash / haste / vigilance / trample / lifelink / deathtouch / firstStrike / doubleStrike / reach / menace / defender / prowess / indestructible)
+- 出力: `ok`(boolean) (`as=名前` で受けて、`$名前` で渡す)
+
+### `hasType` 型を持つか
+
+対象のパーマネント(複数なら先頭)の、いまの型行に type (型・サブタイプ。| は または) があるかを、ok として出力する。as= で受けて、if=$名前。「斥候なら」(Kellan)は、hasType type=Scout
+
+- 引数: `target`(ref・必須)、`type`(string・必須)
+- 出力: `ok`(boolean) (`as=名前` で受けて、`$名前` で渡す)
+
+### `castWith` どう唱えられたか
+
+対象のパーマネント(複数なら先頭)が、flag の形で唱えられて出たかを、ok として出力する。flag=alt(別のコスト。ワープなど) / kicked。as= で受けて、if=$名前。「ワープのコストで唱えられたなら」(Full Bore)は、castWith flag=alt
+
+- 引数: `target`(ref・必須)、`flag`(string・必須・alt / kicked)
+- 出力: `ok`(boolean) (`as=名前` で受けて、`$名前` で渡す)
+
+### `spellsCast` このターンに唱えた呪文の数
+
+プレイヤー (player=you / opponents / target) が、このターンに唱えた呪文の数 (いま唱えたものも含む) を、n として出力する。type・notType で型を絞る(「クリーチャーでない呪文」は notType=creature)。target=プレイヤーの id (controllerOf の出力) と player=target で、そのプレイヤー。Magebane Lizard
+
+- 引数: `player`(string・必須・you / opponents / target)、`target`(ref)、`type`(string)、`notType`(string)
+- 出力: `n`(number) (`as=名前` で受けて、`$名前` で渡す)
 
 ### `compare` 数を比べる
 
@@ -384,9 +420,9 @@ cards(look / choose の出力)を、持ち主の to へ動かす。to=hand / gra
 
 ### `exilePlay` 追放して、プレイしてよい
 
-コントローラーが、ライブラリーの一番上から count 枚(既定は1)を追放し、期限までのあいだ、プレイしてよい。duration=endOfTurn(このターン中) / yourNextEnd(自分の次の終了ステップまで)。実際には手札に置いて印を付ける(期限が来て、まだ手札にあれば追放される。shortcut: 手札の枚数にも数える)
+コントローラーが、ライブラリーの一番上から count 枚(既定は1)を追放し、期限までのあいだ、プレイしてよい。target=自分のパーマネント(self など)なら、それを追放して、あとのターンに唱え直せる(ワープ)。duration=endOfTurn(このターン中) / yourNextEnd(自分の次の終了ステップまで) / later(期限なし)。実際には手札に置いて印を付ける(期限が来て、まだ手札にあれば追放される。shortcut: 手札の枚数にも数える)
 
-- 引数: `count`(number)、`duration`(string・必須・endOfTurn / yourNextEnd)
+- 引数: `count`(number)、`target`(ref)、`duration`(string・必須・endOfTurn / yourNextEnd / later)
 
 ### `zoneCards` 墓地・手札のカード
 
@@ -625,9 +661,9 @@ a と b(それぞれ target ノードの出力)のパーマネントのコント
 
 ### `affect` 及ぶ先
 
-継続効果の常在型能力の最初に書く、効果が及ぶ先。who=attached(このパーマネントが付いているもの。装備・オーラ) / self(このパーマネント自身) / yours(自分のパーマネント) / all(すべて)。type・notType で型を絞る。turn=yours で、そのコントローラーのターンのあいだだけ(「自分のターンのあいだ、先制攻撃を持つ」)/ opponents で、相手のターンのあいだだけ
+継続効果の常在型能力の最初に書く、効果が及ぶ先。who=attached(このパーマネントが付いているもの。装備・オーラ) / self(このパーマネント自身) / yours(自分のパーマネント) / all(すべて)。type・notType で型を絞る。turn=yours で、そのコントローラーのターンのあいだだけ(「自分のターンのあいだ、先制攻撃を持つ」)/ opponents で、相手のターンのあいだだけ。minSpeed=4 で、速度が 4 (最高速度) のあいだだけ
 
-- 引数: `who`(string・必須・attached / self / yours / all)、`type`(string)、`notType`(string)、`turn`(string・yours / opponents)
+- 引数: `who`(string・必須・attached / self / yours / all)、`type`(string)、`notType`(string)、`turn`(string・yours / opponents)、`minSpeed`(number)
 - 書ける能力: static
 - 宣言のノード (エンジンが読む。`if=` は付けられない)
 - 中心のノード (ルールを書かせるとき、いつも AI の指示に入る。ほかは、カードごとに選ぶ)

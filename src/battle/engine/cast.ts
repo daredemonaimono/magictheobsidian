@@ -77,6 +77,7 @@ export function castCore(g: Game, p: PlayerId, card: GameCard, body: NodeCall[],
   const before = g.spellsCast ?? 0; // この呪文より前に唱えられた数 (Storm)
   g.spellsCast = before + 1;
   (g.spellsBy ??= {})[p] = (g.spellsBy[p] ?? 0) + 1;
+  ((g.castTypes ??= {})[p] ??= []).push(card.typeLine);
   for (const c of pitch) {
     g.hands[p] = g.hands[p].filter((x) => x !== c);
     g.exile[c.owner].push(c);

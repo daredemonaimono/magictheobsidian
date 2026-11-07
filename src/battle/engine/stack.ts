@@ -27,6 +27,7 @@ export function resolveTop(g: Game, rules: RuleBook): void {
   if (!fizzled) {
     const vars: Record<string, Value> = item.x !== undefined ? { X: item.x } : {}; // 起動時に選んだ X は、$X として参照できる
     for (const [i, call] of body.entries()) {
+      if (call.node === "delay" && call.if !== undefined && !evalCondition(call.if, ctx(call, vars))) break; // 条件を満たさない遅延は、残りも実行しない (ワープなど)
       if (call.node === "delay") {
         // 遅延誘発: 残りのノードを、次の、そのステップの開始時に回して、ここでは止める
         (g.delayed ??= []).push({ step: call.args.step as Step, card: item.card, controller: item.controller, ...(item.source ? { source: item.source } : {}), body: body.slice(i + 1) });

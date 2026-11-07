@@ -82,6 +82,18 @@ export function registerDeclarations(): void {
     run: (): Record<string, Value> => ({}),
   });
 
+  // エンジン始動! (速度): 戦場に出たとき、速度が無ければ 1 から始まる
+  node({
+    id: "startEngines",
+    title: "エンジン始動!",
+    summary: "常在型能力。このパーマネントが戦場に出たとき、自分に速度が無ければ、速度が 1 から始まる。速度は、自分のターンに相手がライフを失うと、1 ターンに 1 回 1 上がる(最高 4)。「最高速度のあいだ〜」は、affect minSpeed=4 と書く",
+    params: {},
+    declaration: true,
+    only: ["static"],
+    outputs: {},
+    run: (): Record<string, Value> => ({}),
+  });
+
   // 墓地に行くかわりに追放 (置換)。戦場にあるあいだ働く
   node({
     id: "exileInstead",

@@ -1,8 +1,8 @@
 import { characteristics } from "../continuous";
 import { NodeDef, Value } from "../node";
 import { defineNode as define } from "../registry";
-import { Perm, playersOf, typeIn } from "../state";
-import { filterParams, findCard, idList, matches, who } from "./shared";
+import { Perm, normKeyword, playersOf, typeIn } from "../state";
+import { KEYWORDS, filterParams, findCard, idList, matches, who } from "./shared";
 
 // ノード: 対象・数える・絞り込む
 const CATEGORY = "対象・数える・絞り込む";
@@ -132,8 +132,10 @@ export function registerTargets(): void {
     params: { target: { type: "ref", required: true } },
     outputs: { id: "id" },
     run: (ctx, a): Record<string, Value> => {
-      const perm = ctx.game.battlefield.find((x) => x.id === idList(a.target)[0]);
-      return perm ? { id: perm.controller } : {};
+      const id = idList(a.target)[0];
+      const perm = ctx.game.battlefield.find((x) => x.id === id);
+      const spell = perm ? undefined : ctx.game.stack.find((x) => x.id === id); // スタックの呪文 (eventPerm が、唱えられた呪文を返す): そのコントローラー
+      return perm ? { id: perm.controller } : spell ? { id: spell.controller } : {};
     },
   });
 
@@ -162,6 +164,58 @@ export function registerTargets(): void {
     outputs: { n: "number" },
     only: ["spell"],
     run: (ctx): Record<string, Value> => ({ n: ctx.item.cast.colors ?? 0 }),
+  });
+
+  // 対象の状態を調べる (条件に使う true / false): キーワード・型・どう唱えられたか
+  node({
+    id: "hasKeyword",
+    title: "キーワードを持つか",
+    summary: "対象のクリーチャー(複数なら先頭)が、いま keyword を持っているかを、ok として出力する。as= で受けて、if=$名前 (否定は if=!$名前)。「飛行を持つなら 2 倍」(Cut Propulsion)は、hasKeyword keyword=flying",
+    params: { target: { type: "ref", required: true }, keyword: { type: "string", required: true, choices: KEYWORDS } },
+    outputs: { ok: "boolean" },
+    run: (ctx, a): Record<string, Value> => {
+      const perm = ctx.game.battlefield.find((x) => x.id === idList(a.target)[0]);
+      return { ok: !!perm && characteristics(ctx.game, perm, ctx.rules).keywords.includes(normKeyword(String(a.keyword))) };
+    },
+  });
+
+  node({
+    id: "hasType",
+    title: "型を持つか",
+    summary: "対象のパーマネント(複数なら先頭)の、いまの型行に type (型・サブタイプ。| は または) があるかを、ok として出力する。as= で受けて、if=$名前。「斥候なら」(Kellan)は、hasType type=Scout",
+    params: { target: { type: "ref", required: true }, type: { type: "string", required: true } },
+    outputs: { ok: "boolean" },
+    run: (ctx, a): Record<string, Value> => {
+      const perm = ctx.game.battlefield.find((x) => x.id === idList(a.target)[0]);
+      return { ok: !!perm && typeIn(characteristics(ctx.game, perm, ctx.rules).typeLine, String(a.type)) };
+    },
+  });
+
+  node({
+    id: "castWith",
+    title: "どう唱えられたか",
+    summary: "対象のパーマネント(複数なら先頭)が、flag の形で唱えられて出たかを、ok として出力する。flag=alt(別のコスト。ワープなど) / kicked。as= で受けて、if=$名前。「ワープのコストで唱えられたなら」(Full Bore)は、castWith flag=alt",
+    params: { target: { type: "ref", required: true }, flag: { type: "string", required: true, choices: ["alt", "kicked"] } },
+    outputs: { ok: "boolean" },
+    run: (ctx, a): Record<string, Value> => {
+      const perm = ctx.game.battlefield.find((x) => x.id === idList(a.target)[0]);
+      return { ok: !!perm?.cast?.[a.flag as "alt" | "kicked"] };
+    },
+  });
+
+  // このターンに唱えた呪文の数 (型で絞れる)
+  node({
+    id: "spellsCast",
+    title: "このターンに唱えた呪文の数",
+    summary: "プレイヤー (player=you / opponents / target) が、このターンに唱えた呪文の数 (いま唱えたものも含む) を、n として出力する。type・notType で型を絞る(「クリーチャーでない呪文」は notType=creature)。target=プレイヤーの id (controllerOf の出力) と player=target で、そのプレイヤー。Magebane Lizard",
+    params: { player: who, target: { type: "ref" }, type: { type: "string" }, notType: { type: "string" } },
+    outputs: { n: "number" },
+    run: (ctx, a): Record<string, Value> => {
+      const g = ctx.game;
+      const ps = a.player === "target" ? idList(a.target) : playersOf(g, ctx.item.controller, String(a.player));
+      const types = ps.flatMap((p) => g.castTypes?.[p] ?? []);
+      return { n: types.filter((t) => (typeof a.type !== "string" || typeIn(t, a.type)) && (typeof a.notType !== "string" || !typeIn(t, a.notType))).length };
+    },
   });
 
   // 2つの数を比べる

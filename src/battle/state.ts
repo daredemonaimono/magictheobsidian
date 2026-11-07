@@ -117,8 +117,17 @@ export interface Delayed { step: Step; card: GameCard; controller: PlayerId; sou
 // ライフを失う (ダメージ・ライフの支払い・ライフを失う効果で共通。そのターンに失った量 lostLife も、数える)
 export function loseLife(g: Game, p: PlayerId, n: number): void {
   g.life[p] -= n;
-  if (n > 0) (g.lostLife ??= {})[p] = (g.lostLife[p] ?? 0) + n;
+  if (n <= 0) return;
+  (g.lostLife ??= {})[p] = (g.lostLife[p] ?? 0) + n;
+  // 速度: 自分のターンに、相手がライフを失うと、1 ターンに 1 回、1 上がる (最高速度は 4)
+  const q = g.active;
+  if (q !== p && (g.speed?.[q] ?? 0) > 0 && (g.speed![q] ?? 0) < MAX_SPEED && g.speedTurn?.[q] !== g.turn) {
+    g.speed![q]++;
+    (g.speedTurn ??= {})[q] = g.turn;
+    g.log.push(`${q} の速度が ${g.speed![q]} になった${g.speed![q] === MAX_SPEED ? " (最高速度)" : ""}`);
+  }
 }
+export const MAX_SPEED = 4;
 
 // ライフを得る (そのターンに得た量 gained も、数える)
 export function gainLife(g: Game, p: PlayerId, n: number): void {
@@ -168,11 +177,14 @@ export interface Game {
   effects?: { text: string; card?: string }[]; // スタックを使わない効果の発動 (Dredge・伝説のルール・置換効果)。画面が、スタックとは別に、一時的に表示する (最後の 30 件)
   activated?: Record<string, number>; // このターンに、起動型能力を起動した回数 (パーマネントの id:番号 / 手札のカードの id:h番号)。暴走防止 (AI は、同じ能力を 1 ターンに 3 回までしか選ばない)。ターンが替わると空
   discarded?: Record<PlayerId, number>; // このターンに捨てた・サイクリングしたカードの数 (手札から墓地へ。プレイヤーごと。ターンが替わると 0)
-  mayPlay?: { id: string; owner: PlayerId; until: "endOfTurn" | "yourNextEnd" }[]; // 追放して、そのあいだだけプレイしてよいカード (手札に置いて印を付ける。期限が来て、まだ手札にあれば、追放領域へ)
+  speed?: Record<PlayerId, number>; // 速度 (Start your engines!。1〜4。無ければ 0)
+  speedTurn?: Record<PlayerId, number>; // 速度を上げた最後のターン (自分のターンに 1 回まで)
+  mayPlay?: { id: string; owner: PlayerId; until: "endOfTurn" | "yourNextEnd" | "later" }[]; // 追放して、そのあいだだけプレイしてよいカード (手札に置いて印を付ける。期限が来て、まだ手札にあれば、追放領域へ)
   lostLife?: Record<PlayerId, number>; // このターンに失ったライフの量 (プレイヤーごと。ターンが替わると 0)
   gained?: Record<PlayerId, number>; // このターンに得たライフの量 (プレイヤーごと。ターンが替わると 0)
   delayed?: Delayed[]; // 遅延誘発 (あとのステップの開始時に積む)
   drawn?: Record<PlayerId, string[]>; // このターンに引いたカードの id (プレイヤーごと)
+  castTypes?: Record<PlayerId, string[]>; // このターンに、プレイヤーごとに唱えた呪文の型行 (spellsCast が数える)
   spellsBy?: Record<PlayerId, number>; // このターンに、プレイヤーごとに唱えた呪文の数 (castLimit)
   spellsCast?: number; // このターンに唱えられた呪文の数 (全員。Storm)。ターンが替わると 0
   landsPlayed: number; // このターンに出した土地の数 (1ターンに1枚)

@@ -178,4 +178,103 @@ const lib = (g: Game, owner: string, n: number) => (g.libraries[owner] = Array.f
   assert.ok(g.hands["A"].some((c) => c.exilePlay), "捨てたので、一番上を追放して、プレイしてよい");
   assert.equal(g.mayPlay?.[0].until, "yourNextEnd");
 }
+
+// ---- 条件のノード・ワープ・速度・サブタイプ・唱えた呪文の数
+// Cut Propulsion: 自分のパワー分のダメージ。飛行なら 2 倍
+for (const [kw, dmg] of [[[], 2], [["flying"], 4]] as const) {
+  const g = setup();
+  enterBattlefield(g, C("T", "T", "Creature — Bird", "B", { power: 2, toughness: 5, keywords: [...kw] }), "B", rules);
+  g.hands["A"].push(C("CP", "Cut Propulsion", "Instant"));
+  castSpell(g, "A", "CP", { t: "T" }, rules);
+  drain(g);
+  assert.equal(g.battlefield.find((p) => p.id === "T")!.damage, dmg, `飛行 ${kw.length > 0}`);
+}
+// ワープ: Nova Hellkite を別のコストで唱えると、次の終了ステップに追放され、あとのターンに唱え直せる。Full Bore は、ワープで唱えたものに、トランプルと速攻
+{
+  const g = setup();
+  g.hands["A"].push(C("NH", "Nova Hellkite", "Creature — Dragon", "A", { power: 4, toughness: 5 }), C("FB", "Full Bore", "Instant"));
+  g.mana["A"] = 3;
+  g.pool["A"] = { R: 1 };
+  castSpell(g, "A", "NH", {}, rules, { alt: true });
+  drain(g);
+  const nh = g.battlefield.find((p) => p.id === "NH")!;
+  assert.ok(nh?.cast?.alt, "別のコストで唱えて出た");
+  castSpell(g, "A", "FB", { t: "NH" }, rules);
+  drain(g);
+  const kw = characteristics(g, nh, rules).keywords;
+  assert.ok(kw.includes("trample") && kw.includes("haste"), "ワープで唱えたクリーチャーは、トランプルと速攻");
+  g.step = "main2";
+  advanceStep(g, rules); // 終了ステップの開始時: 遅延誘発
+  drain(g);
+  assert.ok(!g.battlefield.some((p) => p.id === "NH") && g.hands["A"].some((c) => c.id === "NH" && c.exilePlay), "追放されて、あとで唱え直せる");
+  g.step = "end";
+  advanceStep(g, rules);
+  assert.ok(g.hands["A"].some((c) => c.id === "NH"), "期限なし: ターンが終わっても、手札に残る");
+}
+// 通常に唱えると、ワープの追放は起きない
+{
+  const g = setup();
+  g.hands["A"].push(C("NH", "Nova Hellkite", "Creature — Dragon", "A", { power: 4, toughness: 5 }));
+  castSpell(g, "A", "NH", {}, rules);
+  drain(g);
+  g.step = "main2";
+  advanceStep(g, rules);
+  drain(g);
+  assert.ok(g.battlefield.some((p) => p.id === "NH"));
+}
+// Burnout Bashtronaut: 速度。自分のターンに相手がライフを失うと、1 ターンに 1 回上がる。最高速度 (4) で二段攻撃
+{
+  const g = setup();
+  g.turn = 1;
+  enterBattlefield(g, C("BB", "Burnout Bashtronaut", "Creature — Goblin Warrior", "A", { power: 1, toughness: 1 }), "A", rules);
+  const bb = g.battlefield.find((p) => p.id === "BB")!;
+  assert.equal(g.speed?.["A"], 1);
+  const dmg = () => { g.hands["A"].push(C(`LS${g.turn}${g.speed?.["A"]}`, "Lightning Strike", "Instant")); castSpell(g, "A", `LS${g.turn}${g.speed?.["A"]}`, { t: "B" }, rules); drain(g); };
+  dmg();
+  assert.equal(g.speed?.["A"], 2, "相手がライフを失った");
+  dmg();
+  assert.equal(g.speed?.["A"], 2, "1 ターンに 1 回だけ");
+  assert.ok(!characteristics(g, bb, rules).keywords.includes("doublestrike"));
+  for (const t of [2, 3]) { g.turn = t; dmg(); }
+  assert.equal(g.speed?.["A"], 4, "最高速度");
+  assert.ok(characteristics(g, bb, rules).keywords.includes("doublestrike"), "最高速度で二段攻撃");
+  g.turn = 9;
+  dmg();
+  assert.equal(g.speed?.["A"], 4, "4 を超えない");
+}
+// Kellan: 斥候 → 探偵 → ならず者 (3/2・二段攻撃)。探偵になってから戦闘ダメージで、追放してプレイ
+{
+  const g = setup();
+  lib(g, "A", 3);
+  enterBattlefield(g, C("K", "Kellan, Planar Trailblazer", "Legendary Creature — Human Faerie Scout", "A", { power: 2, toughness: 1 }), "A", rules);
+  const k = g.battlefield.find((p) => p.id === "K")!;
+  const act = (i: number) => { g.mana["A"] = 3; g.pool["A"] = { R: 1 }; activateAbility(g, "A", "K", i, {}, rules); drain(g); };
+  act(1);
+  assert.ok(!characteristics(g, k, rules).typeLine.includes("Rogue"), "斥候のままなら、2 つ目は何も起きない");
+  act(0);
+  assert.ok(characteristics(g, k, rules).typeLine.includes("Detective"));
+  act(1);
+  const now = characteristics(g, k, rules);
+  assert.ok(now.typeLine.includes("Rogue") && now.power === 3 && now.toughness === 2 && now.keywords.includes("doublestrike"));
+  g.events.push({ type: "damaged", source: k, target: "B", kind: "player", amount: 3, combat: true });
+  flushEvents(g, rules);
+  drain(g);
+  assert.ok(g.hands["A"].some((c) => c.exilePlay), "戦闘ダメージを与えたとき、追放してプレイできる");
+}
+// Magebane Lizard: 呪文を唱えたプレイヤーに、そのターンに唱えた、クリーチャーでない呪文の数のダメージ
+{
+  const g = setup();
+  enterBattlefield(g, C("ML", "Magebane Lizard", "Creature — Lizard", "A", { power: 1, toughness: 4 }), "A", rules);
+  g.hands["B"].push(C("S1", "Lightning Strike", "Instant", "B"), C("S2", "Lightning Strike", "Instant", "B"));
+  g.active = "B";
+  g.priority = "B";
+  castSpell(g, "B", "S1", { t: "A" }, rules);
+  flushEvents(g, rules);
+  drain(g);
+  assert.equal(g.life["B"], 19, "1 つ目: 1 点");
+  castSpell(g, "B", "S2", { t: "A" }, rules);
+  flushEvents(g, rules);
+  drain(g);
+  assert.equal(g.life["B"], 17, "2 つ目: 2 点");
+}
 console.log("battle-redaggro ok");

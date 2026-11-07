@@ -197,18 +197,33 @@ export function registerCards(): void {
   node({
     id: "exilePlay",
     title: "追放して、プレイしてよい",
-    summary: "コントローラーが、ライブラリーの一番上から count 枚(既定は1)を追放し、期限までのあいだ、プレイしてよい。duration=endOfTurn(このターン中) / yourNextEnd(自分の次の終了ステップまで)。実際には手札に置いて印を付ける(期限が来て、まだ手札にあれば追放される。shortcut: 手札の枚数にも数える)",
-    params: { count: { type: "number", min: 1 }, duration: { type: "string", required: true, choices: ["endOfTurn", "yourNextEnd"] } },
+    summary: "コントローラーが、ライブラリーの一番上から count 枚(既定は1)を追放し、期限までのあいだ、プレイしてよい。target=自分のパーマネント(self など)なら、それを追放して、あとのターンに唱え直せる(ワープ)。duration=endOfTurn(このターン中) / yourNextEnd(自分の次の終了ステップまで) / later(期限なし)。実際には手札に置いて印を付ける(期限が来て、まだ手札にあれば追放される。shortcut: 手札の枚数にも数える)",
+    params: { count: { type: "number", min: 1 }, target: { type: "ref" }, duration: { type: "string", required: true, choices: ["endOfTurn", "yourNextEnd", "later"] } },
     outputs: {},
     run: (ctx, a): Record<string, Value> => {
       const g = ctx.game;
       const p = ctx.item.controller;
+      if (a.target !== undefined) {
+        // 戦場のパーマネントを追放して、あとで唱え直せる (ワープ)。実際には手札に置いて印を付ける
+        for (const id of idList(a.target)) {
+          const perm = g.battlefield.find((x) => x.id === id && x.controller === p);
+          if (!perm) continue;
+          g.battlefield = g.battlefield.filter((x) => x !== perm);
+          g.events.push({ type: "leaves", perm, to: "exile" });
+          if (perm.card.token) continue;
+          perm.card.exilePlay = true;
+          g.hands[perm.card.owner].push(perm.card);
+          (g.mayPlay ??= []).push({ id: perm.card.id, owner: perm.card.owner, until: "later" });
+          g.log.push(`${perm.card.name} を追放した。あとのターンに、唱え直してよい`);
+        }
+        return {};
+      }
       for (let i = 0; i < (typeof a.count === "number" ? a.count : 1); i++) {
         const top = g.libraries[p].shift();
         if (!top) break;
         top.exilePlay = true;
         g.hands[p].push(top);
-        (g.mayPlay ??= []).push({ id: top.id, owner: p, until: a.duration === "yourNextEnd" ? "yourNextEnd" : "endOfTurn" });
+        (g.mayPlay ??= []).push({ id: top.id, owner: p, until: a.duration === "yourNextEnd" ? "yourNextEnd" : a.duration === "later" ? "later" : "endOfTurn" });
         g.log.push(`${logWho(p)}は、ライブラリーの一番上の ${top.name} を追放した。${a.duration === "yourNextEnd" ? "次の終了ステップまで" : "このターン中"}、プレイしてよい`);
       }
       return {};

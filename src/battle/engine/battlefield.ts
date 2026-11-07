@@ -21,6 +21,11 @@ export function enterBattlefield(g: Game, card: GameCard, controller: PlayerId, 
   }
   const repl = (rules.get(card.name)?.abilities ?? []).filter((a) => a.kind === "static").flatMap((a) => a.body).find((c) => c.node === "exileInstead");
   if (repl) perm.exileInstead = repl.args.who as "opponents" | "you" | "all"; // shortcut: すべての能力を失っても、置換は残る (出たときに写すだけ)
+  // 「エンジン始動!」: 速度が無ければ、1 から始まる
+  if ((rules.get(card.name)?.abilities ?? []).some((a) => a.kind === "static" && a.body.some((c) => c.node === "startEngines")) && !(g.speed?.[controller] ?? 0)) {
+    (g.speed ??= {})[controller] = 1;
+    g.log.push(`${controller} の速度が 1 になった`);
+  }
   g.battlefield.push(perm);
   g.events.push({ type: "enters", perm, ...(opts.from ? { from: opts.from } : {}) });
 }

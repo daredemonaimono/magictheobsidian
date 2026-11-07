@@ -33,6 +33,7 @@ const continuous = (s: Perm, rules: RuleBook) => (rules.get(s.card.name)?.abilit
 
 function affects(g: Game, s: Perm, aff: NodeCall, p: Perm): boolean {
   if (p.emblem) return false; // 紋章は、継続効果の影響を受けない
+  if (typeof aff.args.minSpeed === "number" && (g.speed?.[s.controller] ?? 0) < aff.args.minSpeed) return false; // minSpeed: 速度が、その値以上のあいだだけ (最高速度)
   if ((aff.args.turn === "yours" && g.active !== s.controller) || (aff.args.turn === "opponents" && g.active === s.controller)) return false; // turn: そのコントローラーのターン (opponents = 相手のターン) のあいだだけ
   switch (aff.args.who) {
     case "attached":
