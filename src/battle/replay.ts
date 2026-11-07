@@ -17,6 +17,7 @@ export function replay(ctl: BattleController, entries: RecordEntry[], upTo = ent
       case "use": r = ctl.use(a[0], a[1], a[2], a[3]); break;
       case "activate": r = ctl.activate(a[0], a[1], a[2], a[3]); break;
       case "hand": r = ctl.activateHand(a[0], a[1], a[2]); break;
+      case "yard": r = ctl.useYard(a[0], a[1], a[2]); break;
       case "declareAttackers": r = ctl.declareAttackers(a[0]); break;
       case "declareBlockers": r = ctl.declareBlockers(a[0]); break;
       case "assign": r = ctl.assign(a[0]); break;

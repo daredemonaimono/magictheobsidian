@@ -33,6 +33,7 @@ const continuous = (s: Perm, rules: RuleBook) => (rules.get(s.card.name)?.abilit
 
 function affects(g: Game, s: Perm, aff: NodeCall, p: Perm): boolean {
   if (p.emblem) return false; // 紋章は、継続効果の影響を受けない
+  if (aff.args.color === "chosen" && (!s.chosen || !(p.card.colors ?? []).includes(s.chosen))) return false; // color=chosen: 選んだ色のものだけ
   if (typeof aff.args.ifCounter === "string" && !((s.counters?.[aff.args.ifCounter] ?? 0) > 0)) return false; // ifCounter: このパーマネントに、そのカウンターが載っているあいだだけ
   if (typeof aff.args.minSpeed === "number" && (g.speed?.[s.controller] ?? 0) < aff.args.minSpeed) return false; // minSpeed: 速度が、その値以上のあいだだけ (最高速度)
   if ((aff.args.turn === "yours" && g.active !== s.controller) || (aff.args.turn === "opponents" && g.active === s.controller)) return false; // turn: そのコントローラーのターン (opponents = 相手のターン) のあいだだけ
@@ -75,6 +76,9 @@ export function activatedAbilities(g: Game, rules: RuleBook, p: Perm): Ability[]
 const declared = (rules: RuleBook, card: GameCard): string[] =>
   (rules.get(card.name)?.abilities ?? []).filter((a) => a.kind === "static" && a.body[0]?.node !== "affect").flatMap((a) => a.body.filter((c) => c.node === "keyword").map((c) => String(c.args.name)));
 
+// 型行にサブタイプなどを足す (元のものは残る。すでにあれば足さない)
+const addTypes = (typeLine: string, add: string[]): string => add.reduce((t, x) => (typeIn(t, x) ? t : t.includes("—") ? `${t} ${x}` : `${t} — ${x}`), typeLine);
+
 export function characteristics(g: Game, p: Perm, rules: RuleBook): Chars {
   const lost = losesAll(g, p, rules);
   const effs = effectsOn(g, p, rules);
@@ -100,7 +104,7 @@ export function characteristics(g: Game, p: Perm, rules: RuleBook): Chars {
   ].map(normKeyword);
   return {
     name: last("setName") ? String(last("setName")!.args.name) : p.card.name,
-    typeLine: [...bec].reverse().find((b) => b.types)?.types ?? (last("setTypes") ? String(last("setTypes")!.args.types) : p.card.typeLine),
+    typeLine: addTypes([...bec].reverse().find((b) => b.types)?.types ?? (last("setTypes") ? String(last("setTypes")!.args.types) : p.card.typeLine), effs.filter((e) => e.call.node === "staticAddType").map((e) => String(e.call.args.type))),
     colors: [...bec].reverse().find((b) => b.colors)?.colors ?? (last("setColors") ? String(last("setColors")!.args.colors).split(/[\s,]+/).filter(Boolean) : p.card.colors ?? []),
     power,
     toughness,

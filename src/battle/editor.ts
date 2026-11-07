@@ -117,8 +117,7 @@ export function problems(rule: CardRule): Problem[] {
     for (const r of refProblems(ab)) out.push({ ability: a, node: r.node, message: r.message }); // 参照の検査は、AI の返事の検証・状況レポートと共通
     ab.body.forEach((c, n) => {
       const add = (message: string) => out.push({ ability: a, node: n, message });
-      const bad = checkCall(c) ?? placementProblem(ab.kind, c);
-      if (bad) add(bad);
+      for (const bad of [checkCall(c), placementProblem(ab.kind, c)]) if (bad) add(bad); // 引数の問題と、書ける場所の問題は、両方出す
       for (const v of Object.values(c.args)) {
         if (typeof v === "string" && v.includes('"')) add("引用符 (\") は md に書けないので使えない");
         if (typeof v === "number" && !Number.isInteger(v)) add("整数だけ使える (md に小数は書けない)");

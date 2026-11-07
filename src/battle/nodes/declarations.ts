@@ -24,8 +24,8 @@ export function registerDeclarations(): void {
     id: "cost",
     core: true,
     title: "コスト",
-    summary: "起動型能力のコスト(能力の最初に書く)。mana=払う汎用マナの数 / manaCost=色つきのマナコスト(\"{1}{U}\") / tap=このパーマネントをタップ / sacrifice=このパーマネントを生け贄に捧げる / life=N点のライフを払う (フェッチランド) / tapCreatures=パワーの合計がこの値以上になるよう、自分のクリーチャーをタップ / loyalty=忠誠度を足す(+1 は loyalty=1、−2 は loyalty=-2。プレインズウォーカーの能力。ソーサリーのタイミングで1ターンに1回) / loyaltyX=true で −X(X は起動時に選び、効果の中で $X として参照する) / removeCounter=カウンターの種類(+1/+1 など)を 1 個取り除く / discardSelf=true で、このカードを手札から捨てる(手札から起動する能力: サイクリング {2}。cost mana=2 discardSelf=true → draw)",
-    params: { mana: { type: "number", min: 0 }, manaCost: { type: "string" }, tap: { type: "boolean" }, sacrifice: { type: "boolean" }, life: { type: "number", min: 0 }, tapCreatures: { type: "number", min: 0 }, loyalty: { type: "number" }, loyaltyX: { type: "boolean" }, removeCounter: { type: "string" }, discardSelf: { type: "boolean" } },
+    summary: "起動型能力のコスト(能力の最初に書く)。mana=払う汎用マナの数 / manaCost=色つきのマナコスト(\"{1}{U}\") / tap=このパーマネントをタップ / sacrifice=このパーマネントを生け贄に捧げる / life=N点のライフを払う (フェッチランド) / tapCreatures=パワーの合計がこの値以上になるよう、自分のクリーチャーをタップ / loyalty=忠誠度を足す(+1 は loyalty=1、−2 は loyalty=-2。プレインズウォーカーの能力。ソーサリーのタイミングで1ターンに1回) / loyaltyX=true で −X(X は起動時に選び、効果の中で $X として参照する) / removeCounter=カウンターの種類(+1/+1 など)を 1 個取り除く / discardSelf=true で、このカードを手札から捨てる(手札から起動する能力: サイクリング。cost mana=2 discardSelf=true → draw) / exileSelf=true で、このカードを墓地から追放する(墓地から起動する能力)",
+    params: { mana: { type: "number", min: 0 }, manaCost: { type: "string" }, tap: { type: "boolean" }, sacrifice: { type: "boolean" }, life: { type: "number", min: 0 }, tapCreatures: { type: "number", min: 0 }, loyalty: { type: "number" }, loyaltyX: { type: "boolean" }, removeCounter: { type: "string" }, discardSelf: { type: "boolean" }, exileSelf: { type: "boolean" } },
     check: (a) => { try { if (typeof a.manaCost === "string") parseManaCost(a.manaCost); return null; } catch (e) { return (e as Error).message; } },
     outputs: {},
     declaration: true,
@@ -37,9 +37,12 @@ export function registerDeclarations(): void {
     id: "additionalCost",
     core: true,
     title: "追加コスト(任意)",
-    summary: "呪文を唱えるときに払ってもよい追加コスト(キッカー・チームワーク)。flag=kicked / teamwork。払って唱えると、if=<flag> のノードが実行される。mana=汎用のマナ / manaCost=色つきのマナコスト(\"{1}{U}\") / tapCreatures=パワーの合計がこの値以上になるよう、自分のクリーチャーをタップ",
-    params: { flag: { type: "string", required: true, choices: ["kicked", "teamwork"] }, mana: { type: "number", min: 0 }, manaCost: { type: "string" }, tapCreatures: { type: "number", min: 0 } },
-    check: (a) => { try { if (typeof a.manaCost === "string") parseManaCost(a.manaCost); return null; } catch (e) { return (e as Error).message; } },
+    summary: "呪文を唱えるときの追加コスト。任意(キッカー・チームワーク): flag=kicked / teamwork。払って唱えると、if=<flag> のノードが実行される。mana / manaCost=\"{1}{U}\" / tapCreatures=パワーの合計がこの値以上になるよう自分のクリーチャーをタップ。必須: required=true と、sacrifice=型(クリーチャーなどを生け贄に捧げる。Final Vengeance) か、forage=true と manaCost(探索=墓地のカード3枚を追放か食物を生け贄にするか、manaCost を支払う。Feed the Cycle)",
+    params: { flag: { type: "string", choices: ["kicked", "teamwork"] }, mana: { type: "number", min: 0 }, manaCost: { type: "string" }, tapCreatures: { type: "number", min: 0 }, required: { type: "boolean" }, sacrifice: { type: "string" }, forage: { type: "boolean" } },
+    check: (a) => {
+      if (a.required === true ? a.sacrifice === undefined && a.forage !== true : a.flag === undefined) return a.required === true ? "required には sacrifice か forage が要る" : "flag が要る (kicked / teamwork)";
+      try { if (typeof a.manaCost === "string") parseManaCost(a.manaCost); return null; } catch (e) { return (e as Error).message; }
+    },
     outputs: {},
     declaration: true,
     only: ["spell"],
@@ -79,6 +82,42 @@ export function registerDeclarations(): void {
     params: { step: { type: "string", required: true, choices: ["upkeep", "draw", "main1", "combat", "main2", "end"] } },
     outputs: {},
     only: ["triggered", "activated", "spell"],
+    run: (): Record<string, Value> => ({}),
+  });
+
+  // 戦場の選択: 「出るとき、色を 1 つ選ぶ」(Heraldic Banner)。選んだ色は、affect の color=chosen・addMana の color=chosen で使う
+  node({
+    id: "chooseColor",
+    title: "色を選ぶ",
+    summary: "常在型能力。このパーマネントが戦場に出るとき、色を 1 つ選ぶ。選んだ色は、affect color=chosen(その色のクリーチャーに及ぶ)・addMana color=chosen(その色のマナ)で使う",
+    params: {},
+    declaration: true,
+    only: ["static"],
+    outputs: {},
+    run: (): Record<string, Value> => ({}),
+  });
+
+  // 墓地から唱えられる
+  node({
+    id: "castFromGraveyard",
+    title: "墓地から唱えられる",
+    summary: "常在型能力。このカードを、墓地から唱えてよい。alt=true なら、別のコスト(altCost。ワープなど)でだけ。唱えるのは、墓地のカードの一覧から (Timeline Culler)",
+    params: { alt: { type: "boolean" } },
+    declaration: true,
+    only: ["static"],
+    outputs: {},
+    run: (): Record<string, Value> => ({}),
+  });
+
+  // 戦闘: ブロックできない (継続効果)
+  node({
+    id: "cantBlock",
+    title: "ブロックできない",
+    summary: "常在型能力。このクリーチャーは、ブロックできない(Forsaken Miner)",
+    params: {},
+    declaration: true,
+    only: ["static"],
+    outputs: {},
     run: (): Record<string, Value> => ({}),
   });
 
@@ -217,9 +256,9 @@ export function registerDeclarations(): void {
     core: true,
     title: "どうなったら",
     summary:
-      "誘発型能力の最初に書く、誘発のきっかけ。event=cast / enters(from=graveyard) / leaves(to=graveyard で死亡) / moved(from=library to=graveyard、from=hand to=graveyard=捨てた) / damaged(combat=true) / attacks / blocks / targeted(by=you で自分の呪文・能力の) / drew / step(step=upkeep〜end)。zone=graveyard は墓地にあるあいだだけ。castFrom=graveyard は墓地から唱えて出たとき。絞り込み: who=you・opponents / type・notType / turn=yours・opponents / self=true / alone=true / first=true(attacks は宣言で最初の1体、targeted はそのターンで最初) / once=true(同じ攻撃の宣言で1回だけ) / requires=印(gainAbility の印)。eventPerm は引き金のもの",
+      "誘発型能力の最初に書く、誘発のきっかけ。event=cast / enters(from=graveyard) / leaves(to=graveyard=死亡) / moved(from=hand to=graveyard=捨てた) / damaged(combat=true) / attacks / blocks / targeted(by=you) / drew / crime(相手側を対象にした) / step(step=upkeep〜end)。zone=graveyard は墓地にあるあいだだけ。castFrom=graveyard は墓地から唱えて。絞り込み: who=you・opponents / type・notType / turn=yours・opponents / self=true / other=true(ほかの) / maxPower=N / alone / first(attacks は最初の1体、targeted はそのターン最初) / once(同じ宣言で1回) / requires=印(gainAbility)。eventPerm は引き金のもの",
     params: {
-      event: { type: "string", required: true, choices: ["cast", "enters", "leaves", "moved", "damaged", "step", "attacks", "blocks", "targeted", "drew"] },
+      event: { type: "string", required: true, choices: ["cast", "enters", "leaves", "moved", "damaged", "step", "attacks", "blocks", "targeted", "drew", "crime"] },
       combat: { type: "boolean" },
       hit: { type: "string", choices: ["creature", "player", "planeswalker"] },
       zone: { type: "string", choices: ["battlefield", "graveyard"] },
@@ -236,6 +275,8 @@ export function registerDeclarations(): void {
       first: { type: "boolean" },
       once: { type: "boolean" },
       requires: { type: "string" },
+      other: { type: "boolean" },
+      maxPower: { type: "number" },
       by: { type: "string", choices: ["you"] },
     },
     outputs: {},

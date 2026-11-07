@@ -5,6 +5,7 @@ import { nextRandom } from "../rng";
 import { discardCards, drawCards, loseLife, putInGraveyard, Game, Perm, typeIn } from "../state";
 import { enterBattlefield, removeFromBattlefield, tryRegenerate } from "../engine/battlefield";
 import { enterBlocked, entersTapped } from "../engine/restrict";
+import { payManaCost } from "../engine/upkeep";
 import { who as logWho } from "../engine/shared";
 import { findCard, idList, playersFor, takeCard, targetPlayer, who, zoneOf } from "./shared";
 
@@ -136,8 +137,8 @@ export function registerCards(): void {
   node({
     id: "move",
     title: "カードを動かす",
-    summary: "cards(look / choose の出力)を、持ち主の to へ動かす。to=hand / graveyard / top(ライブラリーの一番上) / bottom(一番下) / battlefield(持ち主のコントロールで、戦場へ。tapped=true でタップ状態。「墓地から出られない」の制限に従う)。optional=true なら「してもよい」(断れる)。except に渡したカードは動かさない(「残りを底に」)。random=true で、ランダムな順で(「ランダムな順番でライブラリーの一番下に置く」)",
-    params: { cards: { type: "ref", required: true }, except: { type: "ref" }, to: { type: "string", required: true, choices: ["hand", "graveyard", "top", "bottom", "battlefield"] }, random: { type: "boolean" }, tapped: { type: "boolean" }, optional: { type: "boolean" } },
+    summary: "cards(look / choose の出力)を、持ち主の to へ動かす。to=hand / graveyard / top(ライブラリーの一番上) / bottom(一番下) / battlefield(持ち主のコントロールで、戦場へ。tapped=true でタップ状態。「墓地から出られない」の制限に従う) / exile(追放。untilLeaves=true で、このパーマネントが戦場を離れるまで追放して、離れたら持ち主の手札に戻す)。optional=true なら「してもよい」(断れる)。except に渡したカードは動かさない(「残りを底に」)。random=true で、ランダムな順で(「ランダムな順番でライブラリーの一番下に置く」)",
+    params: { cards: { type: "ref", required: true }, except: { type: "ref" }, to: { type: "string", required: true, choices: ["hand", "graveyard", "top", "bottom", "battlefield", "exile"] }, random: { type: "boolean" }, tapped: { type: "boolean" }, optional: { type: "boolean" }, untilLeaves: { type: "boolean" } },
     outputs: {},
     run: (ctx, a): Record<string, Value> => {
       const g = ctx.game;
@@ -164,7 +165,12 @@ export function registerCards(): void {
         }
         const c = takeCard(g, id);
         if (!c) continue;
-        if (a.to === "hand") g.hands[c.owner].push(c);
+        if (a.to === "exile") {
+          g.exile[c.owner].push(c);
+          g.log.push(`${c.name} を追放した`);
+          g.events.push({ type: "moved", card: c, from: from ?? "hand", to: "exile" });
+          if (a.untilLeaves === true && ctx.item.source) (g.held ??= []).push({ card: c.id, by: ctx.item.source, owner: c.owner });
+        } else if (a.to === "hand") g.hands[c.owner].push(c);
         else if (a.to === "graveyard") putInGraveyard(g, c, from ?? "hand");
         else if (a.to === "top") g.libraries[c.owner].unshift(c);
         else g.libraries[c.owner].push(c);
@@ -190,6 +196,56 @@ export function registerCards(): void {
         g.log.push(`${logWho(p)}のライブラリーの上から ${top.length} 枚を墓地に置いた${top.length ? ` (${top.map((c) => c.name).join("、")})` : ""}`);
       }
       return { id: out.join(",") };
+    },
+  });
+
+  // 「{B} を支払ってもよい。そうしたなら〜」: 色つきのマナコストを、払えるなら、払うか聞いて、払う。払えたかを ok として出力する (as= で受けて、if=$名前)
+  node({
+    id: "payMana",
+    title: "マナを支払ってもよい",
+    summary: "コントローラーが、色つきのマナコスト manaCost (例: \"{B}\") を、払えるなら支払ってもよい(払うか聞く。マナ能力は、自動でタップする)。払えたかを ok として出力する。「そうしたなら」は、as= で受けて if=$名前 (Forsaken Miner)",
+    params: { manaCost: { type: "string", required: true } },
+    outputs: { ok: "boolean" },
+    run: (ctx, a): Record<string, Value> => {
+      const g = ctx.game;
+      const p = ctx.item.controller;
+      if (!(g.decide?.pay?.(g, p, 1, `${a.manaCost} を支払いますか?`) ?? true)) return { ok: false };
+      const ok = payManaCost(g, p, String(a.manaCost), ctx.rules);
+      if (ok) g.log.push(`${logWho(p)}は ${a.manaCost} を支払った`);
+      return { ok };
+    },
+  });
+
+  // プレイヤーが、自分のパーマネントを選んで、生け贄に捧げる・追放する (「対象のプレイヤーは、クリーチャーを 1 体生け贄に捧げる」Gatekeeper of Malakir・「クリーチャーを 1 体追放する」Strategic Betrayal)
+  node({
+    id: "playerRemoves",
+    title: "プレイヤーが選んで取り除く",
+    summary: "プレイヤー (player=you / opponents / target) が、自分がコントロールする type (例: creature) のパーマネントを count 体(既定は1)選んで、how=sacrifice(生け贄に捧げる) / exile(追放する)。選ぶのは、そのプレイヤー。無ければ何も起きない",
+    params: { player: who, target: targetPlayer, type: { type: "string" }, count: { type: "number", min: 1 }, how: { type: "string", required: true, choices: ["sacrifice", "exile"] } },
+    outputs: { n: "number" },
+    run: (ctx, a): Record<string, Value> => {
+      const g = ctx.game;
+      let n = 0;
+      for (const p of playersFor(ctx, a)) {
+        const options = g.battlefield.filter((x) => x.controller === p && (typeof a.type !== "string" || typeIn(characteristics(g, x, ctx.rules).typeLine, a.type)));
+        const k = Math.min(typeof a.count === "number" ? a.count : 1, options.length);
+        if (!k) continue;
+        const cards = options.map((x) => x.card);
+        const picked = (g.decide?.choose?.(g, p, cards, k, false, "sacrifice") ?? cards.slice(0, k)).filter((c) => cards.includes(c)).slice(0, k);
+        for (const c of picked) {
+          const perm = options.find((x) => x.card === c);
+          if (!perm || !g.battlefield.includes(perm)) continue;
+          if (a.how === "sacrifice") removeFromBattlefield(g, perm);
+          else {
+            g.battlefield = g.battlefield.filter((x) => x !== perm);
+            if (!perm.card.token) g.exile[perm.card.owner].push(perm.card);
+            g.events.push({ type: "leaves", perm, to: "exile" });
+          }
+          g.log.push(`${logWho(p)}は ${perm.card.name} を${a.how === "sacrifice" ? "生け贄に捧げた" : "追放した"}`);
+          n++;
+        }
+      }
+      return { n };
     },
   });
 

@@ -25,7 +25,7 @@ const strength = (x: Perm) => {
 };
 const best = <T,>(xs: T[], f: (x: T) => number): T | undefined => xs.reduce<T | undefined>((a, x) => (a === undefined || f(x) > f(a) ? x : a), undefined);
 
-const HOSTILE = ["destroy", "exile", "bounce", "damage", "counter", "tap", "discard", "loseLife", "mill", "lookHand", "sacrifice"];
+const HOSTILE = ["playerRemoves", "destroy", "exile", "bounce", "damage", "counter", "tap", "discard", "loseLife", "mill", "lookHand", "sacrifice"];
 const FRIENDLY = ["addCounter", "grant", "attach", "regenerate", "untap", "gainLife", "draw"];
 const refName = (v: unknown) => (v && typeof v === "object" && "ref" in v ? String((v as { ref: string }).ref) : undefined);
 const usesRef = (c: NodeCall, as: string) => Object.values(c.args).some((v) => refName(v) === as);
@@ -41,6 +41,11 @@ export function heuristicDecider(me: PlayerId, rules: RuleBook): Decider {
     },
     choose(g, p, from, n, _atMost, kind) {
       if (p === me) return undefined;
+      if (kind === "sacrifice") {
+        // 自分のパーマネントを 1 つ選んで取り除く: いちばん価値の低いもの (弱いものから)
+        const worth = (c: GameCard) => { const perm = g.battlefield.find((x) => x.card === c); return perm ? strength(perm) : 0; };
+        return [...from].sort((a, b) => worth(a) - worth(b)).slice(0, n);
+      }
       const foe = from.length > 0 && from.every((c) => c.owner !== p);
       if (kind !== "search" && !foe) return undefined;
       return [...from].sort((a, b) => val(g, p, b) - val(g, p, a)).slice(0, n);

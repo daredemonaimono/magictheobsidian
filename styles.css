@@ -497,3 +497,4 @@ button.mtg-color .mtg-sym { width: 20px; height: 20px; display: block; }
 .mtg-bt-speed.is-max { background: #3a2a00; border-color: #ffd45a; color: #ffe38a; }
 .mtg-bt-speed.is-self { left: 84px; bottom: 86px; } .mtg-bt-speed.is-opp { right: 22px; top: 112px; }
 .mtg-bt-typenow { position: absolute; left: 2px; top: 2px; max-width: 96%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; background: #3a1500e6; color: #ffb27a; border: 1px solid #ff8a3d; font-size: 10px; font-weight: 700; padding: 0 4px; border-radius: 4px; pointer-events: none; }
+.mtg-bt-yardbtn { margin-left: auto; font-size: 11px; padding: 1px 8px; }

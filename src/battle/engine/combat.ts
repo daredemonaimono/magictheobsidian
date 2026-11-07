@@ -1,4 +1,5 @@
 import { characteristics } from "../continuous";
+import { cantBlockNow } from "./restrict";
 import { dealDamage } from "../damage";
 import { Game, Perm, PlayerId, RuleBook } from "../state";
 import { RuleError, defenderOf, evasionAllows, isCreature, isSick, kwOf, live } from "./shared";
@@ -66,7 +67,7 @@ export function declareAttackers(g: Game, p: PlayerId, attackers: { id: string; 
 }
 
 // この blocker が、この attacker を (単独の決まりで) ブロックできるか。画面が、ブロックの選択が要るかを決めるのに使う (威嚇は、2体以上が要る: 呼び出し側が数える)
-export const canBlock = (g: Game, blocker: Perm, attacker: Perm, rules: RuleBook): boolean => !blocker.tapped && isCreature(g, blocker, rules) && evasionAllows(kwOf(g, attacker, rules), kwOf(g, blocker, rules));
+export const canBlock = (g: Game, blocker: Perm, attacker: Perm, rules: RuleBook): boolean => !blocker.tapped && !cantBlockNow(g, rules, blocker) && isCreature(g, blocker, rules) && evasionAllows(kwOf(g, attacker, rules), kwOf(g, blocker, rules));
 
 // ブロックを指定する (防御側。ブロックの段階で、1回だけ。ブロックしなくても、空で呼んでよい)。blocks = [{ blocker, attacker }]。
 // 飛行は飛行か到達でしかブロックできず、威嚇は2体以上でないとブロックできない。不正なら RuleError で、何も変えない
@@ -79,7 +80,7 @@ export function declareBlockers(g: Game, p: PlayerId, blocks: { blocker: string;
   for (const b of blocks) {
     const blocker = g.battlefield.find((q) => q.id === b.blocker);
     const attacker = g.battlefield.find((q) => q.id === b.attacker);
-    if (!blocker || blocker.controller !== p || !isCreature(g, blocker, rules) || blocker.tapped) throw new RuleError(`ブロックできるクリーチャーではない: ${b.blocker}`);
+    if (!blocker || blocker.controller !== p || !isCreature(g, blocker, rules) || blocker.tapped || cantBlockNow(g, rules, blocker)) throw new RuleError(`ブロックできるクリーチャーではない: ${b.blocker}`);
     if (!attacker || !attacker.attacking || defenderOf(g, attacker) !== p) throw new RuleError(`ブロックできる攻撃クリーチャーではない: ${b.attacker}`);
     if (used.has(blocker.id)) throw new RuleError(`1体で複数をブロックできない: ${blocker.card.name}`);
     used.add(blocker.id);

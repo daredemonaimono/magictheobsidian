@@ -3,7 +3,7 @@
 export { nextPlayer, RuleError, isSick } from "./shared";
 export { targetSlots } from "./targets";
 export type { TargetSlot } from "./targets";
-export { castSpell, playLand, activateAbility, activateFromHand, handAbilitiesOf, canCastNow, castPrepared, pitchable } from "./cast";
+export { castSpell, playLand, activateAbility, activateFromHand, activateFromGraveyard, graveyardAbilitiesOf, handAbilitiesOf, canCastNow, castPrepared, pitchable } from "./cast";
 export { resolveTop } from "./stack";
 export { applyOpening, serumPowder } from "./opening";
 export { passPriority, startGame } from "./turn";

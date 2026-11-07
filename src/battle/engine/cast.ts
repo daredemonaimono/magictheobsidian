@@ -2,12 +2,12 @@ import { activatedAbilities, characteristics, costReduction } from "../continuou
 import { CastRecord, NodeCall } from "../node";
 import { getNode } from "../registry";
 import { addCosts, emptyCost, ManaCost, parseManaCost } from "../mana";
-import { prepareAbilityOf, putInGraveyard, Game, GameCard, PlayerId, RuleBook, StackItem } from "../state";
+import { prepareAbilityOf, putInGraveyard, typeIn, Game, GameCard, PlayerId, RuleBook, StackItem } from "../state";
 import { RuleError, UNRULED, isPermanentCard, live, resolveArgs, spellBody, staticKeywords, unruled } from "./shared";
-import { enterBattlefield } from "./battlefield";
+import { enterBattlefield, removeFromBattlefield } from "./battlefield";
 import { announceTargets, flushEvents } from "./triggers";
 import { checkModes, validate } from "./targets";
-import { costOf, costProblem, payCost } from "./costs";
+import { costOf, costProblem, parseOrRule, payCost } from "./costs";
 import { declareAttackers, declareBlockers } from "./combat";
 import { activationBlocked, castProblem } from "./restrict";
 
@@ -17,15 +17,22 @@ import { activationBlocked, castProblem } from "./restrict";
 // cast = 唱えるときの選択 (kicked / teamwork = 追加コストを払う、tap = チームワークでタップするクリーチャー)。宣言 (additionalCost) の無いフラグは選べない
 export function castSpell(g: Game, p: PlayerId, cardId: string, targets: Record<string, string>, rules: RuleBook, cast: CastRecord = {}): void {
   live(g);
-  const card = g.hands[p]?.find((c) => c.id === cardId);
-  if (!card) throw new RuleError(`手札に無い: ${cardId}`);
+  const fromYard = cast.from === "graveyard"; // 墓地から唱える (castFromGraveyard): 手札のかわりに、墓地のカード
+  const card = (fromYard ? g.graveyards[p] : g.hands[p])?.find((c) => c.id === cardId);
+  if (!card) throw new RuleError(`${fromYard ? "墓地" : "手札"}に無い: ${cardId}`);
+  if (fromYard) {
+    const decl = (rules.get(card.name)?.abilities ?? []).filter((a) => a.kind === "static").flatMap((a) => a.body).find((c) => c.node === "castFromGraveyard");
+    if (!decl) throw new RuleError(`${card.name}: 墓地からは唱えられない`);
+    if (decl.args.alt === true && !cast.alt) throw new RuleError(`${card.name}: 墓地からは、別のコスト (ワープ) でだけ唱えられる`);
+  }
   if (/\bLand\b/.test(card.typeLine)) throw new RuleError(`土地は唱えられない (playLand で出す): ${card.name}`); // 1ターン1枚の制限は playLand にある
   if (!canCastNow(g, p, card, rules)) throw new RuleError(`いまは唱えられない: ${card.name}`);
   const skipped = unruled(g, rules, card); // ルールが設定されていないカード: 効果は飛ばす
   const body = skipped ? [] : spellBody(rules, card) ?? (rules.get(card.name) && isPermanentCard(card) ? [] : undefined); // 呪文能力の無いパーマネントも、ルールがあれば唱えられる
   if (!body) throw new RuleError(`呪文能力のルールが無い: ${card.name}`);
   castCore(g, p, card, body, targets, rules, cast, () => {
-    g.hands[p] = g.hands[p].filter((c) => c !== card);
+    if (fromYard) g.graveyards[p] = g.graveyards[p].filter((c) => c !== card);
+    else g.hands[p] = g.hands[p].filter((c) => c !== card);
     delete card.exilePlay;
     if (skipped) g.log.push(`${card.name}: ${UNRULED}`);
   });
@@ -41,7 +48,7 @@ export function castCore(g: Game, p: PlayerId, card: GameCard, body: NodeCall[],
   validate(g, item, body, card.name, rules);
   const chosen = (["kicked", "teamwork"] as const).filter((f) => cast[f]);
   const decls = chosen.flatMap((f) => {
-    const d = body.filter((c) => c.node === "additionalCost" && c.args.flag === f);
+    const d = body.filter((c) => c.node === "additionalCost" && c.args.required !== true && c.args.flag === f);
     if (!d.length) throw new RuleError(`${card.name}: ${f} の追加コストが書かれていない`);
     return d;
   });
@@ -62,10 +69,43 @@ export function castCore(g: Game, p: PlayerId, card: GameCard, body: NodeCall[],
     }
     cost.sym = addCosts(cost.sym, { ...own, generic: generic - delved.length });
   } else if (cast.delve && !alt) throw new RuleError(`${card.name}: Delve を使えない`);
+  // 必須の追加コスト (required): 生け贄に捧げる / 探索 (墓地のカード 3 枚を追放か食物を生け贄に) か、マナを払う。払うのは、マナを払ったあと
+  const after: (() => void)[] = [];
+  for (const r of body.filter((c) => c.node === "additionalCost" && c.args.required === true)) {
+    if (typeof r.args.sacrifice === "string") {
+      const options = g.battlefield.filter((x) => x.controller === p && typeIn(characteristics(g, x, rules).typeLine, String(r.args.sacrifice)));
+      if (!options.length) throw new RuleError(`${card.name}: 生け贄に捧げるもの (${r.args.sacrifice}) が無い (追加コスト)`);
+      const cards = options.map((x) => x.card);
+      const pick = (g.decide?.choose?.(g, p, cards, 1, false, "sacrifice") ?? cards.slice(0, 1)).find((c) => cards.includes(c)) ?? cards[0];
+      const perm = options.find((x) => x.card === pick)!;
+      after.push(() => {
+        g.log.push(`${perm.card.name} を生け贄に捧げた (${card.name} の追加コスト)`);
+        removeFromBattlefield(g, perm);
+      });
+    } else if (r.args.forage === true) {
+      const food = g.battlefield.find((x) => x.controller === p && typeIn(x.card.typeLine, "Food"));
+      const canForage = g.graveyards[p].length >= 3 || !!food;
+      if (canForage && (g.decide?.may?.(g, p, `${card.name}: 探索しますか? (墓地のカード 3 枚を追放するか、食物を生け贄に捧げる。しなければ ${r.args.manaCost} を支払う)`) ?? true)) {
+        const useFood = !!food && (g.graveyards[p].length < 3 || !(g.decide?.may?.(g, p, `${card.name}: 食物を生け贄に捧げますか? (しなければ、墓地のカード 3 枚を追放する)`) ?? false));
+        after.push(() => {
+          if (useFood && food) {
+            g.log.push(`${food.card.name} を生け贄に捧げた (探索)`);
+            removeFromBattlefield(g, food);
+          } else {
+            const gone = g.graveyards[p].slice(0, 3);
+            g.graveyards[p] = g.graveyards[p].filter((c) => !gone.includes(c));
+            g.exile[p].push(...gone);
+            g.log.push(`墓地の ${gone.map((c) => c.name).join("、")} を追放した (探索)`);
+          }
+        });
+      } else cost.sym = addCosts(cost.sym, parseOrRule(String(r.args.manaCost)));
+    }
+  }
   const why = costProblem(g, p, cost, undefined, cast.tap ?? [], rules, card);
   if (why) throw new RuleError(`${card.name}: ${why}`);
   payCost(g, p, cost, undefined, cast.tap ?? [], card);
   afterPay();
+  for (const f of after) f();
   for (const c of delved) {
     g.graveyards[p] = g.graveyards[p].filter((x) => x !== c);
     g.exile[c.owner].push(c);
@@ -161,6 +201,7 @@ export function activateAbility(g: Game, p: PlayerId, permId: string, index: num
   const timing = ab.body.find((c) => c.node === "timing");
   const cost = costOf(ab.body.filter((c) => c.node === "cost"));
   if (cost.discardSelf) throw new RuleError(`${perm.card.name}: この能力は、手札から起動する (戦場からは起動できない)`);
+  if (cost.exileSelf) throw new RuleError(`${perm.card.name}: この能力は、墓地から起動する (戦場からは起動できない)`);
   if ((timing?.args.sorcery === true || cost.isLoyalty) && !(p === g.active && (g.step === "main1" || g.step === "main2") && g.stack.length === 0)) throw new RuleError(`${perm.card.name}: ソーサリーのタイミングだけ起動できる (自分のメインフェイズで、スタックが空のとき)`);
   if (timing?.args.oncePerTurn === true && (g.activated?.[`${perm.id}:${index}`] ?? 0) >= 1) throw new RuleError(`${perm.card.name}: この能力は、1ターンに1回だけ起動できる`);
   if (timing?.args.oppLostLife === true && !g.players.some((q) => q !== p && (g.lostLife?.[q] ?? 0) > 0)) throw new RuleError(`${perm.card.name}: 相手がこのターンにライフを失っているときだけ起動できる`);
@@ -188,6 +229,37 @@ export function activateAbility(g: Game, p: PlayerId, permId: string, index: num
 
 // 手札から起動する能力 (cost discardSelf=true: サイクリング)。そのカードの、手札から起動できる能力の一覧 (起動型能力のうち、コストにこのカードを捨てるもの)
 export const handAbilitiesOf = (rules: RuleBook, cardName: string) => (rules.get(cardName)?.abilities ?? []).filter((a) => a.kind === "activated" && a.body.some((c) => c.node === "cost" && c.args.discardSelf === true));
+
+// 墓地から起動する能力 (cost exileSelf=true): そのカードの、墓地から起動できる能力の一覧
+export const graveyardAbilitiesOf = (rules: RuleBook, cardName: string) => (rules.get(cardName)?.abilities ?? []).filter((a) => a.kind === "activated" && a.body.some((c) => c.node === "cost" && c.args.exileSelf === true));
+
+// 墓地のカードの、index 番目の墓地から起動する能力を起動する。コストを払い (マナ・このカードを追放する)、能力をスタックに積む。インスタントのタイミング (優先権があるとき)
+export function activateFromGraveyard(g: Game, p: PlayerId, cardId: string, index: number, targets: Record<string, string>, rules: RuleBook): void {
+  live(g);
+  const card = g.graveyards[p]?.find((c) => c.id === cardId);
+  if (!card) throw new RuleError(`墓地に無い: ${cardId}`);
+  if (g.priority !== p) throw new RuleError(`${p} は優先権を持っていない`);
+  const ab = graveyardAbilitiesOf(rules, card.name)[index];
+  if (!ab) throw new RuleError(`墓地から起動する能力が無い: ${card.name} (${index} 番目)`);
+  const cost = costOf(ab.body.filter((c) => c.node === "cost"));
+  const effects = ab.body.filter((c) => c.node !== "cost" && c.node !== "timing");
+  const item: StackItem = { id: `${card.id}#${g.serial + 1}`, card, controller: p, targets, cast: {}, body: effects, ability: true, source: card.id };
+  validate(g, item, ab.body, card.name, rules);
+  const why = costProblem(g, p, cost, undefined, [], rules);
+  if (why) throw new RuleError(`${card.name}: ${why}`);
+  payCost(g, p, cost, undefined, [], undefined);
+  (g.activated ??= {})[`${card.id}:y${index}`] = (g.activated[`${card.id}:y${index}`] ?? 0) + 1;
+  g.graveyards[p] = g.graveyards[p].filter((c) => c !== card);
+  g.exile[card.owner].push(card); // コストで追放する
+  g.events.push({ type: "moved", card, from: "graveyard", to: "exile" });
+  g.log.push(`${card.name} を墓地から追放して、能力を起動した`);
+  g.serial++;
+  g.stack.push(item);
+  announceTargets(g, item, rules);
+  g.priority = p;
+  g.passes = [];
+  flushEvents(g, rules);
+}
 
 // 手札のカードの、index 番目の手札から起動する能力を起動する。コストを払い (マナ・このカードを捨てる)、能力をスタックに積む。インスタントのタイミング (優先権があるとき)
 export function activateFromHand(g: Game, p: PlayerId, cardId: string, index: number, targets: Record<string, string>, rules: RuleBook): void {

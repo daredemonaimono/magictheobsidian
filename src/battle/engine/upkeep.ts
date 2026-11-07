@@ -3,6 +3,7 @@ import { activatedAbilities } from "../continuous";
 import { spendGeneric } from "../mana";
 import { Game, PlayerId, RuleBook } from "../state";
 import { removeFromBattlefield } from "./battlefield";
+import { costOf, costProblem, payCost } from "./costs";
 import { activateAbility } from "./cast";
 import { staticCalls, typeOk, whoOk } from "./restrict";
 
@@ -10,7 +11,7 @@ import { staticCalls, typeOk, whoOk } from "./restrict";
 // shortcut: スタックを使わず、アップキープの開始時に、そのプレイヤーのパーマネントを1つずつ、その場で解決する。マナは、払えるなら、マナ能力を自動でタップして払う
 
 // マナだけの起動型能力を1つタップして、マナを出す (出せたら真)
-function tapOneSource(g: Game, p: PlayerId, rules: RuleBook): boolean {
+export function tapOneSource(g: Game, p: PlayerId, rules: RuleBook): boolean {
   for (const perm of g.battlefield) {
     if (perm.controller !== p || perm.tapped) continue;
     const abs = activatedAbilities(g, rules, perm);
@@ -54,4 +55,21 @@ export function applyUpkeepTaxes(g: Game, rules: RuleBook, player: PlayerId): vo
     g.log.push(`${perm.card.name} は、支払われなかったので、${tax.call.args.else === "destroy" ? "破壊された" : "生け贄に捧げられた"} (${tax.source.card.name})`);
     removeFromBattlefield(g, perm);
   }
+}
+
+// 色つきのマナコスト ("{B}") を、払えるなら、マナ能力を自動でタップして払う (払えなければ、何も変えず false)。「{B} を支払ってもよい。そうしたなら」(payMana)
+export function payManaCost(g: Game, p: PlayerId, manaCost: string, rules: RuleBook): boolean {
+  const cost = costOf([{ node: "cost", args: { manaCost } }]);
+  const attempt = (game: Game): boolean => {
+    for (let i = 0; i < 12; i++) {
+      if (!costProblem(game, p, cost, undefined, [], rules)) {
+        payCost(game, p, cost, undefined, []);
+        return true;
+      }
+      if (!tapOneSource(game, p, rules)) return false;
+    }
+    return false;
+  };
+  const sim = structuredClone({ ...g, decide: undefined }) as Game;
+  return attempt(sim) && attempt(g);
 }

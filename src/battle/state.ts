@@ -73,6 +73,7 @@ export interface Perm {
   prepared?: boolean; // 準備済 (準備呪文を、追放領域のコピーとして唱えられる。戦場を離れると消える)
   deathtouched?: boolean; // 接死のダメージを受けた (ターン終了時に消える)
   cast?: CastRecord; // 呪文として唱えられて出たとき、その記録 (キッカー・別のコスト)。誘発型能力の if=kicked / if=alt が見る
+  chosen?: string; // 出るときに選んだ色 (chooseColor。W U B R G)
   flags?: string[]; // 能力を得た印 (gainAbility)。when requires=印 の誘発型能力が、この印があるときだけ働く
   targetedTurn?: number; // 自分のコントローラーの呪文・能力の対象に、最後になったターン (果敢 Valiant の「そのターンで最初」)
   enteredTurn?: number; // 戦場に出たターン (Game.turn)。召喚酔いの判定
@@ -137,15 +138,16 @@ export function gainLife(g: Game, p: PlayerId, n: number): void {
   if (n > 0) (g.gained ??= {})[p] = (g.gained[p] ?? 0) + n;
 }
 
-export type GameEvent = { type: "cast"; player: PlayerId; card: GameCard } | { type: "enters"; perm: Perm; from?: Zone } | { type: "leaves"; perm: Perm; to?: Zone } | { type: "moved"; card: GameCard; from: Zone; to: Zone } | { type: "damaged"; source?: Perm; target: string; kind: "player" | "creature" | "planeswalker"; amount: number; combat: boolean } | { type: "step"; step: Step; player: PlayerId } | { type: "attacks"; perm: Perm; first?: boolean } | { type: "blocks"; perm: Perm } | { type: "targeted"; perm: Perm; by: StackItem; first?: boolean } | { type: "drew"; player: PlayerId }; // targeted = パーマネントが、呪文・能力の対象になった (護法。first = コントローラー自身の呪文・能力の対象になった、そのターンで最初)。attacks の first = その攻撃の宣言で、最初の 1 体。drew = カードを引いた
+export type GameEvent = { type: "cast"; player: PlayerId; card: GameCard } | { type: "enters"; perm: Perm; from?: Zone } | { type: "leaves"; perm: Perm; to?: Zone } | { type: "moved"; card: GameCard; from: Zone; to: Zone } | { type: "damaged"; source?: Perm; target: string; kind: "player" | "creature" | "planeswalker"; amount: number; combat: boolean } | { type: "step"; step: Step; player: PlayerId } | { type: "attacks"; perm: Perm; first?: boolean } | { type: "blocks"; perm: Perm } | { type: "targeted"; perm: Perm; by: StackItem; first?: boolean } | { type: "drew"; player: PlayerId } | { type: "crime"; player: PlayerId }; // targeted = パーマネントが、呪文・能力の対象になった (護法。first = コントローラー自身の呪文・能力の対象になった、そのターンで最初)。attacks の first = その攻撃の宣言で、最初の 1 体。drew = カードを引いた / crime = 犯罪を犯した (対戦相手・その持ち物・その墓地のカードを対象にした)
 // 人の判断の差し替え口。無ければ決まった動きになる (shortcut: 判断の入力はまだ無い。入力の仕組みを作るときに置き換える)
 export interface Decider {
   discard?(g: Game, p: PlayerId, n: number, cleanup?: boolean): GameCard[] | undefined; // 捨てるカード
   may?(g: Game, p: PlayerId, what: string): boolean | undefined; // 「してもよい」をするか (既定はする)
   pay?(g: Game, p: PlayerId, n: number, why?: string): boolean | undefined; // 「支払わないかぎり」を払うか
-  choose?(g: Game, p: PlayerId, from: GameCard[], n: number, atMost?: boolean, kind?: "choose" | "search"): GameCard[] | undefined; // 選ぶカード (look / choose)
+  choose?(g: Game, p: PlayerId, from: GameCard[], n: number, atMost?: boolean, kind?: "choose" | "search" | "sacrifice"): GameCard[] | undefined; // 選ぶカード (look / choose)
   order?(g: Game, p: PlayerId, cards: GameCard[], to: "top" | "bottom"): GameCard[] | undefined; // ライブラリーの上・底に置く順番 (上から下へ。既定は、並んでいる順)
   orderTriggers?(g: Game, p: PlayerId, items: StackItem[]): StackItem[] | undefined; // 同じプレイヤーの、同時の誘発の順番 (先に解決する順。既定は、見つけた順の逆 = 見つけたものが下)
+  pickColor?(g: Game, p: PlayerId, card: GameCard): string | undefined; // 「出るとき、色を 1 つ選ぶ」(W U B R G。既定は、そのプレイヤーのカードに多い色)
   legend?(g: Game, p: PlayerId, same: Perm[]): Perm | undefined; // 伝説のルール: 同名の伝説のパーマネントのうち、残す 1 つ (ほかは墓地へ。無ければ、先に出ていたもの)
   dredge?(g: Game, p: PlayerId, options: { card: GameCard; n: number }[]): GameCard | undefined; // 引くかわりに Dredge するカード (しないなら undefined)
   target?(g: Game, item: StackItem, call: NodeCall, legal: string[]): string[] | undefined; // 誘発型能力の対象 (誘発時に選ぶ。既定は合法な対象の先頭から)
@@ -180,6 +182,7 @@ export interface Game {
   activated?: Record<string, number>; // このターンに、起動型能力を起動した回数 (パーマネントの id:番号 / 手札のカードの id:h番号)。暴走防止 (AI は、同じ能力を 1 ターンに 3 回までしか選ばない)。ターンが替わると空
   discarded?: Record<PlayerId, number>; // このターンに捨てた・サイクリングしたカードの数 (手札から墓地へ。プレイヤーごと。ターンが替わると 0)
   speed?: Record<PlayerId, number>; // 速度 (Start your engines!。1〜4。無ければ 0)
+  held?: { card: string; by: string; owner: PlayerId }[]; // 「〜が戦場にあるあいだ追放しておく」カード (move untilLeaves)。by = 離れたら戻すパーマネントの id
   speedBy?: Record<PlayerId, string>; // 速度を始めたカードの名前 (ログに出す)
   speedTurn?: Record<PlayerId, number>; // 速度を上げた最後のターン (自分のターンに 1 回まで)
   mayPlay?: { id: string; owner: PlayerId; until: "endOfTurn" | "yourNextEnd" | "later" }[]; // 追放して、そのあいだだけプレイしてよいカード (手札に置いて印を付ける。期限が来て、まだ手札にあれば、追放領域へ)

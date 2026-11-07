@@ -106,6 +106,8 @@ export function cpuDo(g: Game, rules: RuleBook, p: PlayerId, a: Action, targets?
   } else if (a.kind === "handAbility") {
     g.log.push(`${who(g, p)}が ${g.hands[p].find((x) => x.id === a.card)?.name} の能力を、手札から起動した`);
     activateFromHand(g, p, a.card, a.index, targets ?? {}, rules);
+  } else if (a.kind === "yardAbility" || a.kind === "yardCast") {
+    throw new RuleError("墓地からの行動は、人の画面だけが使う");
   } else {
     const name = g.battlefield.find((x) => x.id === a.perm)?.card.name;
     const before = g.stack.length;

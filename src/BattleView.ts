@@ -1382,6 +1382,17 @@ export class BattleView extends ItemView {
       const url = this.urls.get(c.name);
       if (url) row.createEl("img", { attr: { src: url, alt: c.name, draggable: "false" } });
       row.createSpan({ text: c.name });
+      // 自分の墓地: 墓地から起動できる能力・唱えられるカードは、ボタンで (Faerie Dreamthief・Timeline Culler)
+      if (mine && this.ctl) {
+        for (const a of this.ctl.yardActions(c.id)) {
+          const b = row.createEl("button", { cls: "mtg-bt-yardbtn", text: a.label });
+          b.disabled = !a.usable;
+          b.addEventListener("click", (e) => {
+            e.stopPropagation();
+            this.ask(c.name, this.ctl!.needsForYard(c.id, a.key), (t) => this.run(() => this.ctl!.useYard(c.id, a.key, t)));
+          });
+        }
+      }
       row.addEventListener("mouseenter", () => {
         const mine = ++seq;
         void cardText(this.app, c.name).catch(() => "").then((text) => {

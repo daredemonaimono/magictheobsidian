@@ -218,10 +218,11 @@ export function registerPermanents(): void {
     title: "トークンを作る",
     summary: "コントローラーが、トークンのクリーチャーなどを count 個(既定は1)作る。name=名前 / types=型行(例: \"Creature — Illusion\") / power・toughness / colors=色(空白区切り。例: \"U\")",
     params: { name: { type: "string", required: true }, types: { type: "string", required: true }, power: { type: "number" }, toughness: { type: "number" }, colors: { type: "string" }, count: { type: "number", min: 1 } },
-    outputs: {},
+    outputs: { id: "id" },
     run: (ctx, a): Record<string, Value> => {
       const g = ctx.game;
       const p = ctx.item.controller;
+      const made: string[] = []; // 作ったトークンの id (出力。「それに付ける」Dark Knight's Greatsword)
       for (let i = 0; i < (typeof a.count === "number" ? a.count : 1); i++) {
         g.serial++;
         const card: GameCard = {
@@ -240,8 +241,9 @@ export function registerPermanents(): void {
         g.battlefield.push(perm);
         g.events.push({ type: "enters", perm });
         g.log.push(`${logWho(p)}が ${card.name} (トークン) を作った`);
+        made.push(card.id);
       }
-      return {};
+      return { id: made.join(",") };
     },
   });
 

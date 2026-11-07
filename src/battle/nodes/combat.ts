@@ -77,15 +77,16 @@ export function registerCombat(): void {
     id: "addMana",
     title: "マナを加える",
     summary:
-      "コントローラーがマナを amount 点加える。colors=GWU(その中の好きな1色。「{G}、{W}、{U} のいずれか」)。color=W・U・B・R・G(その色) / C(無色。既定) / any(好きな色。どの色のコストにも使える)。spellType / spellNotType を添えると、そのマナは、その型の呪文(spellNotType ならその型でない呪文)を唱えるためにしか使えない(「クリーチャーでない呪文を唱えるためにしか使えない」は spellNotType=creature)",
-    params: { amount: { type: "number", required: true, min: 0 }, color: { type: "string", choices: ["W", "U", "B", "R", "G", "C", "any"] }, colors: { type: "string" }, spellType: { type: "string" }, spellNotType: { type: "string" } },
+      "コントローラーがマナを amount 点加える。colors=GWU(その中の好きな1色。「{G}、{W}、{U} のいずれか」)。color=W・U・B・R・G(その色) / C(無色。既定) / any(好きな色) / chosen(出るとき選んだ色。chooseColor)。spellType / spellNotType を添えると、そのマナは、その型の呪文(spellNotType ならその型でない呪文)を唱えるためにしか使えない(「クリーチャーでない呪文を唱えるためにしか使えない」は spellNotType=creature)",
+    params: { amount: { type: "number", required: true, min: 0 }, color: { type: "string", choices: ["W", "U", "B", "R", "G", "C", "any", "chosen"] }, colors: { type: "string" }, spellType: { type: "string" }, spellNotType: { type: "string" } },
     outputs: {},
     run: (ctx, a): Record<string, Value> => {
       const g = ctx.game;
       const p = ctx.item.controller;
       const n = Number(a.amount);
       const set = typeof a.colors === "string" ? [...new Set(a.colors.toUpperCase().split("").filter((c) => "WUBRG".includes(c)))].join("") : "";
-      const key = set ? (`A:${set}` as const) : a.color === "any" ? "A" : a.color === undefined || a.color === "C" ? undefined : (String(a.color) as "W" | "U" | "B" | "R" | "G"); // undefined = 無色
+      const chosen = a.color === "chosen" ? g.battlefield.find((x) => x.id === ctx.item.source)?.chosen : undefined; // 出るとき選んだ色
+      const key = set ? (`A:${set}` as const) : a.color === "any" ? "A" : a.color === "chosen" ? (chosen as "W" | "U" | "B" | "R" | "G" | undefined) : a.color === undefined || a.color === "C" ? undefined : (String(a.color) as "W" | "U" | "B" | "R" | "G"); // undefined = 無色
       if (typeof a.spellType === "string" || typeof a.spellNotType === "string") {
         g.restrictedMana[p] ??= [];
         g.restrictedMana[p].push({ amount: n, ...(key ? { color: key } : {}), ...(typeof a.spellType === "string" ? { type: a.spellType } : {}), ...(typeof a.spellNotType === "string" ? { notType: a.spellNotType } : {}) });

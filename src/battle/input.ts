@@ -69,6 +69,11 @@ export function makeDecider(me: PlayerId, answers: Answer[], ai?: PlayerId, rule
       const got = ids(next({ kind: "choose", min: 0, max: 1, cards: refs(ask.map((x) => x.o.card)), label, key, for: p }));
       return ask.find((x) => got.includes(x.o.card.id))?.o.card;
     },
+    pickColor(_g, p, card) {
+      if (p !== me) return h?.pickColor?.(_g, p, card);
+      const colors: [string, string][] = [["W", "白 (W)"], ["U", "青 (U)"], ["B", "黒 (B)"], ["R", "赤 (R)"], ["G", "緑 (G)"]];
+      return ids(next({ kind: "choose", min: 1, max: 1, cards: colors.map(([id, name]) => ({ id, name })), label: `${card.name}: 色を 1 つ選ぶ` }))[0];
+    },
     legend(g, p, same) {
       if (p !== me) return h?.legend?.(g, p, same);
       const got = ids(next({ kind: "choose", min: 1, max: 1, cards: refs(same.map((x) => x.card)), label: `伝説のルール: ${same[0].card.name} が ${same.length} 体いる。残す 1 体を選ぶ (ほかは墓地に置かれる)` }));

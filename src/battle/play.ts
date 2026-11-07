@@ -1,6 +1,6 @@
 import { Action, abilityLabels, actionsFor, autoTargets, flexColors, manaOnly, slotsOf, tapManaSource, tryAction, tryWithMana, uselessMana, withAllMana } from "./actions";
 import { activatedAbilities } from "./continuous";
-import { RuleError, TargetSlot, applyOpening, serumPowder, activateAbility, activateFromHand, handAbilitiesOf, attackersAt, canAttackWith, castSpell, pitchable, declareAttackers, declareBlockers, assignDamage, passPriority, playLand } from "./engine";
+import { RuleError, TargetSlot, applyOpening, serumPowder, activateAbility, activateFromGraveyard, activateFromHand, graveyardAbilitiesOf, handAbilitiesOf, attackersAt, canAttackWith, castSpell, pitchable, declareAttackers, declareBlockers, assignDamage, passPriority, playLand } from "./engine";
 import { AiOption, aiAttackers, aiBlockers, aiOptions } from "./ai";
 import { cpuAct, cpuAttack, cpuBlock, cpuDo, tapFor, tapOne } from "./cpu";
 import { Answer, InputRequest, NeedInput, makeDecider } from "./input";
@@ -340,7 +340,7 @@ export class BattleController {
       if (i < 0 || tryAction(g, this.rules, this.me, { kind: "activate", perm: p.id, index: i }) !== undefined) continue;
       const ab = activatedAbilities(g, this.rules, p)[i];
       const m = ab.body.find((c) => c.node === "addMana");
-      out.push({ id: p.id, name: p.card.name, label: flexColors(this.rules, p.card.name) ?? `${Number(m?.args.amount ?? 1) > 1 ? Number(m?.args.amount) : ""}${String(m?.args.color ?? "C")}` }); // デュアルランドは、出せる色の集合 ("GU")
+      out.push({ id: p.id, name: p.card.name, label: flexColors(this.rules, p.card.name) ?? `${Number(m?.args.amount ?? 1) > 1 ? Number(m?.args.amount) : ""}${m?.args.color === "chosen" ? p.chosen ?? "?" : String(m?.args.color ?? "C")}` }); // デュアルランドは、出せる色の集合 ("GU")
     }
     return out;
   }
@@ -562,6 +562,46 @@ export class BattleController {
     return this.perform(card.name, (x) => {
       tapFor(x, this.rules, this.me, act, t);
       activateFromHand(x, this.me, cardId, index, t, this.rules);
+    }, []);
+  }
+
+  // ---- 墓地から起動する・唱える (Faerie Dreamthief の墓地の能力・Timeline Culler のワープ): 墓地の一覧から
+  yardActions(cardId: string): { key: string; label: string; usable: boolean }[] {
+    const card = this.game.graveyards[this.me].find((c) => c.id === cardId);
+    if (!card) return [];
+    const out: { key: string; label: string; usable: boolean }[] = graveyardAbilitiesOf(this.rules, card.name).map((ab, index) => ({
+      key: `ability:${index}`,
+      label: `墓地から: ${ab.body.filter((c) => c.node !== "cost" && c.node !== "timing").map((c) => getNode(c.node)?.title ?? c.node).join(" → ")} (${describeAbilityCost(ab.body.find((c) => c.node === "cost")?.args ?? {})})`,
+      usable: tryWithMana(this.game, this.rules, this.me, { kind: "yardAbility", card: cardId, index }) === undefined,
+    }));
+    const decl = (this.rules.get(card.name)?.abilities ?? []).filter((a) => a.kind === "static").flatMap((a) => a.body).find((c) => c.node === "castFromGraveyard");
+    if (decl) out.push({ key: "cast", label: decl.args.alt === true ? "墓地から唱える (ワープ)" : "墓地から唱える", usable: tryWithMana(this.game, this.rules, this.me, { kind: "yardCast", card: cardId }, undefined, decl.args.alt === true ? { alt: true } : undefined) === undefined });
+    return out;
+  }
+  private yardAct(key: string, cardId: string): { act: Action; cast?: CastRecord } {
+    if (key === "cast") {
+      const decl = (this.rules.get(this.game.graveyards[this.me].find((c) => c.id === cardId)?.name ?? "")?.abilities ?? []).filter((a) => a.kind === "static").flatMap((a) => a.body).find((c) => c.node === "castFromGraveyard");
+      return { act: { kind: "yardCast", card: cardId }, ...(decl?.args.alt === true ? { cast: { alt: true } } : {}) };
+    }
+    return { act: { kind: "yardAbility", card: cardId, index: Number(key.split(":")[1]) } };
+  }
+  needsForYard(cardId: string, key: string): TargetSlot[] {
+    return slotsOf(this.game, this.rules, this.me, this.yardAct(key, cardId).act);
+  }
+  useYard(cardId: string, key: string, targets?: Record<string, string>): string | undefined {
+    const g = this.game;
+    if (g.mulligan) return this.fail("使えない", "マリガンを終えてください");
+    const card = g.graveyards[this.me].find((c) => c.id === cardId);
+    if (!card) return this.fail(cardId, "墓地に無い");
+    const { act, cast } = this.yardAct(key, cardId);
+    const t = targets ?? autoTargets(slotsOf(g, this.rules, this.me, act));
+    const why = tryWithMana(g, this.rules, this.me, act, t, cast);
+    if (why) return this.fail(card.name, why.replace("マナが足りない", "マナが足りません"));
+    this.rec("yard", [cardId, key, targets]);
+    return this.perform(card.name, (x) => {
+      tapFor(x, this.rules, this.me, act, t, cast);
+      if (act.kind === "yardCast") castSpell(x, this.me, cardId, t, this.rules, { ...cast, from: "graveyard" });
+      else if (act.kind === "yardAbility") activateFromGraveyard(x, this.me, cardId, act.index, t, this.rules);
     }, []);
   }
 

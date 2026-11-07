@@ -62,3 +62,6 @@ export function enterBlocked(g: Game, rules: RuleBook, card: GameCard, zone: str
 
 // ライフを得られないか (cantGainLife)
 export const lifeGainBlocked = (g: Game, rules: RuleBook, p: PlayerId): boolean => staticCalls(g, rules, "cantGainLife").some(({ source, call }) => whoOk(call.args.who, source.controller, p));
+
+// ブロックできないか (cantBlock: このクリーチャー自身の常在型能力。能力を失っていれば、働かない)
+export const cantBlockNow = (g: Game, rules: RuleBook, perm: Perm): boolean => (rules.get(perm.card.name)?.abilities ?? []).some((a) => a.kind === "static" && a.body.some((c) => c.node === "cantBlock")) && !characteristics(g, perm, rules).lostAbilities;

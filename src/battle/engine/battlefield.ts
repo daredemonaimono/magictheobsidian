@@ -21,6 +21,14 @@ export function enterBattlefield(g: Game, card: GameCard, controller: PlayerId, 
   }
   const repl = (rules.get(card.name)?.abilities ?? []).filter((a) => a.kind === "static").flatMap((a) => a.body).find((c) => c.node === "exileInstead");
   if (repl) perm.exileInstead = repl.args.who as "opponents" | "you" | "all"; // shortcut: すべての能力を失っても、置換は残る (出たときに写すだけ)
+  // 「出るとき、色を 1 つ選ぶ」(chooseColor)。選ぶのは、コントローラー (人なら質問。AI・CPU は、デッキに多い色)
+  if ((rules.get(card.name)?.abilities ?? []).some((a) => a.kind === "static" && a.body.some((c) => c.node === "chooseColor"))) {
+    const count: Record<string, number> = {};
+    for (const c of [...g.hands[controller], ...g.libraries[controller], ...g.graveyards[controller], ...g.battlefield.filter((x) => x.controller === controller).map((x) => x.card)]) for (const k of c.colors ?? []) count[k] = (count[k] ?? 0) + 1;
+    const common = Object.entries(count).sort((x, y) => y[1] - x[1])[0]?.[0] ?? "W";
+    perm.chosen = g.decide?.pickColor?.(g, controller, card) ?? common;
+    g.log.push(`${card.name}: 色を ${perm.chosen} にした`);
+  }
   // 「エンジン始動!」: 速度が無ければ、1 から始まる
   if ((rules.get(card.name)?.abilities ?? []).some((a) => a.kind === "static" && a.body.some((c) => c.node === "startEngines")) && !(g.speed?.[controller] ?? 0)) {
     (g.speed ??= {})[controller] = 1;
