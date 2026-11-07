@@ -159,14 +159,18 @@ export async function printingOf(app: App, key: string, print: string): Promise<
 export async function addPrintings(app: App, key: string, prints: Printing[]) {
   const f = app.vault.getAbstractFileByPath(`${CARD_DIR}/${key}.md`);
   if (!(f instanceof TFile) || !prints.length) return;
-  await app.vault.process(f, (c) => {
-    const lines = c.split("\n");
-    const last = lines.map((l) => l.startsWith("| ")).lastIndexOf(true);
-    const fresh = prints.filter((p) => !c.includes(p.id)).map((p) => `| ${p.set} | ${p.collector_number} | ${p.rarity} | ${p.released_at} | ${p.id} | ${p.lang} |`);
-    if (last < 0) return `${c.trimEnd()}\n\n## Printings\n\n| set | no | rarity | released | scryfall_id | lang |\n|---|---|---|---|---|---|\n${fresh.join("\n")}\n`; // 表が無いカード: 表ごと足す
-    lines.splice(last + 1, 0, ...fresh);
-    return lines.join("\n");
-  });
+  await app.vault.process(f, (c) => mergePrintings(c, prints));
+}
+
+// ノートの本文に、Printings の表の行を足す (表の行に無い版だけ。表が無ければ表ごと)。純粋な関数
+export function mergePrintings(c: string, prints: Printing[]): string {
+  const lines = c.split("\n");
+  const last = lines.map((l) => l.startsWith("| ")).lastIndexOf(true);
+  const fresh = prints.filter((p) => !lines.some((l) => l.startsWith("| ") && l.includes(p.id))).map((p) => `| ${p.set} | ${p.collector_number} | ${p.rarity} | ${p.released_at} | ${p.id} | ${p.lang} |`); // 表の行だけで見る (フロントマターの scryfall_id には一致させない)
+  if (!fresh.length) return c;
+  if (last < 0) return `${c.trimEnd()}\n\n## Printings\n\n| set | no | rarity | released | scryfall_id | lang |\n|---|---|---|---|---|---|\n${fresh.join("\n")}\n`; // 表が無いカード: 表ごと足す
+  lines.splice(last + 1, 0, ...fresh);
+  return lines.join("\n");
 }
 
 export const oracleIdOf = (app: App, key: string): string | undefined => {

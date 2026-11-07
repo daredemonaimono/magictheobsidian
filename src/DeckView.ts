@@ -606,8 +606,9 @@ export class DeckView extends ItemView {
     const own = cardInfo(this.app, key)?.id;
     if (own && !prints.some((p) => p.id === own)) {
       try {
-        await addPrintings(this.app, key, [(await fetchById(own)) as unknown as Printing]);
-        prints = await readPrintings(this.app, key);
+        const got = (await fetchById(own)) as unknown as Printing;
+        await addPrintings(this.app, key, [got]);
+        prints = [...prints, got]; // 表の読み直しを待たずに、取れた1枚をそのまま出す
       } catch {
         /* 取れなくても、選択画面は開く */
       }
