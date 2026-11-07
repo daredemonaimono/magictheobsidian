@@ -506,7 +506,6 @@ export default class MagicTheObsidian extends Plugin {
   }
 
   private async beginBattle(self: string, opp: string) {
-    if (this.settings.battleOpponent === "claude" && this.makeAsk()) new Notice("相手 (AI) が、手札を決めています…");
     try {
       this.battleSession = await startBattle(this.app, self, opp, this.settings.battleOpponent !== "passive", this.settings.battleOpponent === "claude" ? this.makeAsk() : undefined);
     } catch (e) {

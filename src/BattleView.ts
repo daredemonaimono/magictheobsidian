@@ -77,6 +77,7 @@ export class BattleView extends ItemView {
   private cbar?: HTMLElement;
   private gaugeKey = ""; // いまのゲージが、どの局面のものか
   private gaugeTimer?: number;
+  private waitAi = false; // AI の相手が、マリガンを決めている最中 (自分のマリガンは、そのあとに聞く)
   private mullEl?: HTMLElement; // マリガンのダイアログ (手札にカーソルを合わせて見られるよう、後ろの操作は止めない)
   private bottoming = false; // マリガンのキープのあと、底に置くカードを選んでいる
   private askCancel?: () => void; // いまの質問を Esc で取り消すときの動き (無ければ、操作の取り消し)
@@ -226,7 +227,18 @@ export class BattleView extends ItemView {
     this.bottoming = false;
     this.askCancel = undefined;
     this.mullEl = undefined;
+    this.waitAi = !!session?.pendingAi;
     this.checkMulligan();
+    if (session?.pendingAi) {
+      void session.pendingAi.then(() => {
+        if (this.session !== session) return; // 待っているあいだに、閉じた・別の対戦に替わった
+        this.waitAi = false;
+        void this.loadImages().then(() => this.paint());
+        this.paint();
+        this.checkMulligan();
+        void this.driveAi();
+      });
+    }
     void this.driveAi();
     if (session?.replay && session.rebuild) this.startRp(session);
     this.watcher?.disconnect(); // 開き直されても、監視は1つだけ
@@ -691,6 +703,7 @@ export class BattleView extends ItemView {
     if (this.bottoming) return; // 底に置くカードの選択は、showAsk が出している
     const box = this.ui.stage.createDiv("mtg-bt-ask is-mull");
     this.mullEl = box;
+    if (this.waitAi) return void box.createDiv({ cls: "mtg-bt-asktitle", text: "相手 (AI) が、手札を決めています…" }); // 盤面は先に開く。自分のマリガンは、そのあと
     box.createDiv({ cls: "mtg-bt-asktitle", text: m.count === 0 ? "この手札でキープしますか?" : `マリガン ${m.count} 回目: この手札でキープしますか?` });
     const row = box.createDiv("mtg-bt-askrow");
     row.createEl("button", { cls: "mod-cta", text: m.count > 0 ? `キープ (${m.count} 枚を底に置く)` : "キープ" }).addEventListener("click", () => {

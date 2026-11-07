@@ -73,14 +73,14 @@ type Inputs = { self: DeckData; opp: DeckData; rules: RuleBook };
 
 // 同じ種から、いつも同じ初期状態を作る (対戦を始めるときと、履歴のリプレイで、共通)
 // cpu = 相手 (雑魚 CPU) が、簡単な決まりで、先にマリガンする (何もしない相手は、しない)。aiMulligan = AI の相手のマリガンの記録 (リプレイで、同じ手札を作り直す)
-export function buildSession(inputs: Inputs, selfName: string, oppName: string, seed: number, cpu: boolean, aiMulligan?: MulliganResult): BattleSession {
+export function buildSession(inputs: Inputs, selfName: string, oppName: string, seed: number, cpu: boolean, aiMulligan?: MulliganResult, deferOpening = false): BattleSession {
   const rng = seeded(seed); // 山札の切り直し・マリガンは、この種から決まる (履歴のリプレイで、同じ局面を作るため)
   const game = buildMatch(inputs.self, inputs.opp, inputs.rules, rng);
   game.mulligan = { count: 0 }; // 開始前に、マリガンを聞く
   game.rngState = Math.imul(seed ^ 0x9e3779b9, 0x85ebca6b) >>> 0; // ゲームの中の乱数 (ライブラリーを切る、など) の初期状態: 種から決める (リプレイで、同じ結果)
   if (aiMulligan) applyMulligan(game, "opp", rng, aiMulligan);
   else if (cpu) cpuMulligan(game, "opp", rng);
-  applyOpening(game, "opp", inputs.rules); // 相手の、開始時に戦場に出すカード (自分のは、キープしたあと)
+  if (!deferOpening) applyOpening(game, "opp", inputs.rules); // 相手の、開始時に戦場に出すカード (自分のは、キープしたあと)。AI の相手は、AI のマリガンが終わってから
   return { game, rules: inputs.rules, seed, rng, self: selfName, opp: oppName, ...(aiMulligan ? { aiMulligan } : {}) };
 }
 
@@ -98,9 +98,18 @@ export async function startBattle(app: App, selfName: string, oppName: string, c
   const seed = Math.floor(Math.random() * 2 ** 31);
   const oppMemo = await loadDeckMemo(app, oppName);
   if (!ask) return { ...buildSession(inputs, selfName, oppName, seed, cpu), oppMemo };
-  const s = buildSession(inputs, selfName, oppName, seed, false);
-  const aiMulligan = await aiMulliganOf(s, ask, oppMemo);
-  return { ...s, oppMemo, aiMulligan };
+  // AI の相手のマリガンは、盤面を開いたあとに、裏で決める (API の待ちで、盤面が遅れないように)。終わるまで、自分のマリガンは聞かない (乱数の順番を、リプレイと同じにするため)
+  const s: BattleSession = { ...buildSession(inputs, selfName, oppName, seed, false, undefined, true), oppMemo };
+  s.pendingAi = aiMulliganOf(s, ask, oppMemo)
+    .then((m) => {
+      s.aiMulligan = m;
+    })
+    .catch(() => undefined) // aiMulligan は、失敗しても雑魚 CPU の決まりで済ませる。ここまで来る失敗は、何もしない
+    .then(() => {
+      applyOpening(s.game, "opp", s.rules); // 相手の、開始時に戦場に出すカード
+      s.pendingAi = undefined;
+    });
+  return s;
 }
 async function aiMulliganOf(s: BattleSession, ask: AskAi, memo: string): Promise<MulliganResult> {
   return aiMulligan(s.game, "opp", s.rng!, ask, memo, s.self && s.opp ? { mine: s.opp, foe: s.self } : undefined);
