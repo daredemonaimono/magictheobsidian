@@ -162,8 +162,8 @@ export async function addPrintings(app: App, key: string, prints: Printing[]) {
   await app.vault.process(f, (c) => {
     const lines = c.split("\n");
     const last = lines.map((l) => l.startsWith("| ")).lastIndexOf(true);
-    if (last < 0) return c; // 表が無いカード (取得前に作った): 足せない
     const fresh = prints.filter((p) => !c.includes(p.id)).map((p) => `| ${p.set} | ${p.collector_number} | ${p.rarity} | ${p.released_at} | ${p.id} | ${p.lang} |`);
+    if (last < 0) return `${c.trimEnd()}\n\n## Printings\n\n| set | no | rarity | released | scryfall_id | lang |\n|---|---|---|---|---|---|\n${fresh.join("\n")}\n`; // 表が無いカード: 表ごと足す
     lines.splice(last + 1, 0, ...fresh);
     return lines.join("\n");
   });

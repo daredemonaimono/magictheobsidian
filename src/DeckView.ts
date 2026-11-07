@@ -602,7 +602,6 @@ export class DeckView extends ItemView {
 
   private async pickPrint(key: string, board: Board) {
     const prints = await readPrintings(this.app, key);
-    if (!prints.length) return void new Notice("収録一覧が無いカード。Cards から削除して取り直すと付く");
     const oracle = oracleIdOf(this.app, key);
     const cur = this.deck[board].get(key)?.print?.split(" ")[2];
     // 言語タブ: ある言語を開いたときに、その言語の版を取りに行って、ノートの表に足す
@@ -655,15 +654,24 @@ export class PrintModal extends Modal {
     const bar = this.contentEl.createDiv("mtg-print-tabs");
     const grid = this.contentEl.createDiv("mtg-print-grid");
     const loaded = new Set(this.prints.map((p) => p.lang));
+    const LANG_NAME: Record<string, string> = { en: "英語", ja: "日本語", ko: "韓国語", zhs: "簡体字中国語", zht: "繁体字中国語", fr: "フランス語", de: "ドイツ語", es: "スペイン語", it: "イタリア語", pt: "ポルトガル語", ru: "ロシア語", ph: "ファイレクシア語" };
     const show = async (lang?: string) => {
       bar.querySelectorAll("button").forEach((b) => b.toggleClass("mod-cta", b.dataset.lang === lang));
       if (lang && !loaded.has(lang) && this.tabs) {
+        // まだ取っていない言語: ボタンを押したときだけ、その言語の版を取りに行く (自動では通信しない)
         grid.empty();
-        grid.createDiv({ text: "取得中…", cls: "mtg-dim" });
-        const got = await this.tabs.load(lang).catch(() => []);
-        loaded.add(lang);
-        const ids = new Set(this.prints.map((p) => p.id));
-        this.prints.push(...got.filter((p) => !ids.has(p.id)));
+        const name = LANG_NAME[lang] ?? lang;
+        const fetchBtn = grid.createEl("button", { cls: "mod-cta", text: `${name}版を取得する` });
+        fetchBtn.onclick = async () => {
+          fetchBtn.disabled = true;
+          fetchBtn.setText("取得中…");
+          const got = await this.tabs!.load(lang).catch(() => []);
+          loaded.add(lang);
+          const ids = new Set(this.prints.map((p) => p.id));
+          this.prints.push(...got.filter((p) => !ids.has(p.id)));
+          await show(lang);
+        };
+        return;
       }
       grid.empty();
       const list = lang ? this.prints.filter((p) => p.lang === lang) : this.prints;
