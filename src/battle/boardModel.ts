@@ -158,6 +158,19 @@ export interface StackView {
   image?: string; // カードの画像 (呪文・能力の発生源)
   group: string; // 同じ項目の印 (名前・能力かどうか・どの能力か・コントローラー・対象が同じ)。画面は、同じ印が並んだら、1 枚にまとめて ×N と出す (Prized Amalgam が 4 枚あると、誘発が 8 個、積まれるため)
 }
+// スタックの項目を、表示用にまとめる: **隣り合った**、同じ group のものだけを、1 つにして、個数 n を持たせる (A・A・B・A・A は、A×2・B・A×2。間に別のものがあれば、まとめない: 解決の順番が分かるように)
+export function groupStack(stack: StackView[]): { s: StackView; n: number }[] {
+  const out: { s: StackView; n: number }[] = [];
+  for (const s of stack) {
+    const last = out[out.length - 1];
+    if (last && last.s.group === s.group) {
+      last.s = s; // 位置は、いちばん上 (新しい) ものの
+      last.n++;
+    } else out.push({ s, n: 1 });
+  }
+  return out;
+}
+
 // 自分が、いま選ぶ戦闘の指定 (攻撃クリーチャー / ブロック)。mine = 選べる自分のクリーチャー、attackers = ブロックできる攻撃クリーチャー
 export type AssignItem = { attacker: string; name: string; power: number; trample: boolean; blockers: { id: string; name: string; lethal: number }[]; defaults: Record<string, number> };
 export type CombatChoice = { kind: "attack"; mine: string[] } | { kind: "block"; mine: string[]; attackers: string[] } | { kind: "assign"; mine: string[]; items: AssignItem[] }; // assign = 自分の攻撃クリーチャーが 2 体以上にブロックされたとき、ダメージの割り振り

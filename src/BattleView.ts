@@ -11,7 +11,7 @@ import { AiAdvisor, aiStep, humanAsking } from "./battle/aiRun";
 import { BattleController, StopMode } from "./battle/play";
 import type { CastRecord } from "./battle/node";
 import { stackEffectText } from "./battle/stackText";
-import { BoardModel, CardView, CombatChoice, LandStack, PhaseId, StackView, boardModel } from "./battle/boardModel";
+import { BoardModel, CardView, CombatChoice, LandStack, PhaseId, boardModel, groupStack } from "./battle/boardModel";
 import { CARD_H, CARD_W, GAP, GAUGE_SEC, HAND_H, HAND_W, LAYER_PX, TAP_EXTRA, cardBackUrl, overlapFor, pileLayers, rowNeed } from "./battle/layout";
 import { BattleSession } from "./battle/deckToGame";
 import { sampleBattle } from "./battle/sampleBattle";
@@ -1282,16 +1282,8 @@ export class BattleView extends ItemView {
     el.dataset.sig = sig;
     el.empty();
     // 古いものが左、新しいもの (次に解決されるもの) が右。カードが右へ重なっていく。カーソルを合わせたカードは、前面に出る。効果の説明 (能力ならどの能力か・効果テキスト) は、一番上のカードと、カーソルを合わせたカードに出る
-    // 同じ項目 (group が同じ) は、1 枚にまとめて、×N と出す。位置は、一番上のもの (一番新しいもの) の位置
-    const groups: { s: StackView; n: number }[] = [];
-    for (const s of m.stack) {
-      const at = groups.findIndex((x) => x.s.group === s.group);
-      if (at >= 0) {
-        const n = groups[at].n + 1;
-        groups.splice(at, 1);
-        groups.push({ s, n });
-      } else groups.push({ s, n: 1 });
-    }
+    // 隣り合った同じ項目 (group が同じ) だけ、1 枚にまとめて、×N と出す (間に別のものがあれば、まとめない: 解決の順番が分かるように)
+    const groups = groupStack(m.stack);
     groups.forEach(({ s, n }, i) => {
       const card = el.createDiv({ cls: `mtg-bt-stackcard is-${s.controller}${i === groups.length - 1 ? " is-top" : ""}` });
       if (n > 1) card.createDiv({ cls: "mtg-bt-stackcount", text: `×${n}` });

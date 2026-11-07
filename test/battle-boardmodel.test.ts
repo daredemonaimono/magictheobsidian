@@ -1,5 +1,5 @@
 import assert from "node:assert";
-import { boardModel, sideView } from "../src/battle/boardModel";
+import { groupStack, boardModel, sideView } from "../src/battle/boardModel";
 import { sampleBattle } from "../src/battle/sampleBattle";
 import { CARD_BACK_ID, CARD_H, CARD_W, GAP, TAP_EXTRA, cardBackUrl, overlapFor, pileLayers, rowNeed } from "../src/battle/layout";
 import { Game, GameCard, Perm, RuleBook, createGame } from "../src/battle/state";
@@ -164,6 +164,12 @@ const none = () => undefined;
   const groups = boardModel(g, noRules, "A", none).stack.map((x) => x.group);
   assert.equal(groups[0], groups[1], "同じ誘発は、同じ group");
   assert.notEqual(groups[0], groups[2], "対象が違えば、別の group");
+  // 隣り合ったものだけ、まとめる: A・A・B・A・A は、A×2・B・A×2 (解決の順番を保つ)
+  const view = (group: string, id: string) => ({ id, name: group, controller: "opp" as const, ability: true, group });
+  const g2 = groupStack([view("A", "1"), view("A", "2"), view("B", "3"), view("A", "4"), view("A", "5")]);
+  assert.deepEqual(g2.map((x) => `${x.s.group}×${x.n}`), ["A×2", "B×1", "A×2"], "交互のときは、まとめない");
+  assert.deepEqual(g2.map((x) => x.s.id), ["2", "3", "5"], "位置は、いちばん上のもの");
+  assert.equal(groupStack([]).length, 0);
 }
 
 // マナ・プール: 無色は合計から色つきを引いた残り。負にならない
