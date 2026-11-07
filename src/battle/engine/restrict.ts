@@ -28,12 +28,13 @@ export const whoOk = (who: unknown, sourceController: PlayerId, p: PlayerId): bo
 export const typeOk = (a: Record<string, unknown>, typeLine: string): boolean => (typeof a.type !== "string" || typeIn(typeLine, a.type)) && (typeof a.notType !== "string" || !typeIn(typeLine, a.notType));
 
 // p が card を唱えられるか。だめなら理由 (castLimit: 1ターンに唱えられる数 / cantCast: 型・マナ総量の制限)
-export function castProblem(g: Game, rules: RuleBook, p: PlayerId, card: GameCard): string | null {
+export function castProblem(g: Game, rules: RuleBook, p: PlayerId, card: GameCard, zone = "hand"): string | null {
   for (const { source, call } of staticCalls(g, rules, "castLimit")) {
     if (whoOk(call.args.who, source.controller, p) && (g.spellsBy?.[p] ?? 0) >= Number(call.args.amount)) return `${source.card.name}: 1ターンに唱えられる呪文は ${call.args.amount} つまで`;
   }
   for (const { source, call } of staticCalls(g, rules, "cantCast")) {
     if (!whoOk(call.args.who, source.controller, p) || !typeOk(call.args, card.typeLine)) continue;
+    if (typeof call.args.from === "string" && !call.args.from.split("|").includes(zone)) continue; // from= そのゾーンから唱えるときだけ (Grafdigger's Cage)
     if (call.args.mvOverLands === true) {
       const lands = g.battlefield.filter((x) => x.controller === p && /\bLand\b/.test(characteristics(g, x, rules).typeLine)).length;
       if (card.mv > lands) return `${source.card.name}: マナ総量 (${card.mv}) が、土地の数 (${lands}) より大きい呪文は、唱えられない`;

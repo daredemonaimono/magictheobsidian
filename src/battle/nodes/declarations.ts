@@ -182,7 +182,7 @@ export function registerDeclarations(): void {
     core: true,
     title: "どうなったら",
     summary:
-      "誘発型能力の最初に書く、誘発のきっかけ。event=cast(呪文を唱えた) / enters(戦場に出た。from=graveyard で墓地から) / leaves(離れた。to=graveyard で死亡・exile・hand) / moved(カードがゾーンを移った。from=library to=graveyard など) / damaged(ダメージを与えた。combat=true で戦闘ダメージ。hit=creature・player。eventPerm はダメージを受けたもの) / attacks / blocks / step(ステップの開始時。step=upkeep・draw・main1・combat・main2・end)。zone=graveyard で、このカードが墓地にあるあいだだけ働く。絞り込み: who=you・opponents / type・notType / turn=yours・opponents / self=true(このカード自身) / alone=true(attacks で単独)",
+      "誘発型能力の最初に書く、誘発のきっかけ。event=cast(呪文を唱えた) / enters(戦場に出た。from=graveyard で墓地から) / leaves(離れた。to=graveyard で死亡・exile・hand) / moved(カードがゾーンを移った。from=library to=graveyard など) / damaged(ダメージを与えた。combat=true で戦闘ダメージ。hit=creature・player。eventPerm はダメージを受けたもの) / attacks / blocks / step(ステップの開始時。step=upkeep・draw・main1・combat・main2・end)。zone=graveyard で、このカードが墓地にあるあいだだけ働く。enters で castFrom=graveyard は、墓地から唱えて出たとき。絞り込み: who=you・opponents / type・notType / turn=yours・opponents / self=true(このカード自身) / alone=true(attacks で単独)",
     params: {
       event: { type: "string", required: true, choices: ["cast", "enters", "leaves", "moved", "damaged", "step", "attacks", "blocks"] },
       combat: { type: "boolean" },
@@ -190,6 +190,7 @@ export function registerDeclarations(): void {
       zone: { type: "string", choices: ["battlefield", "graveyard"] },
       from: { type: "string", choices: ["library", "hand", "graveyard", "stack", "battlefield"] },
       to: { type: "string", choices: ["library", "hand", "graveyard", "exile", "battlefield"] },
+      castFrom: { type: "string" },
       step: { type: "string", choices: ["upkeep", "draw", "main1", "combat", "main2", "end"] },
       who: { type: "string", choices: ["you", "opponents"] },
       type: { type: "string" },
@@ -236,8 +237,8 @@ export function registerDeclarations(): void {
   node({
     id: "cantCast",
     title: "唱えられない呪文",
-    summary: "条件に合う呪文を、唱えられなくする。who=opponents(対戦相手が唱える呪文。all 既定 / you)。type・notType で呪文の型を絞る。mvOverLands=true なら、マナ総量が、そのプレイヤーがコントロールする土地の数より大きい呪文だけ(Lavinia は who=opponents notType=creature mvOverLands=true)。affect は要らない",
-    params: { who: { type: "string", choices: ["you", "opponents", "all"] }, type: { type: "string" }, notType: { type: "string" }, mvOverLands: { type: "boolean" } },
+    summary: "条件に合う呪文を、唱えられなくする。who=opponents(対戦相手が唱える呪文。all 既定 / you)。type・notType で呪文の型を絞る。mvOverLands=true なら、マナ総量が、そのプレイヤーがコントロールする土地の数より大きい呪文だけ(Lavinia は who=opponents notType=creature mvOverLands=true)。from=graveyard|library で、そのゾーンから唱えるときだけ(Grafdigger's Cage)。affect は要らない",
+    params: { who: { type: "string", choices: ["you", "opponents", "all"] }, type: { type: "string" }, notType: { type: "string" }, mvOverLands: { type: "boolean" }, from: { type: "string" } },
     ...cont,
   });
 

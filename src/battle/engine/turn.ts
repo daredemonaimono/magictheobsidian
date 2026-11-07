@@ -26,6 +26,13 @@ export function advanceStep(g: Game, rules: RuleBook): void {
       delete p.deathtouched;
       delete p.regen; // 再生の盾も消える
     }
+    // クリンナップ中に誘発したもの (捨てたときの誘発など) があれば、優先権が回る。解決したあと、もう一度クリンナップ (手札・ダメージ・ターン終了時までの効果を、もう一度)
+    flushEvents(g, rules);
+    if (g.stack.length) {
+      g.priority = g.active;
+      g.passes = [];
+      return;
+    }
     g.active = g.extraTurns?.shift() ?? nextPlayer(g, g.active); // 追加のターンがあれば、それが先
     g.turn++;
     g.landsPlayed = 0;

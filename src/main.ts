@@ -184,6 +184,7 @@ export default class MagicTheObsidian extends Plugin {
       void this.syncSidebar();
       window.setTimeout(() => void this.preloadImages(false), 8000); // 「先に保存」のときだけ。起動の直後を避けて、あとから、静かに
     });
+    this.addCommand({ id: "refresh-gaps", name: "Rules: refresh the missing-nodes list (from the current rules)", callback: () => void this.refreshGaps() });
     this.addCommand({ id: "cache-images", name: "Save card images (local cache, per settings)", callback: () => void this.preloadImages(true) });
 
     this.addCommand({
@@ -607,6 +608,21 @@ export default class MagicTheObsidian extends Plugin {
       }
     }
     new Notice(`AI のルール作成: 作った ${made} 枚 / 上書きした ${over} 枚 / 失敗 ${failed} 枚${fallback ? ` / 全ノードで、やり直した ${fallback} 枚` : ""}${gaps ? ` / 足りない効果あり ${gaps} 枚 (${RULES_DIR}/${GAPS_NOTE})` : ""}`);
+  }
+
+  // Rules/_足りないノード.md を、いまのルールの「未対応」から、作り直す (ノードを足したあと、ルールを手で直したあとの、古い記録を消す)。AI は呼ばない
+  private async refreshGaps() {
+    const entries: string[] = [];
+    for (const f of this.app.vault.getMarkdownFiles().filter((x) => x.parent?.path === RULES_DIR && !x.basename.startsWith("_")).sort((a, b) => a.basename.localeCompare(b.basename))) {
+      const lines = unsupportedLines(await this.app.vault.read(f));
+      if (lines.length) entries.push(`- [[${f.basename}]]: ${lines.join(" / ").replace(/\n/g, " ")}`);
+    }
+    const text = `---\nmtg: gaps\n---\n\n# 足りないノード (ルールの「未対応」)\n\nAI にルールを書かせたとき、書けなかった効果。ノードを足したら、そのカードのルールを、もう一度、書かせる。\n\n${entries.join("\n")}${entries.length ? "\n" : ""}`;
+    const path = normalizePath(`${RULES_DIR}/${GAPS_NOTE}`);
+    const f = this.app.vault.getAbstractFileByPath(path);
+    if (f instanceof TFile) await this.app.vault.modify(f, text);
+    else await this.app.vault.create(path, text);
+    new Notice(`足りないノードの一覧を作り直した: ${entries.length} 枚`);
   }
 
   // 足りない効果 (ルールの「未対応」と、1段目が「書けなさそう」と答えたもの) を、Rules/_足りないノード.md に、カードごとに残す。次に作るノードの手がかり (ノードを足したら、そのカードを、もう一度、書かせる)。無ければ、そのカードの行を消す

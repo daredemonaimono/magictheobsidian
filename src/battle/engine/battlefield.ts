@@ -8,7 +8,7 @@ import { announceEffect, prepareAbilityOf, putInGraveyard, typeIn, Game, GameCar
 // パーマネントを戦場に出す。「戦場に出た」イベントを積む (宣言されたキーワードは、characteristics が導く)
 // opts.from = どこから出たか (墓地から出たとき from=graveyard。誘発の絞り込みに使う)。opts.tapped = タップ状態で出す
 export function enterBattlefield(g: Game, card: GameCard, controller: PlayerId, rules: RuleBook, cast?: CastRecord, opts: { from?: Zone; tapped?: boolean; x?: number } = {}): void {
-  const perm: Perm = { id: card.id, card, controller, enteredTurn: g.turn, ...(cast && (cast.kicked || cast.teamwork || cast.alt) ? { cast } : {}) };
+  const perm: Perm = { id: card.id, card, controller, enteredTurn: g.turn, ...(cast && (cast.kicked || cast.teamwork || cast.alt || (cast.from && cast.from !== "hand")) ? { cast } : {}) };
   // 「準備済状態で戦場に出る」: 準備呪文を持つクリーチャーだけ
   if (prepareAbilityOf(rules, card.name) && (rules.get(card.name)?.abilities ?? []).some((a) => a.kind === "static" && a.body.some((c) => c.node === "entersPrepared"))) perm.prepared = true;
   if (card.loyalty !== undefined) perm.counters = { loyalty: card.loyalty }; // プレインズウォーカーは、初期忠誠度で戦場に出る

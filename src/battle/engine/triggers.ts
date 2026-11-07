@@ -26,6 +26,7 @@ export function matchesEvent(g: Game, s: Perm, when: NodeCall, ev: GameEvent): b
   const from = ev.type === "moved" ? ev.from : ev.type === "enters" ? ev.from ?? "stack" : undefined;
   const to = ev.type === "moved" ? ev.to : ev.type === "leaves" ? ev.to ?? "graveyard" : undefined;
   if ((a.from !== undefined && from !== a.from) || (a.to !== undefined && to !== a.to)) return false;
+  if (typeof a.castFrom === "string" && (ev.type !== "enters" || !a.castFrom.split("|").includes(ev.perm.cast?.from ?? "hand"))) return false; // 唱えられて出たとき、どこから唱えられたか (Prized Amalgam の「墓地から唱えた」)
   if (a.who === "you" && subject.controller !== s.controller) return false;
   if (a.who === "opponents" && subject.controller === s.controller) return false;
   if (subject.card) {
@@ -67,13 +68,13 @@ export function announceTargets(g: Game, item: StackItem, rules: RuleBook): void
 // shortcut: 誘発の順番 (APNAP) は決めず、戦場の順
 export function flushEvents(g: Game, rules: RuleBook): void {
   let added = false;
+  const batch: StackItem[] = []; // 今回の flush で誘発したもの。最後に、APNAP の順番 (アクティブ・プレイヤーが先 = 下) で、スタックに積む
   const push = (s: Perm, body: NodeCall[], trigger?: string) => {
     for (let k = 0; k <= extraTriggers(g, s, rules); k++) {
       const item: StackItem = { id: `${s.id}#${g.serial + 1}`, card: s.card, controller: s.controller, targets: {}, cast: s.cast ?? {}, body, ability: true, source: s.id, ...(trigger ? { trigger } : {}) };
       if (!chooseTargets(g, item, rules)) continue; // 合法な対象が足りない誘発型能力は、スタックに積まれない
       g.serial++;
-      g.stack.push(item);
-      announceTargets(g, item, rules);
+      batch.push(item);
       added = true;
     }
   };
@@ -89,7 +90,7 @@ export function flushEvents(g: Game, rules: RuleBook): void {
             if (c.node !== "ward") continue;
             const item: StackItem = { id: `${ev.perm.id}#${g.serial + 1}`, card: ev.perm.card, controller: ev.perm.controller, targets: {}, cast: {}, body: [{ node: "counter", args: { target: ev.by.id, unlessPay: Number(c.args.amount) } }], ability: true, source: ev.perm.id };
             g.serial++;
-            g.stack.push(item);
+            batch.push(item);
             added = true;
           }
         }
@@ -102,7 +103,7 @@ export function flushEvents(g: Game, rules: RuleBook): void {
         const item: StackItem = { id: `${d.card.id}#${g.serial + 1}`, card: d.card, controller: d.controller, targets: {}, cast: {}, body: d.body, ability: true, ...(d.source ? { source: d.source } : {}) };
         if (!chooseTargets(g, item, rules)) continue;
         g.serial++;
-        g.stack.push(item);
+        batch.push(item);
         added = true;
       }
       g.delayed = g.delayed.filter((x) => x.step !== ev.step);
@@ -134,6 +135,12 @@ export function flushEvents(g: Game, rules: RuleBook): void {
       }
     }
     stateBased(g, rules); // 誘発の効果が積まれる前に起きた変化も、落ち着かせる
+  }
+  // 誘発の順番 (APNAP): アクティブ・プレイヤーのものを先に積み (下)、非アクティブ・プレイヤーのものを、あとに積む (上。先に解決される)。同じプレイヤーのものは、見つけた順
+  // shortcut: 同じプレイヤーの誘発の順番は、そのプレイヤーが選べない (戦場の順)
+  for (const item of [...batch.filter((x) => x.controller === g.active), ...batch.filter((x) => x.controller !== g.active)]) {
+    g.stack.push(item);
+    announceTargets(g, item, rules);
   }
   if (added) g.passes = []; // 優先権は動かさない (唱えた・起動した本人が、積まれた誘発にも応答できる。解決のあとは、アクティブ・プレイヤーに戻る)
 }

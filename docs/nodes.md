@@ -128,9 +128,9 @@ Storm の宣言(呪文能力の最初に書く。引数なし)。この呪文を
 
 ### `when` どうなったら
 
-誘発型能力の最初に書く、誘発のきっかけ。event=cast(呪文を唱えた) / enters(戦場に出た。from=graveyard で墓地から) / leaves(離れた。to=graveyard で死亡・exile・hand) / moved(カードがゾーンを移った。from=library to=graveyard など) / damaged(ダメージを与えた。combat=true で戦闘ダメージ。hit=creature・player。eventPerm はダメージを受けたもの) / attacks / blocks / step(ステップの開始時。step=upkeep・draw・main1・combat・main2・end)。zone=graveyard で、このカードが墓地にあるあいだだけ働く。絞り込み: who=you・opponents / type・notType / turn=yours・opponents / self=true(このカード自身) / alone=true(attacks で単独)
+誘発型能力の最初に書く、誘発のきっかけ。event=cast(呪文を唱えた) / enters(戦場に出た。from=graveyard で墓地から) / leaves(離れた。to=graveyard で死亡・exile・hand) / moved(カードがゾーンを移った。from=library to=graveyard など) / damaged(ダメージを与えた。combat=true で戦闘ダメージ。hit=creature・player。eventPerm はダメージを受けたもの) / attacks / blocks / step(ステップの開始時。step=upkeep・draw・main1・combat・main2・end)。zone=graveyard で、このカードが墓地にあるあいだだけ働く。enters で castFrom=graveyard は、墓地から唱えて出たとき。絞り込み: who=you・opponents / type・notType / turn=yours・opponents / self=true(このカード自身) / alone=true(attacks で単独)
 
-- 引数: `event`(string・必須・cast / enters / leaves / moved / damaged / step / attacks / blocks)、`combat`(boolean)、`hit`(string・creature / player / planeswalker)、`zone`(string・battlefield / graveyard)、`from`(string・library / hand / graveyard / stack / battlefield)、`to`(string・library / hand / graveyard / exile / battlefield)、`step`(string・upkeep / draw / main1 / combat / main2 / end)、`who`(string・you / opponents)、`type`(string)、`notType`(string)、`turn`(string・yours / opponents)、`self`(boolean)、`alone`(boolean)
+- 引数: `event`(string・必須・cast / enters / leaves / moved / damaged / step / attacks / blocks)、`combat`(boolean)、`hit`(string・creature / player / planeswalker)、`zone`(string・battlefield / graveyard)、`from`(string・library / hand / graveyard / stack / battlefield)、`to`(string・library / hand / graveyard / exile / battlefield)、`castFrom`(string)、`step`(string・upkeep / draw / main1 / combat / main2 / end)、`who`(string・you / opponents)、`type`(string)、`notType`(string)、`turn`(string・yours / opponents)、`self`(boolean)、`alone`(boolean)
 - 書ける能力: triggered
 - 宣言のノード (エンジンが読む。`if=` は付けられない)
 - 中心のノード (ルールを書かせるとき、いつも AI の指示に入る。ほかは、カードごとに選ぶ)
@@ -162,9 +162,9 @@ Storm の宣言(呪文能力の最初に書く。引数なし)。この呪文を
 
 ### `cantCast` 唱えられない呪文
 
-条件に合う呪文を、唱えられなくする。who=opponents(対戦相手が唱える呪文。all 既定 / you)。type・notType で呪文の型を絞る。mvOverLands=true なら、マナ総量が、そのプレイヤーがコントロールする土地の数より大きい呪文だけ(Lavinia は who=opponents notType=creature mvOverLands=true)。affect は要らない
+条件に合う呪文を、唱えられなくする。who=opponents(対戦相手が唱える呪文。all 既定 / you)。type・notType で呪文の型を絞る。mvOverLands=true なら、マナ総量が、そのプレイヤーがコントロールする土地の数より大きい呪文だけ(Lavinia は who=opponents notType=creature mvOverLands=true)。from=graveyard|library で、そのゾーンから唱えるときだけ(Grafdigger's Cage)。affect は要らない
 
-- 引数: `who`(string・you / opponents / all)、`type`(string)、`notType`(string)、`mvOverLands`(boolean)
+- 引数: `who`(string・you / opponents / all)、`type`(string)、`notType`(string)、`mvOverLands`(boolean)、`from`(string)
 - 書ける能力: static
 - 宣言のノード (エンジンが読む。`if=` は付けられない)
 

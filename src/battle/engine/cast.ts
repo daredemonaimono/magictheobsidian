@@ -34,7 +34,7 @@ export function castSpell(g: Game, p: PlayerId, cardId: string, targets: Record<
 export function castCore(g: Game, p: PlayerId, card: GameCard, body: NodeCall[], targets: Record<string, string>, rules: RuleBook, cast: CastRecord, afterPay: () => void, copy = false): void {
   const item: StackItem = { id: card.id, card, controller: p, targets, cast, ...(copy ? { body, copy: true } : {}) };
   const own = ownCost(card);
-  const banned = castProblem(g, rules, p, card);
+  const banned = castProblem(g, rules, p, card, cast.from ?? "hand");
   if (banned) throw new RuleError(banned);
   checkModes(body, cast, card.name);
   validate(g, item, body, card.name, rules);

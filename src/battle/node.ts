@@ -60,6 +60,7 @@ export interface CastRecord {
   kicked?: boolean;
   teamwork?: boolean;
   alt?: boolean; // 別のコスト (altCost) で唱えた
+  from?: "hand" | "graveyard" | "library" | "exile"; // どこから唱えたか (無ければ手札)。cantCast from= (Cage)・when castFrom= (Prized Amalgam) が見る
   exile?: string[]; // 別のコストで追放する手札のカードの id (無ければ、条件に合う先頭から)
   x?: number; // マナコストの {X} に選んだ値
   delve?: string[] | true; // 変異ではなく Delve: 追放する墓地のカードの id (true = 払うのに要るぶんだけ、先頭から)
