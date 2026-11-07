@@ -137,11 +137,23 @@ export async function fetchPrintings(card: ScryfallCard, lang = "en"): Promise<P
     return out;
   };
   if (lang !== "en") {
-    const q = encodeURIComponent(`oracleid:${card.oracle_id} lang:${lang}`);
-    const found = await get(`https://api.scryfall.com/cards/search?order=released&unique=prints&q=${q}`);
+    const found = await fetchPrintingsLang(card.oracle_id, lang);
     if (found.length) return found;
   }
   return get(card.prints_search_uri);
+}
+
+// ある言語の版だけ (なければ空)。版の選択の言語タブが、タブを開いたときに取りに行く
+export async function fetchPrintingsLang(oracleId: string, lang: string): Promise<Printing[]> {
+  const out: Printing[] = [];
+  let url: string | undefined = `https://api.scryfall.com/cards/search?order=released&unique=prints&q=${encodeURIComponent(`oracleid:${oracleId} lang:${lang}`)}`;
+  while (url) {
+    const res = await requestUrl({ url, headers: HEADERS, throw: false });
+    if (res.status !== 200) break;
+    out.push(...res.json.data);
+    url = res.json.has_more ? res.json.next_page : undefined;
+  }
+  return out;
 }
 
 // 指定言語の版 (printed_name / printed_text を持つ)。全カードに全言語があるわけではないので無ければ undefined

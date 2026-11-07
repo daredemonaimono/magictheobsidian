@@ -1,4 +1,5 @@
 import { startGame } from "./engine";
+import { TokenArt } from "./tokenArt";
 import { Game, GameCard, RuleBook, createGame } from "./state";
 
 // デッキ → 対戦の局面。Obsidian に依存しない純粋な関数 (カードのノートを読む処理は、画面の側)
@@ -14,10 +15,12 @@ export interface CardData {
   keywords?: string[];
   colors: string[];
   loyalty?: number;
+  art?: string; // デッキで選んだ版の絵の URL
 }
 
 export interface DeckData {
   format: string;
+  tokens?: TokenArt[]; // デッキの ## Token に入れてあるトークン
   main: { key: string; n: number; data: CardData }[]; // メイン (コマンダー欄・サイド・トークン欄は、山札に入れない)
 }
 
@@ -38,6 +41,7 @@ export function toGameCard(d: CardData, id: string, owner: string): GameCard {
     ...(d.keywords ? { keywords: d.keywords } : {}),
     colors: d.colors,
     ...(d.loyalty !== undefined ? { loyalty: d.loyalty } : {}),
+    ...(d.art ? { art: d.art } : {}),
     owner,
   };
 }
@@ -66,6 +70,7 @@ export function buildMatch(self: DeckData, opp: DeckData, rules: RuleBook, rng: 
   const g = createGame(["you", "opp"]);
   g.libraries["you"] = library(self, "you", rng);
   g.libraries["opp"] = library(opp, "opp", rng);
+  if (self.tokens?.length || opp.tokens?.length) g.tokenArt = { you: self.tokens ?? [], opp: opp.tokens ?? [] };
   g.payManaCosts = true;
   g.skipUnruled = true;
   startGame(g, rules, "you");

@@ -28,7 +28,7 @@ export async function preloadImages(app: App, scope: PreloadScope, kind: Preload
   } else {
     for (const f of app.vault.getMarkdownFiles().filter((x) => x.path.startsWith(`${DECK_DIR}/`))) {
       const deck = parseDeck(await app.vault.cachedRead(f));
-      for (const board of [deck.commander, deck.main, deck.side]) for (const [key, e] of board) await add(key, e.print);
+      for (const board of [deck.commander, deck.main, deck.side, deck.token]) for (const [key, e] of board) await add(key, e.print);
     }
     for (const row of (await loadCollection(app)).values()) await add(row.card, row.print);
   }

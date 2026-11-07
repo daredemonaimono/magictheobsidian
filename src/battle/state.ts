@@ -22,6 +22,7 @@ export interface GameCard {
   colors?: string[]; // 色 (W U B R G)
   loyalty?: number; // プレインズウォーカーの初期忠誠度 (戦場に出るとき loyalty カウンターとして置かれる)
   token?: boolean; // トークン (戦場を離れると消える)
+  art?: string; // 絵の URL (デッキで選んだ版・トークン)。無ければ、カードのノートの絵
 }
 export interface StackItem {
   id: string;
@@ -149,6 +150,7 @@ export interface Game {
   log: string[];
   serial: number; // 起動型・誘発型能力の id を作るための通し番号
   events: GameEvent[]; // まだ誘発型能力を探していないイベント
+  tokenArt?: Record<PlayerId, import("./tokenArt").TokenArt[]>; // 各プレイヤーのデッキに登録してあるトークン (作ったトークンの絵を選ぶ)
   emblems: Perm[]; // 紋章 (戦場の外に残り続ける。元のカードのルールにある、emblem で始まる誘発型能力が働く)
   rngState?: number; // ゲームの中の乱数の状態 (ライブラリーを切る、など。nextRandom)。対戦を始めるとき、種から決める
   handLook?: { by: PlayerId; of: PlayerId; ids: string[]; n: number }; // 手札を見たとき (lookHand): だれが、だれの手札を、どのカードを見たか。n = 何回目か (画面が、新しい「見た」を見つける)

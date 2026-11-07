@@ -8,7 +8,7 @@ import { wikiUrl } from "./wiki";
 // カードの、ローカルネーム・ローカルテキストを手で直す画面と、ボタン。デッキ画面のプレビューと、カード一覧が、同じものを使う
 
 export class TextModal extends Modal {
-  constructor(app: App, private title: string, private body: string, private onSave: (text: string) => Promise<void>, private hint?: string) {
+  constructor(app: App, private title: string, private body: string, private onSave: (text: string) => Promise<void>, private hint?: string, private cards?: { key: string; label: string }[]) {
     super(app);
   }
   onOpen() {
@@ -16,6 +16,23 @@ export class TextModal extends Modal {
     if (this.hint) this.contentEl.createEl("p", { text: this.hint, cls: "setting-item-description" });
     const area = this.contentEl.createEl("textarea", { cls: "mtg-textedit" });
     area.value = this.body;
+    // カードの引用: デッキのカードを選ぶと、カーソルの位置に [[カード名]] を入れる
+    if (this.cards?.length) {
+      const list = this.contentEl.createEl("datalist", { attr: { id: "mtg-quote-cards" } });
+      for (const c of this.cards) list.createEl("option", { attr: { value: c.key, label: c.label } });
+      const quote = this.contentEl.createEl("input", { cls: "mtg-quote", attr: { type: "text", list: "mtg-quote-cards", placeholder: "デッキのカードを引用 (名前を入れて選ぶ)" } });
+      this.contentEl.insertBefore(quote, area);
+      this.contentEl.insertBefore(list, area);
+      quote.addEventListener("change", () => {
+        if (!this.cards!.some((c) => c.key === quote.value)) return;
+        const at = area.selectionStart ?? area.value.length;
+        const text = `[[${quote.value}]]`;
+        area.value = area.value.slice(0, at) + text + area.value.slice(area.selectionEnd ?? at);
+        area.focus();
+        area.setSelectionRange(at + text.length, at + text.length);
+        quote.value = "";
+      });
+    }
     new Setting(this.contentEl).addButton((b) =>
       b.setButtonText("保存").setCta().onClick(async () => {
         await this.onSave(area.value);

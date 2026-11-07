@@ -1,4 +1,6 @@
 import { NodeDef, Value } from "../node";
+import { pickTokenArt } from "../tokenArt";
+const artOf = (art?: string) => (art ? { art } : {});
 import { defineNode as define } from "../registry";
 import { who as logWho } from "../engine/shared";
 import { parseManaCost } from "../mana";
@@ -216,6 +218,7 @@ export function registerPermanents(): void {
           ...(typeof a.power === "number" ? { power: a.power } : {}),
           ...(typeof a.toughness === "number" ? { toughness: a.toughness } : {}),
           ...(typeof a.colors === "string" ? { colors: a.colors.split(/[\s,]+/).filter(Boolean) } : {}),
+          ...artOf(pickTokenArt(g.tokenArt?.[p], String(a.name), String(a.types), typeof a.power === "number" ? a.power : undefined, typeof a.toughness === "number" ? a.toughness : undefined)),
         };
         const perm: Perm = { id: card.id, card, controller: p, enteredTurn: g.turn };
         g.battlefield.push(perm);

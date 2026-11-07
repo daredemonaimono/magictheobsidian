@@ -350,12 +350,16 @@ export class BattleView extends ItemView {
   // 画像の URL: カード名でノートを引いて、保存済みの URL を使う (新しい通信はしない)。無いカードは、名前と P/T の代わりの面
   private async loadImages(extra: string[] = []) {
     const g = this.game;
+    const cards = [...g.battlefield.map((p) => p.card), ...Object.values(g.hands).flat(), ...Object.values(g.graveyards).flat(), ...Object.values(g.exile).flat(), ...Object.values(g.libraries).flat(), ...g.stack.map((s) => s.card)];
+    // 絵はカード名で引く。デッキで選んだ版・トークンの絵があれば、それ (同じ名前なら、自分のデッキのものを先に)
+    const art = new Map<string, string>();
+    for (const c of [...cards].sort((a, b) => Number(a.owner !== VIEWER) - Number(b.owner !== VIEWER))) if (c.art && !art.has(c.name)) art.set(c.name, c.art);
     const names = new Set<string>([...g.battlefield.map((p) => p.card.name), ...Object.values(g.hands).flat().map((c) => c.name), ...Object.values(g.graveyards).flat().map((c) => c.name), ...g.stack.map((s) => s.card.name), ...extra]);
     await Promise.all(
-      [...names].filter((n) => !this.tried.has(n)).map(async (n) => {
-        this.tried.add(n);
+      [...names].filter((n) => !this.tried.has(`${n}|${art.get(n) ?? ""}`)).map(async (n) => {
+        this.tried.add(`${n}|${art.get(n) ?? ""}`);
         const info = cardInfo(this.app, n);
-        const url = info ? await cardImage(this.app, info.file) : undefined;
+        const url = art.get(n) ?? (info ? await cardImage(this.app, info.file) : undefined);
         const local = await localUrl(url); // 保存済みの画像 (通信しない)
         if (local) this.urls.set(n, local);
       }),

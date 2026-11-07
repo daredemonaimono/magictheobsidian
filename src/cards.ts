@@ -149,10 +149,30 @@ export async function setLocalName(app: App, key: string, name: string) {
   await app.fileManager.processFrontMatter(f, (fm) => applyLocalName(fm, name));
 }
 
+// 版の指定は "set no" か "set no lang" (言語タブで選んだ版)。言語が無ければ、表の最初に見つかったもの
 export async function printingOf(app: App, key: string, print: string): Promise<Printing | undefined> {
-  const [set, no] = print.split(" ");
-  return (await readPrintings(app, key)).find((x) => x.set === set && x.collector_number === no);
+  const [set, no, lang] = print.split(" ");
+  return (await readPrintings(app, key)).find((x) => x.set === set && x.collector_number === no && (!lang || x.lang === lang));
 }
+
+// 言語タブで取ってきた版を、カードのノートの Printings 表に足す (id が無いものだけ)。足した版は通信なしで使える
+export async function addPrintings(app: App, key: string, prints: Printing[]) {
+  const f = app.vault.getAbstractFileByPath(`${CARD_DIR}/${key}.md`);
+  if (!(f instanceof TFile) || !prints.length) return;
+  await app.vault.process(f, (c) => {
+    const lines = c.split("\n");
+    const last = lines.map((l) => l.startsWith("| ")).lastIndexOf(true);
+    if (last < 0) return c; // 表が無いカード (取得前に作った): 足せない
+    const fresh = prints.filter((p) => !c.includes(p.id)).map((p) => `| ${p.set} | ${p.collector_number} | ${p.rarity} | ${p.released_at} | ${p.id} | ${p.lang} |`);
+    lines.splice(last + 1, 0, ...fresh);
+    return lines.join("\n");
+  });
+}
+
+export const oracleIdOf = (app: App, key: string): string | undefined => {
+  const f = app.vault.getAbstractFileByPath(`${CARD_DIR}/${key}.md`);
+  return f instanceof TFile ? app.metadataCache.getFileCache(f)?.frontmatter?.oracle_id : undefined;
+};
 
 export async function printingImage(app: App, key: string, print: string): Promise<string | undefined> {
   const p = await printingOf(app, key, print);

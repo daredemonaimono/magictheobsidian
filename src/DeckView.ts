@@ -6,14 +6,14 @@ import { typeIcon } from "./typeIcon";
 import { editableMemo, setMemo } from "./battle/memo";
 import { addFlip } from "./flip";
 import { normLocalName } from "./localName";
-import { CARD_DIR, cardBackImage, cardBackText, cardImage, cardInfo, cardText, oracleEnglish, printingImage, printingOf, readPrintings, refetchCard, updateLegality } from "./cards";
+import { CARD_DIR, addPrintings, oracleIdOf, cardBackImage, cardBackText, cardImage, cardInfo, cardText, oracleEnglish, printingImage, printingOf, readPrintings, refetchCard, updateLegality } from "./cards";
 import { CREATABLE, FORMATS, formatOf, judge } from "./rules";
 import { loadCollection } from "./collection";
 import { formatPrice, priceOf, refreshPrices } from "./prices";
 import { ThumbnailModal, deckArtUrl } from "./ThumbnailModal";
 import { Settings } from "./settings";
 import { Board, Deck, emptyDeck, parseDeck, thumbnailKey, writeDeck } from "./deck";
-import { Printing, printingImageUrl } from "./scryfall";
+import { Printing, fetchPrintingsLang, printingImageUrl } from "./scryfall";
 import { COLUMNS, groupOf, groupRank, isToken } from "./layout";
 import { Filters, Meta, Result, buildFilterBar, emptyFilters, isEmpty, searchAll } from "./search";
 
@@ -233,7 +233,7 @@ export class DeckView extends ItemView {
       const body = editableMemo(await this.app.vault.read(f));
       new TextModal(this.app, "AI へのメモ", body, async (t) => {
         await this.app.vault.process(f, (c) => setMemo(c, t));
-      }, "このデッキを、対戦で AI が使うとき、読みます。マリガンの基準・立ち回り・コンボなどを、自由に書いてください (書いていないことは、AI が自分で判断します)。デッキのノートの「## メモ」の欄に保存されます。").open();
+      }, "このデッキを、対戦で AI が使うとき、読みます。マリガンの基準・立ち回り・コンボなどを、自由に書いてください (書いていないことは、AI が自分で判断します)。デッキのノートの「## メモ」の欄に保存されます。", [...new Set((["commander", "main", "side"] as Board[]).flatMap((b) => [...this.deck[b].keys()]))].map((key) => ({ key, label: cardInfo(this.app, key)?.nameLocal ?? key }))).open();
     };
 
     el.createDiv({ text: this.getDisplayText(), cls: "mtg-dtitle" });
@@ -603,7 +603,15 @@ export class DeckView extends ItemView {
   private async pickPrint(key: string, board: Board) {
     const prints = await readPrintings(this.app, key);
     if (!prints.length) return void new Notice("収録一覧が無いカード。Cards から削除して取り直すと付く");
-    new PrintModal(this.app, key, prints, true, (p) => void this.setPrint(key, p, board)).open();
+    const oracle = oracleIdOf(this.app, key);
+    const cur = this.deck[board].get(key)?.print?.split(" ")[2];
+    // 言語タブ: ある言語を開いたときに、その言語の版を取りに行って、ノートの表に足す
+    const tabs = { langs: [...new Set([...prints.map((p) => p.lang), "en", this.settings.textLang])], first: cur ?? this.settings.textLang, load: async (lang: string) => {
+      const got = oracle ? await fetchPrintingsLang(oracle, lang) : [];
+      await addPrintings(this.app, key, got);
+      return got;
+    } };
+    new PrintModal(this.app, key, prints, true, (p) => void this.setPrint(key, p, board), tabs).open();
   }
 
   // ja = 設定した言語のカード名。無ければ英語名だけ出す
@@ -630,8 +638,13 @@ export class DeckView extends ItemView {
   }
 }
 
+export interface PrintTabs {
+  langs: string[]; // タブにする言語
+  first: string; // 最初に開く言語
+  load: (lang: string) => Promise<Printing[]>; // 表に無い言語の版を取ってくる
+}
 export class PrintModal extends Modal {
-  constructor(app: App, private key: string, private prints: Printing[], private canReset: boolean, private onPick: (print?: string) => void) {
+  constructor(app: App, private key: string, private prints: Printing[], private canReset: boolean, private onPick: (print?: string) => void, private tabs?: PrintTabs) {
     super(app);
   }
   onOpen() {
@@ -639,15 +652,39 @@ export class PrintModal extends Modal {
     this.modalEl.addClass("mtg-print-modal");
     // コレクションは版が必須なので「指定なし」は出さない
     if (this.canReset) this.contentEl.createEl("button", { text: "指定なし (標準に戻す)" }).onclick = () => this.pick();
+    const bar = this.contentEl.createDiv("mtg-print-tabs");
     const grid = this.contentEl.createDiv("mtg-print-grid");
-    for (const p of this.prints) {
-      const cell = grid.createDiv("mtg-print");
-      // 画像は表示されるものだけ読み込む (一覧が長くても重くならない)
-      cell.createEl("img", { attr: { src: printingImageUrl(p.id), loading: "lazy", alt: p.set } });
-      cell.createDiv({ text: `${p.set.toUpperCase()} ${p.collector_number}${p.lang !== "en" ? ` (${p.lang})` : ""}`, cls: "mtg-dim" });
-      cell.createDiv({ text: p.released_at, cls: "mtg-dim" });
-      cell.onclick = () => this.pick(`${p.set} ${p.collector_number}`);
-    }
+    const loaded = new Set(this.prints.map((p) => p.lang));
+    const show = async (lang?: string) => {
+      bar.querySelectorAll("button").forEach((b) => b.toggleClass("mod-cta", b.dataset.lang === lang));
+      if (lang && !loaded.has(lang) && this.tabs) {
+        grid.empty();
+        grid.createDiv({ text: "取得中…", cls: "mtg-dim" });
+        const got = await this.tabs.load(lang).catch(() => []);
+        loaded.add(lang);
+        const ids = new Set(this.prints.map((p) => p.id));
+        this.prints.push(...got.filter((p) => !ids.has(p.id)));
+      }
+      grid.empty();
+      const list = lang ? this.prints.filter((p) => p.lang === lang) : this.prints;
+      if (!list.length) grid.createDiv({ text: "この言語の版は無い", cls: "mtg-dim" });
+      for (const p of list) {
+        const cell = grid.createDiv("mtg-print");
+        // 画像は表示されるものだけ読み込む (一覧が長くても重くならない)
+        cell.createEl("img", { attr: { src: printingImageUrl(p.id), loading: "lazy", alt: p.set } });
+        cell.createDiv({ text: `${p.set.toUpperCase()} ${p.collector_number}${p.lang !== "en" ? ` (${p.lang})` : ""}`, cls: "mtg-dim" });
+        cell.createDiv({ text: p.released_at, cls: "mtg-dim" });
+        cell.onclick = () => this.pick(`${p.set} ${p.collector_number}${this.tabs ? ` ${p.lang}` : ""}`);
+      }
+    };
+    if (this.tabs) {
+      for (const l of this.tabs.langs) {
+        const b = bar.createEl("button", { text: l });
+        b.dataset.lang = l;
+        b.onclick = () => void show(l);
+      }
+      void show(this.tabs.langs.includes(this.tabs.first) ? this.tabs.first : this.tabs.langs[0]);
+    } else void show();
   }
   private pick(print?: string) {
     this.close();
