@@ -550,3 +550,19 @@ body.mtg-sidebar-left .sidebar-toggle-button.mod-right { display: none; }
 .mtg-bt-pip.is-conq { background: #ff8a3d; }
 .mtg-bt-pip::after { content: attr(data-tip); position: absolute; right: 13px; top: 50%; transform: translateY(-50%); display: none; white-space: nowrap; padding: 1px 6px; border-radius: 4px; background: #000d; color: #fff; font-size: 12px; font-weight: 700; pointer-events: none; }
 .mtg-bt-pip:hover::after { display: block; }
+
+/* 墓地: 縦のスタック。カーソルのあったカードが、前面に全体を出す。墓地から使えるカードは、紫に光る */
+.mtg-bt-yardstack { display: flex; flex-direction: column; }
+.mtg-bt-yarditem { position: relative; height: 30px; border-radius: 8px; overflow: hidden; }
+.mtg-bt-yarditem:last-child { height: auto; }
+.mtg-bt-yarditem img { display: block; width: 100%; border-radius: 8px; }
+.mtg-bt-yarditem:not(:last-child) img { position: absolute; top: 0; left: 0; }
+.mtg-bt-yarditem:hover { overflow: visible; z-index: 5; }
+.mtg-bt-yarditem.is-yard-able { box-shadow: 0 0 0 2px #b86bff66, 0 0 6px #b86bff66; }
+.mtg-bt-yarditem.is-yard-playable { box-shadow: 0 0 0 2px #b86bff, 0 0 12px #b86bff; cursor: pointer; }
+.mtg-bt-yarditem.is-yard-playable:hover img { box-shadow: 0 0 0 2px #b86bff, 0 0 12px #b86bff; }
+.mtg-bt-yarditem.is-yard-able:hover img { box-shadow: 0 0 0 2px #b86bff66, 0 0 6px #b86bff66; }
+.mtg-bt-yarditem:hover { box-shadow: none; }
+.mtg-bt-yarddetail { margin-top: 10px; }
+.mtg-bt-yarddetail .mtg-bt-yardbtn { display: block; margin: 6px 0 0; }
+.mtg-bt-deck.is-self-yard.is-yard-playable { box-shadow: 0 0 0 2px #b86bff, 0 0 14px #b86bff; border-radius: 6px; }

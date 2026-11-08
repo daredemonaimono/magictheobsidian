@@ -15,7 +15,7 @@ import { BoardModel, CardView, CombatChoice, LandStack, PhaseId, boardModel, gro
 import { CARD_H, CARD_W, GAP, GAUGE_SEC, HAND_H, HAND_W, LAYER_PX, TAP_EXTRA, cardBackUrl, overlapFor, pileLayers, rowNeed } from "./battle/layout";
 import { BattleSession } from "./battle/deckToGame";
 import { sampleBattle } from "./battle/sampleBattle";
-import { Game, RuleBook } from "./battle/state";
+import { Game, GameCard, RuleBook } from "./battle/state";
 import { cardImage, cardInfo, cardText } from "./cards";
 
 export const BATTLE_VIEW = "mtg-battle";
@@ -406,6 +406,8 @@ export class BattleView extends ItemView {
     }
     this.paintPile(ui.piles["self-library"], m.self.library);
     this.paintPile(ui.piles["self-yard"], m.self.graveyard, m.self.graveyardTop);
+    // 墓地から使えるものがあるとき: 墓地の山が、紫に光る
+    ui.piles["self-yard"].toggleClass("is-yard-playable", !!this.ctl && this.game.graveyards[VIEWER].some((c) => this.ctl!.yardActions(c.id).some((a) => a.usable)));
     this.paintPile(ui.piles["opp-library"], m.opp.library);
     this.paintPile(ui.piles["opp-yard"], m.opp.graveyard, m.opp.graveyardTop);
     this.paintMana(m);
@@ -1410,37 +1412,37 @@ export class BattleView extends ItemView {
     el.empty();
     el.createDiv({ cls: "mtg-bt-pname", text: `${mine ? "あなた" : "相手"}の墓地 (${cards.length} 枚)` });
     if (!cards.length) return void el.createDiv({ cls: "mtg-bt-ptext", text: "(空)" });
-    const list = el.createDiv("mtg-bt-yardlist");
-    const detail = el.createDiv("mtg-bt-yarddetail"); // 一覧の下に、カーソルを合わせたカードの画像と効果 (一覧は消さない)
+    // 縦のスタック (デッキ構築の画面と同じ): 1 枚ずつ、名前の帯だけを重ねて見せる。カーソルのあったカードが、前面に全体を出す。下に、そのカードの効果テキストと、墓地からの行動のボタン
+    const stack = el.createDiv("mtg-bt-yardstack");
+    const detail = el.createDiv("mtg-bt-yarddetail");
     let seq = 0;
-    for (const c of cards) {
-      const row = list.createDiv("mtg-bt-yardrow");
-      const url = this.urls.get(c.name);
-      if (url) row.createEl("img", { attr: { src: url, alt: c.name, draggable: "false" } });
-      row.createSpan({ text: c.name });
-      // 自分の墓地: 墓地から起動できる能力・唱えられるカードは、ボタンで (Faerie Dreamthief・Timeline Culler)
-      if (mine && this.ctl) {
-        for (const a of this.ctl.yardActions(c.id)) {
-          const b = row.createEl("button", { cls: "mtg-bt-yardbtn", text: a.label });
-          b.disabled = !a.usable;
-          b.addEventListener("click", (e) => {
-            e.stopPropagation();
-            this.ask(c.name, this.ctl!.needsForYard(c.id, a.key), (t) => this.run(() => this.ctl!.useYard(c.id, a.key, t)));
-          });
+    const showDetail = (c: GameCard) => {
+      const mineSeq = ++seq;
+      const acts = mine && this.ctl ? this.ctl.yardActions(c.id) : [];
+      void cardText(this.app, c.name).catch(() => "").then((text) => {
+        if (mineSeq !== seq) return;
+        detail.empty();
+        detail.createDiv({ cls: "mtg-bt-pname", text: c.name });
+        detail.createDiv({ cls: "mtg-bt-ptext", text: text || "(効果テキストが見つかりません)" });
+        // 自分の墓地: 墓地から起動できる能力・唱えられるカードは、ボタンで (Faerie Dreamthief・Timeline Culler)
+        for (const a of acts) {
+          const btn = detail.createEl("button", { cls: "mtg-bt-yardbtn", text: a.label });
+          btn.disabled = !a.usable;
+          btn.addEventListener("click", () => this.ask(c.name, this.ctl!.needsForYard(c.id, a.key), (t) => this.run(() => this.ctl!.useYard(c.id, a.key, t))));
         }
-      }
-      row.addEventListener("mouseenter", () => {
-        const mine = ++seq;
-        void cardText(this.app, c.name).catch(() => "").then((text) => {
-          if (mine !== seq) return;
-          detail.empty();
-          const u = this.urls.get(c.name);
-          if (u) detail.createEl("img", { attr: { src: u, alt: c.name } });
-          detail.createDiv({ cls: "mtg-bt-pname", text: c.name });
-          detail.createDiv({ cls: "mtg-bt-ptext", text: text || "(効果テキストが見つかりません)" });
-        });
       });
+    };
+    for (const c of cards) {
+      const item = stack.createDiv("mtg-bt-yarditem");
+      const url = this.urls.get(c.art ? `art:${c.art}` : c.name) ?? this.urls.get(c.name);
+      if (url) item.createEl("img", { attr: { src: url, alt: c.name, draggable: "false" } });
+      else item.createDiv({ cls: "mtg-bt-face", text: c.name });
+      // 墓地から起動できる・唱えられるカードは、紫に光る (使える状態のものは、強く。使えないものは、薄く)
+      const acts = mine && this.ctl ? this.ctl.yardActions(c.id) : [];
+      if (acts.length) item.addClass(acts.some((a) => a.usable) ? "is-yard-playable" : "is-yard-able");
+      item.addEventListener("mouseenter", () => showDetail(c));
     }
+    showDetail(cards[0]);
   }
 
   private async showPreview(name: string) {
