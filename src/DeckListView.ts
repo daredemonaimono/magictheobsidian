@@ -42,7 +42,6 @@ export class DeckListView extends ItemView {
   private seq = 0;
   private body!: HTMLElement;
   private tabs!: HTMLElement;
-  private status!: HTMLElement;
   private refresh = debounce(() => void this.render(), 300, true);
 
   constructor(leaf: WorkspaceLeaf, private actions: DeckListActions) {
@@ -77,8 +76,6 @@ export class DeckListView extends ItemView {
       this.query = (e.target as HTMLInputElement).value.trim().toLowerCase();
       void this.render();
     });
-    bar.createEl("button", { text: "＋ 新しいデッキ" }).onclick = () => this.actions.create();
-    this.status = root.createDiv("mtg-status");
     this.body = root.createDiv("mtg-dgrid");
 
     const inDir = (f: { path: string }) => f.path.startsWith(`${DECK_DIR}/`);
@@ -137,8 +134,12 @@ export class DeckListView extends ItemView {
     }
 
     const list = all.filter((d) => (this.tab === "all" || d.favorite) && d.file.basename.toLowerCase().includes(this.query) && (!this.format || d.format === this.format));
-    this.status.setText(`${list.length} 件 (更新日の新しい順)`);
     this.body.empty();
+    // 先頭は、新しいデッキを作る「＋」のタイル (アリーナと同じ)
+    const add = this.body.createDiv("mtg-dcard");
+    const plus = add.createDiv({ cls: "mtg-dtile mtg-dnew", attr: { "aria-label": "新しいデッキ" } });
+    plus.createDiv({ text: "＋", cls: "mtg-dplus" });
+    plus.onclick = () => this.actions.create();
     for (const d of list) this.card(d);
   }
 
