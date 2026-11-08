@@ -566,3 +566,10 @@ body.mtg-sidebar-left .sidebar-toggle-button.mod-right { display: none; }
 .mtg-bt-yarddetail { margin-top: 10px; }
 .mtg-bt-yarddetail .mtg-bt-yardbtn { display: block; margin: 6px 0 0; }
 .mtg-bt-deck.is-self-yard.is-yard-playable { box-shadow: 0 0 0 2px #b86bff, 0 0 14px #b86bff; border-radius: 6px; }
+
+/* 対戦のサイドバー: カードのテキストを優先する。カードのプレビューは、テキストの長さまで広がり (絵が先に縮む)、そのぶん、ログが縮む。ログは、最低限の高さを残す */
+.mtg-bt-sideview .mtg-bt-side { min-height: 0; }
+.mtg-bt-sideview .mtg-bt-preview { display: flex; flex-direction: column; flex: 0 1 auto; min-height: 0; max-height: calc(100% - 84px); overflow-y: auto; }
+.mtg-bt-sideview .mtg-bt-preview > :not(img) { flex-shrink: 0; }
+.mtg-bt-sideview .mtg-bt-preview > img { flex: 0 10 auto; width: 100%; min-height: 70px; object-fit: contain; }
+.mtg-bt-sideview .mtg-bt-log { flex: 1 1 0; min-height: 72px; }
