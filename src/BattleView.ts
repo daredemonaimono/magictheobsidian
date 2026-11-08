@@ -23,6 +23,15 @@ export const BATTLE_VIEW = "mtg-battle";
 const PHASES: [PhaseId, string][] = [["beginning", "開始"], ["main1", "戦闘前メイン"], ["combat", "戦闘"], ["main2", "戦闘後メイン"], ["ending", "最終"]];
 const MANA_COLORS = ["W", "U", "B", "R", "G", "A"] as const;
 const VIEWER = "you";
+// カウンターの印 (カードの縁に並べる): 種類ごとの色。決まっていない種類は、名前から、色を決める
+const PIP_CLASS: Record<string, string> = { "+1/+1": "is-plus", "-1/-1": "is-minus", stun: "is-stun", charge: "is-charge", conqueror: "is-conq" };
+const pipColor = (k: string): string => {
+  let h = 0;
+  for (const ch of k) h = (h * 31 + ch.charCodeAt(0)) % 360;
+  return `hsl(${h} 70% 55%)`;
+};
+// カーソルを合わせたときに出る文字: +1/+1 が 2 個なら +2/+2。それ以外は、名前 ×個数
+const counterTip = (k: string, n: number): string => (k === "+1/+1" ? `+${n}/+${n}` : k === "-1/-1" ? `-${n}/-${n}` : `${COUNTER_JA[k] ?? k} ×${n}`);
 const COUNTER_JA: Record<string, string> = { conqueror: "征服", stun: "麻痺", charge: "チャージ" }; // 画面に出すカウンターの名前 (無いものは、そのまま)
 
 interface Entry {
@@ -1002,6 +1011,7 @@ export class BattleView extends ItemView {
         }
         count.setText(title ? `${title} (${picked.size} / ${max})` : req.kind === "choose" && req.label ? `${req.label} (${picked.size} / ${max})` : `${req.kind === "discard" ? (keep !== undefined ? `手札を ${keep} 枚にする: 残すカードを ${keep} 枚選ぶ` : `手札から ${req.n} 枚捨てる`) : req.kind === "target" ? `${req.card}: 対象を選ぶ` : "カードを選ぶ"} (${picked.size} / ${min === max ? max : `${min}〜${max}`})`);
         ok.disabled = picked.size < min || picked.size > max;
+        ok.setText(min === 0 && picked.size === 0 ? "何もしない" : "確定"); // 選ばなくてよい効果 (0 枚でもよい): 何も選ばずに押すと、何もしない。必ず選ぶ効果 (1 枚以上) は、「確定」のまま
       };
       const tileOf = new Map<string, HTMLElement>();
       const tiles = box.createDiv("mtg-bt-asktiles");
@@ -1228,7 +1238,11 @@ export class BattleView extends ItemView {
     if (c.loyalty !== undefined) el.createDiv({ cls: "mtg-bt-pt is-loyalty", text: String(c.loyalty) });
     if (c.damage > 0) el.createDiv({ cls: "mtg-bt-dmg", text: String(c.damage) });
     const counters = Object.entries(c.counters).filter(([k, n]) => k !== "loyalty" && n > 0);
-    if (counters.length) el.createDiv({ cls: "mtg-bt-counters", text: counters.map(([k, n]) => `${COUNTER_JA[k] ?? k} ×${n}`).join("  "), attr: { title: counters.map(([k, n]) => `${COUNTER_JA[k] ?? k}カウンター ${n} 個`).join(" / ") } });
+    if (counters.length) {
+      // カウンター: 種類ごとに色を変えた印を、カードの縁に並べる (アリーナと同じ。数字は書かない)。カーソルを合わせると、数が浮き出る (+1/+1 カウンター 2 個なら +2/+2)
+      const pips = el.createDiv("mtg-bt-pips");
+      for (const [k, n] of counters) pips.createDiv({ cls: `mtg-bt-pip ${PIP_CLASS[k] ?? ""}`, attr: { "data-tip": counterTip(k, n), ...(PIP_CLASS[k] ? {} : { style: `background:${pipColor(k)}` }) } });
+    }
   }
 
   private face(el: HTMLElement, c: CardView) {

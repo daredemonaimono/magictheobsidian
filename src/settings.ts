@@ -31,6 +31,7 @@ export interface Settings {
   cardLang: string; // カード画像 (収録一覧)
   listArt: boolean; // サイドバーの一覧に、カードのイラストを薄く出す
   dashboardTab: boolean; // 新しいタブ (空のタブ) をダッシュボードにする
+  sidebarLeft: boolean; // 右のサイドバー (カード一覧・カード情報・対戦のプレビューとログ) を、左に出す。ダッシュボードのボタンでも切り替える
   hideLeftBar: boolean; // Obsidian の左のバー (ファイル一覧) を隠す (パソコンのみ。操作は、ダッシュボードで行う)
   currency: string; // 資産価格の通貨 (EUR で取れた価格はこれに換算する)
   sidebar: boolean; // カード一覧・対戦のプレビューとログを右サイドバーに出す。オフなら画面内 (従来の表示)
@@ -47,7 +48,7 @@ export interface Settings {
     battleStops: "always" | "smart"; // 対戦の優先権の止まり方。always = 毎回止まる / smart = 使えるものがあるときだけ (メインフェイズでは、必ず止まる)
 }
 
-export const DEFAULT_SETTINGS: Settings = { textLang: "en", cardLang: "en", sidebar: true, listArt: true, dashboardTab: true, hideLeftBar: true, currency: "USD", ai: DEFAULT_AI, keyRemove: "shift", keyMove: "mod", battleNoMirror: false, imageMode: "view", imageScope: "decks", imageKind: "both", battleStops: "smart", battleOpponent: "cpu", battleHistory: true, battleEffects: true };
+export const DEFAULT_SETTINGS: Settings = { textLang: "en", cardLang: "en", sidebar: true, listArt: true, dashboardTab: true, hideLeftBar: true, sidebarLeft: false, currency: "USD", ai: DEFAULT_AI, keyRemove: "shift", keyMove: "mod", battleNoMirror: false, imageMode: "view", imageScope: "decks", imageKind: "both", battleStops: "smart", battleOpponent: "cpu", battleHistory: true, battleEffects: true };
 
 // 設定の名前で、キーチェーンから取る (空・見つからないときは null)
 // 設定画面の部品: 大項目 (タブ) → 中項目 (折りたたみ) → 小項目 (1つの設定を描く関数)
@@ -69,7 +70,7 @@ interface TabDef {
 export const secretKey = (app: App, name: string): string | null => (name ? app.secretStorage.getSecret(name) : null);
 
 export class SettingsTab extends PluginSettingTab {
-  constructor(app: App, plugin: Plugin, private settings: Settings, private save: () => Promise<void>, private onSidebar: () => void, private onImages: () => void = () => {}, private onLeftBar: () => void = () => {}) {
+  constructor(app: App, plugin: Plugin, private settings: Settings, private save: () => Promise<void>, private onSidebar: () => void, private onImages: () => void = () => {}, private onLeftBar: () => void = () => {}, private onSide: () => void = () => {}) {
     super(app, plugin);
   }
   // ---- 設定画面の構造: 大項目 (タブ) → 中項目 (折りたたみ) → 小項目 (1つの設定)。
@@ -93,7 +94,7 @@ export class SettingsTab extends PluginSettingTab {
               await this.save();
             }),
         );
-    const toggle = (c: Ctx, name: string, desc: string, key: "dashboardTab" | "hideLeftBar" | "sidebar" | "listArt" | "battleHistory" | "battleEffects" | "battleNoMirror", after?: () => void) =>
+    const toggle = (c: Ctx, name: string, desc: string, key: "dashboardTab" | "hideLeftBar" | "sidebarLeft" | "sidebar" | "listArt" | "battleHistory" | "battleEffects" | "battleNoMirror", after?: () => void) =>
       new Setting(el(c))
         .setName(name)
         .setDesc(desc)
@@ -160,6 +161,7 @@ export class SettingsTab extends PluginSettingTab {
             items: [
               (c) => toggle(c, "新しいタブをダッシュボードにする / New tab is the dashboard", "新しいタブ(空のタブ)を開くと、ダッシュボードが開く。オフにすると、Obsidian 標準の新しいタブに戻る。", "dashboardTab"),
               (c) => toggle(c, "左のバーを隠す / Hide the left sidebar (file explorer)", "Obsidian の左のバー(ファイル一覧)を隠して、操作を、ダッシュボードで行う(パソコンのみ)。オフにすると、元に戻る。コマンド「Toggle left sidebar」でも切り替えられる。", "hideLeftBar", () => this.onLeftBar()),
+              (c) => toggle(c, "サイドバーを左に出す / Show the sidebar on the left", "カード一覧・カード情報・対戦のプレビューとログを、右ではなく、左のバーに出す(右のバーは隠れる。左のバーのファイル一覧は閉じる)。ダッシュボードのボタンでも切り替えられる。対戦中は、切り替えられない。", "sidebarLeft", () => this.onSide()),
             ],
           },
           {

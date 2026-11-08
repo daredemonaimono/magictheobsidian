@@ -35,6 +35,9 @@ export class CardInfoView extends ItemView {
   getViewType() {
     return CARDINFO_VIEW;
   }
+  current() {
+    return this.key; // いま出しているカード (サイドバーの側を切り替えるとき、開き直すため)
+  }
   getDisplayText() {
     return this.key ? `Card: ${this.key}` : "Card info";
   }

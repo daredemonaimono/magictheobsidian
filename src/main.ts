@@ -113,6 +113,7 @@ export default class MagicTheObsidian extends Plugin {
       listArt: d.listArt ?? DEFAULT_SETTINGS.listArt,
       dashboardTab: d.dashboardTab ?? DEFAULT_SETTINGS.dashboardTab,
       hideLeftBar: d.hideLeftBar ?? DEFAULT_SETTINGS.hideLeftBar,
+      sidebarLeft: d.sidebarLeft ?? DEFAULT_SETTINGS.sidebarLeft,
       currency: d.currency ?? DEFAULT_SETTINGS.currency,
       ai: migrateAi(d), // 昔の設定 (claudeKeySecret・battleModel など) も、ここで新しい形に移す
       battleStops: d.battleStops === "always" ? "always" : "smart",
@@ -137,12 +138,12 @@ export default class MagicTheObsidian extends Plugin {
         for (const l of this.app.workspace.getLeavesOfType(CARDLIST_VIEW)) if (l.view instanceof CardListView) l.view.refresh();
         this.prevCount = 0; // 次の同期で開き直す
         void this.syncSidebar();
-      }, () => void this.preloadImages(false), () => this.applyLeftBar()),
+      }, () => void this.preloadImages(false), () => this.applyLeftBar(), () => void this.moveSidebars()),
     );
     this.registerView(DECK_VIEW, (leaf) => new DeckView(leaf, this.settings));
     this.registerView(BATTLE_VIEW, (leaf) => new BattleView(leaf, () => this.battleSession, () => this.settings.battleStops, () => this.settings.battleOpponent, () => this.settings.battleEffects, () => this.makeAsk(), (b) => void this.saveBattle(b), () => this.ensureBattleSide(), () => this.hintAdvisor()));
     this.registerView(BATTLE_SIDE_VIEW, (leaf) => new BattleSideView(leaf));
-    this.registerView(DASHBOARD_VIEW, (leaf) => new DashboardView(leaf, { collection: () => void this.openOrReveal(COLLECTION_VIEW), deck: () => void this.openOrReveal(DECKLIST_VIEW), cards: () => void this.openOrReveal(CARDS_VIEW), pluginId: this.manifest.id }));
+    this.registerView(DASHBOARD_VIEW, (leaf) => new DashboardView(leaf, { collection: () => void this.openOrReveal(COLLECTION_VIEW), deck: () => void this.openOrReveal(DECKLIST_VIEW), cards: () => void this.openOrReveal(CARDS_VIEW), pluginId: this.manifest.id, sidebarLeft: () => this.settings.sidebarLeft }));
     this.registerView(CARDS_VIEW, (leaf) => new CardsView(leaf, this.settings, (key) => void this.showCardInfo(key, true)));
     this.registerView(CARDINFO_VIEW, (leaf) => new CardInfoView(leaf, this.cardInfoApi()));
     this.registerView(
@@ -252,6 +253,17 @@ export default class MagicTheObsidian extends Plugin {
     this.addCommand({ id: "battle-edit-rule", name: "Battle: edit rule nodes", callback: () => void this.openEditor() });
     this.addCommand({ id: "battle-restore-rule", name: "Battle: restore rule version", callback: () => void this.openRestore() });
     this.addCommand({ id: "battle-rules-coverage", name: "Battle: rules coverage", callback: () => void this.rulesCoverage() });
+    const ws0 = this.app.workspace;
+    this.addCommand({
+      id: "toggle-sidebar-side",
+      name: "Toggle sidebar side (show the sidebar on the left / right)",
+      callback: async () => {
+        this.settings.sidebarLeft = !this.settings.sidebarLeft;
+        await this.saveSettings();
+        await this.moveSidebars();
+        if (ws0.getLeavesOfType(BATTLE_VIEW).length === 0) new Notice(this.settings.sidebarLeft ? "サイドバーを左に出す" : "サイドバーを右に戻した");
+      },
+    });
     this.addCommand({
       id: "toggle-left-bar",
       name: "Toggle left sidebar (show/hide the file explorer)",
@@ -325,7 +337,7 @@ export default class MagicTheObsidian extends Plugin {
     const ws = this.app.workspace;
     let leaf = ws.getLeavesOfType(BATTLE_SIDE_VIEW)[0];
     if (!leaf) {
-      const fresh = ws.getRightLeaf(false);
+      const fresh = this.sideLeaf();
       if (!fresh) return undefined;
       await fresh.setViewState({ type: BATTLE_SIDE_VIEW, active: false });
       leaf = fresh;
@@ -349,7 +361,7 @@ export default class MagicTheObsidian extends Plugin {
       if (this.closedByTab || pairs.some(([, s]) => s !== mine[1] && shown(s))) void this.showSide(mine[1], leaf);
       this.closedByTab = false;
     } else if (pairs.some(([, s]) => shown(s))) {
-      ws.rightSplit.collapse();
+      this.sideSplit.collapse();
       this.closedByTab = true;
     }
   }
@@ -400,14 +412,14 @@ export default class MagicTheObsidian extends Plugin {
     if (sides.length && !ws.getLeavesOfType(BATTLE_VIEW).length) {
       const shown = sides.some((l) => l.view.containerEl.isShown());
       sides.forEach((l) => l.detach());
-      if (shown) ws.rightSplit.collapse();
+      if (shown) this.sideSplit.collapse();
     }
     // カード情報 (カードのタブから開いたもの): カードのタブが無くなったら、サイドバーも閉じる (デッキ構築のサイドバーと同じ)
     const infos = ws.getLeavesOfType(CARDINFO_VIEW);
     if (this.cardInfoFromCards && infos.length && !ws.getLeavesOfType(CARDS_VIEW).length) {
       const shown = infos.some((l) => l.view.containerEl.isShown());
       infos.forEach((l) => l.detach());
-      if (shown) ws.rightSplit.collapse();
+      if (shown) this.sideSplit.collapse();
     }
     if (!infos.length) this.cardInfoFromCards = false;
     const count = ws.getLeavesOfType(DECK_VIEW).length;
@@ -416,11 +428,11 @@ export default class MagicTheObsidian extends Plugin {
       // 一覧が見えていたなら、閉じるときにサイドバーも畳む。他のタブだけが見えているときは触らない
       const shown = lists.some((l) => l.view.containerEl.isShown());
       lists.forEach((l) => l.detach());
-      if (shown) ws.rightSplit.collapse();
+      if (shown) this.sideSplit.collapse();
     } else if (this.prevCount === 0 && !lists.length && !this.opening) {
       this.opening = true;
       try {
-        const leaf = ws.getRightLeaf(false);
+        const leaf = this.sideLeaf();
         if (leaf) {
           const deck = ws.getActiveViewOfType(DeckView)?.leaf;
           await leaf.setViewState({ type: CARDLIST_VIEW, active: false });
@@ -716,7 +728,7 @@ export default class MagicTheObsidian extends Plugin {
     const ws = this.app.workspace;
     let leaf = ws.getLeavesOfType(CARDINFO_VIEW)[0];
     if (!leaf) {
-      const right = ws.getRightLeaf(false);
+      const right = this.sideLeaf();
       if (!right) return;
       await right.setViewState({ type: CARDINFO_VIEW, active: true });
       leaf = right;
@@ -728,9 +740,45 @@ export default class MagicTheObsidian extends Plugin {
 
   // 左のバー (ファイル一覧) を隠す・戻す (パソコンのみ)。隠すときは、開いていれば、畳む
   applyLeftBar() {
-    const hide = this.settings.hideLeftBar && Platform.isDesktop;
+    const left = this.settings.sidebarLeft && Platform.isDesktop; // サイドバーを左に出すモード: 左のバーは、サイドバーとして使う (隠さない)
+    const hide = this.settings.hideLeftBar && Platform.isDesktop && !left;
     document.body.toggleClass("mtg-hide-left-bar", hide);
+    document.body.toggleClass("mtg-sidebar-left", left);
     if (hide) this.app.workspace.leftSplit?.collapse();
+    if (left) for (const l of this.app.workspace.getLeavesOfType("file-explorer")) l.detach(); // 左のバーに残るファイル一覧は、閉じる
+  }
+
+  // プラグインのサイドバーを出す側 (設定「サイドバーを左に出す」)
+  private get sideSplit() {
+    return this.settings.sidebarLeft && Platform.isDesktop ? this.app.workspace.leftSplit : this.app.workspace.rightSplit;
+  }
+  private sideLeaf(): WorkspaceLeaf | null {
+    return this.settings.sidebarLeft && Platform.isDesktop ? this.app.workspace.getLeftLeaf(false) : this.app.workspace.getRightLeaf(false);
+  }
+
+  // サイドバーの側を切り替えたとき: 出ているサイドバー (カード一覧・カード情報・対戦のプレビューとログ) を、反対側に移す。対戦中は、プレビューとログの持ち主 (対戦の画面) が、場所を覚えているので、切り替えない
+  async moveSidebars() {
+    const ws = this.app.workspace;
+    if (ws.getLeavesOfType(BATTLE_VIEW).length) {
+      this.settings.sidebarLeft = !this.settings.sidebarLeft; // 元に戻す
+      await this.saveSettings();
+      new Notice("対戦中は、サイドバーの側を切り替えられません (対戦の画面を閉じてから)");
+      return;
+    }
+    this.applyLeftBar();
+    const info = (ws.getLeavesOfType(CARDINFO_VIEW)[0]?.view as CardInfoView | undefined)?.current();
+    const fromCards = this.cardInfoFromCards;
+    for (const t of [CARDLIST_VIEW, BATTLE_SIDE_VIEW, CARDINFO_VIEW]) for (const l of ws.getLeavesOfType(t)) l.detach();
+    ws.leftSplit.collapse();
+    ws.rightSplit.collapse();
+    this.prevCount = 0; // 次の同期で、デッキ画面のカード一覧を、新しい側に開き直す
+    await this.syncSidebar();
+    if (info) await this.showCardInfo(info, fromCards);
+    for (const l of ws.getLeavesOfType(DASHBOARD_VIEW)) if (l.view instanceof DashboardView) void l.view.refresh();
+  }
+
+  private async saveSettings() {
+    await this.saveData({ ...this.settings, prices: priceStore.prices, pricesUpdated: priceStore.updated, rates: priceStore.rates });
   }
 
   // 旧い名前のノート (_足りないノード.md) があって、新しい名前 (_missing-nodes.md) が無ければ、名前を移す

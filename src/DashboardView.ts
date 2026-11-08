@@ -6,6 +6,7 @@ export interface DashboardActions {
   collection: () => void;
   deck: () => void;
   cards: () => void;
+  sidebarLeft: () => boolean; // サイドバーを左に出しているか (ボタンの文字)
   pluginId: string; // このプラグインの id (コマンドの id の頭: "<id>:<コマンド>")
 }
 
@@ -57,10 +58,7 @@ const SECTIONS: { title: string; buttons: { label: string; command: string; hint
   },
   {
     title: "画面",
-    buttons: [
-      { label: "左のバーの表示・非表示", command: "toggle-left-bar" },
-      { label: "カード情報 (開いているノート)", command: "card-info" },
-    ],
+    buttons: [{ label: "カード情報 (開いているノート)", command: "card-info" }],
   },
 ];
 
@@ -106,6 +104,10 @@ export class DashboardView extends ItemView {
   }
 
   async onOpen() {
+    await this.refresh();
+  }
+
+  async refresh() {
     const root = this.contentEl;
     root.empty();
     root.addClass("mtg-dashboard");
@@ -126,10 +128,18 @@ export class DashboardView extends ItemView {
         if (keys.length) btn.createSpan({ text: keys[0], cls: "mtg-dash-key" });
         btn.onclick = () => this.run(b.command);
       }
+      // 画面: サイドバー (カード一覧・カード情報・対戦のプレビューとログ) を、左に出すモード
+      if (sec.title === "画面") {
+        const left = this.actions.sidebarLeft();
+        const keys = this.hotkeysOf(`${this.actions.pluginId}:toggle-sidebar-side`);
+        const btn = box.createEl("button", { text: left ? "サイドバーを右に戻す" : "サイドバーを左にする", cls: left ? "mod-cta" : "", attr: { "aria-label": "カード一覧・カード情報・対戦のプレビューとログを出す側を切り替える (対戦中は、切り替えられません)" } });
+        if (keys.length) btn.createSpan({ text: keys[0], cls: "mtg-dash-key" });
+        btn.onclick = () => this.run("toggle-sidebar-side");
+      }
     }
 
     // すべてのコマンド (このプラグインのもの。コマンドを足すと、自動で並ぶ)
-    const all = (this.internal.commands?.listCommands() ?? []).filter((c) => c.id.startsWith(`${this.actions.pluginId}:`)).sort((a, b) => a.name.localeCompare(b.name));
+    const all = (this.internal.commands?.listCommands() ?? []).filter((c) => c.id.startsWith(`${this.actions.pluginId}:`) && c.id !== `${this.actions.pluginId}:toggle-left-bar`).sort((a, b) => a.name.localeCompare(b.name));
     if (all.length) {
       const head = root.createDiv("mtg-dash-allhead");
       head.createEl("h3", { text: "すべてのコマンド" });
