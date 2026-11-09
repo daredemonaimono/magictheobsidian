@@ -1,15 +1,17 @@
 // 対戦の画面の、列の重なりの計算 (DOM を持たない。テストで確かめる)。列の幅に収まるように、カードを重ねる量を決める
 
 // カードの大きさ (px)。盤面のカードと、手前の手札。CSS の変数 (--cw / --ch) は、画面を作るときに、これらから入れる
-export const CARD_W = 104; // 盤面のカードは、アリーナと同じ、絵だけを横長に切り抜いて出す (テキスト欄は出さない)
-export const CARD_H = 82;
+export const CARD_W = 76; // 盤面のカード (設定「カード全体」): 縦長
+export const CARD_H = 106;
+export const ART_W = 104; // 盤面のカード (設定「絵だけ」。アリーナ風): 絵の部分だけを、横長に出す (テキスト欄は出さない)
+export const ART_H = 82;
 export const HAND_W = 120;
 export const HAND_H = 168;
 export const GAP = 10; // カードどうしの間
 export const TAP_EXTRA = CARD_H - CARD_W; // タップして横向きになったカードが、列の中で余分に取る幅 (横長なので、負の値 = 倒すと、幅は狭くなる) (左右に半分ずつ)
 
 // 列に必要な幅。cardW = カード1枚の幅、n = 枚数、tapped = そのうちタップしている枚数
-export const rowNeed = (cardW: number, n: number, tapped: number): number => n * cardW + Math.max(0, n - 1) * GAP + tapped * TAP_EXTRA;
+export const rowNeed = (cardW: number, n: number, tapped: number, extra = TAP_EXTRA): number => n * cardW + Math.max(0, n - 1) * GAP + tapped * extra;
 
 // 重ねる量 (px。隣との間の、負の余白)。need が avail に収まるなら 0。枚数が 1 以下・幅が測れない (0) ときも 0
 export const overlapFor = (need: number, n: number, avail: number): number => (n > 1 && avail > 0 ? Math.max(0, Math.ceil((need - avail) / (n - 1))) : 0);

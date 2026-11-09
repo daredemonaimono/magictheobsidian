@@ -12,7 +12,7 @@ import { BattleController, StopMode } from "./battle/play";
 import type { CastRecord } from "./battle/node";
 import { stackEffectText } from "./battle/stackText";
 import { BoardModel, CardView, CombatChoice, LandStack, PhaseId, boardModel, groupStack } from "./battle/boardModel";
-import { CARD_H, CARD_W, GAP, GAUGE_SEC, HAND_H, HAND_W, LAYER_PX, TAP_EXTRA, cardBackUrl, overlapFor, pileLayers, rowNeed } from "./battle/layout";
+import { ART_H, ART_W, CARD_H, CARD_W, GAP, GAUGE_SEC, HAND_H, HAND_W, LAYER_PX, TAP_EXTRA, cardBackUrl, overlapFor, pileLayers, rowNeed } from "./battle/layout";
 import { BattleSession } from "./battle/deckToGame";
 import { sampleBattle } from "./battle/sampleBattle";
 import { Game, GameCard, RuleBook } from "./battle/state";
@@ -92,6 +92,10 @@ export class BattleView extends ItemView {
   private waitAi = false; // AI の相手が、マリガンを決めている最中 (自分のマリガンは、そのあとに聞く)
   private mullEl?: HTMLElement; // マリガンのダイアログ (手札にカーソルを合わせて見られるよう、後ろの操作は止めない)
   private mullTried = new Set<string>();
+  private art = true; // 盤面のカードを、絵だけで出す (設定)。build のたびに決める
+  private get cw() { return this.art ? ART_W : CARD_W; }
+  private get ch() { return this.art ? ART_H : CARD_H; }
+  private get tapExtra() { return this.ch - this.cw; } // 横向きにしたとき、列の中で余分に取る幅 (絵だけのときは、負)
   private imgLoading = new Set<Promise<unknown>>(); // 読み込み中の画像 (別の呼び出しが先に始めたものも、待てるように)
   private bottoming = false; // マリガンのキープのあと、底に置くカードを選んでいる
   private askCancel?: () => void; // いまの質問を Esc で取り消すときの動き (無ければ、操作の取り消し)
@@ -102,7 +106,7 @@ export class BattleView extends ItemView {
   private watcher?: ResizeObserver;
 
   // getSession = 対戦の局面 (無ければ、サンプルの局面)。対戦を始め直したときは、begin() で読み直す
-  constructor(leaf: WorkspaceLeaf, private getSession: () => BattleSession | undefined, private getStops: () => StopMode = () => "smart", private getOpp: () => "cpu" | "claude" | "passive" = () => "passive", private getFx: () => boolean = () => true, private getAsk: () => AskAi | undefined = () => undefined, private onSave: (b: SavedBattle) => void = () => {}, private getSide: () => Promise<{ preview: HTMLElement; log: HTMLElement } | undefined> = async () => undefined, private getAdvisor: () => AiAdvisor | undefined = () => undefined) {
+  constructor(leaf: WorkspaceLeaf, private getSession: () => BattleSession | undefined, private getStops: () => StopMode = () => "smart", private getOpp: () => "cpu" | "claude" | "passive" = () => "passive", private getFx: () => boolean = () => true, private getAsk: () => AskAi | undefined = () => undefined, private onSave: (b: SavedBattle) => void = () => {}, private getSide: () => Promise<{ preview: HTMLElement; log: HTMLElement } | undefined> = async () => undefined, private getAdvisor: () => AiAdvisor | undefined = () => undefined, private getCardStyle: () => "art" | "full" = () => "art") {
     super(leaf);
   }
 
@@ -237,6 +241,7 @@ export class BattleView extends ItemView {
     this.effectsEl = undefined;
     this.tried.clear();
     this.mullTried.clear();
+    this.peeking = false;
     this.askEl = undefined;
     this.targeting = undefined;
     this.tbar = undefined;
@@ -315,8 +320,10 @@ export class BattleView extends ItemView {
     const root = this.contentEl;
     root.empty();
     root.addClass("mtg-bt");
+    this.art = this.getCardStyle() !== "full";
     const stage = root.createDiv("mtg-bt-stage");
-    for (const [k, v] of [["--bw", CARD_W], ["--bh", CARD_H], ["--hw", HAND_W], ["--hh", HAND_H], ["--tx", TAP_EXTRA / 2]] as const) stage.style.setProperty(k, `${v}px`); // カードの大きさ (src/battle/layout.ts)
+    stage.toggleClass("is-art", this.art);
+    for (const [k, v] of [["--bw", this.cw], ["--bh", this.ch], ["--hw", HAND_W], ["--hh", HAND_H], ["--tx", this.tapExtra / 2]] as const) stage.style.setProperty(k, `${v}px`); // カードの大きさ (src/battle/layout.ts)
     stage.style.setProperty("--back", `url("${cardBackUrl()}")`);
     void cssUrl(cardBackUrl()).then((u) => u && stage.style.setProperty("--back", `url("${u}")`)); // 保存済みなら、そちら // 山札の裏面の絵 (読めなければ、CSS の代わりの絵)
     const inner = side ? undefined : root.createDiv("mtg-bt-side"); // サイドバーを使うなら、プレビューとログは、そちらに出す
@@ -386,6 +393,11 @@ export class BattleView extends ItemView {
         const url = art.get(n) ?? (info ? await cardImage(this.app, info.file) : undefined);
         const local = await localUrl(url); // 保存済みの画像 (通信しない)
         if (local) this.urls.set(n, local);
+        const cropUrl = url?.replace(/\/cards\.scryfall\.io\/(?:small|normal|large|png|border_crop)\/(front|back)\//, "/cards.scryfall.io/art_crop/$1/").replace(/\.png(\?.*)?$/, ".jpg$1"); // 同じ場所の、絵の部分の画像
+        if (this.art && cropUrl && cropUrl !== url) {
+          const lc = await localUrl(cropUrl);
+          if (lc) this.urls.set(`crop:${n}`, lc);
+        }
       }),
     );
     this.imgLoading.add(loading);
@@ -683,7 +695,7 @@ export class BattleView extends ItemView {
       key: c.id,
       data: c,
       name: c.name,
-      paint: (el) => this.fill(el, c),
+      paint: (el) => this.fill(el, c, kind !== "hand"),
       ...(this.ctl && kind === "hand" ? { pick: () => this.pickHandAbility(c.id), use: () => {
         const why = this.ctl!.whyNot(c.id); // カードを選んだ時点で、使えない理由 (マナが足りません、など) を出す
         if (why) return this.toast(why);
@@ -768,6 +780,21 @@ export class BattleView extends ItemView {
   }
 
   // ---- マリガン (ロンドン): キープ / マリガン。キープしたら、マリガンした回数ぶん、底に置くカードを選ぶ。Esc で、キープ / マリガンの選択に戻る
+  // 「戦場を見る」: 大きな選択の画面 (マリガンなど) を、いったん透明にして、戦場を見られるようにする。押すと「選択に戻る」に変わる。あとで、戦場を見て選ぶ場面にも使う
+  private peeking = false;
+  private addPeek(box: HTMLElement) {
+    const b = box.createEl("button", { cls: "mtg-st-peek" });
+    const apply = () => {
+      box.toggleClass("is-peek", this.peeking);
+      b.setText(this.peeking ? "選択に戻る" : "戦場を見る");
+    };
+    b.addEventListener("click", () => {
+      this.peeking = !this.peeking;
+      apply();
+    });
+    apply();
+  }
+
   // アリーナ風: 先攻 / 後攻の選択 → 「◯◯が先攻です」と手札 → キープ / マリガン。相手 (AI) が決めている間は、ボタン無しで待つ
   private checkMulligan() {
     this.mullEl?.remove();
@@ -778,6 +805,7 @@ export class BattleView extends ItemView {
     if (this.bottoming) return; // 底に置くカードの選択は、showAsk が出している
     const box = this.ui.stage.createDiv("mtg-bt-ask is-mull mtg-st");
     this.mullEl = box;
+    this.addPeek(box);
     const head = box.createDiv("mtg-st-head");
     const title = head.createDiv("mtg-st-title");
     const sub = head.createDiv("mtg-st-sub");
@@ -848,6 +876,7 @@ export class BattleView extends ItemView {
     this.mullEl?.remove();
     const box = this.ui.stage.createDiv("mtg-bt-ask is-mull mtg-st");
     this.mullEl = box;
+    this.addPeek(box);
     const head = box.createDiv("mtg-st-head");
     head.createDiv({ cls: "mtg-st-title", text: `${count}枚戻す` });
     head.createDiv({ cls: "mtg-st-sub", text: `ライブラリーの一番下に置く${count}枚を、クリックで選んでください。` });
@@ -885,9 +914,11 @@ export class BattleView extends ItemView {
           render();
         });
       }
-      for (const id of chosen) {
+      for (const [i, id] of chosen.entries()) {
         const c = cards.find((x) => x.id === id)!;
-        cardEl(picked, c, "mtg-st-pickedcard").addEventListener("click", () => { // 選んだカードを、もう一度押すと、手札に戻る
+        const pe = cardEl(picked, c, "mtg-st-pickedcard");
+        pe.style.setProperty("--i", String(i));
+        pe.addEventListener("click", () => { // 選んだカードを、もう一度押すと、手札に戻る
           chosen.splice(chosen.indexOf(id), 1);
           render();
         });
@@ -1330,11 +1361,11 @@ export class BattleView extends ItemView {
   }
 
   // 1枚のカードの中身。画像があれば画像、無ければ名前の代わりの面。P/T と忠誠度は、あるものを両方出す
-  private fill(el: HTMLElement, c: CardView) {
+  private fill(el: HTMLElement, c: CardView, onBoard = false) {
     el.className = "mtg-bt-card";
     for (const [on, cls] of [[c.tapped, "is-tapped"], [c.attacking, "is-attacking"], [c.blocking, "is-blocking"], [c.sick, "is-sick"], [c.prepared, "is-prepared"], [c.token, "is-token"], [c.foil, "is-foil"], [c.exiled, "is-exiled"], [c.playable && !!this.ctl, "is-playable"]] as const) if (on) el.addClass(cls);
     el.empty();
-    this.face(el, c);
+    this.face(el, c, onBoard);
     if (c.power !== null && c.toughness !== null) {
       const pt = el.createDiv("mtg-bt-pt");
       pt.createSpan({ cls: c.powerMod ? `is-${c.powerMod}` : "", text: String(c.power) }); // 修整を受けている数字: 上がったら黄色、下がったら赤
@@ -1351,12 +1382,14 @@ export class BattleView extends ItemView {
     }
   }
 
-  private face(el: HTMLElement, c: CardView) {
-    if (c.image) {
-      el.createEl("img", { attr: { src: c.image, alt: c.name, loading: "lazy", draggable: "false" } });
-      if (/art_crop/.test(c.image)) el.addClass("is-artimg"); // もう絵だけの画像は、そのまま (カード全体の画像だけを、絵の部分に切り抜く)
+  private face(el: HTMLElement, c: CardView, onBoard = false) {
+    const crop = onBoard && this.art ? this.urls.get(`crop:${c.name}`) : undefined; // 盤面で絵だけのとき: Scryfall の絵の部分の画像 (あれば)
+    const src = crop ?? c.image;
+    if (src) {
+      el.createEl("img", { attr: { src, alt: c.name, loading: "lazy", draggable: "false" } });
+      if (crop || /art_crop/.test(src)) el.addClass("is-artimg"); // もう絵だけの画像は、そのまま。カード全体の画像しか無いときだけ、CSS で絵の部分に切り抜く
     } else el.createDiv({ cls: "mtg-bt-face", text: c.name });
-    el.createDiv({ cls: "mtg-bt-nm", text: c.name }); // 盤面のカードの名前 (手札では、隠す)
+    if (onBoard) el.createDiv({ cls: "mtg-bt-nm", text: c.name }); // 盤面のカードの名前 (絵だけのとき、上の帯に出す)
     // 継続効果で型が変わっているカード (Zhao の「Mountain になる」など): いまの型を、札の上に出す
     if (c.typeNow) el.createDiv({ cls: "mtg-bt-typenow", text: c.typeNow, attr: { title: `いまの型: ${c.typeLine} (継続効果で変わっている)` } });
   }
@@ -1369,23 +1402,23 @@ export class BattleView extends ItemView {
     const standing = s.cards.filter((c) => !c.tapped);
     const tapped = s.cards.filter((c) => c.tapped);
     const pile = el.createDiv("mtg-bt-pile3d");
-    pile.style.width = `${CARD_W + Math.max(0, standing.length - 1) * 5}px`;
+    pile.style.width = `${this.cw + Math.max(0, standing.length - 1) * 5}px`;
     standing.forEach((c, i) => {
       const card = pile.createDiv("mtg-bt-card");
       card.dataset.tid = c.id;
       card.style.left = `${i * 5}px`;
-      this.face(card, c);
+      this.face(card, c, true);
     });
     if (tapped.length) {
       const side = el.createDiv("mtg-bt-tapgroup");
-      side.style.width = `${CARD_H + (tapped.length - 1) * 14}px`;
-      side.style.height = `${CARD_W}px`;
+      side.style.width = `${this.ch + (tapped.length - 1) * 14}px`;
+      side.style.height = `${this.cw}px`;
       tapped.forEach((c, i) => {
         const card = side.createDiv("mtg-bt-card is-lying");
         card.dataset.tid = c.id;
-        card.style.left = `${i * 14 + TAP_EXTRA / 2}px`; // 横向き (縦と横が入れ替わる) が、i * 14 の位置に収まる
-        card.style.top = `${-TAP_EXTRA / 2}px`;
-        this.face(card, c);
+        card.style.left = `${i * 14 + this.tapExtra / 2}px`; // 横向き (縦と横が入れ替わる) が、i * 14 の位置に収まる
+        card.style.top = `${-this.tapExtra / 2}px`;
+        this.face(card, c, true);
       });
     }
     if (s.cards.length > 1) el.createDiv({ cls: "mtg-bt-count", text: `×${s.cards.length}` });
@@ -1502,7 +1535,7 @@ export class BattleView extends ItemView {
     for (const row of Object.values(ui.rows)) {
       const kids = Array.from(row.children) as HTMLElement[];
       const isStacks = kids.some((k) => k.classList.contains("mtg-bt-landstack"));
-      const need = isStacks ? kids.reduce((a, k) => a + k.offsetWidth, 0) + Math.max(0, kids.length - 1) * GAP : rowNeed(CARD_W, kids.length, kids.filter((k) => k.classList.contains("is-tapped")).length);
+      const need = isStacks ? kids.reduce((a, k) => a + k.offsetWidth, 0) + Math.max(0, kids.length - 1) * GAP : rowNeed(this.cw, kids.length, kids.filter((k) => k.classList.contains("is-tapped")).length, this.tapExtra);
       set(row, need);
     }
     set(ui.hand, ui.hand.children.length * HAND_W);

@@ -39,6 +39,7 @@ export interface Settings {
   ai: AiSettings; // AI の接続 (キー) と、場面ごとの使い分け (対戦の相手・ルールを書かせる・メモの下書き)
   battleOpponent: "cpu" | "claude" | "passive"; // 対戦の相手。cpu = 雑魚 CPU / claude = AI (API を、判断のたびに呼ぶ。種類は、ai の battle) / passive = 何もしない
   battleHistory: boolean; // 対戦の履歴を Battles/ に保存する (終わったとき・途中でやめたとき)
+  boardCard: "art" | "full"; // 対戦の盤面のカードの見た目: art = 絵だけ (アリーナ風・横長) / full = カード全体 (縦長。テキストも読める)
   battleEffects: boolean; // 対戦の演出 (ダメージ・ライフの数字を大きく出す)
   keyRemove: ModKey; // デッキの一覧で、このキーを押しながらクリック = 1枚減らす (初期値 Shift)
   keyMove: ModKey; // デッキの一覧で、このキーを押しながらクリック = メインとサイドを入れ替える (初期値 ⌘ / Ctrl)
@@ -49,7 +50,7 @@ export interface Settings {
     battleStops: "always" | "smart"; // 対戦の優先権の止まり方。always = 毎回止まる / smart = 使えるものがあるときだけ (メインフェイズでは、必ず止まる)
 }
 
-export const DEFAULT_SETTINGS: Settings = { textLang: "en", cardLang: "en", sidebar: true, listArt: true, dashboardTab: true, hideLeftBar: true, sidebarLeft: false, deckBg: "", currency: "USD", ai: DEFAULT_AI, keyRemove: "shift", keyMove: "mod", battleNoMirror: false, imageMode: "view", imageScope: "decks", imageKind: "both", battleStops: "smart", battleOpponent: "cpu", battleHistory: true, battleEffects: true };
+export const DEFAULT_SETTINGS: Settings = { textLang: "en", cardLang: "en", sidebar: true, listArt: true, dashboardTab: true, hideLeftBar: true, sidebarLeft: false, deckBg: "", currency: "USD", ai: DEFAULT_AI, keyRemove: "shift", keyMove: "mod", battleNoMirror: false, imageMode: "view", imageScope: "decks", imageKind: "both", battleStops: "smart", battleOpponent: "cpu", battleHistory: true, battleEffects: true, boardCard: "art" };
 
 // 設定の名前で、キーチェーンから取る (空・見つからないときは null)
 // 設定画面の部品: 大項目 (タブ) → 中項目 (折りたたみ) → 小項目 (1つの設定を描く関数)
@@ -327,6 +328,20 @@ export class SettingsTab extends PluginSettingTab {
             title: "記録と演出 / History & effects",
             items: [
               (c) => toggle(c, "対戦の履歴を保存する / Save battle history", "対戦が終わったとき(や、途中でやめたとき)、Battles/ に、ログとリプレイ用の記録を、ノートとして保存する。", "battleHistory"),
+              (c) =>
+                new Setting(el(c))
+                  .setName("盤面のカードの見た目 / Card style on the board")
+                  .setDesc("絵だけ: アリーナのように、絵の部分だけを横長に出す (すっきり。名前は上の帯、P/T は右下)。カード全体: カードをそのまま縦に出す (テキストも読める。クラスやサーガなど、絵だけだと分かりにくいカード向け)。対戦を開き直すと変わる。")
+                  .addDropdown((d) =>
+                    d
+                      .addOption("art", "絵だけ (アリーナ風)")
+                      .addOption("full", "カード全体")
+                      .setValue(this.settings.boardCard)
+                      .onChange(async (v) => {
+                        this.settings.boardCard = v === "full" ? "full" : "art";
+                        await this.save();
+                      }),
+                  ),
               (c) => toggle(c, "対戦の演出 / Battle effects", "ダメージやライフが変わったとき、数字を大きく出して、ふくらませて消す。相手の手札を見たとき、手札を前に出す。重いと感じたらオフ。", "battleEffects"),
             ],
           },

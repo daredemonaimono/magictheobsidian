@@ -337,7 +337,7 @@ button.mtg-color .mtg-sym { width: 20px; height: 20px; display: block; }
 .mtg-bt-count { position: absolute; right: -6px; top: -8px; background: #000c; border-radius: 8px; padding: 0 6px; font-size: 11px; font-weight: 700; z-index: 3; }
 
 /* 相手側は、相手の向き (180 度回転)。列ごと回すので、並びと土地の山の左右も、自分側の点対称になる。雰囲気重視 (効果は、ホバーのプレビューで読める) */
-.mtg-bt-opp-lands, .mtg-bt-opp-others, .mtg-bt-opp-creatures { transform: rotate(180deg); }
+.mtg-bt-stage:not(.is-art) .mtg-bt-opp-lands, .mtg-bt-stage:not(.is-art) .mtg-bt-opp-others, .mtg-bt-stage:not(.is-art) .mtg-bt-opp-creatures { transform: rotate(180deg); } /* 絵だけのときは、相手のカードも、同じ向き (読める) */
 .mtg-bt-deck.is-opp-library, .mtg-bt-deck.is-opp-yard { transform: rotate(180deg); }
 .mtg-bt-deck.is-opp-library .mtg-bt-dcount, .mtg-bt-deck.is-opp-yard .mtg-bt-dcount { transform: translateX(-50%) rotate(180deg); }
 
@@ -615,12 +615,12 @@ body.mtg-sidebar-left .sidebar-toggle-button.mod-right { display: none; }
 .mtg-st-powder { margin-top: 10px; display: flex; gap: 8px; }
 
 /* 盤面のカード (アリーナ風): カード全体の画像から、絵の部分だけを横長に切り抜く。テキスト欄は出さない。名前は、上の細い帯 */
-.mtg-bt-board .mtg-bt-card { border-radius: 6px; border-width: 1px; }
-.mtg-bt-board .mtg-bt-card img { position: absolute; width: 131%; height: auto; left: -15.7%; top: -26%; object-fit: initial; }
-.mtg-bt-board .mtg-bt-card.is-artimg img, .mtg-bt-board .mtg-bt-card.is-token img { width: 100%; height: 100%; left: 0; top: 0; object-fit: cover; }
+.mtg-bt-stage.is-art .mtg-bt-board .mtg-bt-card { border-radius: 6px; border-width: 1px; }
+.mtg-bt-stage.is-art .mtg-bt-board .mtg-bt-card img { position: absolute; width: 131%; height: auto; left: -15.7%; top: -26%; object-fit: initial; }
+.mtg-bt-stage.is-art .mtg-bt-board .mtg-bt-card.is-artimg img, .mtg-bt-stage.is-art .mtg-bt-board .mtg-bt-card.is-token img { width: 100%; height: 100%; left: 0; top: 0; object-fit: cover; }
 .mtg-bt-nm { display: none; }
-.mtg-bt-board .mtg-bt-nm { display: block; position: absolute; left: 0; right: 0; top: 0; padding: 1px 4px; background: linear-gradient(#000d, #0000); color: #fff; font-size: 9px; font-weight: 600; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
-.mtg-bt-board .mtg-bt-pt { right: 3px; bottom: 3px; font-size: 12px; padding: 1px 6px; border-radius: 4px; background: #000c; border: 1px solid #fff4; }
+.mtg-bt-stage.is-art .mtg-bt-board .mtg-bt-nm { display: block; position: absolute; left: 0; right: 0; top: 0; padding: 1px 4px; background: linear-gradient(#000d, #0000); color: #fff; font-size: 9px; font-weight: 600; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
+.mtg-bt-stage.is-art .mtg-bt-board .mtg-bt-pt { right: 3px; bottom: 3px; font-size: 12px; padding: 1px 6px; border-radius: 4px; background: #000c; border: 1px solid #fff4; }
 
 /* マリガンで戻すカードを選ぶ (アリーナ風): 左にライブラリー、右に手札。クリックで選ぶ */
 .mtg-st-mid { flex: 1; display: flex; align-items: center; gap: 3%; width: 100%; min-height: 0; }
@@ -635,3 +635,17 @@ body.mtg-sidebar-left .sidebar-toggle-button.mod-right { display: none; }
 .mtg-st-pickedcard img { width: 100%; display: block; border-radius: 6px; box-shadow: 0 4px 14px #000b; }
 .mtg-st-card.is-pick { cursor: pointer; }
 .mtg-st-link { background: none; border: 0; box-shadow: none; color: #bbc; cursor: pointer; align-self: center; }
+
+/* 戻すカードの選択: 手札の扇は、右の幅に収まる大きさ。選んだカードは、ライブラリー (裏面) の左に、はみ出して重なる */
+.mtg-st-mid .mtg-st-card { width: clamp(56px, 7vw, 124px); margin-left: -1.1vw; }
+.mtg-st-mid .mtg-st-card:first-child { margin-left: 0; }
+.mtg-st-mid .mtg-st-fan { min-width: 0; overflow: visible; }
+.mtg-st-back { position: relative; z-index: 2; }
+.mtg-st-picked { pointer-events: none; }
+.mtg-st-pickedcard { position: absolute; margin: 0; left: calc(50% - 150px - var(--i, 0) * 26px); top: 50%; width: 136px; transform: translateY(-50%) rotate(calc(var(--i, 0) * -2deg - 2deg)); z-index: 1; pointer-events: auto; }
+/* 「戦場を見る」 */
+.mtg-st-peek { position: absolute; top: 14px; right: 16px; z-index: 3; height: 38px; padding: 0 24px; border-radius: 999px; background: #000a; border: 2px solid #fff; color: #fff; font-size: 16px; font-weight: 700; cursor: pointer; box-shadow: none; }
+.mtg-st-peek:hover { background: #fff3; }
+.mtg-st.is-peek { background: transparent; pointer-events: none; }
+.mtg-st.is-peek > *:not(.mtg-st-peek) { visibility: hidden; }
+.mtg-st.is-peek .mtg-st-peek { pointer-events: auto; }

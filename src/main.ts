@@ -127,6 +127,7 @@ export default class MagicTheObsidian extends Plugin {
       imageKind: PRELOAD_KINDS.includes(d.imageKind) ? d.imageKind : DEFAULT_SETTINGS.imageKind,
       battleHistory: d.battleHistory ?? DEFAULT_SETTINGS.battleHistory,
       battleEffects: d.battleEffects ?? DEFAULT_SETTINGS.battleEffects,
+      boardCard: d.boardCard === "full" ? "full" : "art",
     };
     priceStore.prices = d.prices ?? {};
     priceStore.updated = d.pricesUpdated ?? "";
@@ -142,7 +143,7 @@ export default class MagicTheObsidian extends Plugin {
       }, () => void this.preloadImages(false), () => this.applyLeftBar(), () => void this.moveSidebars()),
     );
     this.registerView(DECK_VIEW, (leaf) => new DeckView(leaf, this.settings));
-    this.registerView(BATTLE_VIEW, (leaf) => new BattleView(leaf, () => this.battleSession, () => this.settings.battleStops, () => this.settings.battleOpponent, () => this.settings.battleEffects, () => this.makeAsk(), (b) => void this.saveBattle(b), () => this.ensureBattleSide(), () => this.hintAdvisor()));
+    this.registerView(BATTLE_VIEW, (leaf) => new BattleView(leaf, () => this.battleSession, () => this.settings.battleStops, () => this.settings.battleOpponent, () => this.settings.battleEffects, () => this.makeAsk(), (b) => void this.saveBattle(b), () => this.ensureBattleSide(), () => this.hintAdvisor(), () => this.settings.boardCard));
     this.registerView(BATTLE_SIDE_VIEW, (leaf) => new BattleSideView(leaf));
     this.registerView(DASHBOARD_VIEW, (leaf) => new DashboardView(leaf, { collection: () => void this.openOrReveal(COLLECTION_VIEW), deck: () => void this.openOrReveal(DECKLIST_VIEW), cards: () => void this.openOrReveal(CARDS_VIEW), pluginId: this.manifest.id, sidebarLeft: () => this.settings.sidebarLeft }));
     this.registerView(CARDS_VIEW, (leaf) => new CardsView(leaf, this.settings, (key) => void this.showCardInfo(key, true)));
