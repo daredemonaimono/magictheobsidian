@@ -322,10 +322,11 @@ export class BattleView extends ItemView {
     const rows: Record<string, HTMLElement> = {};
     for (const key of ["opp-lands", "opp-others", "opp-creatures", "self-creatures", "self-others", "self-lands"]) rows[key] = board.createDiv({ cls: `mtg-bt-row mtg-bt-${key}` });
     const belt = board.createDiv("mtg-bt-belt"); // 真ん中の帯: だれのターンか・フェイズの進み・ステップ
-    const turn = belt.createDiv("mtg-bt-turn");
-    const phase = belt.createDiv("mtg-bt-phase");
-    const step = belt.createDiv("mtg-bt-step");
-    const gauge = belt.createDiv("mtg-bt-gauge");
+    const status = stage.createDiv("mtg-bt-status"); // 右下の状況ラベル (アリーナと同じ): 進行のアイコン・だれのターンか・ステップ。優先権のゲージは、その底
+    const phase = status.createDiv("mtg-bt-phase");
+    const turn = status.createDiv("mtg-bt-turn");
+    const step = status.createDiv("mtg-bt-step");
+    const gauge = status.createDiv("mtg-bt-gauge");
     const gfill = gauge.createDiv("mtg-bt-gaugefill");
     const hand = stage.createDiv("mtg-bt-hand");
     stage.createDiv({ cls: "mtg-bt-avatar is-opp" }).dataset.tid = this.game.players.find((p) => p !== VIEWER) ?? "";
@@ -1292,8 +1293,11 @@ export class BattleView extends ItemView {
   }
 
   private face(el: HTMLElement, c: CardView) {
-    if (c.image) el.createEl("img", { attr: { src: c.image, alt: c.name, loading: "lazy", draggable: "false" } });
-    else el.createDiv({ cls: "mtg-bt-face", text: c.name });
+    if (c.image) {
+      el.createEl("img", { attr: { src: c.image, alt: c.name, loading: "lazy", draggable: "false" } });
+      if (/art_crop/.test(c.image)) el.addClass("is-artimg"); // もう絵だけの画像は、そのまま (カード全体の画像だけを、絵の部分に切り抜く)
+    } else el.createDiv({ cls: "mtg-bt-face", text: c.name });
+    el.createDiv({ cls: "mtg-bt-nm", text: c.name }); // 盤面のカードの名前 (手札では、隠す)
     // 継続効果で型が変わっているカード (Zhao の「Mountain になる」など): いまの型を、札の上に出す
     if (c.typeNow) el.createDiv({ cls: "mtg-bt-typenow", text: c.typeNow, attr: { title: `いまの型: ${c.typeLine} (継続効果で変わっている)` } });
   }
@@ -1359,11 +1363,11 @@ export class BattleView extends ItemView {
 
   private paintPhase(m: BoardModel) {
     const el = this.ui.phase;
-    if (!el.firstChild) for (const [id, label] of PHASES) el.createDiv({ text: label, attr: { "data-phase": id } });
+    if (!el.firstChild) for (const [id, label] of PHASES) el.createDiv({ attr: { "data-phase": id, "aria-label": label, title: label } });
     for (const child of Array.from(el.children) as HTMLElement[]) child.toggleClass("on", child.dataset.phase === m.phase);
     this.setText(this.ui.step, `ターン ${m.turn}・${m.step}`);
     const mine = m.activeSide === "self";
-    this.setText(this.ui.turn, mine ? "あなたのターン" : "相手のターン");
+    this.setText(this.ui.turn, mine ? "あなたのターン" : "対戦相手のターン");
     this.ui.turn.toggleClass("is-self", mine);
     this.ui.turn.toggleClass("is-opp", !mine);
     this.ui.stage.toggleClass("is-self-turn", mine);
