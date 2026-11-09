@@ -92,6 +92,7 @@ export class BattleView extends ItemView {
   private waitAi = false; // AI の相手が、マリガンを決めている最中 (自分のマリガンは、そのあとに聞く)
   private mullEl?: HTMLElement; // マリガンのダイアログ (手札にカーソルを合わせて見られるよう、後ろの操作は止めない)
   private mullTried = new Set<string>();
+  private imgLoading = new Set<Promise<unknown>>(); // 読み込み中の画像 (別の呼び出しが先に始めたものも、待てるように)
   private bottoming = false; // マリガンのキープのあと、底に置くカードを選んでいる
   private askCancel?: () => void; // いまの質問を Esc で取り消すときの動き (無ければ、操作の取り消し)
   private askEl?: HTMLElement; // 質問のダイアログ (捨てる・選ぶ・してもよい・支払う)
@@ -235,6 +236,7 @@ export class BattleView extends ItemView {
     this.pendingEffects = [];
     this.effectsEl = undefined;
     this.tried.clear();
+    this.mullTried.clear();
     this.askEl = undefined;
     this.targeting = undefined;
     this.tbar = undefined;
@@ -377,7 +379,7 @@ export class BattleView extends ItemView {
       void localUrl(a).then((u) => u && (this.urls.set(`art:${a}`, u), this.paint())); // 同じ名前でも、絵の違うカードは、絵ごとに引く
     }
     const names = new Set<string>([...g.battlefield.map((p) => p.card.name), ...Object.values(g.hands).flat().map((c) => c.name), ...Object.values(g.graveyards).flat().map((c) => c.name), ...g.stack.map((s) => s.card.name), ...extra]);
-    await Promise.all(
+    const loading = Promise.all(
       [...names].filter((n) => !this.tried.has(`${n}|${art.get(n) ?? ""}`)).map(async (n) => {
         this.tried.add(`${n}|${art.get(n) ?? ""}`);
         const info = cardInfo(this.app, n);
@@ -386,6 +388,9 @@ export class BattleView extends ItemView {
         if (local) this.urls.set(n, local);
       }),
     );
+    this.imgLoading.add(loading);
+    void loading.finally(() => this.imgLoading.delete(loading));
+    await loading;
   }
 
   // ---- 描く (BoardModel を、差分だけ更新)
@@ -806,7 +811,8 @@ export class BattleView extends ItemView {
     const miss = hand.filter((c) => !this.urls.has(c.name) && !this.mullTried.has(c.name));
     if (miss.length) {
       for (const c of miss) this.mullTried.add(c.name); // 絵が無いカードで、くり返さない
-      void this.loadImages().then(() => this.mullEl === box && this.checkMulligan()); // マリガンで引き直した手札の絵
+      // マリガンで引き直した手札の絵: 自分で読み込み、ほかの呼び出しが読んでいる最中のものも待ってから、描き直す (先に始めた呼び出しの終わりを待たないと、絵が無いまま描いてしまう)
+      void this.loadImages().then(() => Promise.all([...this.imgLoading])).then(() => this.mullEl && this.checkMulligan());
     }
     if (this.waitAi) return void sub.setText("対戦相手が7枚の手札をキープするかマリガンするかを選択しています。"); // 盤面は先に開く。自分のマリガンは、そのあと
     const foeN = (g.hands[g.players.find((p) => p !== VIEWER) ?? ""] ?? []).length;
@@ -829,19 +835,72 @@ export class BattleView extends ItemView {
       for (const c of powders) pr.createEl("button", { text: `${c.name}: 手札を入れ替える` }).addEventListener("click", () => this.run(() => this.ctl!.powder(c.id)));
     }
   }
+  // キープしたあと、マリガンした回数ぶん、手札からライブラリーの底に戻すカードを選ぶ (アリーナ風: 左にライブラリー、右に手札。ドラッグでなく、クリックで選ぶ。選んだカードは、ライブラリーの側に移る)
   private async showBottom(count: number) {
     const cards = this.game.hands[VIEWER].map((c) => ({ id: c.id, name: c.name }));
     await this.loadImages(cards.map((c) => c.name));
+    await Promise.all([...this.imgLoading]);
     if (!this.game.mulligan || !this.bottoming) return; // 待っているあいだに、閉じた・開き直された
     this.askCancel = () => {
       this.bottoming = false;
       this.checkMulligan();
     };
-    this.showAsk({ kind: "choose", min: count, max: count, cards }, (ids) => {
+    this.mullEl?.remove();
+    const box = this.ui.stage.createDiv("mtg-bt-ask is-mull mtg-st");
+    this.mullEl = box;
+    const head = box.createDiv("mtg-st-head");
+    head.createDiv({ cls: "mtg-st-title", text: `${count}枚戻す` });
+    head.createDiv({ cls: "mtg-st-sub", text: `ライブラリーの一番下に置く${count}枚を、クリックで選んでください。` });
+    const mid = box.createDiv("mtg-st-mid");
+    const lib = mid.createDiv("mtg-st-lib");
+    lib.createDiv({ cls: "mtg-st-libtitle", text: "ライブラリー" });
+    const libBox = lib.createDiv("mtg-st-libbox");
+    libBox.createEl("img", { cls: "mtg-st-back", attr: { src: cardBackUrl("small"), alt: "", draggable: "false" } });
+    const picked = libBox.createDiv("mtg-st-picked");
+    const fan = mid.createDiv("mtg-st-fan");
+    const row = box.createDiv("mtg-st-btns");
+    const back = row.createEl("button", { cls: "mtg-st-link", text: "← 手札を見直す" });
+    back.addEventListener("click", () => this.askCancel?.());
+    const done = row.createEl("button", { cls: "mtg-st-btn is-orange", text: "完了" });
+    const chosen: string[] = [];
+    const cardEl = (parent: HTMLElement, c: { id: string; name: string }, cls: string) => {
+      const el = parent.createDiv(cls);
+      const url = this.urls.get(c.name);
+      if (url) el.createEl("img", { attr: { src: url, alt: c.name, draggable: "false" } });
+      else el.createDiv({ cls: "mtg-bt-face", text: c.name });
+      return el;
+    };
+    const render = () => {
+      fan.empty();
+      picked.empty();
+      const rest = cards.filter((c) => !chosen.includes(c.id));
+      for (const [i, c] of rest.entries()) {
+        const mid = (rest.length - 1) / 2;
+        const el = cardEl(fan, c, "mtg-st-card is-pick");
+        el.style.setProperty("--r", `${(i - mid) * 3}deg`);
+        el.style.setProperty("--y", `${Math.round((i - mid) ** 2 * 5)}px`);
+        el.addEventListener("click", () => {
+          if (chosen.length >= count) return;
+          chosen.push(c.id);
+          render();
+        });
+      }
+      for (const id of chosen) {
+        const c = cards.find((x) => x.id === id)!;
+        cardEl(picked, c, "mtg-st-pickedcard").addEventListener("click", () => { // 選んだカードを、もう一度押すと、手札に戻る
+          chosen.splice(chosen.indexOf(id), 1);
+          render();
+        });
+      }
+      done.disabled = chosen.length !== count;
+    };
+    done.addEventListener("click", () => {
+      if (chosen.length !== count) return;
       this.bottoming = false;
       this.askCancel = undefined;
-      this.run(() => this.ctl!.bottom(ids as string[]));
-    }, `ライブラリーの底に置くカードを ${count} 枚選ぶ`);
+      this.run(() => this.ctl!.bottom([...chosen]));
+    });
+    render();
   }
 
   // 払うマナの選択: 足りないマナを自動でタップするとき、種類の違う土地・マナ源から選べる余地があれば、どれをタップするか選ばせる (払えるだけ選ぶと、「確定」が押せる)。「自動」で、並んでいる順。余地が無ければ、聞かない。Esc で取り消し
