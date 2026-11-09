@@ -127,7 +127,7 @@ export default class MagicTheObsidian extends Plugin {
       imageKind: PRELOAD_KINDS.includes(d.imageKind) ? d.imageKind : DEFAULT_SETTINGS.imageKind,
       battleHistory: d.battleHistory ?? DEFAULT_SETTINGS.battleHistory,
       battleEffects: d.battleEffects ?? DEFAULT_SETTINGS.battleEffects,
-      boardCard: d.boardCard === "full" ? "full" : "art",
+      boardCard: d.boardCard === "full" ? "full" : "frame", // 昔の値 "art" は、frame に
     };
     priceStore.prices = d.prices ?? {};
     priceStore.updated = d.pricesUpdated ?? "";

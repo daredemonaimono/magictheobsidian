@@ -13,7 +13,7 @@ import type { CastRecord } from "./battle/node";
 import { stackEffectText } from "./battle/stackText";
 import { BoardModel, CardView, CombatChoice, LandStack, PhaseId, boardModel, groupStack } from "./battle/boardModel";
 import { frameClass } from "./battle/frame";
-import { ART_H, ART_W, CARD_H, CARD_W, GAP, GAUGE_SEC, HAND_H, HAND_W, LAYER_PX, TAP_EXTRA, cardBackUrl, overlapFor, pileLayers, rowNeed } from "./battle/layout";
+import { FRAME_H, FRAME_W, frameImage, CARD_H, CARD_W, GAP, GAUGE_SEC, HAND_H, HAND_W, LAYER_PX, TAP_EXTRA, cardBackUrl, overlapFor, pileLayers, rowNeed } from "./battle/layout";
 import { BattleSession } from "./battle/deckToGame";
 import { sampleBattle } from "./battle/sampleBattle";
 import { Game, GameCard, RuleBook } from "./battle/state";
@@ -93,9 +93,9 @@ export class BattleView extends ItemView {
   private waitAi = false; // AI の相手が、マリガンを決めている最中 (自分のマリガンは、そのあとに聞く)
   private mullEl?: HTMLElement; // マリガンのダイアログ (手札にカーソルを合わせて見られるよう、後ろの操作は止めない)
   private mullTried = new Set<string>();
-  private art = true; // 盤面のカードを、絵だけで出す (設定)。build のたびに決める
-  private get cw() { return this.art ? ART_W : CARD_W; }
-  private get ch() { return this.art ? ART_H : CARD_H; }
+  private frame = false; // 盤面のカードを、CSS で描いたフレームに、絵を入れて出す (設定「オリジナルフレーム」)
+  private get cw() { return this.frame ? FRAME_W : CARD_W; }
+  private get ch() { return this.frame ? FRAME_H : CARD_H; }
   private get tapExtra() { return this.ch - this.cw; } // 横向きにしたとき、列の中で余分に取る幅 (絵だけのときは、負)
   private imgLoading = new Set<Promise<unknown>>(); // 読み込み中の画像 (別の呼び出しが先に始めたものも、待てるように)
   private bottoming = false; // マリガンのキープのあと、底に置くカードを選んでいる
@@ -107,7 +107,7 @@ export class BattleView extends ItemView {
   private watcher?: ResizeObserver;
 
   // getSession = 対戦の局面 (無ければ、サンプルの局面)。対戦を始め直したときは、begin() で読み直す
-  constructor(leaf: WorkspaceLeaf, private getSession: () => BattleSession | undefined, private getStops: () => StopMode = () => "smart", private getOpp: () => "cpu" | "claude" | "passive" = () => "passive", private getFx: () => boolean = () => true, private getAsk: () => AskAi | undefined = () => undefined, private onSave: (b: SavedBattle) => void = () => {}, private getSide: () => Promise<{ preview: HTMLElement; log: HTMLElement } | undefined> = async () => undefined, private getAdvisor: () => AiAdvisor | undefined = () => undefined, private getCardStyle: () => "art" | "full" = () => "art") {
+  constructor(leaf: WorkspaceLeaf, private getSession: () => BattleSession | undefined, private getStops: () => StopMode = () => "smart", private getOpp: () => "cpu" | "claude" | "passive" = () => "passive", private getFx: () => boolean = () => true, private getAsk: () => AskAi | undefined = () => undefined, private onSave: (b: SavedBattle) => void = () => {}, private getSide: () => Promise<{ preview: HTMLElement; log: HTMLElement } | undefined> = async () => undefined, private getAdvisor: () => AiAdvisor | undefined = () => undefined, private getCardStyle: () => "full" | "frame" = () => "frame") {
     super(leaf);
   }
 
@@ -321,9 +321,12 @@ export class BattleView extends ItemView {
     const root = this.contentEl;
     root.empty();
     root.addClass("mtg-bt");
-    this.art = this.getCardStyle() !== "full";
+    const style = this.getCardStyle();
+    this.frame = style === "frame";
     const stage = root.createDiv("mtg-bt-stage");
-    stage.toggleClass("is-art", this.art);
+    stage.toggleClass("is-frame", this.frame);
+    const fi = frameImage();
+    for (const [k, v] of [["--fw", fi.width], ["--fl", fi.left], ["--ft", fi.top]] as const) stage.style.setProperty(k, `${v}px`); // オリジナルフレームの、絵の窓に入れる画像の大きさと位置
     for (const [k, v] of [["--bw", this.cw], ["--bh", this.ch], ["--hw", HAND_W], ["--hh", HAND_H], ["--tx", this.tapExtra / 2]] as const) stage.style.setProperty(k, `${v}px`); // カードの大きさ (src/battle/layout.ts)
     stage.style.setProperty("--back", `url("${cardBackUrl()}")`);
     void cssUrl(cardBackUrl()).then((u) => u && stage.style.setProperty("--back", `url("${u}")`)); // 保存済みなら、そちら // 山札の裏面の絵 (読めなければ、CSS の代わりの絵)
@@ -1361,7 +1364,7 @@ export class BattleView extends ItemView {
     el.className = "mtg-bt-card";
     for (const [on, cls] of [[c.tapped, "is-tapped"], [c.attacking, "is-attacking"], [c.blocking, "is-blocking"], [c.sick, "is-sick"], [c.prepared, "is-prepared"], [c.token, "is-token"], [c.foil, "is-foil"], [c.exiled, "is-exiled"], [c.playable && !!this.ctl, "is-playable"]] as const) if (on) el.addClass(cls);
     el.empty();
-    if (onBoard && this.art) for (const f of frameClass(c).split(" ")) el.addClass(f); // フレームの色 (CSS で描く)
+    if (onBoard && this.frame) for (const f of frameClass(c).split(" ")) el.addClass(f); // フレームの色 (CSS で描く)
     this.face(el, c, onBoard);
     if (c.power !== null && c.toughness !== null) {
       const pt = el.createDiv("mtg-bt-pt");
@@ -1380,11 +1383,19 @@ export class BattleView extends ItemView {
   }
 
   private face(el: HTMLElement, c: CardView, onBoard = false) {
+    if (onBoard && this.frame) {
+      // オリジナルフレーム: 名前の帯と、絵の窓 (カード画像の絵の部分だけ) を、枠の中に置く。枠は CSS
+      el.createDiv({ cls: "mtg-bt-fnm", text: c.name });
+      const win = el.createDiv("mtg-bt-fart");
+      if (c.image) {
+        win.createEl("img", { attr: { src: c.image, alt: c.name, loading: "lazy", draggable: "false" } });
+        if (/art_crop/.test(c.image) || c.token) win.addClass("is-whole"); // もう絵だけの画像 (トークンなど) は、窓いっぱいに
+      }
+      return;
+    }
     if (c.image) {
       el.createEl("img", { attr: { src: c.image, alt: c.name, loading: "lazy", draggable: "false" } });
-      if (/art_crop/.test(c.image)) el.addClass("is-artimg"); // もう絵だけの画像 (トークンなど) は、そのまま
     } else el.createDiv({ cls: "mtg-bt-face", text: c.name });
-    if (onBoard && this.art) el.createDiv("mtg-bt-edge"); // 絵だけのとき、カードの下 (テキスト欄を省いたところ) の縁
     // 継続効果で型が変わっているカード (Zhao の「Mountain になる」など): いまの型を、札の上に出す
     if (c.typeNow) el.createDiv({ cls: "mtg-bt-typenow", text: c.typeNow, attr: { title: `いまの型: ${c.typeLine} (継続効果で変わっている)` } });
   }

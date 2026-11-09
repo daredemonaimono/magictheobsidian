@@ -337,7 +337,7 @@ button.mtg-color .mtg-sym { width: 20px; height: 20px; display: block; }
 .mtg-bt-count { position: absolute; right: -6px; top: -8px; background: #000c; border-radius: 8px; padding: 0 6px; font-size: 11px; font-weight: 700; z-index: 3; }
 
 /* 相手側は、相手の向き (180 度回転)。列ごと回すので、並びと土地の山の左右も、自分側の点対称になる。雰囲気重視 (効果は、ホバーのプレビューで読める) */
-.mtg-bt-stage:not(.is-art) .mtg-bt-opp-lands, .mtg-bt-stage:not(.is-art) .mtg-bt-opp-others, .mtg-bt-stage:not(.is-art) .mtg-bt-opp-creatures { transform: rotate(180deg); } /* 絵だけのときは、相手のカードも、同じ向き (読める) */
+.mtg-bt-stage:not(.is-frame) .mtg-bt-opp-lands, .mtg-bt-stage:not(.is-frame) .mtg-bt-opp-others, .mtg-bt-stage:not(.is-frame) .mtg-bt-opp-creatures { transform: rotate(180deg); } /* 絵だけのときは、相手のカードも、同じ向き (読める) */
 .mtg-bt-deck.is-opp-library, .mtg-bt-deck.is-opp-yard { transform: rotate(180deg); }
 .mtg-bt-deck.is-opp-library .mtg-bt-dcount, .mtg-bt-deck.is-opp-yard .mtg-bt-dcount { transform: translateX(-50%) rotate(180deg); }
 
@@ -614,21 +614,6 @@ body.mtg-sidebar-left .sidebar-toggle-button.mod-right { display: none; }
 .mtg-st-btn:disabled { opacity: .4; cursor: default; }
 .mtg-st-powder { margin-top: 10px; display: flex; gap: 8px; }
 
-/* 盤面のカード (アリーナ風): カードの横幅はそのまま、画像の上の部分 (名前・絵・タイプ) だけを見せ、テキスト欄は省く。下の縁は、色ごとの色 */
-.mtg-bt-stage.is-art { --fa: #8a8f96; }
-.mtg-bt-stage.is-art .mtg-bt-board .mtg-bt-card { border: 0; border-radius: 6px; background: #0b0b0d; box-shadow: 0 0 0 1px #000; }
-.mtg-bt-stage.is-art .mtg-bt-board .mtg-bt-card > img { position: absolute; left: 0; top: 0; width: 100%; height: auto; object-fit: initial; }
-.mtg-bt-stage.is-art .mtg-bt-board .mtg-bt-card.is-artimg > img, .mtg-bt-stage.is-art .mtg-bt-board .mtg-bt-card.is-token > img { height: 100%; object-fit: cover; }
-.mtg-bt-edge { display: none; }
-.mtg-bt-stage.is-art .mtg-bt-board .mtg-bt-edge { display: block; position: absolute; left: 0; right: 0; bottom: 0; height: 6px; background: var(--fa); border-top: 1px solid #000b; pointer-events: none; }
-.mtg-bt-stage.is-art .mtg-bt-card.f-W { --fa: #cdbf8c; } .mtg-bt-stage.is-art .mtg-bt-card.f-U { --fa: #3a6ea8; } .mtg-bt-stage.is-art .mtg-bt-card.f-B { --fa: #3d3744; }
-.mtg-bt-stage.is-art .mtg-bt-card.f-R { --fa: #b4472f; } .mtg-bt-stage.is-art .mtg-bt-card.f-G { --fa: #3e7b4a; } .mtg-bt-stage.is-art .mtg-bt-card.f-M { --fa: #b5963a; }
-.mtg-bt-stage.is-art .mtg-bt-card.f-C { --fa: #8a8f96; } .mtg-bt-stage.is-art .mtg-bt-card.f-art { --fa: #7d8996; } .mtg-bt-stage.is-art .mtg-bt-card.f-land { --fa: #8c7b5e; }
-.mtg-bt-stage.is-art .mtg-bt-card.f-land.f-W { --fa: #cdbf8c; } .mtg-bt-stage.is-art .mtg-bt-card.f-land.f-U { --fa: #3a6ea8; } .mtg-bt-stage.is-art .mtg-bt-card.f-land.f-B { --fa: #3d3744; }
-.mtg-bt-stage.is-art .mtg-bt-card.f-land.f-R { --fa: #b4472f; } .mtg-bt-stage.is-art .mtg-bt-card.f-land.f-G { --fa: #3e7b4a; } .mtg-bt-stage.is-art .mtg-bt-card.f-land.f-M { --fa: #b5963a; }
-.mtg-bt-nm { display: none; }
-.mtg-bt-stage.is-art .mtg-bt-board .mtg-bt-nm { display: block; position: absolute; left: 0; right: 0; top: 0; height: 15px; padding: 0 5px; background: var(--fh); color: #15171c; font-size: 9px; font-weight: 700; line-height: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
-.mtg-bt-stage.is-art .mtg-bt-board .mtg-bt-pt { right: 4px; bottom: 8px; font-size: 12px; padding: 1px 6px; border-radius: 4px; background: #000c; border: 1px solid #fff4; }
 
 /* マリガンで戻すカードを選ぶ (アリーナ風): 左にライブラリー、右に手札。クリックで選ぶ */
 .mtg-st-mid { flex: 1; display: flex; align-items: center; gap: 3%; width: 100%; min-height: 0; }
@@ -657,3 +642,17 @@ body.mtg-sidebar-left .sidebar-toggle-button.mod-right { display: none; }
 .mtg-st.is-peek { background: transparent; pointer-events: none; }
 .mtg-st.is-peek > *:not(.mtg-st-peek) { visibility: hidden; }
 .mtg-st.is-peek .mtg-st-peek { pointer-events: auto; }
+
+/* オリジナルフレーム (設定): 枠・名前の帯は CSS で描く。絵は、カード画像の絵の部分だけ (大きさと位置は src/battle/layout.ts の frameImage)。--fa = 枠の色、--fh = 名前の帯の色 */
+.mtg-bt-stage.is-frame { --fa: #8a8f96; --fh: #d9dcdf; --bd: #1b1b20; }
+.mtg-bt-stage.is-frame .mtg-bt-board .mtg-bt-card { border: 0; border-radius: 6px; background: var(--fa); box-shadow: 0 2px 6px #0008, inset 0 0 0 1px #0006; }
+.mtg-bt-stage.is-frame .mtg-bt-board .mtg-bt-fnm { position: absolute; left: 3.5px; right: 3.5px; top: 3.5px; height: 12px; padding: 0 4px; border-radius: 3px 3px 0 0; background: var(--fh); color: #15171c; font-size: 8.5px; font-weight: 700; line-height: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-shadow: 0 1px 0 #0006; }
+.mtg-bt-stage.is-frame .mtg-bt-board .mtg-bt-fart { position: absolute; left: 3.5px; right: 3.5px; top: 15.5px; bottom: 3.5px; overflow: hidden; background: var(--bd); box-shadow: 0 0 0 1px var(--bd); }
+.mtg-bt-stage.is-frame .mtg-bt-board .mtg-bt-fart > img { position: absolute; width: var(--fw); height: auto; left: var(--fl); top: var(--ft); max-width: none; }
+.mtg-bt-stage.is-frame .mtg-bt-board .mtg-bt-fart.is-whole > img { width: 100%; height: 100%; left: 0; top: 0; object-fit: cover; }
+.mtg-bt-stage.is-frame .mtg-bt-board .mtg-bt-pt { right: 4px; bottom: 4px; font-size: 11px; padding: 0 5px; border-radius: 3px; background: var(--fh); color: #15171c; border: 1px solid var(--bd); z-index: 2; }
+.mtg-bt-stage.is-frame .mtg-bt-card.f-W { --fa: #cdbf8c; --fh: #f1e9cf; } .mtg-bt-stage.is-frame .mtg-bt-card.f-U { --fa: #3a6ea8; --fh: #cfdff0; } .mtg-bt-stage.is-frame .mtg-bt-card.f-B { --fa: #3d3744; --fh: #c9c3cc; }
+.mtg-bt-stage.is-frame .mtg-bt-card.f-R { --fa: #b4472f; --fh: #f0d2c8; } .mtg-bt-stage.is-frame .mtg-bt-card.f-G { --fa: #3e7b4a; --fh: #cfe3cf; } .mtg-bt-stage.is-frame .mtg-bt-card.f-M { --fa: #b5963a; --fh: #efe2b5; }
+.mtg-bt-stage.is-frame .mtg-bt-card.f-C { --fa: #8a8f96; --fh: #d9dcdf; } .mtg-bt-stage.is-frame .mtg-bt-card.f-art { --fa: #7d8996; --fh: #dfe4e9; } .mtg-bt-stage.is-frame .mtg-bt-card.f-land { --fa: #8c7b5e; --fh: #e2d8c2; }
+.mtg-bt-stage.is-frame .mtg-bt-card.f-land.f-W { --fa: #cdbf8c; } .mtg-bt-stage.is-frame .mtg-bt-card.f-land.f-U { --fa: #3a6ea8; } .mtg-bt-stage.is-frame .mtg-bt-card.f-land.f-B { --fa: #3d3744; }
+.mtg-bt-stage.is-frame .mtg-bt-card.f-land.f-R { --fa: #b4472f; } .mtg-bt-stage.is-frame .mtg-bt-card.f-land.f-G { --fa: #3e7b4a; } .mtg-bt-stage.is-frame .mtg-bt-card.f-land.f-M { --fa: #b5963a; }

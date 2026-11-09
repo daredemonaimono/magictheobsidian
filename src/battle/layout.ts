@@ -3,8 +3,18 @@
 // カードの大きさ (px)。盤面のカードと、手前の手札。CSS の変数 (--cw / --ch) は、画面を作るときに、これらから入れる
 export const CARD_W = 76; // 盤面のカード (設定「カード全体」): 縦長
 export const CARD_H = 106;
-export const ART_W = 96; // 盤面のカード (設定「絵だけ」。アリーナ風): カードの横幅はそのまま、上の部分 (名前・絵・タイプ) だけを出し、テキスト欄は省く
-export const ART_H = 78;
+export const CARD_ASPECT = 680 / 488; // カード画像の、縦 / 横
+export const FRAME_W = 88; // 盤面のカード (設定「オリジナルフレーム」): 枠・名前の帯は CSS で描き、絵は、カード画像の絵の部分だけを切り出す
+export const FRAME_H = 74;
+export const FRAME_T = 3.5; // 枠の太さ
+export const FRAME_NAME_H = 12; // 名前の帯の高さ
+// カード画像の中の、絵の枠の位置 (割合。標準のカードの枠。見ながら調整)
+export const FRAME_ART = { x: 0.07, w: 0.858, y: 0.113 };
+// 絵の窓 (枠の内側・名前の帯の下) に、カード画像の絵の部分が合うように、画像の大きさと位置 (px) を決める
+export const frameImage = (): { width: number; left: number; top: number } => {
+  const width = (FRAME_W - 2 * FRAME_T) / FRAME_ART.w;
+  return { width, left: -width * FRAME_ART.x, top: -width * CARD_ASPECT * FRAME_ART.y };
+};
 export const HAND_W = 120;
 export const HAND_H = 168;
 export const GAP = 10; // カードどうしの間
