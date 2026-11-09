@@ -12,6 +12,7 @@ export interface CardView {
   name: string;
   typeLine: string;
   manaCost?: string;
+  colors?: string[]; // 色 (W U B R G): フレームの色
   power: number | null;
   toughness: number | null;
   powerMod?: "up" | "down"; // 戦場で、継続効果・カウンターなどで、もとのパワーより大きい (黄色) / 小さい (赤)
@@ -63,6 +64,7 @@ const inHand = (c: GameCard, image?: string, playable = false): CardView => ({
   name: c.name,
   typeLine: c.typeLine,
   ...(c.manaCost !== undefined ? { manaCost: c.manaCost } : {}),
+  ...(c.colors ? { colors: c.colors } : {}),
   power: c.power ?? null,
   toughness: c.toughness ?? null,
   damage: 0,
@@ -89,6 +91,7 @@ function permView(g: Game, rules: RuleBook, p: Perm, imageOf: ImageOf, playable:
     typeLine: now.typeLine,
     ...(now.typeLine !== p.card.typeLine ? { typeNow: (now.typeLine.split(/—|-/)[1] ?? now.typeLine).trim() || now.typeLine } : {}),
     ...(p.card.manaCost !== undefined ? { manaCost: p.card.manaCost } : {}),
+    ...(p.card.colors ? { colors: p.card.colors } : {}),
     power: now.power,
     toughness: now.toughness,
     ...(p.card.power !== undefined && now.power !== p.card.power ? { powerMod: (now.power ?? 0) > p.card.power ? ("up" as const) : ("down" as const) } : {}),

@@ -331,10 +331,10 @@ export class SettingsTab extends PluginSettingTab {
               (c) =>
                 new Setting(el(c))
                   .setName("盤面のカードの見た目 / Card style on the board")
-                  .setDesc("絵だけ: アリーナのように、絵の部分だけを横長に出す (すっきり。名前は上の帯、P/T は右下)。カード全体: カードをそのまま縦に出す (テキストも読める。クラスやサーガなど、絵だけだと分かりにくいカード向け)。対戦を開き直すと変わる。")
+                  .setDesc("アリーナ風: 色ごとのフレーム (白・青・黒・赤・緑・多色・無色・アーティファクト・土地) に、カード名と絵だけを入れた横長のカード (すっきり。P/T は右下)。カード全体: カードをそのまま縦に出す (テキストも読める。クラスやサーガなど、絵だけだと分かりにくいカード向け)。対戦を開き直すと変わる。")
                   .addDropdown((d) =>
                     d
-                      .addOption("art", "絵だけ (アリーナ風)")
+                      .addOption("art", "アリーナ風 (色のフレームに絵だけ)")
                       .addOption("full", "カード全体")
                       .setValue(this.settings.boardCard)
                       .onChange(async (v) => {

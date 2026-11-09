@@ -12,6 +12,7 @@ import { BattleController, StopMode } from "./battle/play";
 import type { CastRecord } from "./battle/node";
 import { stackEffectText } from "./battle/stackText";
 import { BoardModel, CardView, CombatChoice, LandStack, PhaseId, boardModel, groupStack } from "./battle/boardModel";
+import { frameClass } from "./battle/frame";
 import { ART_H, ART_W, CARD_H, CARD_W, GAP, GAUGE_SEC, HAND_H, HAND_W, LAYER_PX, TAP_EXTRA, cardBackUrl, overlapFor, pileLayers, rowNeed } from "./battle/layout";
 import { BattleSession } from "./battle/deckToGame";
 import { sampleBattle } from "./battle/sampleBattle";
@@ -1365,6 +1366,7 @@ export class BattleView extends ItemView {
     el.className = "mtg-bt-card";
     for (const [on, cls] of [[c.tapped, "is-tapped"], [c.attacking, "is-attacking"], [c.blocking, "is-blocking"], [c.sick, "is-sick"], [c.prepared, "is-prepared"], [c.token, "is-token"], [c.foil, "is-foil"], [c.exiled, "is-exiled"], [c.playable && !!this.ctl, "is-playable"]] as const) if (on) el.addClass(cls);
     el.empty();
+    if (onBoard && this.art) for (const f of frameClass(c).split(" ")) el.addClass(f); // フレームの色 (CSS で描く)
     this.face(el, c, onBoard);
     if (c.power !== null && c.toughness !== null) {
       const pt = el.createDiv("mtg-bt-pt");
@@ -1386,7 +1388,7 @@ export class BattleView extends ItemView {
     const crop = onBoard && this.art ? this.urls.get(`crop:${c.name}`) : undefined; // 盤面で絵だけのとき: Scryfall の絵の部分の画像 (あれば)
     const src = crop ?? c.image;
     if (src) {
-      el.createEl("img", { attr: { src, alt: c.name, loading: "lazy", draggable: "false" } });
+      (onBoard && this.art ? el.createDiv("mtg-bt-win") : el).createEl("img", { attr: { src, alt: c.name, loading: "lazy", draggable: "false" } });
       if (crop || /art_crop/.test(src)) el.addClass("is-artimg"); // もう絵だけの画像は、そのまま。カード全体の画像しか無いときだけ、CSS で絵の部分に切り抜く
     } else el.createDiv({ cls: "mtg-bt-face", text: c.name });
     if (onBoard) el.createDiv({ cls: "mtg-bt-nm", text: c.name }); // 盤面のカードの名前 (絵だけのとき、上の帯に出す)
