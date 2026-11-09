@@ -58,7 +58,11 @@ const SECTIONS: { title: string; buttons: { label: string; command: string; hint
   },
   {
     title: "画面",
-    buttons: [{ label: "カード情報 (開いているノート)", command: "card-info" }],
+    buttons: [
+      { label: "カード情報 (開いているノート)", command: "card-info" },
+      { label: "デッキ選択画面の背景を設定", command: "deck-background", hint: "画像ファイルを選ぶ" },
+      { label: "デッキ選択画面の背景をもとに戻す", command: "deck-background-clear" },
+    ],
   },
 ];
 

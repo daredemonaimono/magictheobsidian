@@ -212,6 +212,7 @@ export interface Game {
   drewEmpty: PlayerId[]; // 空のライブラリーから引こうとした人 (次の状況起因処理で負ける)
   lost: PlayerId[]; // 負けた人
   over?: { winner?: PlayerId }; // ゲームが終わった。winner が無ければ引き分け
+  firstChoice?: boolean; // コイントスに勝った人 (画面を見ている自分) が、先攻 / 後攻を選ぶのを待っている。選ぶまで、マリガンは聞かない
   mulligan?: { count: number }; // 開始前のマリガンの途中 (count = ここまでにマリガンした回数)。あるあいだ、対戦の画面は、操作・「次へ」を受けない。相手 (CPU) は常にキープ
 }
 export interface RuleBook {

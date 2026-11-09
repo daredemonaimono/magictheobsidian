@@ -76,24 +76,30 @@
 .mtg-dash-buttons button { padding: 16px 32px; font-size: var(--font-ui-large); height: auto; }
 
 /* デッキ一覧 */
-.mtg-decklist { padding: 16px; }
+.mtg-decklist { padding: 16px; background-size: cover; background-position: center; background-attachment: local; }
+.mtg-decklist.has-bg .mtg-dtitle, .mtg-decklist.has-bg .mtg-dago { color: #fff; text-shadow: 0 1px 4px rgba(0,0,0,.8); }
 .mtg-dbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
-.mtg-dtabs { display: flex; gap: 6px; margin-right: auto; }
-.mtg-dtabs button.is-on { background: var(--interactive-accent); color: var(--text-on-accent); }
+.mtg-dtitle { font-size: var(--font-ui-large); font-weight: 700; letter-spacing: .04em; margin-right: 8px; }
+.mtg-dsearch { width: 200px; }
+.mtg-dcolors { display: flex; gap: 6px; align-items: center; }
+.mtg-dcolor { display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; padding: 0; border-radius: 50%; opacity: .45; }
+.mtg-dcolor.is-on { opacity: 1; box-shadow: 0 0 0 2px var(--interactive-accent); }
+.mtg-dcolor .mtg-sym { width: 24px; height: 24px; }
 .mtg-dgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(max(180px, calc((100% - 60px) / 6)), 1fr)); gap: 12px; margin-top: 8px; } /* 広げたとき、6 列 (アリーナと同じ) */
 .mtg-dtile { position: relative; height: 170px; border-radius: 10px; overflow: hidden; cursor: pointer; background: var(--background-secondary); color: #fff; }
 .mtg-dtile > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center 0%; }
 .mtg-dshade { position: absolute; inset: 0; background: linear-gradient(to top, rgba(0,0,0,.8), rgba(0,0,0,.15)); }
-.mtg-dname { position: absolute; left: 12px; top: 10px; right: 12px; font-size: var(--font-ui-medium); font-weight: 700; line-height: 1.25; text-shadow: 0 1px 4px rgba(0,0,0,.7); }
-.mtg-dformat { position: absolute; right: 12px; bottom: 12px; font-size: var(--font-ui-smaller); font-style: italic; opacity: .85; }
-.mtg-dpips { position: absolute; left: 12px; bottom: 10px; display: flex; gap: 4px; }
+.mtg-dname { position: relative; margin-top: -2px; padding: 5px 10px; border-radius: 999px; text-align: center; font-size: var(--font-ui-medium); font-weight: 600; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: text; background: #000; color: #fff; border: 1px solid rgba(255,255,255,.25); }
+body.theme-light .mtg-dname { background: #fff; color: #000; border-color: rgba(0,0,0,.25); }
+.mtg-dname-input { width: 100%; padding: 0; border: 0; background: transparent; color: inherit; text-align: center; font: inherit; box-shadow: none; height: auto; }
+.mtg-dpips { position: absolute; z-index: 1; left: 0; right: 0; bottom: 6px; display: flex; justify-content: center; gap: 4px; }
 .mtg-dpips .mtg-sym { width: 20px; height: 20px; }
 .mtg-dctl { position: absolute; right: 8px; top: 8px; display: flex; gap: 4px; opacity: 0; transition: opacity .15s; } /* ボタンは、カーソルを合わせたときだけ出る */
 .mtg-dtile:hover .mtg-dctl, .mtg-dctl:focus-within { opacity: 1; }
 @media (hover: none) { .mtg-dctl { opacity: 1; } } /* カーソルの無い画面 (タッチ) では、いつも出す */
 .mtg-dctl button { padding: 0 8px; height: 26px; }
 .mtg-dctl button.is-on { color: #e25563; }
-.mtg-dago { text-align: right; color: var(--text-muted); font-size: var(--font-ui-smaller); margin-top: 4px; }
+.mtg-dago { text-align: center; color: var(--text-muted); font-size: var(--font-ui-smaller); margin-top: 4px; }
 
 .mtg-lcell.is-banned { opacity: 0.35; cursor: not-allowed; }
 .mtg-lcell.is-banned .mtg-lname { text-decoration: line-through; }
@@ -578,4 +584,30 @@ body.mtg-sidebar-left .sidebar-toggle-button.mod-right { display: none; }
 .mtg-dnew { display: flex; align-items: center; justify-content: center; border: 2px dashed var(--background-modifier-border-hover); background: var(--background-primary); color: var(--text-muted); }
 .mtg-dnew:hover { color: var(--text-normal); border-color: var(--interactive-accent); }
 .mtg-dplus { font-size: 64px; line-height: 1; font-weight: 200; }
-.mtg-dcard:has(.mtg-dnew) .mtg-dago { visibility: hidden; }
+.mtg-dcard:has(.mtg-dnew) .mtg-dago { display: none; }
+
+/* 「＋」のタイルは、黒地で、デッキ名の欄まで含めた高さ */
+.mtg-dcard:has(.mtg-dnew) { display: flex; }
+.mtg-dnew { flex: 1; height: auto; min-height: 170px; background: #000; border: 0; color: #fff; }
+.mtg-dnew:hover { background: #111; }
+
+/* 対戦の開始 (アリーナ風): 先攻 / 後攻の選択・手札・キープ / マリガン */
+.mtg-st { inset: 0; left: 0; top: 0; transform: none; max-width: none; width: 100%; height: 100%; border: 0; border-radius: 0; padding: 4% 4% 5%; justify-content: space-between; background: radial-gradient(ellipse at center, rgba(14,10,30,.78), rgba(4,3,10,.92)); gap: 0; }
+.mtg-st-head { text-align: center; max-width: 720px; }
+.mtg-st-title { font-size: clamp(26px, 4.2vw, 52px); font-weight: 700; letter-spacing: .06em; color: #fff; text-shadow: 0 2px 10px #000; }
+.mtg-st-sub { margin-top: 6px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,.35); font-size: clamp(12px, 1.4vw, 16px); color: #ddd; line-height: 1.5; }
+.mtg-st-fan { flex: 1; display: flex; align-items: center; justify-content: center; width: 100%; min-height: 0; padding: 2% 0; }
+.mtg-st-card { width: clamp(70px, 11vw, 170px); flex: none; margin-left: -2.2%; transform: translateY(var(--y)) rotate(var(--r)); transition: transform .15s; }
+.mtg-st-card:first-child { margin-left: 0; }
+.mtg-st-card img { width: 100%; display: block; border-radius: 6%; box-shadow: 0 4px 14px #000b; }
+.mtg-st-card:hover { transform: translateY(-14px) scale(1.35); z-index: 3; }
+.mtg-st-card .mtg-bt-face { padding: 30px 4px; background: #3a434b; border-radius: 6px; text-align: center; font-size: 11px; font-weight: 700; color: #fff; }
+.mtg-st-btns { display: flex; gap: 28px; align-items: flex-start; justify-content: center; }
+.mtg-st-col { display: flex; flex-direction: column; align-items: center; gap: 8px; max-width: 240px; }
+.mtg-st-note { font-size: 12px; color: #ccc; text-align: center; line-height: 1.4; }
+.mtg-st-btn { min-width: 160px; height: 42px; padding: 0 26px; border: 0; border-radius: 999px; font-size: 18px; font-weight: 700; color: #fff; cursor: pointer; text-shadow: 0 1px 3px #0008; box-shadow: 0 0 18px var(--glow), inset 0 2px 6px #fff6; }
+.mtg-st-btn.is-blue { --glow: #5b6cff; background: linear-gradient(#7d8cff, #3a45d6); }
+.mtg-st-btn.is-orange { --glow: #ff9a4a; background: linear-gradient(#ffb877, #ec6a2c); }
+.mtg-st-btn:hover:not(:disabled) { filter: brightness(1.15); }
+.mtg-st-btn:disabled { opacity: .4; cursor: default; }
+.mtg-st-powder { margin-top: 10px; display: flex; gap: 8px; }

@@ -172,10 +172,26 @@ export class BattleController {
     }, []);
   }
 
+  // ---- 先攻 / 後攻 (コイントスに勝ったとき)。後攻を選ぶと、相手が最初のターン
+  chooseFirst(first: boolean): string | undefined {
+    const g = this.game;
+    if (!g.firstChoice) return undefined;
+    g.firstChoice = undefined;
+    if (!first) {
+      const foe = g.players.find((p) => p !== this.me) ?? this.me;
+      g.active = foe;
+      g.priority = foe;
+    }
+    g.log.push(first ? "あなたは先攻を選んだ" : "あなたは後攻を選んだ");
+    this.record.push({ op: "first", args: [first] });
+    return undefined;
+  }
+
   // ---- マリガン (ロンドン)。game.mulligan があるあいだ、操作・「次へ」は受けない
   mulligan(): string | undefined {
     const g = this.game;
     if (!g.mulligan) return undefined;
+    if (g.firstChoice) return this.fail("マリガン", "先に、先攻か後攻を選んでください");
     if (g.mulligan.count >= HAND_SIZE) return this.fail("マリガン", "これ以上は、マリガンできない");
     g.mulligan.count++;
     redraw(g, this.me, this.rng);
@@ -201,7 +217,7 @@ export class BattleController {
   // キープする。マリガンした回数ぶん、底に置くカードが要るなら "bottom" (画面が選ばせて、bottom() を呼ぶ)。要らなければ、すぐ始まる
   keep(): "bottom" | "done" {
     const g = this.game;
-    if (!g.mulligan) return "done";
+    if (!g.mulligan || g.firstChoice) return "done";
     if (g.mulligan.count > 0) return "bottom";
     g.mulligan = undefined;
     applyOpening(g, this.me, this.rules); // 開始時に戦場に出すカード (Leyline of the Void)

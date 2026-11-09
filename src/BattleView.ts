@@ -91,6 +91,7 @@ export class BattleView extends ItemView {
   private gaugeTimer?: number;
   private waitAi = false; // AI の相手が、マリガンを決めている最中 (自分のマリガンは、そのあとに聞く)
   private mullEl?: HTMLElement; // マリガンのダイアログ (手札にカーソルを合わせて見られるよう、後ろの操作は止めない)
+  private mullTried = new Set<string>();
   private bottoming = false; // マリガンのキープのあと、底に置くカードを選んでいる
   private askCancel?: () => void; // いまの質問を Esc で取り消すときの動き (無ければ、操作の取り消し)
   private askEl?: HTMLElement; // 質問のダイアログ (捨てる・選ぶ・してもよい・支払う)
@@ -206,6 +207,7 @@ export class BattleView extends ItemView {
       entries: ctl.record,
       ...(ctl.aiNotes.length ? { notes: ctl.aiNotes } : {}),
       ...(s.aiMulligan ? { aiMulligan: s.aiMulligan } : {}),
+      ...(s.coin ? { coin: true as const } : {}),
       log: [...ctl.game.log],
     });
   }
@@ -760,18 +762,59 @@ export class BattleView extends ItemView {
   }
 
   // ---- マリガン (ロンドン): キープ / マリガン。キープしたら、マリガンした回数ぶん、底に置くカードを選ぶ。Esc で、キープ / マリガンの選択に戻る
+  // アリーナ風: 先攻 / 後攻の選択 → 「◯◯が先攻です」と手札 → キープ / マリガン。相手 (AI) が決めている間は、ボタン無しで待つ
   private checkMulligan() {
     this.mullEl?.remove();
     this.mullEl = undefined;
-    const m = this.game.mulligan;
+    const g = this.game;
+    const m = g.mulligan;
     if (!this.ctl || !m) return;
     if (this.bottoming) return; // 底に置くカードの選択は、showAsk が出している
-    const box = this.ui.stage.createDiv("mtg-bt-ask is-mull");
+    const box = this.ui.stage.createDiv("mtg-bt-ask is-mull mtg-st");
     this.mullEl = box;
-    if (this.waitAi) return void box.createDiv({ cls: "mtg-bt-asktitle", text: "相手 (AI) が、手札を決めています…" }); // 盤面は先に開く。自分のマリガンは、そのあと
-    box.createDiv({ cls: "mtg-bt-asktitle", text: m.count === 0 ? "この手札でキープしますか?" : `マリガン ${m.count} 回目: この手札でキープしますか?` });
-    const row = box.createDiv("mtg-bt-askrow");
-    row.createEl("button", { cls: "mod-cta", text: m.count > 0 ? `キープ (${m.count} 枚を底に置く)` : "キープ" }).addEventListener("click", () => {
+    const head = box.createDiv("mtg-st-head");
+    const title = head.createDiv("mtg-st-title");
+    const sub = head.createDiv("mtg-st-sub");
+    const row = box.createDiv("mtg-st-btns");
+    const btn = (label: string, kind: "blue" | "orange", f: () => void, parent: HTMLElement = row) => {
+      const b = parent.createEl("button", { cls: `mtg-st-btn is-${kind}`, text: label });
+      b.addEventListener("click", f);
+      return b;
+    };
+    if (g.firstChoice) {
+      title.setText("先攻後攻を選んでください");
+      sub.setText("先攻のプレイヤーは最初のドロー・ステップをスキップします。基本的には先攻が有利ですが、あえて後攻を選ぶ戦略もあります。");
+      btn("後攻", "blue", () => this.run(() => this.ctl!.chooseFirst(false)));
+      btn("先攻", "orange", () => this.run(() => this.ctl!.chooseFirst(true)));
+      return;
+    }
+    const first = g.active === VIEWER;
+    title.setText(first ? "あなたが先攻です" : "対戦相手が先攻です");
+    const fan = box.createDiv("mtg-st-fan");
+    box.insertBefore(fan, row);
+    const hand = g.hands[VIEWER];
+    for (const [i, c] of hand.entries()) {
+      const mid = (hand.length - 1) / 2;
+      const el = fan.createDiv("mtg-st-card");
+      el.style.setProperty("--r", `${(i - mid) * 3}deg`);
+      el.style.setProperty("--y", `${Math.round((i - mid) ** 2 * 5)}px`);
+      const url = this.urls.get(c.name);
+      if (url) el.createEl("img", { attr: { src: url, alt: c.name, draggable: "false" } });
+      else el.createDiv({ cls: "mtg-bt-face", text: c.name });
+    }
+    const miss = hand.filter((c) => !this.urls.has(c.name) && !this.mullTried.has(c.name));
+    if (miss.length) {
+      for (const c of miss) this.mullTried.add(c.name); // 絵が無いカードで、くり返さない
+      void this.loadImages().then(() => this.mullEl === box && this.checkMulligan()); // マリガンで引き直した手札の絵
+    }
+    if (this.waitAi) return void sub.setText("対戦相手が7枚の手札をキープするかマリガンするかを選択しています。"); // 盤面は先に開く。自分のマリガンは、そのあと
+    const foeN = (g.hands[g.players.find((p) => p !== VIEWER) ?? ""] ?? []).length;
+    sub.setText(first ? "対戦相手が最初のマリガン選択を待っています。" : foeN < 7 ? `対戦相手は${7 - foeN}回マリガンし、${foeN}枚の手札をキープしました。` : "対戦相手は7枚の手札をキープしました。");
+    const mullWrap = row.createDiv("mtg-st-col");
+    const mull = btn("マリガン", "blue", () => this.run(() => this.ctl!.mulligan()), mullWrap);
+    mull.disabled = m.count >= 7;
+    if (!mull.disabled) mullWrap.createDiv({ cls: "mtg-st-note", text: `カード${m.count + 1}枚をライブラリーの一番下に置くことになります。` });
+    btn(`${7 - m.count}枚でキープ`, "orange", () => {
       if (this.ctl!.keep() === "bottom") {
         this.bottoming = true;
         this.mullEl?.remove();
@@ -779,10 +822,11 @@ export class BattleView extends ItemView {
         this.showBottom(m.count);
       } else this.run(() => undefined);
     });
-    const mull = row.createEl("button", { text: "マリガン" });
-    mull.disabled = m.count >= 7;
-    mull.addEventListener("click", () => this.run(() => this.ctl!.mulligan()));
-    for (const c of this.ctl.powderCards()) row.createEl("button", { text: `${c.name}: 手札を入れ替える` }).addEventListener("click", () => this.run(() => this.ctl!.powder(c.id)));
+    const powders = this.ctl.powderCards();
+    if (powders.length) {
+      const pr = box.createDiv("mtg-st-powder");
+      for (const c of powders) pr.createEl("button", { text: `${c.name}: 手札を入れ替える` }).addEventListener("click", () => this.run(() => this.ctl!.powder(c.id)));
+    }
   }
   private async showBottom(count: number) {
     const cards = this.game.hands[VIEWER].map((c) => ({ id: c.id, name: c.name }));

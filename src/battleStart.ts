@@ -91,15 +91,22 @@ type Inputs = { self: DeckData; opp: DeckData; rules: RuleBook };
 
 // 同じ種から、いつも同じ初期状態を作る (対戦を始めるときと、履歴のリプレイで、共通)
 // cpu = 相手 (雑魚 CPU) が、簡単な決まりで、先にマリガンする (何もしない相手は、しない)。aiMulligan = AI の相手のマリガンの記録 (リプレイで、同じ手札を作り直す)
-export function buildSession(inputs: Inputs, selfName: string, oppName: string, seed: number, cpu: boolean, aiMulligan?: MulliganResult, deferOpening = false): BattleSession {
+export function buildSession(inputs: Inputs, selfName: string, oppName: string, seed: number, cpu: boolean, aiMulligan?: MulliganResult, deferOpening = false, coin = false): BattleSession {
   const rng = seeded(seed); // 山札の切り直し・マリガンは、この種から決まる (履歴のリプレイで、同じ局面を作るため)
   const game = buildMatch(inputs.self, inputs.opp, inputs.rules, rng);
   game.mulligan = { count: 0 }; // 開始前に、マリガンを聞く
   game.rngState = Math.imul(seed ^ 0x9e3779b9, 0x85ebca6b) >>> 0; // ゲームの中の乱数 (ライブラリーを切る、など) の初期状態: 種から決める (リプレイで、同じ結果)
+  if (coin) {
+    if ((Math.imul(seed ^ 0x5bd1e995, 0x27d4eb2d) >>> 15) & 1) game.firstChoice = true; // コイントスに勝った: 自分が選ぶ
+    else {
+      game.active = "opp"; // 負けた: 相手が先攻 (相手は、いつも先攻を選ぶ)。ゲーム開始の直後で、戦場は空なので、先手の入れ替えで困る誘発は無い
+      game.priority = "opp";
+    }
+  }
   if (aiMulligan) applyMulligan(game, "opp", rng, aiMulligan);
   else if (cpu) cpuMulligan(game, "opp", rng);
   if (!deferOpening) applyOpening(game, "opp", inputs.rules); // 相手の、開始時に戦場に出すカード (自分のは、キープしたあと)。AI の相手は、AI のマリガンが終わってから
-  return { game, rules: inputs.rules, seed, rng, self: selfName, opp: oppName, ...(aiMulligan ? { aiMulligan } : {}) };
+  return { game, rules: inputs.rules, seed, rng, self: selfName, opp: oppName, ...(coin ? { coin: true } : {}), ...(aiMulligan ? { aiMulligan } : {}) };
 }
 
 export const findDeckFile = (app: App, name: string): TFile | undefined => deckFiles(app).find((f) => f.basename === name);
@@ -116,9 +123,9 @@ export async function startBattle(app: App, selfName: string, oppName: string, c
   const seed = Math.floor(Math.random() * 2 ** 31);
   const oppMemo = await loadDeckMemo(app, oppName);
   const shared = sharedFor(await loadAgentRules(app), "battle"); // 共通ルール (Rules/_agent.md)
-  if (!ask) return { ...buildSession(inputs, selfName, oppName, seed, cpu), oppMemo, shared };
+  if (!ask) return { ...buildSession(inputs, selfName, oppName, seed, cpu, undefined, false, true), oppMemo, shared };
   // AI の相手のマリガンは、盤面を開いたあとに、裏で決める (API の待ちで、盤面が遅れないように)。終わるまで、自分のマリガンは聞かない (乱数の順番を、リプレイと同じにするため)
-  const s: BattleSession = { ...buildSession(inputs, selfName, oppName, seed, false, undefined, true), oppMemo, shared };
+  const s: BattleSession = { ...buildSession(inputs, selfName, oppName, seed, false, undefined, true, true), oppMemo, shared };
   s.pendingAi = aiMulliganOf(s, ask, oppMemo, shared)
     .then((m) => {
       s.aiMulligan = m;
@@ -137,6 +144,6 @@ async function aiMulliganOf(s: BattleSession, ask: AskAi, memo: string, shared: 
 // 履歴のリプレイ: 記録と同じデッキ・種から初期状態を作る関数を持った、対戦のセッション (いまのデッキ・ルールのノートを読む)
 export async function startReplay(app: App, saved: SavedBattle): Promise<BattleSession> {
   const inputs = await loadMatchInputs(app, saved.self, saved.opp);
-  const make = () => buildSession(inputs, saved.self, saved.opp, saved.seed, saved.mode !== "passive", saved.aiMulligan);
+  const make = () => buildSession(inputs, saved.self, saved.opp, saved.seed, saved.mode !== "passive", saved.aiMulligan, false, !!saved.coin);
   return { ...make(), replay: saved, rebuild: make };
 }

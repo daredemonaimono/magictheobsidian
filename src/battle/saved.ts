@@ -13,6 +13,7 @@ export interface SavedBattle {
   tokens?: { input: number; output: number };
   date: string; // ISO
   entries: RecordEntry[];
+  coin?: true; // コイントスで先攻 / 後攻を決めた対戦 (無ければ、いつも自分が先攻だった古い記録)
   aiMulligan?: { count: number; bottom: string[] }; // AI の相手のマリガンの結果
   notes?: { n: number; why: string }[]; // AI が返した理由 (n = 記録の何件目の行動か)。読めるログには出さない (あとで学ぶのに使う)
   log: string[];
@@ -38,7 +39,7 @@ export function battleNote(b: SavedBattle): string {
     `seed: ${b.seed}`,
     "---",
   ];
-  const data = { version: b.version, seed: b.seed, mode: b.mode, self: b.self, opp: b.opp, entries: b.entries, ...(b.notes?.length ? { notes: b.notes } : {}), ...(b.aiMulligan ? { aiMulligan: b.aiMulligan } : {}) };
+  const data = { version: b.version, seed: b.seed, mode: b.mode, self: b.self, opp: b.opp, entries: b.entries, ...(b.notes?.length ? { notes: b.notes } : {}), ...(b.aiMulligan ? { aiMulligan: b.aiMulligan } : {}), ...(b.coin ? { coin: true as const } : {}) };
   return [
     ...fm,
     "",
@@ -81,6 +82,7 @@ export function parseBattleNote(md: string): SavedBattle | undefined {
       entries: d.entries,
       ...(Array.isArray(d.notes) && d.notes.length ? { notes: d.notes } : {}),
       ...(d.aiMulligan && typeof d.aiMulligan.count === "number" ? { aiMulligan: d.aiMulligan } : {}),
+      ...(d.coin ? { coin: true as const } : {}),
       log: [...md.matchAll(/^- (.*)$/gm)].map((m) => m[1]),
     };
   } catch {

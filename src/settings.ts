@@ -32,6 +32,7 @@ export interface Settings {
   listArt: boolean; // サイドバーの一覧に、カードのイラストを薄く出す
   dashboardTab: boolean; // 新しいタブ (空のタブ) をダッシュボードにする
   sidebarLeft: boolean; // 右のサイドバー (カード一覧・カード情報・対戦のプレビューとログ) を、左に出す。ダッシュボードのボタンでも切り替える
+  deckBg: string; // デッキ選択画面の背景の画像 (プラグインのフォルダ内のファイル。空 = なし)。ダッシュボードのボタンで設定する
   hideLeftBar: boolean; // Obsidian の左のバー (ファイル一覧) を隠す (パソコンのみ。操作は、ダッシュボードで行う)
   currency: string; // 資産価格の通貨 (EUR で取れた価格はこれに換算する)
   sidebar: boolean; // カード一覧・対戦のプレビューとログを右サイドバーに出す。オフなら画面内 (従来の表示)
@@ -48,7 +49,7 @@ export interface Settings {
     battleStops: "always" | "smart"; // 対戦の優先権の止まり方。always = 毎回止まる / smart = 使えるものがあるときだけ (メインフェイズでは、必ず止まる)
 }
 
-export const DEFAULT_SETTINGS: Settings = { textLang: "en", cardLang: "en", sidebar: true, listArt: true, dashboardTab: true, hideLeftBar: true, sidebarLeft: false, currency: "USD", ai: DEFAULT_AI, keyRemove: "shift", keyMove: "mod", battleNoMirror: false, imageMode: "view", imageScope: "decks", imageKind: "both", battleStops: "smart", battleOpponent: "cpu", battleHistory: true, battleEffects: true };
+export const DEFAULT_SETTINGS: Settings = { textLang: "en", cardLang: "en", sidebar: true, listArt: true, dashboardTab: true, hideLeftBar: true, sidebarLeft: false, deckBg: "", currency: "USD", ai: DEFAULT_AI, keyRemove: "shift", keyMove: "mod", battleNoMirror: false, imageMode: "view", imageScope: "decks", imageKind: "both", battleStops: "smart", battleOpponent: "cpu", battleHistory: true, battleEffects: true };
 
 // 設定の名前で、キーチェーンから取る (空・見つからないときは null)
 // 設定画面の部品: 大項目 (タブ) → 中項目 (折りたたみ) → 小項目 (1つの設定を描く関数)

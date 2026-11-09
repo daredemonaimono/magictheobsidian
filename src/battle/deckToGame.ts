@@ -126,6 +126,7 @@ export interface BattleSession {
   rules: RuleBook;
   // 履歴の保存・リプレイ用 (サンプルの局面には無い)
   seed?: number;
+  coin?: boolean; // コイントスで先攻 / 後攻を決める対戦 (リプレイでも、同じ決まり方にするため、記録に残す)
   rng?: () => number;
   self?: string;
   opp?: string;

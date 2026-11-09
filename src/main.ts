@@ -113,6 +113,7 @@ export default class MagicTheObsidian extends Plugin {
       listArt: d.listArt ?? DEFAULT_SETTINGS.listArt,
       dashboardTab: d.dashboardTab ?? DEFAULT_SETTINGS.dashboardTab,
       hideLeftBar: d.hideLeftBar ?? DEFAULT_SETTINGS.hideLeftBar,
+      deckBg: typeof d.deckBg === "string" ? d.deckBg : DEFAULT_SETTINGS.deckBg,
       sidebarLeft: d.sidebarLeft ?? DEFAULT_SETTINGS.sidebarLeft,
       currency: d.currency ?? DEFAULT_SETTINGS.currency,
       ai: migrateAi(d), // 昔の設定 (claudeKeySecret・battleModel など) も、ここで新しい形に移す
@@ -151,6 +152,7 @@ export default class MagicTheObsidian extends Plugin {
       (leaf) =>
         new DeckListView(leaf, {
           open: (f) => void this.openDeck(f),
+          background: () => (this.settings.deckBg ? this.app.vault.adapter.getResourcePath(this.settings.deckBg) : undefined),
           create: () => new NameModal(this.app, "Create deck", "赤単バーン", (n, f, l) => void (l.trim() ? this.importDeck(n, l, f) : this.createDeck(n, f)), true).open(),
         }),
     );
@@ -254,6 +256,40 @@ export default class MagicTheObsidian extends Plugin {
     this.addCommand({ id: "battle-restore-rule", name: "Battle: restore rule version", callback: () => void this.openRestore() });
     this.addCommand({ id: "battle-rules-coverage", name: "Battle: rules coverage", callback: () => void this.rulesCoverage() });
     const ws0 = this.app.workspace;
+    const refreshDeckBg = () => this.app.workspace.getLeavesOfType(DECKLIST_VIEW).forEach((l) => (l.view as DeckListView).applyBg());
+    this.addCommand({
+      id: "deck-background",
+      name: "Set deck list background image",
+      callback: () => {
+        const input = document.createElement("input");
+        input.type = "file";
+        input.accept = "image/*";
+        input.onchange = async () => {
+          const f = input.files?.[0];
+          if (!f) return;
+          const ext = (f.name.split(".").pop() || "png").toLowerCase().replace(/[^a-z0-9]/g, "");
+          const path = `${this.manifest.dir}/deck-bg.${ext}`;
+          if (this.settings.deckBg && this.settings.deckBg !== path) await this.app.vault.adapter.remove(this.settings.deckBg).catch(() => {});
+          await this.app.vault.adapter.writeBinary(path, await f.arrayBuffer());
+          this.settings.deckBg = path;
+          await this.saveSettings();
+          refreshDeckBg();
+          new Notice("デッキ選択画面の背景を設定した");
+        };
+        input.click();
+      },
+    });
+    this.addCommand({
+      id: "deck-background-clear",
+      name: "Clear deck list background image",
+      callback: async () => {
+        if (this.settings.deckBg) await this.app.vault.adapter.remove(this.settings.deckBg).catch(() => {});
+        this.settings.deckBg = "";
+        await this.saveSettings();
+        refreshDeckBg();
+        new Notice("デッキ選択画面の背景をもとに戻した");
+      },
+    });
     this.addCommand({
       id: "toggle-sidebar-side",
       name: "Toggle sidebar side (show the sidebar on the left / right)",

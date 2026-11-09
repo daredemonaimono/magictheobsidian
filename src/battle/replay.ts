@@ -9,6 +9,7 @@ export function replay(ctl: BattleController, entries: RecordEntry[], upTo = ent
     const a = e.args.map((x) => (x === null ? undefined : x)) as any[];
     let r: unknown;
     switch (e.op) {
+      case "first": r = ctl.chooseFirst(!!a[0]); break;
       case "mulligan": r = ctl.mulligan(); break;
       case "powder": r = ctl.powder(a[0]); break;
       case "keep": r = ctl.keep(); break;
