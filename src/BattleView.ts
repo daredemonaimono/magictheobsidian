@@ -394,11 +394,6 @@ export class BattleView extends ItemView {
         const url = art.get(n) ?? (info ? await cardImage(this.app, info.file) : undefined);
         const local = await localUrl(url); // 保存済みの画像 (通信しない)
         if (local) this.urls.set(n, local);
-        const cropUrl = url?.replace(/\/cards\.scryfall\.io\/(?:small|normal|large|png|border_crop)\/(front|back)\//, "/cards.scryfall.io/art_crop/$1/").replace(/\.png(\?.*)?$/, ".jpg$1"); // 同じ場所の、絵の部分の画像
-        if (this.art && cropUrl && cropUrl !== url) {
-          const lc = await localUrl(cropUrl);
-          if (lc) this.urls.set(`crop:${n}`, lc);
-        }
       }),
     );
     this.imgLoading.add(loading);
@@ -1385,13 +1380,11 @@ export class BattleView extends ItemView {
   }
 
   private face(el: HTMLElement, c: CardView, onBoard = false) {
-    const crop = onBoard && this.art ? this.urls.get(`crop:${c.name}`) : undefined; // 盤面で絵だけのとき: Scryfall の絵の部分の画像 (あれば)
-    const src = crop ?? c.image;
-    if (src) {
-      (onBoard && this.art ? el.createDiv("mtg-bt-win") : el).createEl("img", { attr: { src, alt: c.name, loading: "lazy", draggable: "false" } });
-      if (crop || /art_crop/.test(src)) el.addClass("is-artimg"); // もう絵だけの画像は、そのまま。カード全体の画像しか無いときだけ、CSS で絵の部分に切り抜く
+    if (c.image) {
+      el.createEl("img", { attr: { src: c.image, alt: c.name, loading: "lazy", draggable: "false" } });
+      if (/art_crop/.test(c.image)) el.addClass("is-artimg"); // もう絵だけの画像 (トークンなど) は、そのまま
     } else el.createDiv({ cls: "mtg-bt-face", text: c.name });
-    if (onBoard) el.createDiv({ cls: "mtg-bt-nm", text: c.name }); // 盤面のカードの名前 (絵だけのとき、上の帯に出す)
+    if (onBoard && this.art) el.createDiv("mtg-bt-edge"); // 絵だけのとき、カードの下 (テキスト欄を省いたところ) の縁
     // 継続効果で型が変わっているカード (Zhao の「Mountain になる」など): いまの型を、札の上に出す
     if (c.typeNow) el.createDiv({ cls: "mtg-bt-typenow", text: c.typeNow, attr: { title: `いまの型: ${c.typeLine} (継続効果で変わっている)` } });
   }

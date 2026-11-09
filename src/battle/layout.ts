@@ -3,8 +3,8 @@
 // カードの大きさ (px)。盤面のカードと、手前の手札。CSS の変数 (--cw / --ch) は、画面を作るときに、これらから入れる
 export const CARD_W = 76; // 盤面のカード (設定「カード全体」): 縦長
 export const CARD_H = 106;
-export const ART_W = 104; // 盤面のカード (設定「絵だけ」。アリーナ風): 絵の部分だけを、横長に出す (テキスト欄は出さない)
-export const ART_H = 82;
+export const ART_W = 96; // 盤面のカード (設定「絵だけ」。アリーナ風): カードの横幅はそのまま、上の部分 (名前・絵・タイプ) だけを出し、テキスト欄は省く
+export const ART_H = 78;
 export const HAND_W = 120;
 export const HAND_H = 168;
 export const GAP = 10; // カードどうしの間
