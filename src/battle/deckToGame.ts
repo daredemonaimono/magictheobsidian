@@ -130,6 +130,7 @@ export interface BattleSession {
   rng?: () => number;
   self?: string;
   opp?: string;
+  format?: string; // 自分のデッキのフォーマット (デッキのノートの format:)。Vintage / Legacy のとき、山札や墓地を、使い込んだ見た目にする
   oppMemo?: string; // 相手のデッキの、持ち主のメモ
   aiMulligan?: { count: number; bottom: string[] }; // AI の相手のマリガンの結果 (リプレイで、同じ手札を作り直す)
   shared?: string; // 共通ルール (Rules/_agent.md の、共通 + 対戦)。AI への指示に足す

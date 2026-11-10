@@ -10,6 +10,8 @@ Obsidian を Magic: The Gathering 専用のソフトにするプラグイン。�
 
 ## 2. 今の状態
 
+> **注**: 下の「まだ無い」といった記述には、古いものが残っている。対戦の画面・雑魚 CPU・Claude の相手・履歴・リプレイは、実装済み (README の「対戦」を参照)。整理する予定。盤面のカードの見た目の作業は、`docs/board-card-design.md` (**最新。続きは、ここから**)。
+
 - デッキ・コレクション・価格・カード一覧は完成していて、README に使い方がある。
 - **対戦機能は「核」まで**。対戦の画面・Bot・戦闘・ライフ/勝敗は、まだ無い。0.40.0 までの古い実装は捨てて作り直した(旧実装は git タグ `archive/battle-rules-0.40.0`。参照は `git show archive/battle-rules-0.40.0:src/<ファイル>`)。
 - 設計は `docs/superpowers/specs/2026-11-04-battle-core-design.md`。ノードを足す順番は `docs/superpowers/plans/2026-11-05-deck-node-roadmap.md`(デッキ「Gentry Mono U」のカードを組めるかで決める。第1〜11弾まで実装済み。これからの順番はロードマップの末尾 (対戦の画面。エンジンは `startGame` で始め、`declareAttackers` などの入口を呼ぶ。`Game.strictTurns` と `payManaCosts` は、画面の側で真にする))。小さな手順の計画は `docs/superpowers/plans/` の各ファイル。ROADMAP.md は、デッキ側の予定。
@@ -43,6 +45,13 @@ Obsidian を Magic: The Gathering 専用のソフトにするプラグイン。�
 - 日本語で、簡潔に答える。ユーザーは、細かい仕様を自分で決めたい人。決める点は、推奨つきで聞く。
 - ユーザーの Westeros の決まり(`../../CLAUDE.md`)も守る。`citadel/` は読むだけ。公開(push・リリース)は、ユーザーの依頼があったときだけ。
 - vault 側のデータ(`Rules/` `Cards/` `Decks/`、`.obsidian/plugins/magictheobsidian/` の古い `rulebook/` や `Bot/`)は、アプリを通さずに書き換えない。消すのはユーザー。
+
+## 4b. 盤面のカードの見た目 (オリジナルフレーム)
+
+- 設定 `boardCard` = `frame` (既定。CSS で枠を描く) / `full` (カード全体)。実装は `src/battle/layout.ts` (`FRAME_*`・`boardScale`・`landFactor`)・`BattleView.face()`・`styles.css` 末尾の `is-frame`。詳しい仕様・調整の場所・落とし穴・これからやることは、**`docs/board-card-design.md`**。
+- 見た目は、じゅまが、Arena の画像と並べて、細かい数値で指示して直す。確認は、じゅまが Obsidian でする (AI は、実際の画面を見ていない)。
+- CSS を足したら、コメントの `/*` と `*/` の数が合うか確かめる (閉じ忘れると、次の規則が消える)。
+- スキル「frontend-design」(Anthropic 公式) は、アカウントで有効にしたが、導入したセッションでは呼べなかった。新しいセッションで、呼べるかを確かめる。
 
 ## 5. 残っているもの(デッキ側)
 

@@ -1,8 +1,17 @@
 import { ItemView, WorkspaceLeaf } from "obsidian";
+import type { AvatarKind } from "./settings";
 
 export const DASHBOARD_VIEW = "mtg-dashboard";
 
+export interface AvatarApi {
+  list: (k: AvatarKind) => { files: { path: string; url: string }[]; pick: string };
+  pick: (k: AvatarKind, path: string) => Promise<void>; // "" = ランダム
+  add: (k: AvatarKind) => void;
+  remove: (k: AvatarKind, path: string) => Promise<void>;
+}
+
 export interface DashboardActions {
+  avatars: AvatarApi;
   collection: () => void;
   deck: () => void;
   cards: () => void;
@@ -140,6 +149,32 @@ export class DashboardView extends ItemView {
         if (keys.length) btn.createSpan({ text: keys[0], cls: "mtg-dash-key" });
         btn.onclick = () => this.run("toggle-sidebar-side");
       }
+    }
+
+    // アバター: 対戦の台座に出す画像。CPU とプレイヤーで別。選ぶか、ランダム (選ばないと、対戦のたびに、登録した中から、ランダム)
+    root.createEl("h3", { text: "アバター" });
+    for (const [k, label] of [["cpu", "CPU のアバター"], ["player", "プレイヤーのアバター"], ["sleeve", "カードスリーブ (山札・手札の裏面)"], ["pedestal", "台座の飾り (輪の穴が透明な、SVG・PNG。穴の中心が、画像の中心)"]] as const) {
+      const sleeve = k === "sleeve" || k === "pedestal"; // スリーブは、カードの形。選ばなければ、標準の裏面 (アバターは、ランダム)
+      if (k === "sleeve") root.createEl("h3", { text: "カードスリーブ" });
+      if (k === "pedestal") root.createEl("h3", { text: "台座の飾り" });
+      const { files, pick } = this.actions.avatars.list(k);
+      const box = root.createDiv("mtg-dash-avatars");
+      const head = box.createDiv("mtg-dash-av-head");
+      head.createSpan({ text: label });
+      head.createEl("button", { text: "画像をアップロード" }).onclick = () => this.actions.avatars.add(k);
+      const row = box.createDiv("mtg-dash-av-row");
+      const rnd = row.createDiv({ cls: "mtg-dash-av is-random" + (sleeve ? (k === "pedestal" ? " is-wide" : " is-sleeve") : "") + (pick === "" ? " is-on" : ""), text: sleeve ? "標準" : "ランダム", attr: { "aria-label": sleeve ? "標準 (CSS・自作 SVG) を使う" : "対戦のたびに、登録した画像から、ランダムに選ぶ" } });
+      rnd.onclick = () => void this.actions.avatars.pick(k, "");
+      for (const f of files) {
+        const el = row.createDiv({ cls: "mtg-dash-av" + (sleeve ? (k === "pedestal" ? " is-wide" : " is-sleeve") : "") + (pick === f.path ? " is-on" : "") });
+        el.style.backgroundImage = `url("${f.url}")`;
+        el.onclick = () => void this.actions.avatars.pick(k, f.path);
+        el.createSpan({ cls: "mtg-dash-av-x", text: "×", attr: { "aria-label": "削除" } }).onclick = (e) => {
+          e.stopPropagation();
+          void this.actions.avatars.remove(k, f.path);
+        };
+      }
+      if (!files.length) box.createDiv({ text: sleeve ? "未登録 (標準)" : "未登録 (台座は、光の玉)", cls: "mtg-dim mtg-dash-hint" });
     }
 
     // すべてのコマンド (このプラグインのもの。コマンドを足すと、自動で並ぶ)

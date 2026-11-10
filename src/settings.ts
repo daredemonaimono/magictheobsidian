@@ -33,6 +33,7 @@ export interface Settings {
   dashboardTab: boolean; // 新しいタブ (空のタブ) をダッシュボードにする
   sidebarLeft: boolean; // 右のサイドバー (カード一覧・カード情報・対戦のプレビューとログ) を、左に出す。ダッシュボードのボタンでも切り替える
   deckBg: string; // デッキ選択画面の背景の画像 (プラグインのフォルダ内のファイル。空 = なし)。ダッシュボードのボタンで設定する
+  avatars: Avatars; // 対戦の台座に出す、アバター画像 (プラグインのフォルダ内)。ダッシュボードで、アップロード・選択する
   hideLeftBar: boolean; // Obsidian の左のバー (ファイル一覧) を隠す (パソコンのみ。操作は、ダッシュボードで行う)
   currency: string; // 資産価格の通貨 (EUR で取れた価格はこれに換算する)
   sidebar: boolean; // カード一覧・対戦のプレビューとログを右サイドバーに出す。オフなら画面内 (従来の表示)
@@ -50,7 +51,9 @@ export interface Settings {
     battleStops: "always" | "smart"; // 対戦の優先権の止まり方。always = 毎回止まる / smart = 使えるものがあるときだけ (メインフェイズでは、必ず止まる)
 }
 
-export const DEFAULT_SETTINGS: Settings = { textLang: "en", cardLang: "en", sidebar: true, listArt: true, dashboardTab: true, hideLeftBar: true, sidebarLeft: false, deckBg: "", currency: "USD", ai: DEFAULT_AI, keyRemove: "shift", keyMove: "mod", battleNoMirror: false, imageMode: "view", imageScope: "decks", imageKind: "both", battleStops: "smart", battleOpponent: "cpu", battleHistory: true, battleEffects: true, boardCard: "frame" };
+export type AvatarKind = "cpu" | "player" | "sleeve" | "pedestal"; // sleeve = 山札・手札の裏面 (カードスリーブ)、pedestal = 台座の飾り
+export type Avatars = Record<AvatarKind, { files: string[]; pick: string }>; // pick = 選んだファイル。空 = アバターは、対戦のたびにランダム / スリーブ・台座の飾りは、標準 (CSS・自作 SVG)
+export const DEFAULT_SETTINGS: Settings = { avatars: { cpu: { files: [], pick: "" }, player: { files: [], pick: "" }, sleeve: { files: [], pick: "" }, pedestal: { files: [], pick: "" } }, textLang: "en", cardLang: "en", sidebar: true, listArt: true, dashboardTab: true, hideLeftBar: true, sidebarLeft: false, deckBg: "", currency: "USD", ai: DEFAULT_AI, keyRemove: "shift", keyMove: "mod", battleNoMirror: false, imageMode: "view", imageScope: "decks", imageKind: "both", battleStops: "smart", battleOpponent: "cpu", battleHistory: true, battleEffects: true, boardCard: "frame" };
 
 // 設定の名前で、キーチェーンから取る (空・見つからないときは null)
 // 設定画面の部品: 大項目 (タブ) → 中項目 (折りたたみ) → 小項目 (1つの設定を描く関数)

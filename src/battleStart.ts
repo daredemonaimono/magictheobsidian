@@ -106,7 +106,7 @@ export function buildSession(inputs: Inputs, selfName: string, oppName: string, 
   if (aiMulligan) applyMulligan(game, "opp", rng, aiMulligan);
   else if (cpu) cpuMulligan(game, "opp", rng);
   if (!deferOpening) applyOpening(game, "opp", inputs.rules); // 相手の、開始時に戦場に出すカード (自分のは、キープしたあと)。AI の相手は、AI のマリガンが終わってから
-  return { game, rules: inputs.rules, seed, rng, self: selfName, opp: oppName, ...(coin ? { coin: true } : {}), ...(aiMulligan ? { aiMulligan } : {}) };
+  return { game, rules: inputs.rules, seed, rng, self: selfName, opp: oppName, format: inputs.self.format, ...(coin ? { coin: true } : {}), ...(aiMulligan ? { aiMulligan } : {}) };
 }
 
 export const findDeckFile = (app: App, name: string): TFile | undefined => deckFiles(app).find((f) => f.basename === name);

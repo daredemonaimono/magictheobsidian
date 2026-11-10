@@ -3,6 +3,7 @@ import { backUrl } from "./flip";
 
 export interface ScryfallCard {
   layout?: string;
+  frame?: string; // 枠の版 (1993 / 1997 / 2003 / 2015 / future)。古い版の土地は、盤面で、枠なしの古いカードとして描く
   loyalty?: string; // プレインズウォーカーの初期忠誠度 (Scryfall は文字列。X などもある)
   id: string;
   oracle_id: string;
@@ -217,6 +218,7 @@ export function toMarkdown(c: ScryfallCard, { lang, local, printings }: CardOpti
     `scryfall_id: ${c.id}`,
     `oracle_id: ${c.oracle_id}`,
     ...(c.layout ? [`layout: ${c.layout}`] : []), // 無い = 古いノート (取り直すと付く)
+    ...(c.frame ? [`frame: "${c.frame}"`] : []), // 同上。無ければ、新しい枠として描く
     ...(loyaltyOf(c) ? [`loyalty: ${loyaltyOf(c)}`] : []), // プレインズウォーカーの初期忠誠度 (対戦で使う。X は X と書く: 取得済みだと分かる。両面は、前面の側)
     `legal: [${legalList(c.legalities).join(", ")}]`,
     `restricted: [${restrictedList(c.legalities).join(", ")}]`, // 空でも書く (キーが無い = 未取得、と区別するため)

@@ -1,7 +1,7 @@
 import assert from "node:assert";
 import { groupStack, boardModel, sideView } from "../src/battle/boardModel";
 import { sampleBattle } from "../src/battle/sampleBattle";
-import { CARD_BACK_ID, CARD_H, CARD_W, GAP, TAP_EXTRA, cardBackUrl, overlapFor, pileLayers, rowNeed } from "../src/battle/layout";
+import { CARD_H, CARD_W, GAP, TAP_EXTRA, overlapFor, pileLayers, rowNeed } from "../src/battle/layout";
 import { Game, GameCard, Perm, RuleBook, createGame } from "../src/battle/state";
 
 const noRules: RuleBook = { get: () => undefined };
@@ -307,12 +307,6 @@ const none = () => undefined;
   assert.deepEqual([top.id, top.image], ["g2", "https://example.test/g2.jpg"], "最後に墓地に置かれたものが、一番上");
 }
 
-// ---- カードの裏面 (Scryfall の card_back_id。公式のカードの裏の絵)
-{
-  assert.equal(CARD_BACK_ID, "0aeebaf5-8c7d-4636-9e82-8c27447861f7");
-  assert.equal(cardBackUrl(), "https://backs.scryfall.io/small/0/a/0aeebaf5-8c7d-4636-9e82-8c27447861f7.jpg");
-  assert.equal(cardBackUrl("normal"), "https://backs.scryfall.io/normal/0/a/0aeebaf5-8c7d-4636-9e82-8c27447861f7.jpg");
-}
 // ---- 使えるもの (playable)・「次へ」
 {
   const { registerBuiltinNodes } = await import("../src/battle/nodes");

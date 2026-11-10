@@ -34,7 +34,7 @@ import { editableMemo, setMemo } from "./battle/memo";
 import { BattleHistoryModal } from "./BattleHistoryModal";
 import { COLLECTION_VIEW, CollectionView } from "./CollectionView";
 import { CARDS_VIEW, CardsView } from "./CardsView";
-import { DASHBOARD_VIEW, DashboardView } from "./DashboardView";
+import { AvatarApi, DASHBOARD_VIEW, DashboardView } from "./DashboardView";
 import { DECKLIST_VIEW, DeckListView } from "./DeckListView";
 import { DECK_VIEW, DeckView } from "./DeckView";
 import { fetchCard, fileSafe } from "./scryfall";
@@ -42,7 +42,7 @@ import { priceStore, updateCollectionPrices } from "./prices";
 import { IMAGE_MODES, PRELOAD_KINDS, PRELOAD_SCOPES } from "./imageKey";
 import { initImageCache } from "./imageCache";
 import { preloadImages } from "./imagePreload";
-import { DEFAULT_SETTINGS, MOD_KEYS, Settings, SettingsTab, secretKey } from "./settings";
+import { AvatarKind, DEFAULT_SETTINGS, MOD_KEYS, Settings, SettingsTab, secretKey } from "./settings";
 import { Scene, aiLabel, aiReady, migrateAi, providerName, runAi } from "./battle/aiConfig";
 import { AskAi } from "./battle/ai";
 import { createAgentNote, loadAgentRules } from "./agentNote";
@@ -113,6 +113,7 @@ export default class MagicTheObsidian extends Plugin {
       listArt: d.listArt ?? DEFAULT_SETTINGS.listArt,
       dashboardTab: d.dashboardTab ?? DEFAULT_SETTINGS.dashboardTab,
       hideLeftBar: d.hideLeftBar ?? DEFAULT_SETTINGS.hideLeftBar,
+      avatars: ((["cpu", "player", "sleeve", "pedestal"] as const).reduce((o, k) => ({ ...o, [k]: { files: Array.isArray(d.avatars?.[k]?.files) ? d.avatars[k].files.filter((x: unknown) => typeof x === "string") : [], pick: typeof d.avatars?.[k]?.pick === "string" ? d.avatars[k].pick : "" } }), {}) as Settings["avatars"]),
       deckBg: typeof d.deckBg === "string" ? d.deckBg : DEFAULT_SETTINGS.deckBg,
       sidebarLeft: d.sidebarLeft ?? DEFAULT_SETTINGS.sidebarLeft,
       currency: d.currency ?? DEFAULT_SETTINGS.currency,
@@ -132,6 +133,7 @@ export default class MagicTheObsidian extends Plugin {
     priceStore.prices = d.prices ?? {};
     priceStore.updated = d.pricesUpdated ?? "";
     priceStore.rates = d.rates ?? {};
+    await this.adoptAvatarFiles();
     const saveAll = () => this.saveData({ ...this.settings, prices: priceStore.prices, pricesUpdated: priceStore.updated, rates: priceStore.rates });
     priceStore.save = saveAll;
     this.addSettingTab(
@@ -143,9 +145,9 @@ export default class MagicTheObsidian extends Plugin {
       }, () => void this.preloadImages(false), () => this.applyLeftBar(), () => void this.moveSidebars()),
     );
     this.registerView(DECK_VIEW, (leaf) => new DeckView(leaf, this.settings));
-    this.registerView(BATTLE_VIEW, (leaf) => new BattleView(leaf, () => this.battleSession, () => this.settings.battleStops, () => this.settings.battleOpponent, () => this.settings.battleEffects, () => this.makeAsk(), (b) => void this.saveBattle(b), () => this.ensureBattleSide(), () => this.hintAdvisor(), () => this.settings.boardCard));
+    this.registerView(BATTLE_VIEW, (leaf) => new BattleView(leaf, () => this.battleSession, () => this.settings.battleStops, () => this.settings.battleOpponent, () => this.settings.battleEffects, () => this.makeAsk(), (b) => void this.saveBattle(b), () => this.ensureBattleSide(), () => this.hintAdvisor(), () => this.settings.boardCard, (k) => this.avatarUrl(k)));
     this.registerView(BATTLE_SIDE_VIEW, (leaf) => new BattleSideView(leaf));
-    this.registerView(DASHBOARD_VIEW, (leaf) => new DashboardView(leaf, { collection: () => void this.openOrReveal(COLLECTION_VIEW), deck: () => void this.openOrReveal(DECKLIST_VIEW), cards: () => void this.openOrReveal(CARDS_VIEW), pluginId: this.manifest.id, sidebarLeft: () => this.settings.sidebarLeft }));
+    this.registerView(DASHBOARD_VIEW, (leaf) => new DashboardView(leaf, { collection: () => void this.openOrReveal(COLLECTION_VIEW), deck: () => void this.openOrReveal(DECKLIST_VIEW), cards: () => void this.openOrReveal(CARDS_VIEW), pluginId: this.manifest.id, sidebarLeft: () => this.settings.sidebarLeft, avatars: this.avatarApi() }));
     this.registerView(CARDS_VIEW, (leaf) => new CardsView(leaf, this.settings, (key) => void this.showCardInfo(key, true)));
     this.registerView(CARDINFO_VIEW, (leaf) => new CardInfoView(leaf, this.cardInfoApi()));
     this.registerView(
@@ -812,6 +814,64 @@ export default class MagicTheObsidian extends Plugin {
     await this.syncSidebar();
     if (info) await this.showCardInfo(info, fromCards);
     for (const l of ws.getLeavesOfType(DASHBOARD_VIEW)) if (l.view instanceof DashboardView) void l.view.refresh();
+  }
+
+  // アバター: 画像は、プラグインのフォルダの avatars/ に置く。pick が空なら、対戦のたびに、ランダム
+  private avatarUrl(k: AvatarKind): string | undefined {
+    const a = this.settings.avatars[k];
+    if ((k === "sleeve" || k === "pedestal") && !a.pick) return undefined; // スリーブ・台座の飾りは、選ばなければ、標準 (ランダムにしない)
+    const f = a.pick && a.files.includes(a.pick) ? a.pick : a.files[Math.floor(Math.random() * a.files.length)];
+    return f ? this.app.vault.adapter.getResourcePath(f) : undefined;
+  }
+  // avatars/ に手で置いた画像 (cpu-・player-・sleeve-・pedestal- で始まる名前) を、登録されていなければ、一覧に足す。登録だけで、使われはしない (選んだときだけ)
+  private async adoptAvatarFiles() {
+    const ad = this.app.vault.adapter, dir = `${this.manifest.dir}/avatars`;
+    if (!(await ad.exists(dir))) return;
+    let changed = false;
+    for (const path of (await ad.list(dir)).files.sort()) {
+      const k = (["cpu", "player", "sleeve", "pedestal"] as const).find((x) => path.slice(dir.length + 1).startsWith(`${x}-`));
+      if (k && !this.settings.avatars[k].files.includes(path)) { this.settings.avatars[k].files.push(path); changed = true; }
+    }
+    if (changed) await this.saveSettings();
+  }
+  private avatarApi(): AvatarApi {
+    const ad = () => this.app.vault.adapter;
+    const done = async () => {
+      await this.saveSettings();
+      for (const l of this.app.workspace.getLeavesOfType(DASHBOARD_VIEW)) if (l.view instanceof DashboardView) void l.view.refresh();
+    };
+    return {
+      list: (k) => ({ files: this.settings.avatars[k].files.map((p) => ({ path: p, url: ad().getResourcePath(p) })), pick: this.settings.avatars[k].pick }),
+      pick: async (k, p) => {
+        this.settings.avatars[k].pick = p;
+        await done();
+      },
+      add: (k) => {
+        const input = document.createElement("input");
+        input.type = "file";
+        input.accept = "image/*";
+        input.multiple = true;
+        input.onchange = async () => {
+          const dir = `${this.manifest.dir}/avatars`;
+          if (!(await ad().exists(dir))) await ad().mkdir(dir);
+          for (const f of Array.from(input.files ?? [])) {
+            const ext = (f.name.split(".").pop() || "png").toLowerCase().replace(/[^a-z0-9]/g, "");
+            const path = `${dir}/${k}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.${ext}`;
+            await ad().writeBinary(path, await f.arrayBuffer());
+            this.settings.avatars[k].files.push(path);
+          }
+          await done();
+        };
+        input.click();
+      },
+      remove: async (k, p) => {
+        const a = this.settings.avatars[k];
+        await ad().remove(p).catch(() => {});
+        a.files = a.files.filter((x) => x !== p);
+        if (a.pick === p) a.pick = "";
+        await done();
+      },
+    };
   }
 
   private async saveSettings() {

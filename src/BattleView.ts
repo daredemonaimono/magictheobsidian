@@ -1,5 +1,6 @@
 import { ItemView, WorkspaceLeaf } from "obsidian";
-import { cssUrl, localUrl } from "./imageCache";
+import { pedestalSvg } from "./battle/pedestalSvg";
+import { localUrl } from "./imageCache";
 import { TargetSlot } from "./battle/engine";
 import { InputRequest } from "./battle/input";
 import { Action } from "./battle/actions";
@@ -11,9 +12,9 @@ import { AiAdvisor, aiStep, humanAsking } from "./battle/aiRun";
 import { BattleController, StopMode } from "./battle/play";
 import type { CastRecord } from "./battle/node";
 import { stackEffectText } from "./battle/stackText";
-import { BoardModel, CardView, CombatChoice, LandStack, PhaseId, boardModel, groupStack } from "./battle/boardModel";
+import { BoardModel, CardView, CombatChoice, LandStack, PhaseId, SideView, boardModel, groupStack } from "./battle/boardModel";
 import { frameClass } from "./battle/frame";
-import { FRAME_H, FRAME_W, frameImage, CARD_H, CARD_W, GAP, GAUGE_SEC, HAND_H, HAND_W, LAYER_PX, TAP_EXTRA, cardBackUrl, overlapFor, pileLayers, rowNeed } from "./battle/layout";
+import { FRAME_H, FRAME_LINE, isWornFormat, pileScatter, FRAME_OUTLINE, FRAME_W, cropUrl, boardScale, frameImage, landFactor, CARD_H, CARD_W, GAP, GAUGE_SEC, HAND_H, HAND_W, LAYER_PX, TAP_EXTRA, overlapFor, pileLayers, rowNeed } from "./battle/layout";
 import { BattleSession } from "./battle/deckToGame";
 import { sampleBattle } from "./battle/sampleBattle";
 import { Game, GameCard, RuleBook } from "./battle/state";
@@ -62,6 +63,8 @@ export class BattleView extends ItemView {
     stage: HTMLElement;
     rows: Record<string, HTMLElement>;
     hand: HTMLElement;
+    oppHand: HTMLElement;
+    counts: Record<"opp" | "self", HTMLElement>;
     phase: HTMLElement;
     step: HTMLElement;
     turn: HTMLElement;
@@ -85,7 +88,7 @@ export class BattleView extends ItemView {
   private targeting?: { title: string; slots: TargetSlot[]; i: number; picks: string[][]; done: (t: Record<string, string>) => void; cancel?: () => void };
   private tbar?: HTMLElement;
   // 戦闘の指定を選んでいる途中 (攻撃クリーチャー / ブロック)。choice は boardModel の、選べるもの。ブロックは、自分のクリーチャー → 攻撃クリーチャー の順にクリック
-  private combatSel?: { kind: "attack"; picks: Set<string> } | { kind: "block"; pairs: Map<string, string>; cur?: string } | { kind: "assign"; vals: Map<string, Record<string, number>> };
+  private combatSel?: { kind: "attack"; picks: Set<string>; targets: Map<string, string> } | { kind: "block"; pairs: Map<string, string>; cur?: string } | { kind: "assign"; vals: Map<string, Record<string, number>> };
   private choice?: CombatChoice;
   private cbar?: HTMLElement;
   private gaugeKey = ""; // いまのゲージが、どの局面のものか
@@ -94,9 +97,11 @@ export class BattleView extends ItemView {
   private mullEl?: HTMLElement; // マリガンのダイアログ (手札にカーソルを合わせて見られるよう、後ろの操作は止めない)
   private mullTried = new Set<string>();
   private frame = false; // 盤面のカードを、CSS で描いたフレームに、絵を入れて出す (設定「オリジナルフレーム」)
-  private get cw() { return this.frame ? FRAME_W : CARD_W; }
-  private get ch() { return this.frame ? FRAME_H : CARD_H; }
-  private get tapExtra() { return this.ch - this.cw; } // 横向きにしたとき、列の中で余分に取る幅 (絵だけのときは、負)
+  private lf = { self: 0.85, opp: 0.85 }; // 土地の倍率 (枚数で変わる。layout.ts の landFactor)
+  private scale = 1; // 盤の大きさに合わせた、カードの倍率 (オリジナルフレームのとき。fit で決める)
+  private get cw() { return this.frame ? FRAME_W * this.scale : CARD_W; }
+  private get ch() { return this.frame ? FRAME_H * this.scale : CARD_H; }
+  private get tapExtra() { return this.frame ? 0 : this.ch - this.cw; } // 横向きにしたとき、列の中で余分に取る幅 (絵だけのときは、負)
   private imgLoading = new Set<Promise<unknown>>(); // 読み込み中の画像 (別の呼び出しが先に始めたものも、待てるように)
   private bottoming = false; // マリガンのキープのあと、底に置くカードを選んでいる
   private askCancel?: () => void; // いまの質問を Esc で取り消すときの動き (無ければ、操作の取り消し)
@@ -107,7 +112,7 @@ export class BattleView extends ItemView {
   private watcher?: ResizeObserver;
 
   // getSession = 対戦の局面 (無ければ、サンプルの局面)。対戦を始め直したときは、begin() で読み直す
-  constructor(leaf: WorkspaceLeaf, private getSession: () => BattleSession | undefined, private getStops: () => StopMode = () => "smart", private getOpp: () => "cpu" | "claude" | "passive" = () => "passive", private getFx: () => boolean = () => true, private getAsk: () => AskAi | undefined = () => undefined, private onSave: (b: SavedBattle) => void = () => {}, private getSide: () => Promise<{ preview: HTMLElement; log: HTMLElement } | undefined> = async () => undefined, private getAdvisor: () => AiAdvisor | undefined = () => undefined, private getCardStyle: () => "full" | "frame" = () => "frame") {
+  constructor(leaf: WorkspaceLeaf, private getSession: () => BattleSession | undefined, private getStops: () => StopMode = () => "smart", private getOpp: () => "cpu" | "claude" | "passive" = () => "passive", private getFx: () => boolean = () => true, private getAsk: () => AskAi | undefined = () => undefined, private onSave: (b: SavedBattle) => void = () => {}, private getSide: () => Promise<{ preview: HTMLElement; log: HTMLElement } | undefined> = async () => undefined, private getAdvisor: () => AiAdvisor | undefined = () => undefined, private getCardStyle: () => "full" | "frame" = () => "frame", private getAvatar: (k: "cpu" | "player" | "sleeve" | "pedestal") => string | undefined = () => undefined) {
     super(leaf);
   }
 
@@ -302,9 +307,18 @@ export class BattleView extends ItemView {
       });
       this.registerDomEvent(this.contentEl, "click", (e) => {
         if (this.targeting) return this.clickTarget(e);
+        if (this.suppressClick) {
+          this.suppressClick = false;
+          e.stopPropagation();
+          e.preventDefault();
+          return;
+        }
         if (this.combatSel && this.clickCombat(e)) return;
         if (!(e.target as HTMLElement).closest(".mtg-bt-menu")) this.closeMenu(); // 捕捉の段階で閉じる (そのあと、クリックしたカードが、必要なら開き直す)
       }, true);
+      this.registerDomEvent(this.contentEl, "mousedown", (e) => this.onAtkDown(e), true);
+      this.registerDomEvent(document, "mousemove", (e) => this.onAtkMove(e));
+      this.registerDomEvent(document, "mouseup", (e) => this.onAtkUp(e), true);
       this.registerDomEvent(this.contentEl, "dblclick", (e) => {
         if (this.combatSel?.kind === "assign") this.assignClick(e, "focus");
         else if (this.targeting || (this.combatSel && this.combatTid(e))) e.stopPropagation();
@@ -325,11 +339,12 @@ export class BattleView extends ItemView {
     this.frame = style === "frame";
     const stage = root.createDiv("mtg-bt-stage");
     stage.toggleClass("is-frame", this.frame);
+    stage.toggleClass("is-worn", isWornFormat(this.session?.format)); // Vintage / Legacy: 山札と墓地を、使い込んだ見た目に
     const fi = frameImage();
     for (const [k, v] of [["--fw", fi.width], ["--fl", fi.left], ["--ft", fi.top]] as const) stage.style.setProperty(k, `${v}px`); // オリジナルフレームの、絵の窓に入れる画像の大きさと位置
     for (const [k, v] of [["--bw", this.cw], ["--bh", this.ch], ["--hw", HAND_W], ["--hh", HAND_H], ["--tx", this.tapExtra / 2]] as const) stage.style.setProperty(k, `${v}px`); // カードの大きさ (src/battle/layout.ts)
-    stage.style.setProperty("--back", `url("${cardBackUrl()}")`);
-    void cssUrl(cardBackUrl()).then((u) => u && stage.style.setProperty("--back", `url("${u}")`)); // 保存済みなら、そちら // 山札の裏面の絵 (読めなければ、CSS の代わりの絵)
+    const sleeve = this.getAvatar("sleeve"); // じゅまのカードスリーブ (ダッシュボードで登録)。無ければ、CSS で描いた標準の裏面 (--back-css)
+    if (sleeve) stage.style.setProperty("--back", `url("${sleeve}")`); // 保存済みなら、そちら // 山札の裏面の絵 (読めなければ、CSS の代わりの絵)
     const inner = side ? undefined : root.createDiv("mtg-bt-side"); // サイドバーを使うなら、プレビューとログは、そちらに出す
     const board = stage.createDiv("mtg-bt-board");
     const rows: Record<string, HTMLElement> = {};
@@ -342,15 +357,32 @@ export class BattleView extends ItemView {
     const gauge = status.createDiv("mtg-bt-gauge");
     const gfill = gauge.createDiv("mtg-bt-gaugefill");
     const hand = stage.createDiv("mtg-bt-hand");
-    stage.createDiv({ cls: "mtg-bt-avatar is-opp" }).dataset.tid = this.game.players.find((p) => p !== VIEWER) ?? "";
-    stage.createDiv({ cls: "mtg-bt-avatar is-self" }).dataset.tid = VIEWER;
+    stage.createDiv("mtg-bt-wall is-l"); // フィールドの左右の外の壁 (レンガ。枠のときだけ見える。CSS)
+    stage.createDiv("mtg-bt-wall is-r");
+    const counts = { opp: stage.createDiv("mtg-bt-counts is-opp"), self: stage.createDiv("mtg-bt-counts is-self") }; // 手札・山札・追放・墓地の枚数 (右上 = 相手、左下 = 自分)
+    const oppHand = stage.createDiv("mtg-bt-opphand"); // 相手の手札 (裏向き): 上の端から、扇形に垂れ下がる (枠のときだけ表示。CSS)
+    for (const [side, kind, tid] of [["opp", "cpu", this.game.players.find((p) => p !== VIEWER) ?? ""], ["self", "player", VIEWER]] as const) {
+      const av = stage.createDiv({ cls: `mtg-bt-avatar is-${side}` }); // 台座の上の画像 (ダッシュボードで登録。無ければ、光の玉)
+      av.dataset.tid = tid;
+      for (const c of ["glow", "ring", "aura", "img", "wing is-l", "wing is-r"]) av.createDiv(`mtg-bt-av-${c}`); // 光・輪・絵・左右の羽根 (CSS)
+      const url = this.getAvatar(kind);
+      if (url) {
+        av.addClass("has-img");
+        av.style.setProperty("--av", `url("${url}")`);
+      }
+      if (this.frame) { // 台座 (皿・刃・光) は、SVG。ターンの色は、CSS の --ag で変わる
+        const parse = (x: string) => new DOMParser().parseFromString(x, "image/svg+xml").documentElement;
+        av.prepend(parse(pedestalSvg(!!url, this.getAvatar("pedestal"))));
+        av.addClass("is-svg");
+      }
+    }
     const oppLife = stage.createDiv({ cls: "mtg-bt-life is-opp" });
     const selfLife = stage.createDiv({ cls: "mtg-bt-life is-self" });
     const oppSpeed = stage.createDiv({ cls: "mtg-bt-speed is-opp" });
     const selfSpeed = stage.createDiv({ cls: "mtg-bt-speed is-self" });
     const piles: Record<string, HTMLElement> = {};
     for (const key of ["opp-library", "opp-yard", "self-library", "self-yard"]) piles[key] = board.createDiv({ cls: `mtg-bt-deck is-${key}` }); // 盤面 (3D の面) の上に置く
-    for (const [key, mine] of [["self-yard", true], ["opp-yard", false]] as const) piles[key].addEventListener("mouseenter", () => this.showYard(mine)); // 墓地にカーソルを合わせると、サイドバーに中身の一覧
+    for (const [key, mine] of [["self-yard", true], ["opp-yard", false]] as const) { piles[key].addEventListener("mouseenter", () => this.showYard(mine)); piles[key].addEventListener("click", () => this.openYard(mine)); } // 墓地にカーソルを合わせると、サイドバーに中身の一覧。クリックすると、参照画面 (扇形・遡るバー)
     const mana = stage.createDiv("mtg-bt-mana");
     const banner = stage.createDiv("mtg-bt-banner");
     const next = stage.createEl("button", { cls: "mtg-bt-next mod-cta", text: "次へ" });
@@ -362,7 +394,7 @@ export class BattleView extends ItemView {
         return;
       }
       const sel = this.combatSel;
-      if (sel?.kind === "attack" && sel.picks.size) this.run(() => this.ctl!.declareAttackers([...sel.picks])); // 攻撃するクリーチャーを選んでいれば、「攻撃する」
+      if (sel?.kind === "attack" && sel.picks.size) this.run(() => this.ctl!.declareAttackers([...sel.picks], sel.targets.size ? Object.fromEntries(sel.targets) : undefined)); // 攻撃するクリーチャーを選んでいれば、「攻撃する」。プレインズウォーカーに向けたものは、その攻撃先も
       else if (sel?.kind === "assign") this.run(() => this.ctl!.assign(Object.fromEntries(sel.vals))); // ダメージの割り振りを確定
       else if (sel?.kind === "block") this.run(() => this.ctl!.declareBlockers([...sel.pairs].map(([blocker, attacker]) => ({ blocker, attacker })))); // ブロックの指定 (選んでいなければ、空 = ブロックしない)
       else this.run(() => this.ctl!.next()); // 選んでいなければ、「次へ」(攻撃しない)
@@ -374,7 +406,7 @@ export class BattleView extends ItemView {
     const log = side ? side.log : inner!.createDiv("mtg-bt-log");
     log.empty();
     delete log.dataset.sig;
-    this.ui = { stage, rows, hand, phase, step, turn, gfill, selfLife, oppLife, selfSpeed, oppSpeed, piles, mana, belt, banner, next, stack, preview, log };
+    this.ui = { stage, rows, hand, oppHand, counts, phase, step, turn, gfill, selfLife, oppLife, selfSpeed, oppSpeed, piles, mana, belt, banner, next, stack, preview, log };
   }
 
   // 画像の URL: カード名でノートを引いて、保存済みの URL を使う (新しい通信はしない)。無いカードは、名前と P/T の代わりの面
@@ -396,6 +428,8 @@ export class BattleView extends ItemView {
         const info = cardInfo(this.app, n);
         const url = art.get(n) ?? (info ? await cardImage(this.app, info.file) : undefined);
         const local = await localUrl(url); // 保存済みの画像 (通信しない)
+        const crop = this.frame ? await localUrl(cropUrl(url)) : undefined; // オリジナルフレーム用の、絵の部分だけの画像。両方そろってから入れる (絵が先に出て、あとで入れ替わらないように)
+        if (crop) this.urls.set(`crop:${n}`, crop);
         if (local) this.urls.set(n, local);
       }),
     );
@@ -408,6 +442,14 @@ export class BattleView extends ItemView {
   private paint() {
     const m = boardModel(this.game, this.rules, VIEWER, (c) => (c.art && this.urls.get(`art:${c.art}`)) || this.urls.get(c.name)); // 絵違いは、その絵 (無ければ、名前で引いた絵)
     const ui = this.ui;
+    if (this.frame) {
+      // 土地の大きさは、枚数で変わる (多いほど小さく)。変わったときだけ、変数を直す
+      for (const [side, v, row] of [["self", m.self.landStacks, ui.rows["self-lands"]], ["opp", m.opp.landStacks, ui.rows["opp-lands"]]] as const) {
+        const f = landFactor(v.reduce((a, x) => a + x.cards.length, 0));
+        this.lf[side] = f;
+        row.style.setProperty("--lf", String(f));
+      }
+    }
     this.sync(ui.rows["opp-lands"], "opp-lands", this.stackItems(m.opp.landStacks, false));
     this.sync(ui.rows["opp-others"], "opp-others", this.cardItems(m.opp.others, "opp"));
     this.sync(ui.rows["opp-creatures"], "opp-creatures", this.cardItems(m.opp.creatures, "opp"));
@@ -415,20 +457,39 @@ export class BattleView extends ItemView {
     this.sync(ui.rows["self-others"], "self-others", this.cardItems(m.self.others, "perm"));
     this.sync(ui.rows["self-lands"], "self-lands", this.stackItems(m.self.landStacks, true));
     this.sync(ui.hand, "hand", this.cardItems(m.self.hand, "hand"));
-    this.setText(ui.selfLife, String(m.self.life), m.self.life);
-    this.setText(ui.oppLife, String(m.opp.life), m.opp.life);
+    this.paintOppHand(m.opp.handCount);
+    this.paintCounts(m);
+    const lag = [...this.charged.values()].some((t0) => Date.now() - t0 < 300) ? 130 : 0; // 突撃中は、ぶつかる瞬間に、減らす
+    for (const [el, life, side] of [[ui.selfLife, m.self.life, "self"], [ui.oppLife, m.opp.life, "opp"]] as const) {
+      const prev = this.lastLife[side];
+      if (lag && prev !== undefined && life < prev) {
+        this.lastLife[side] = life;
+        const r = el.getBoundingClientRect(), box = ui.stage.getBoundingClientRect();
+        window.setTimeout(() => {
+          el.removeClass("is-hit");
+          void el.offsetWidth;
+          el.addClass("is-hit");
+          window.setTimeout(() => el.removeClass("is-hit"), 1000);
+          this.dmgPop(r.left + r.width / 2 - box.left, r.top - box.top, prev - life);
+          this.setText(el, String(life), life);
+        }, lag);
+      } else {
+        this.hitLife(el, life, side);
+        this.setText(el, String(life), life);
+      }
+    }
     for (const [el, side] of [[ui.selfSpeed, m.self], [ui.oppSpeed, m.opp]] as const) {
       el.toggleClass("is-on", !!side.speed);
       el.toggleClass("is-max", (side.speed ?? 0) >= 4);
       el.setText(side.speed ? `速度 ${side.speed}${side.speed >= 4 ? " 最高" : " / 4"}` : "");
       el.setAttr("aria-label", "速度 (Start your engines!): 自分のターンに、相手がライフを失うと、1ターンに1回 1 上がる。4 が最高速度");
     }
-    this.paintPile(ui.piles["self-library"], m.self.library);
-    this.paintPile(ui.piles["self-yard"], m.self.graveyard, m.self.graveyardTop);
+    this.paintPile(ui.piles["self-library"], m.self.library, undefined, 1);
+    this.paintPile(ui.piles["self-yard"], m.self.graveyard, m.self.graveyardTop, 2);
     // 墓地から使えるものがあるとき: 墓地の山が、紫に光る
     ui.piles["self-yard"].toggleClass("is-yard-playable", !!this.ctl && this.game.graveyards[VIEWER].some((c) => this.ctl!.yardActions(c.id).some((a) => a.usable)));
-    this.paintPile(ui.piles["opp-library"], m.opp.library);
-    this.paintPile(ui.piles["opp-yard"], m.opp.graveyard, m.opp.graveyardTop);
+    this.paintPile(ui.piles["opp-library"], m.opp.library, undefined, 3);
+    this.paintPile(ui.piles["opp-yard"], m.opp.graveyard, m.opp.graveyardTop, 4);
     this.paintMana(m);
     ui.belt.toggleClass("is-on", m.combat);
     this.paintPhase(m);
@@ -546,13 +607,15 @@ export class BattleView extends ItemView {
     fill.style.transform = auto ? "scaleX(0)" : "scaleX(1)";
     if (!auto) return;
     void fill.offsetWidth; // 0 から始めるために、一度、描かせる
-    fill.style.transition = `transform ${GAUGE_SEC}s linear`;
+    const g = this.game;
+    const sec = this.frame ? (g.step === "combat" ? 0.12 : 0.3) : GAUGE_SEC; // 自分に、できること (ブロック・インスタント・起動など) が何も無いときは、待たずに、すぐ進める (枠のとき。戦闘は特に速く)。できることがあるときは、ゲージが動かず、止まる
+    fill.style.transition = `transform ${sec}s linear`;
     fill.style.transform = "scaleX(1)";
     this.gaugeTimer = window.setTimeout(() => {
       fill.style.transition = "none";
       if (this.targeting || this.askEl || this.mullEl || this.ctl?.pending || this.game.mulligan) return void (this.gaugeKey = ""); // 操作の途中: 進めない (満タンで待つ)
       this.run(() => this.ctl!.next());
-    }, GAUGE_SEC * 1000);
+    }, sec * 1000);
   }
 
   // ---- 戦闘の指定。攻撃: 攻撃するクリーチャーをクリックで選び (もう一度で解除)、「確定」。ブロック: ブロックする自分のクリーチャーをクリック → ブロック先の攻撃クリーチャーをクリック (割り当てたものを、もう一度クリックで解除)、「確定」
@@ -560,13 +623,13 @@ export class BattleView extends ItemView {
     const ch = this.ctl && !this.targeting && !this.askEl ? m.choice : undefined;
     this.choice = ch;
     if (!ch) this.combatSel = undefined;
-    else if (!this.combatSel || this.combatSel.kind !== ch.kind) this.combatSel = ch.kind === "attack" ? { kind: "attack", picks: new Set() } : ch.kind === "assign" ? { kind: "assign", vals: new Map() } : { kind: "block", pairs: new Map() };
+    else if (!this.combatSel || this.combatSel.kind !== ch.kind) this.combatSel = ch.kind === "attack" ? { kind: "attack", picks: new Set(), targets: new Map() } : ch.kind === "assign" ? { kind: "assign", vals: new Map() } : { kind: "block", pairs: new Map() };
     const cs = this.combatSel;
     if (cs?.kind === "assign" && ch?.kind === "assign") {
       for (const it of ch.items) if (!cs.vals.has(it.attacker)) cs.vals.set(it.attacker, { ...it.defaults });
       for (const id of [...cs.vals.keys()]) if (!ch.items.some((it) => it.attacker === id)) cs.vals.delete(id);
     } else if (cs && ch && cs.kind !== "assign") {
-      for (const id of [...(cs.kind === "attack" ? cs.picks : cs.pairs.keys())]) if (!ch.mine.includes(id)) (cs.kind === "attack" ? cs.picks.delete(id) : cs.pairs.delete(id)); // 選んだものが、選べなくなった (倒された・タップした)
+      for (const id of [...(cs.kind === "attack" ? cs.picks : cs.pairs.keys())]) if (!ch.mine.includes(id)) { if (cs.kind === "attack") { cs.picks.delete(id); cs.targets.delete(id); } else cs.pairs.delete(id); } // 選んだものが、選べなくなった (倒された・タップした)
       if (cs.kind === "block") {
         for (const [b, a] of [...cs.pairs]) if (ch.kind !== "block" || !ch.attackers.includes(a)) cs.pairs.delete(b);
         if (cs.cur && !ch.mine.includes(cs.cur)) cs.cur = undefined;
@@ -602,8 +665,10 @@ export class BattleView extends ItemView {
     e.stopPropagation();
     e.preventDefault();
     if (sel.kind === "attack") {
-      if (sel.picks.has(id)) sel.picks.delete(id);
-      else sel.picks.add(id);
+      if (sel.picks.has(id)) {
+        sel.picks.delete(id);
+        sel.targets.delete(id);
+      } else sel.picks.add(id); // 相手のプレイヤーへの攻撃 (プレインズウォーカーへは、掴んで、ドラッグ)
     } else if (this.choice!.mine.includes(id)) {
       if (sel.pairs.has(id)) {
         sel.pairs.delete(id);
@@ -634,11 +699,163 @@ export class BattleView extends ItemView {
     const sel = this.combatSel;
     this.ui.next.setText(sel?.kind === "attack" && sel.picks.size ? `攻撃する (${sel.picks.size} 体)` : sel?.kind === "block" && sel.pairs.size ? `ブロックする (${sel.pairs.size} 体)` : sel?.kind === "assign" ? "ダメージを割り振る" : this.nextLabel);
   }
+  // ダメージ数字: ぶつかった瞬間に、赤い「-N」が浮かんで消える
+  private dmgPop(x: number, y: number, n: number) {
+    const el = this.ui.stage.createDiv({ cls: "mtg-bt-dmg", text: `-${n}` });
+    el.style.left = `${x}px`;
+    el.style.top = `${y}px`;
+    window.setTimeout(() => el.remove(), 1000);
+  }
+  // 衝撃: ぶつかった所に、白い閃光と、橙の火花 (x, y = ステージの中の座標)
+  private hit = new Set<string>();
+  private impact(x: number, y: number) {
+    const fx = this.ui.stage.createDiv({ cls: "mtg-bt-impact" });
+    fx.style.left = `${x}px`;
+    fx.style.top = `${y}px`;
+    for (let i = 0; i < 9; i++) {
+      const s = fx.createDiv("mtg-bt-spark");
+      const ang = (i / 9) * Math.PI * 2 + i;
+      s.style.setProperty("--dx", `${Math.cos(ang) * (28 + (i % 3) * 14)}px`);
+      s.style.setProperty("--dy", `${Math.sin(ang) * (22 + (i % 3) * 12)}px`);
+    }
+    window.setTimeout(() => fx.remove(), 700);
+  }
+  // 攻撃の見せ方: 攻撃クリーチャーは、ブロックが決まる (ブロッカーの宣言が済む) までは、動かず、オレンジの矢印を付けたまま待つ。決まったら、突撃: ブロックされていればブロッカーへ、されていなければ、攻撃先 (相手のプレイヤー = ライフの輪、プレインズウォーカー = そのカード) まで。突撃は、1 回の攻撃につき 1 回だけ
+  private charged = new Map<string, number>();
+  private aimCharge() {
+    const st = this.ui.stage;
+    const g = this.game;
+    const at = (id: string) => st.querySelector<HTMLElement>(`[data-tid="${id}"]`);
+    const attackers = g.battlefield.filter((p) => p.attacking);
+    if (!attackers.length) {
+      this.charged.clear();
+      this.hit.clear();
+      return;
+    }
+    const go = g.combatPhase === "firstStrike" || g.combatPhase === "damage" || g.combatPhase === "end" || (g.combatPhase === "blockers" && !!g.blockersDeclared?.length);
+    const box = st.getBoundingClientRect();
+    const mid = (r: DOMRect) => ({ x: r.left + r.width / 2, y: r.top + r.height / 2 });
+    for (const p of attackers) {
+      const a = at(p.id);
+      if (!a) continue;
+      a.classList.add("is-waiting"); // 攻撃待機: オレンジの矢印 (向きは、CSS。自分は上、相手は下)
+      if (!go) continue;
+      a.classList.remove("is-waiting");
+      const t0 = this.charged.get(p.id);
+      if (t0 !== undefined && Date.now() - t0 > 1000) continue; // もう終わった突撃は、動かさない
+      const blocker = p.blockedBy?.[0] ? at(p.blockedBy[0]) : undefined;
+      const tgtEl = blocker ?? (p.attackTarget && g.players.includes(p.attackTarget) ? (p.controller === VIEWER ? this.ui.oppLife : this.ui.selfLife) : p.attackTarget ? at(p.attackTarget) : undefined);
+      const ra = a.getBoundingClientRect();
+      if (tgtEl) {
+        const rb = tgtEl.getBoundingClientRect();
+        const ca = mid(ra), cb = mid(rb);
+        a.style.setProperty("--cx", `${(cb.x - ca.x) * (blocker ? 0.9 : 0.85)}px`);
+        a.style.setProperty("--cy", `${(cb.y - ca.y) * (blocker ? 0.9 : 0.85)}px`);
+        if (t0 === undefined) {
+          const pw = (el: HTMLElement | null | undefined) => Number(/^\s*(-?\d+)/.exec(el?.querySelector(".mtg-bt-pt")?.textContent ?? "")?.[1] ?? 0); // 表示されているパワー
+          const dmgA = pw(a), dmgB = blocker ? pw(blocker) : 0;
+          window.setTimeout(() => {
+            this.impact(cb.x - box.left, cb.y - box.top); // ぶつかった瞬間: 閃光・火花
+            if (blocker) {
+              if (dmgA > 0) this.dmgPop(cb.x - box.left, cb.y - box.top, dmgA); // ブロッカーが受けたダメージ
+              if (dmgB > 0) this.dmgPop(ca.x - box.left, ca.y - box.top, dmgB); // 攻撃クリーチャーが受けたダメージ
+            }
+          }, 130);
+        }
+      } else {
+        a.style.removeProperty("--cx");
+        a.style.removeProperty("--cy");
+      }
+      if (t0 === undefined) this.charged.set(p.id, Date.now());
+      a.classList.add("is-charging");
+    }
+  }
+  // 相手のプレインズウォーカー (攻撃先の候補)
+  private oppWalkers(): string[] {
+    return this.game.battlefield.filter((p) => p.controller !== VIEWER && /\bPlaneswalker\b/.test(p.card.typeLine)).map((p) => p.id);
+  }
+  // 攻撃先の矢印 (攻撃するクリーチャー → プレインズウォーカー)。from / to は、盤面のカードの id。drag = ドラッグ中の、カーソルまでの線
+  private arrowsEl?: SVGSVGElement;
+  private drawArrows(pairs: [string, string][], drag?: { id: string; x: number; y: number }, orb = false, links: [string, string][] = []) {
+    this.arrowsEl?.remove();
+    this.arrowsEl = undefined;
+    const st = this.ui.stage;
+    if (!pairs.length && !drag && !links.length) return;
+    const box = st.getBoundingClientRect();
+    const center = (id: string) => {
+      const r = st.querySelector<HTMLElement>(`[data-tid="${id}"]`)?.getBoundingClientRect();
+      return r ? { x: r.left + r.width / 2 - box.left, y: r.top + r.height / 2 - box.top } : undefined;
+    };
+    const svg = st.createSvg("svg", { cls: "mtg-bt-atkarrows" });
+    const line = (a: { x: number; y: number }, b: { x: number; y: number }, ball = false) => {
+      svg.createSvg("line", { attr: { x1: a.x, y1: a.y, x2: b.x, y2: b.y } });
+      if (ball) return void svg.createSvg("circle", { cls: "mtg-bt-orb", attr: { cx: b.x, cy: b.y, r: 11 } }); // ブロックのドラッグ: 先頭に、光の玉
+      const s = 9;
+      svg.createSvg("polygon", { attr: { points: `${b.x},${b.y - s} ${b.x + s},${b.y} ${b.x},${b.y + s} ${b.x - s},${b.y}` } }); // 矢の先: ひし形
+    };
+    for (const [a, t] of pairs) {
+      const p = center(a), q = center(t);
+      if (p && q) line(p, q);
+    }
+    for (const [blocker, atk] of links) { // ブロックが決まった組: 攻撃クリーチャーの三角から、ブロッカーへ、黄色い光の線
+      const p = center(atk), q = center(blocker);
+      if (p && q) svg.createSvg("line", { cls: "mtg-bt-blink", attr: { x1: p.x, y1: p.y, x2: q.x, y2: q.y } });
+    }
+    if (drag) {
+      const p = center(drag.id);
+      if (p) line(p, { x: drag.x - box.left, y: drag.y - box.top }, orb);
+    }
+    this.arrowsEl = svg;
+  }
+  // 攻撃するクリーチャーを掴んで、相手のプレインズウォーカーまでドラッグ → その攻撃先にする。離した所にプレインズウォーカーが無ければ、何もしない
+  private atkDrag?: { id: string; x: number; y: number; moved: boolean };
+  private suppressClick = false;
+  private onAtkDown(e: MouseEvent) {
+    const sel = this.combatSel;
+    if (e.button !== 0 || !sel || (sel.kind !== "attack" && sel.kind !== "block")) return;
+    if (sel.kind === "attack" && !this.oppWalkers().length) return; // 攻撃は、プレインズウォーカーがいるときだけ、ドラッグで攻撃先を決める (いなければ、クリックで相手のプレイヤー)
+    const id = this.combatTid(e);
+    if (!id) return;
+    if (sel.kind === "block" && !this.choice?.mine.includes(id)) return; // ブロックは、自分のクリーチャーを掴む
+    this.atkDrag = { id, x: e.clientX, y: e.clientY, moved: false };
+  }
+  private onAtkMove(e: MouseEvent) {
+    const d = this.atkDrag;
+    const sel = this.combatSel;
+    if (!d || !sel || (sel.kind !== "attack" && sel.kind !== "block")) return;
+    if (!d.moved && Math.hypot(e.clientX - d.x, e.clientY - d.y) < 6) return;
+    d.moved = true;
+    this.drawArrows(sel.kind === "attack" ? [...sel.targets] : [], { id: d.id, x: e.clientX, y: e.clientY }, sel.kind === "block");
+  }
+  private onAtkUp(e: MouseEvent) {
+    const d = this.atkDrag;
+    this.atkDrag = undefined;
+    const sel = this.combatSel;
+    if (!d?.moved || !sel || (sel.kind !== "attack" && sel.kind !== "block")) return;
+    this.suppressClick = true; // 離したあとに来る click は、選びの切り替えにしない
+    window.setTimeout(() => (this.suppressClick = false), 0);
+    const t = (document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null)?.closest<HTMLElement>("[data-tid]")?.dataset.tid;
+    if (sel.kind === "attack") {
+      if (t && this.oppWalkers().includes(t)) {
+        sel.picks.add(d.id);
+        sel.targets.set(d.id, t);
+      }
+    } else if (t && this.choice?.kind === "block" && this.choice.attackers.includes(t)) {
+      sel.pairs.set(d.id, t); // 掴んだブロッカーを、攻撃クリーチャーまでドラッグ → そのブロック
+      sel.cur = undefined;
+    }
+    this.paintCombat();
+  }
   private paintCombat() {
     this.applyNextLabel();
+    this.drawArrows([]);
+    this.aimCharge();
     const st = this.ui.stage;
-    for (const el of Array.from(st.querySelectorAll(".is-cmb-able, .is-cmb-picked, .is-cmb-target, [data-block-to], [data-asgn]"))) {
-      el.classList.remove("is-cmb-able", "is-cmb-picked", "is-cmb-target");
+    st.dataset.cmb = this.combatSel?.kind ?? ""; // 攻撃 / ブロックで、光りの形を変える (CSS)
+    for (const el of Array.from(st.querySelectorAll(".is-cmb-able, .is-cmb-picked, .is-cmb-target, .is-cmb-atk, .is-blocking-to, [data-block-to], [data-asgn]"))) {
+      el.classList.remove("is-cmb-able", "is-cmb-picked", "is-cmb-target", "is-cmb-atk", "is-blocking-to");
+      (el as HTMLElement).style.removeProperty("--bx");
+      (el as HTMLElement).style.removeProperty("--by");
       delete (el as HTMLElement).dataset.blockTo;
       delete (el as HTMLElement).dataset.asgn;
     }
@@ -651,15 +868,22 @@ export class BattleView extends ItemView {
     const nameOf = (id: string) => this.game.battlefield.find((p) => p.id === id)?.card.name ?? id;
     if (sel.kind === "attack") {
       for (const id of ch.mine) at(id)?.classList.add(sel.picks.has(id) ? "is-cmb-picked" : "is-cmb-able"); // 攻撃の選択は、盤面の光りと「次へ」ボタンだけ (上の帯は出さない)
+      for (const id of this.oppWalkers()) at(id)?.classList.add("is-cmb-target"); // 相手のプレインズウォーカー: 攻撃先の候補 (クリーチャーを掴んで、ここへドラッグ)
+      this.drawArrows([...sel.targets]);
       return;
     }
     if (sel.kind === "block" && ch.kind === "block") {
       for (const id of ch.mine) at(id)?.classList.add(sel.pairs.has(id) ? "is-cmb-picked" : id === sel.cur ? "is-cmb-picked" : "is-cmb-able");
+      for (const id of ch.attackers) at(id)?.classList.add("is-cmb-atk"); // 攻撃してきているクリーチャー: 下向きの三角 (オレンジ)
       if (sel.cur) for (const id of ch.attackers) at(id)?.classList.add("is-cmb-target"); // ブロックするクリーチャーを選んだら、ブロック先の候補 (攻撃クリーチャー) が光る
       for (const [b, a] of sel.pairs) {
         const el = at(b);
-        if (el) el.dataset.blockTo = nameOf(a);
+        if (!el) continue;
+        el.dataset.blockTo = nameOf(a);
+        el.classList.add("is-blocking-to"); // ブロックが決まったブロッカー: 黄色のドーム (動かさない)
+        at(a)?.classList.add("is-blocked-atk"); // ブロックされる攻撃クリーチャー: 三角が黄色
       }
+      this.drawArrows([], undefined, false, [...sel.pairs]);
       return; // ブロックの選択は、盤面の光りと「次へ」ボタンだけ (上の帯は出さない)
     }
     if (sel.kind === "assign" && ch.kind === "assign") {
@@ -715,7 +939,7 @@ export class BattleView extends ItemView {
         key: `stack:${s.name}`,
         data: s,
         name: s.name,
-        paint: (el: HTMLElement) => this.fillStack(el, s),
+        paint: (el: HTMLElement) => this.fillStack(el, s, mine),
         ...(mine && this.ctl ? {
           // 押したカードに、使える能力があれば、そのカードで。山の隙間 (カードでないところ) を押したら、使える土地の最初の1枚
           use: (e?: MouseEvent) => { const c = clicked(e) ?? usable(); if (c) this.useAbility(c.id); },
@@ -883,7 +1107,9 @@ export class BattleView extends ItemView {
     const lib = mid.createDiv("mtg-st-lib");
     lib.createDiv({ cls: "mtg-st-libtitle", text: "ライブラリー" });
     const libBox = lib.createDiv("mtg-st-libbox");
-    libBox.createEl("img", { cls: "mtg-st-back", attr: { src: cardBackUrl("small"), alt: "", draggable: "false" } });
+    const sl = this.getAvatar("sleeve");
+    if (sl) libBox.createEl("img", { cls: "mtg-st-back", attr: { src: sl, alt: "", draggable: "false" } });
+    else libBox.createDiv("mtg-st-back is-css");
     const picked = libBox.createDiv("mtg-st-picked");
     const fan = mid.createDiv("mtg-st-fan");
     const row = box.createDiv("mtg-st-btns");
@@ -1324,7 +1550,7 @@ export class BattleView extends ItemView {
     items.forEach((it, i) => {
       const key = `${zone}:${it.key}`;
       keep.add(key);
-      const sig = JSON.stringify(it.data);
+      const sig = `${JSON.stringify(it.data)}|${this.scale}|${this.lf.self}|${this.lf.opp}`;
       let entry = this.els.get(key);
       if (!entry) {
         const el = document.createElement("div");
@@ -1348,8 +1574,14 @@ export class BattleView extends ItemView {
     });
     for (const [key, entry] of this.els) {
       if (key.startsWith(`${zone}:`) && !keep.has(key)) {
-        entry.el.remove();
+        const id = key.slice(zone.length + 1);
+        const el = entry.el;
         this.els.delete(key);
+        if (this.frame && zone !== "hand" && el.isConnected && !this.game.battlefield.some((p) => p.id === id) && !el.classList.contains("mtg-bt-landstack")) {
+          el.className += " is-ash"; // 戦場を離れた (倒れた): 黒い灰になって崩れてから、消える
+          el.style.pointerEvents = "none";
+          window.setTimeout(() => el.remove(), 1300);
+        } else el.remove();
       }
     }
   }
@@ -1364,8 +1596,9 @@ export class BattleView extends ItemView {
     el.className = "mtg-bt-card";
     for (const [on, cls] of [[c.tapped, "is-tapped"], [c.attacking, "is-attacking"], [c.blocking, "is-blocking"], [c.sick, "is-sick"], [c.prepared, "is-prepared"], [c.token, "is-token"], [c.foil, "is-foil"], [c.exiled, "is-exiled"], [c.playable && !!this.ctl, "is-playable"]] as const) if (on) el.addClass(cls);
     el.empty();
-    if (onBoard && this.frame) for (const f of frameClass(c).split(" ")) el.addClass(f); // フレームの色 (CSS で描く)
+    if (onBoard && this.frame) for (const f of frameClass({ ...c, frame: /\bLand\b|土地/.test(c.typeLine) ? cardInfo(this.app, c.name)?.frame : undefined }).split(" ")) el.addClass(f); // フレームの色 (CSS で描く)。土地は、ノートの frame (枠の版) も見る
     this.face(el, c, onBoard);
+    if (onBoard && this.frame && c.damage > 0 && c.power !== null) el.createDiv("mtg-bt-wound"); // 傷: 赤い斜線 (ダメージが載っているクリーチャー)
     if (c.power !== null && c.toughness !== null) {
       const pt = el.createDiv("mtg-bt-pt");
       pt.createSpan({ cls: c.powerMod ? `is-${c.powerMod}` : "", text: String(c.power) }); // 修整を受けている数字: 上がったら黄色、下がったら赤
@@ -1385,11 +1618,18 @@ export class BattleView extends ItemView {
   private face(el: HTMLElement, c: CardView, onBoard = false) {
     if (onBoard && this.frame) {
       // オリジナルフレーム: 名前の帯と、絵の窓 (カード画像の絵の部分だけ) を、枠の中に置く。枠は CSS
+      const svg = el.createSvg("svg", { cls: "mtg-bt-fsvg", attr: { viewBox: `0 0 ${FRAME_W} ${FRAME_H}`, preserveAspectRatio: "none" } }); // 枠の線 (くびれた形)
+      svg.createSvg("path", { attr: { d: FRAME_OUTLINE } });
+      el.createDiv("mtg-bt-fpat"); // 絵の窓の左右に、少しだけ見える、色ごとの模様
+      const lines = el.createSvg("svg", { cls: "mtg-bt-fsvg", attr: { viewBox: `0 0 ${FRAME_W} ${FRAME_H}`, preserveAspectRatio: "none" } }); // 赤い立体筋は、模様の上・名前の帯と絵の窓の下 (帯と窓が、内側の半分を隠す)
+      for (const k of ["k", "d", "l", "r"]) lines.createSvg("path", { cls: ["mtg-bt-fln", `fln-${k}`], attr: { d: FRAME_LINE } }); // 赤のカードだけ CSS で見える
       el.createDiv({ cls: "mtg-bt-fnm", text: c.name });
       const win = el.createDiv("mtg-bt-fart");
-      if (c.image) {
-        win.createEl("img", { attr: { src: c.image, alt: c.name, loading: "lazy", draggable: "false" } });
-        if (/art_crop/.test(c.image) || c.token) win.addClass("is-whole"); // もう絵だけの画像 (トークンなど) は、窓いっぱいに
+      const crop = this.urls.get(`crop:${c.name}`);
+      const src = crop ?? c.image;
+      if (src) {
+        win.createEl("img", { attr: { src, alt: c.name, loading: "lazy", draggable: "false" } });
+        if (crop || /art_crop/.test(src) || c.token) win.addClass("is-whole"); // 絵の部分だけの画像 (トークンなども) は、窓いっぱいに。カード全体の画像 (切り出せないとき) だけ、絵の部分を切り出す
       }
       return;
     }
@@ -1400,30 +1640,34 @@ export class BattleView extends ItemView {
     if (c.typeNow) el.createDiv({ cls: "mtg-bt-typenow", text: c.typeNow, attr: { title: `いまの型: ${c.typeLine} (継続効果で変わっている)` } });
   }
 
-  // 土地の山: 立っている土地は少しずつずらして重ね、タップした土地は、横向きに倒して、山の脇に並べる。2枚以上なら枚数を出す
-  private fillStack(el: HTMLElement, s: LandStack) {
+  // 土地の山: 立っている土地は少しずつずらして重ね、タップした土地は、横向きに倒して (枠のときは、少し傾けて灰色にして)、山の脇に並べる。2枚以上なら枚数を出す
+  private fillStack(el: HTMLElement, s: LandStack, mine = true) {
+    const k = this.frame ? this.lf[mine ? "self" : "opp"] : 1; // 土地の倍率
+    const cw = this.cw * k, ch = this.ch * k, tx = (ch - cw) / 2; // 土地1枚の大きさと、横向きにしたときのずれ
     el.className = "mtg-bt-landstack";
     if (this.ctl && s.cards.some((c) => c.playable)) el.addClass("is-playable");
     el.empty();
     const standing = s.cards.filter((c) => !c.tapped);
     const tapped = s.cards.filter((c) => c.tapped);
     const pile = el.createDiv("mtg-bt-pile3d");
-    pile.style.width = `${this.cw + Math.max(0, standing.length - 1) * 5}px`;
+    const off = this.frame ? Math.max(3, Math.round(cw * 0.1)) : 5; // 同じ土地の重なり: 1 枚ごとに、カード幅の 1 割ずらす (Arena の見本)
+    pile.style.width = `${cw + Math.max(0, standing.length - 1) * off}px`;
     standing.forEach((c, i) => {
       const card = pile.createDiv("mtg-bt-card");
       card.dataset.tid = c.id;
-      card.style.left = `${i * 5}px`;
+      card.style.left = `${i * off}px`;
       this.face(card, c, true);
     });
     if (tapped.length) {
       const side = el.createDiv("mtg-bt-tapgroup");
-      side.style.width = `${this.ch + (tapped.length - 1) * 14}px`;
-      side.style.height = `${this.cw}px`;
+      const tilt = this.frame; // 枠のとき: 横に倒さず、少し傾けて立てる (灰色にして、タップのアイコンを重ねる。CSS)
+      side.style.width = `${(tilt ? cw : ch) + (tapped.length - 1) * 14}px`;
+      side.style.height = `${tilt ? ch : cw}px`;
       tapped.forEach((c, i) => {
         const card = side.createDiv("mtg-bt-card is-lying");
         card.dataset.tid = c.id;
-        card.style.left = `${i * 14 + this.tapExtra / 2}px`; // 横向き (縦と横が入れ替わる) が、i * 14 の位置に収まる
-        card.style.top = `${-this.tapExtra / 2}px`;
+        card.style.left = `${i * 14 + (tilt ? 0 : tx)}px`; // 横向き (縦と横が入れ替わる) が、i * 14 の位置に収まる
+        card.style.top = `${tilt ? 0 : -tx}px`;
         this.face(card, c, true);
       });
     }
@@ -1431,18 +1675,110 @@ export class BattleView extends ItemView {
   }
 
   // 山札・墓地: 盤面の上に立体で置く。枚数に応じた厚み (10 枚ごとに 1 層。層ごとに translateZ で高さを付ける)。山札は裏向き、墓地は一番上のカードを見せる。枚数を下に出す
-  private paintPile(el: HTMLElement, count: number, top?: CardView) {
-    const sig = `${count}|${top?.id ?? ""}|${top?.image ?? ""}`;
+  private paintPile(el: HTMLElement, count: number, top: CardView | undefined, seed: number) {
+    const sig = `${count}|${top?.id ?? ""}|${top?.image ?? ""}|${this.scale}`;
     if (el.dataset.sig === sig) return;
     el.dataset.sig = sig;
     el.empty();
     const layers = pileLayers(count);
     el.toggleClass("is-empty", count === 0);
-    for (let i = 0; i < layers; i++) el.createDiv({ cls: `mtg-bt-layer${i % 2 ? " is-odd" : ""}` }).style.transform = `translateZ(${i * LAYER_PX}px)`; // 層ごとに高さを付けて、本当の厚みにする
+    // 層ごとに高さを付けて、本当の厚みにする。きれいに揃えず、層ごとに、少しずらして傾ける (一番上のカードは、控えめに)
+    const tf = (i: number, k: number) => {
+      const s = pileScatter(seed, i);
+      return `translateZ(${i * LAYER_PX}px) translate(calc(var(--s, 1) * ${s.dx * k}px), calc(var(--s, 1) * ${s.dy * k}px)) rotate(${s.r * k}deg)`;
+    };
+    for (let i = 0; i < layers; i++) el.createDiv({ cls: `mtg-bt-layer${i % 2 ? " is-odd" : ""}` }).style.transform = tf(i, 1);
     const faceEl = el.createDiv("mtg-bt-dface");
-    faceEl.style.transform = `translateZ(${layers * LAYER_PX}px)`;
+    faceEl.style.transform = tf(layers, 0.6);
     if (top) this.face(faceEl, top);
     el.createDiv({ cls: "mtg-bt-dcount", text: String(count) });
+  }
+
+  // 相手の手札: 枚数ぶんの裏向きのカードを、上の端から、扇形に垂らす (--i = 真ん中からの位置)
+  private paintOppHand(n: number) {
+    const el = this.ui.oppHand;
+    if (el.dataset.n === String(n)) return;
+    el.dataset.n = String(n);
+    el.empty();
+    for (let i = 0; i < n; i++) el.createDiv("mtg-bt-ohcard").style.setProperty("--i", String(i - (n - 1) / 2));
+  }
+
+  // 枚数の表 (2 x 2)。相手 (右上): 手札・山札 / 追放・墓地。自分 (左下): 山札・手札 / 墓地・追放 (Arena の見本の並び)
+  private paintCounts(m: BoardModel) {
+    const rows: [("opp" | "self"), SideView, [string, string, number][]][] = [
+      ["opp", m.opp, [["hand", "✋", m.opp.handCount], ["lib", "🂠", m.opp.library], ["exile", "🌀", m.opp.exile], ["yard", "🪦", m.opp.graveyard]]],
+      ["self", m.self, [["lib", "🂠", m.self.library], ["hand", "✋", m.self.hand.length], ["yard", "🪦", m.self.graveyard], ["exile", "🌀", m.self.exile]]],
+    ];
+    for (const [side, , cells] of rows) {
+      const el = this.ui.counts[side];
+      const sig = cells.map((c) => c[2]).join(",");
+      if (el.dataset.sig === sig) continue;
+      el.dataset.sig = sig;
+      el.empty();
+      for (const [k, icon, n] of cells) {
+        const cell = el.createDiv(`mtg-bt-count-cell is-${k}`);
+        cell.createSpan({ cls: "mtg-bt-count-icon", text: icon });
+        cell.createSpan({ text: String(n) });
+      }
+    }
+  }
+
+  // 墓地の参照画面 (Arena 風): 暗い幕の上に、タイトル・枚数・扇形のカード (新しいものが右の手前)・遡るバー・完了。バーを左へ動かすと、古いカードが出る (8 枚以上のとき)
+  private yardEl?: HTMLElement;
+  private openYard(mine: boolean) {
+    const p = this.game.players.find((x) => (x === VIEWER) === mine);
+    if (p === undefined) return;
+    this.yardEl?.remove();
+    const cards = [...(this.game.graveyards[p] ?? [])]; // 古い → 新しい
+    const stage = this.ui.stage;
+    const el = stage.createDiv({ cls: "mtg-bt-yardview", attr: { tabindex: "-1" } });
+    this.yardEl = el;
+    const close = () => {
+      el.remove();
+      if (this.yardEl === el) this.yardEl = undefined;
+    };
+    el.addEventListener("keydown", (e) => e.key === "Escape" && close());
+    const w = Math.round(stage.clientWidth * 0.135);
+    el.style.setProperty("--yw", `${w}px`);
+    el.createDiv({ cls: "mtg-bt-yvtitle", text: mine ? "墓地" : "対戦相手の墓地" });
+    el.createDiv({ cls: "mtg-bt-yvcount", text: String(cards.length) });
+    const fan = el.createDiv("mtg-bt-yvfan");
+    const SHOW = 7;
+    const render = (start: number) => {
+      fan.empty();
+      const win = cards.slice(start, start + SHOW);
+      win.forEach((c, j) => {
+        const item = fan.createDiv({ cls: `mtg-bt-yvcard${j === win.length - 1 ? " is-last" : ""}` });
+        item.style.setProperty("--j", String(j - (win.length - 1) / 2));
+        item.style.zIndex = String(j + 1);
+        const url = this.urls.get(c.art ? `art:${c.art}` : c.name) ?? this.urls.get(c.name);
+        if (url) item.createEl("img", { attr: { src: url, alt: c.name, draggable: "false" } });
+        else item.createDiv({ cls: "mtg-bt-face", text: c.name });
+      });
+    };
+    render(Math.max(0, cards.length - SHOW));
+    if (cards.length > SHOW) {
+      const max = cards.length - SHOW;
+      const bar = el.createEl("input", { cls: "mtg-bt-yvbar", attr: { type: "range", min: "0", max: String(max), step: "1" } });
+      bar.value = String(max); // 右端 = いちばん新しい。左へ動かすと、過去へ遡る
+      bar.addEventListener("input", () => render(Number(bar.value)));
+    }
+    const done = el.createEl("button", { cls: "mtg-bt-yvdone", text: "完了" });
+    done.addEventListener("click", close);
+    el.addEventListener("click", (e) => e.target === el && close()); // 幕のクリックでも閉じる
+    el.focus();
+  }
+
+  // ライフが減ったら、輪が燃えるように光る (攻撃が当たった演出)
+  private lastLife: Partial<Record<"self" | "opp", number>> = {};
+  private hitLife(el: HTMLElement, life: number, side: "self" | "opp") {
+    const prev = this.lastLife[side];
+    this.lastLife[side] = life;
+    if (prev === undefined || life >= prev) return;
+    el.removeClass("is-hit");
+    void el.offsetWidth; // アニメーションを、最初からやり直す
+    el.addClass("is-hit");
+    window.setTimeout(() => el.removeClass("is-hit"), 1000);
   }
 
   private paintMana(m: BoardModel) {
@@ -1534,6 +1870,18 @@ export class BattleView extends ItemView {
   // 重なり: 列や手札が幅に収まらないとき、隣との間を負にして重ねる (--ov)。計算は src/battle/layout.ts。タップして横向きのカード・土地の山の横幅も数える
   private fit() {
     const ui = this.ui;
+    if (this.frame) {
+      // 盤の大きさに合わせて、カードの大きさを変える。変わったら、大きさの変数と、土地の山の位置を直して描き直す
+      ui.stage.style.setProperty("--persp", `${Math.round((ui.stage.clientHeight - 42) * 1.017)}px`); // 遠近の強さ: 盤の高さに比例させる (どの大きさでも、同じ見え方。盤の高さ = ステージの高さ - 上 6 - 下 36)
+      const sc = boardScale(ui.stage.clientWidth, ui.stage.clientHeight);
+      if (sc !== this.scale) {
+        this.scale = sc;
+        for (const [k, v] of [["--bw", this.cw], ["--bh", this.ch], ["--tx", this.tapExtra / 2]] as const) ui.stage.style.setProperty(k, `${v}px`);
+        ui.stage.style.setProperty("--s", String(sc));
+        ui.stage.style.setProperty("--s0", String(sc));
+        this.paint();
+      }
+    }
     const set = (container: HTMLElement, need: number) => {
       const n = container.children.length;
       container.style.setProperty("--ov", `${overlapFor(need, n, container.clientWidth)}px`);
@@ -1541,7 +1889,8 @@ export class BattleView extends ItemView {
     for (const row of Object.values(ui.rows)) {
       const kids = Array.from(row.children) as HTMLElement[];
       const isStacks = kids.some((k) => k.classList.contains("mtg-bt-landstack"));
-      const need = isStacks ? kids.reduce((a, k) => a + k.offsetWidth, 0) + Math.max(0, kids.length - 1) * GAP : rowNeed(this.cw, kids.length, kids.filter((k) => k.classList.contains("is-tapped")).length, this.tapExtra);
+      const lgap = this.frame ? this.cw * (row === ui.rows["self-lands"] ? this.lf.self : this.lf.opp) * 0.08 : GAP; // 土地の山どうしのすき間: カード幅の 8% (混み合うと、重ねる)
+      const need = isStacks ? kids.reduce((a, k) => a + k.offsetWidth, 0) + Math.max(0, kids.length - 1) * lgap : rowNeed(this.cw, kids.length, kids.filter((k) => k.classList.contains("is-tapped")).length, this.tapExtra);
       set(row, need);
     }
     set(ui.hand, ui.hand.children.length * HAND_W);

@@ -288,13 +288,13 @@ export class BattleController {
   }
 
   // 攻撃クリーチャーを指定する (戦闘ステップの最初の段階。ids = 攻撃するクリーチャー。攻撃先は相手のプレイヤー)
-  declareAttackers(ids: string[]): string | undefined {
+  declareAttackers(ids: string[], targets?: Record<string, string>): string | undefined { // targets = 攻撃するクリーチャーの id → 攻撃先 (相手のプレインズウォーカーの id)。無ければ、相手のプレイヤー
     if (this.game.mulligan) return this.fail("攻撃", "マリガンを終えてください");
     const g = this.game;
     const names = ids.map((id) => g.battlefield.find((p) => p.id === id)?.card.name ?? id);
-    this.rec("declareAttackers", [ids]);
+    this.rec("declareAttackers", targets && Object.keys(targets).length ? [ids, targets] : [ids]);
     return this.perform("攻撃", (x) => {
-      declareAttackers(x, this.me, ids.map((id) => ({ id })), this.rules);
+      declareAttackers(x, this.me, ids.map((id) => ({ id, ...(targets?.[id] ? { target: targets[id] } : {}) })), this.rules);
       if (ids.length) x.log.push(`あなたが ${names.join("、")} で攻撃した`);
     }, []);
   }
