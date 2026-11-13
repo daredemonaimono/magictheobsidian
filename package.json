@@ -1,6 +1,6 @@
 {
   "name": "magictheobsidian",
-  "version": "0.160.0",
+  "version": "0.161.0",
   "description": "Obsidian plugin: Magic: The Gathering rules and nodes (rebuilt from scratch).",
   "main": "main.js",
   "scripts": {
