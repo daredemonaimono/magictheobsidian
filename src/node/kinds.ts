@@ -1,51 +1,46 @@
-// ノードの「種類」と「タイミング」。定義は、総合ルール (CR) に準じる。足すときは、CR の番号を付ける。
+import { Label } from "../i18n";
+
+// 能力の種類とタイミング。定義は、総合ルール (CR) に準じる。足すときは、CR の番号を付ける。id は、言語に依らない。
 export interface Timing {
   id: string;
   cr: string;
+  label: Label;
 }
 export interface Kind {
   id: string;
   cr: string;
+  label: Label;
   timings: Timing[];
 }
 
+const T = (id: string, cr: string, ja: string, en: string): Timing => ({ id, cr, label: { ja, en } });
+const ALWAYS = T("always", "604.1", "常に", "Always");
+const TRIGGERS: Timing[] = [
+  T("enters", "603.6a", "戦場に出たとき", "When it enters the battlefield"),
+  T("leaves", "603.6c", "戦場を離れたとき", "When it leaves the battlefield"),
+  T("dies", "603.6c", "死亡したとき", "When it dies"),
+  T("attacks", "508.1m", "攻撃したとき", "When it attacks"),
+  T("blocks", "509.1i", "ブロックしたとき", "When it blocks"),
+  T("becomes-blocked", "509.1i", "ブロックされたとき", "When it becomes blocked"),
+  T("combat-damage", "510.2", "戦闘ダメージを与えたとき", "When it deals combat damage"),
+  T("upkeep", "503.1a", "アップキープの開始時", "At the beginning of your upkeep"),
+  T("combat-begin", "507.1", "戦闘の開始時", "At the beginning of combat"),
+  T("end-step", "513.1a", "終了ステップの開始時", "At the beginning of the end step"),
+  T("cast", "601.2i", "呪文を唱えたとき", "When a spell is cast"),
+];
+
 export const KINDS: Kind[] = [
+  { id: "static", cr: "604", label: { ja: "常在型", en: "Static" }, timings: [ALWAYS] },
+  { id: "triggered", cr: "603", label: { ja: "誘発型", en: "Triggered" }, timings: TRIGGERS },
   {
-    id: "誘発型能力",
-    cr: "603",
-    timings: [
-      { id: "戦場に出たとき", cr: "603.6a" },
-      { id: "戦場を離れたとき", cr: "603.6c" },
-      { id: "死亡したとき", cr: "603.6c" },
-      { id: "攻撃したとき", cr: "508.1m" },
-      { id: "ブロックしたとき", cr: "509.1i" },
-      { id: "ブロックされたとき", cr: "509.1i" },
-      { id: "戦闘ダメージを与えたとき", cr: "510.2" },
-      { id: "アップキープの開始時", cr: "503.1a" },
-      { id: "戦闘の開始時", cr: "507.1" },
-      { id: "終了ステップの開始時", cr: "513.1a" },
-      { id: "呪文を唱えたとき", cr: "601.2i" },
-    ],
-  },
-  { id: "常在型能力", cr: "604", timings: [{ id: "常に", cr: "604.1" }] },
-  {
-    id: "起動型能力",
+    id: "activated",
     cr: "602",
-    timings: [
-      { id: "いつでも (優先権があるとき)", cr: "602.5d" },
-      { id: "ソーサリー・タイミングのみ", cr: "602.5d" },
-    ],
+    label: { ja: "起動型", en: "Activated" },
+    timings: [T("anytime", "602.5d", "いつでも (優先権があるとき)", "Any time you have priority"), T("sorcery-speed", "602.5d", "ソーサリー・タイミングのみ", "Only as a sorcery")],
   },
-  { id: "呪文能力", cr: "112.3a", timings: [{ id: "解決時", cr: "608.2" }] },
-  {
-    id: "置換効果",
-    cr: "614",
-    timings: [
-      { id: "ダメージを受けるとき", cr: "614.1" },
-      { id: "戦場に出るとき", cr: "614.1c" },
-      { id: "カードを引くとき", cr: "614.11" },
-    ],
-  },
+  { id: "spell", cr: "112.3a", label: { ja: "呪文能力", en: "Spell" }, timings: [T("resolves", "608.2", "解決時", "On resolution")] },
+  // キーワード能力: 常在型・誘発型のどちらにもなる (威迫は常在、機略は誘発)
+  { id: "keyword", cr: "702", label: { ja: "キーワード能力", en: "Keyword" }, timings: [{ ...ALWAYS, cr: "702.1" }, ...TRIGGERS] },
 ];
 
 export const kindOf = (id: string): Kind | undefined => KINDS.find((k) => k.id === id);

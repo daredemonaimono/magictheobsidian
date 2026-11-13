@@ -1,36 +1,40 @@
+import { pick, t } from "../i18n";
 import { ACTIONS, CONDITIONS, Def } from "./actions";
 import { kindOf, timingOf } from "./kinds";
 import { Call, NodeData } from "./md";
 
-// 問題の一覧 (空なら、保存してよい)。getNode = ほかのノード (参照の確認用。無ければ undefined)
+// 問題の一覧 (空なら、保存してよい。文は、設定の言語)。getNode = ほかのノード (参照の確認用。無ければ undefined)
 export function validate(n: NodeData, getNode: (name: string) => NodeData | undefined): string[] {
   const out: string[] = [];
-  if (!n.name.trim() || /[\\/:*?"<>|[\]#^]/.test(n.name)) out.push("名前が空か、使えない文字 (\\ / : * ? \" < > | [ ] # ^) を含む");
-  if (!kindOf(n.kind)) out.push(`種類 "${n.kind}" は、定義にない`);
-  else if (!timingOf(n.kind, n.timing)) out.push(`タイミング "${n.timing}" は、${n.kind}にない`);
+  if (!n.name.trim() || /[\\/:*?"<>|[\]#^]/.test(n.name)) out.push(t("badName"));
+  const kind = kindOf(n.kind);
+  if (!kind) out.push(t("badKind", n.kind));
+  else if (!timingOf(n.kind, n.timing)) out.push(t("badTiming", n.timing, pick(kind.label)));
   const check = (c: Call, defs: Def[], what: string) => {
     const d = defs.find((x) => x.id === c.id);
-    if (!d) return void out.push(`${what} "${c.id}" は、定義にない`);
-    if (d.only && !d.only.includes(n.kind)) out.push(`${what} "${c.id}" は、${d.only.join("・")}でだけ使える`);
+    if (!d) return void out.push(t("unknownDef", what, c.id));
+    const label = pick(d.label);
+    if (d.only && !d.only.includes(n.kind)) out.push(t("onlyFor", what, label, d.only.map((k) => pick(kindOf(k)!.label)).join(" / ")));
     for (const p of d.params) {
-      const v = c.args[p.label];
-      if (v === undefined) out.push(`${what} "${c.id}": ${p.label} が無い`);
-      else if (p.type === "number" && !/^-?\d+$/.test(v)) out.push(`${what} "${c.id}": ${p.label} は整数 (${v})`);
-      else if (p.type === "choice" && !p.choices!.includes(v)) out.push(`${what} "${c.id}": ${p.label} は ${p.choices!.join(" / ")} のどれか (${v})`);
+      const v = c.args[p.id];
+      const pl = pick(p.label);
+      if (v === undefined) out.push(t("missingParam", what, label, pl));
+      else if (p.type === "number" && !/^-?\d+$/.test(v)) out.push(t("notInteger", what, label, pl, v));
+      else if (p.type === "choice" && !p.choices!.some((x) => x.id === v)) out.push(t("notChoice", what, label, pl, p.choices!.map((x) => pick(x.label)).join(" / "), v));
     }
-    for (const k of Object.keys(c.args)) if (!d.params.some((p) => p.label === k)) out.push(`${what} "${c.id}": ${k} は、引数にない`);
+    for (const k of Object.keys(c.args)) if (!d.params.some((p) => p.id === k)) out.push(t("unknownParam", what, label, k));
   };
-  if (n.condition) check(n.condition, CONDITIONS, "条件");
-  if (!n.steps.length) out.push("手順が空");
-  for (const s of n.steps) if (!s.node) check(s, ACTIONS, "動作");
+  if (n.condition) check(n.condition, CONDITIONS, t("wordCondition"));
+  if (!n.steps.length) out.push(t("noSteps"));
+  for (const s of n.steps) if (!s.node) check(s, ACTIONS, t("wordAction"));
   // 参照: 無いノード・循環
   const walk = (cur: NodeData, path: string[]) => {
     for (const s of cur.steps) {
       if (!s.node) continue;
-      if (path.includes(s.id)) { out.push(`循環: ${[...path, s.id].join(" → ")}`); continue; }
-      const t = getNode(s.id);
-      if (!t) out.push(`ノード [[${s.id}]] が無い`);
-      else walk(t, [...path, s.id]);
+      if (path.includes(s.id)) { out.push(t("cycle", [...path, s.id].join(" → "))); continue; }
+      const target = getNode(s.id);
+      if (!target) out.push(t("noNode", s.id));
+      else walk(target, [...path, s.id]);
     }
   };
   walk(n, [n.name]);
