@@ -1,10 +1,11 @@
-import { Notice, Plugin, TFile, normalizePath } from "obsidian";
+import { Notice, Plugin, TFile, normalizePath, requestUrl } from "obsidian";
 import { setLang, t } from "./i18n";
 import { NODE_EDITOR_VIEW, NodeEditorView, NodeStore } from "./NodeEditorView";
-import { NodeData, parseMd, toMd } from "./node/md";
+import { CardData, parseCardMd, toCardMd } from "./node/card";
+import { ScryCard, artFileName, cardsOf, isScryfallImage, printsFrom, printsUrl, scryfallUrl } from "./node/scryfall";
 import { Settings, SettingsTab, loadSettings } from "./settings";
 
-const NODE_DIR = "Nodes"; // ノード = Nodes/<名前>.md (1 ノード 1 ノート)
+const CARD_DIR = "Cards"; // カード = Cards/<カード名>.md (能力のノードが、コードブロックで入る。ノードの置き場は、ここだけ)
 
 export default class MagicTheObsidian extends Plugin {
   settings!: Settings;
@@ -33,26 +34,65 @@ export default class MagicTheObsidian extends Plugin {
   }
 
   private nodeStore(): NodeStore {
-    const files = () => this.app.vault.getMarkdownFiles().filter((f) => f.path.startsWith(`${NODE_DIR}/`));
+    const vault = this.app.vault;
+    const pathOf = (name: string) => normalizePath(`${CARD_DIR}/${name}.md`);
+    const write = async (c: CardData) => {
+      if (!vault.getAbstractFileByPath(CARD_DIR)) await vault.createFolder(CARD_DIR);
+      const f = vault.getAbstractFileByPath(pathOf(c.name));
+      if (f instanceof TFile) await vault.modify(f, toCardMd(c));
+      else await vault.create(pathOf(c.name), toCardMd(c));
+      new Notice(t("saved", pathOf(c.name)));
+    };
+    // Scryfall の決まり: User-Agent と Accept を付ける。送るのは、検索したカード名 (と、カードの id) だけ
+    const get = async (url: string): Promise<ScryCard[]> => {
+      const res = await requestUrl({ url, headers: { "User-Agent": "MagicTheObsidian/0.1", Accept: "application/json" }, throw: false });
+      if (res.status === 404) return [];
+      if (res.status !== 200) throw new Error(`HTTP ${res.status}`);
+      return cardsOf(res.json as ScryCard);
+    };
     return {
-      all: async () => {
-        const out: NodeData[] = [];
-        for (const f of files()) {
+      cards: async () => {
+        const out: CardData[] = [];
+        for (const f of vault.getMarkdownFiles().filter((x) => x.path.startsWith(`${CARD_DIR}/`))) {
           try {
-            out.push(parseMd(await this.app.vault.cachedRead(f)));
+            out.push(parseCardMd(await vault.cachedRead(f)));
           } catch (e) {
             new Notice(t("unreadable", f.path, (e as Error).message));
           }
         }
         return out;
       },
-      save: async (n) => {
-        if (!this.app.vault.getAbstractFileByPath(NODE_DIR)) await this.app.vault.createFolder(NODE_DIR);
-        const path = normalizePath(`${NODE_DIR}/${n.name}.md`);
-        const f = this.app.vault.getAbstractFileByPath(path);
-        if (f instanceof TFile) await this.app.vault.modify(f, toMd(n));
-        else await this.app.vault.create(path, toMd(n));
-        new Notice(t("saved", path));
+      saveCard: write,
+      // 絵をローカルに保存して (あれば、取りに行かない)、画面に出せるパスを返す。保存先: プラグインのフォルダの art/ (リポジトリの外。コミットされない)
+      art: async (id, url) => {
+        if (!isScryfallImage(url)) throw new Error("not a Scryfall image");
+        const dir = `${this.manifest.dir}/art`;
+        const path = `${dir}/${artFileName(id)}`;
+        const a = vault.adapter;
+        if (!(await a.exists(path))) {
+          if (!(await a.exists(dir))) await a.mkdir(dir);
+          const res = await requestUrl({ url, throw: false });
+          if (res.status !== 200) throw new Error(`HTTP ${res.status}`);
+          await a.writeBinary(path, res.arrayBuffer);
+        }
+        return a.getResourcePath(path);
+      },
+      search: async (query) => get(scryfallUrl(query)),
+      prints: async (oracleId) => printsFrom({ object: "list", data: await get(printsUrl(oracleId)), id: "", name: "" }), // 1 ページ目 (最大 175 印刷)
+      addCard: async (c) => {
+        const f = vault.getAbstractFileByPath(pathOf(c.name));
+        if (f instanceof TFile) {
+          // 保存済み: 能力を守るため、上書きしない。足りない日本語・版違いだけ足す
+          const had = parseCardMd(await vault.cachedRead(f));
+          const addJa = !had.textJa && c.textJa;
+          const addPrints = !had.prints?.length && c.prints?.length;
+          if (!addJa && !addPrints) return had;
+          const merged: CardData = { ...had, ...(addJa ? { nameJa: c.nameJa, typeLineJa: c.typeLineJa, textJa: c.textJa } : {}), ...(addPrints ? { prints: c.prints } : {}) };
+          await write(merged);
+          return merged;
+        }
+        await write(c);
+        return c;
       },
     };
   }

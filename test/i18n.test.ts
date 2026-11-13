@@ -12,9 +12,9 @@ assert.equal(asLang("en"), "en");
 
 // 文字の切り替え
 setLang("ja");
-assert.equal(t("saved", "Nodes/a.md"), "保存した: Nodes/a.md");
+assert.equal(t("saved", "Cards/a.md"), "保存した: Cards/a.md");
 setLang("en");
-assert.equal(t("saved", "Nodes/a.md"), "Saved: Nodes/a.md");
+assert.equal(t("saved", "Cards/a.md"), "Saved: Cards/a.md");
 
 // ラベルが、どの言語でも空でなく、id が重ならない
 const all = [...KINDS, ...KINDS.flatMap((k) => k.timings), ...ACTIONS, ...CONDITIONS, ...[...ACTIONS, ...CONDITIONS].flatMap((d) => d.params.flatMap((p) => [p, ...(p.choices ?? [])]))];

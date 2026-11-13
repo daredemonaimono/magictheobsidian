@@ -1,12 +1,91 @@
-/* ノードを作る画面 */
-.mtg-ne { padding: 12px; display: flex; flex-direction: column; gap: 10px; overflow: auto; }
+/* ノードを作る画面: 左 = 仮のカード枠 (線だけ) / 中 = 盤面 / 右 = パネル */
+.mtg-ne { padding: 12px; display: grid; grid-template-columns: 400px minmax(0, 1fr); gap: 16px; align-items: start; overflow: auto; }
 .mtg-ne-row, .mtg-ne-step { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-.mtg-ne-block { border: 1px solid var(--background-modifier-border); border-radius: 8px; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
-.mtg-ne-h { font-weight: 600; color: var(--text-muted); }
+.mtg-ne-pl { color: var(--text-muted); font-size: var(--font-ui-small); }
+.mtg-ne-dim { color: var(--text-faint); }
+.mtg-ne-num { width: 56px; }
 .mtg-ne-act { font-weight: 600; }
 .mtg-ne-ref { color: var(--text-accent); }
-.mtg-ne-pl { color: var(--text-muted); font-size: var(--font-ui-small); }
-.mtg-ne-num { width: 56px; }
+
+/* カードの枠 (線だけ) */
+.mtg-ne-card { border: 2px solid var(--text-muted); border-radius: 14px; padding: 10px; display: flex; flex-direction: column; gap: 8px; aspect-ratio: 5 / 7; }
+.mtg-ne-card-name, .mtg-ne-card-type { border: 1.5px solid var(--text-muted); border-radius: 6px; padding: 2px 8px; min-height: 1.6em; }
+.mtg-ne-card-art { border: 1.5px solid var(--text-muted); border-radius: 6px; flex: 0 0 32%; background-size: cover; background-position: center; }
+.mtg-ne-card-text { border: 1.5px solid var(--text-muted); border-radius: 8px; padding: 6px 8px; flex: 1; overflow: auto; display: flex; flex-direction: column; gap: 4px; }
+.mtg-ne-ability { cursor: pointer; padding: 0 4px; border-radius: 4px; }
+.mtg-ne-ability:hover, .mtg-ne-ability.is-on { background: var(--background-modifier-hover); font-weight: 600; }
+
+/* 盤面: 矢羽根のチップ (外 = 枠の線 / 内 = 中身) */
+.mtg-ne-mid { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.mtg-ne-chips { display: flex; flex-wrap: wrap; row-gap: 8px; min-height: 160px; align-content: flex-start; align-items: center; border: 1.5px dashed var(--background-modifier-border); border-radius: 12px; padding: 12px; }
+.mtg-ne-chip { --pt: 12px; background: var(--text-muted); padding: 2px; margin-left: -4px; clip-path: polygon(0 0, calc(100% - var(--pt)) 0, 100% 50%, calc(100% - var(--pt)) 100%, 0 100%, var(--pt) 50%); }
+.mtg-ne-chip:first-child { margin-left: 0; clip-path: polygon(0 0, calc(100% - var(--pt)) 0, 100% 50%, calc(100% - var(--pt)) 100%, 0 100%); }
+.mtg-ne-chip > span { display: flex; gap: 6px; align-items: center; background: var(--background-primary); padding: 8px 20px 8px 22px; clip-path: inherit; white-space: nowrap; }
+.mtg-ne-chip.is-keyword > span { font-weight: 700; }
+.mtg-ne-chip.is-effect > span { background: var(--background-secondary); }
+
+/* 右のパネル */
+.mtg-ne-panel { border: 2px solid var(--text-muted); border-radius: 14px; padding: 12px; display: flex; flex-direction: column; gap: 6px; }
+.mtg-ne-kind { font-weight: 700; }
+.mtg-ne-h { font-weight: 600; margin-top: 6px; }
+.mtg-ne-field { display: flex; flex-direction: column; gap: 6px; }
+.mtg-ne-search { width: 100%; }
 .mtg-ne-problem { color: var(--text-error); }
-.mtg-ne-preview { background: var(--background-secondary); padding: 8px; border-radius: 6px; white-space: pre-wrap; }
 .mtg-ne-save:disabled { opacity: .4; cursor: not-allowed; }
+.mtg-ne-x { padding: 0 4px; height: auto; box-shadow: none; background: none; color: var(--text-muted); }
+.mtg-ne-list { max-height: 140px; overflow: auto; display: flex; flex-direction: column; }
+.mtg-ne-item { padding: 3px 8px; border-radius: 4px; cursor: grab; }
+.mtg-ne-item:hover { background: var(--background-modifier-hover); }
+.mtg-ne-left { display: flex; flex-direction: column; gap: 16px; }
+.mtg-ne-name { flex: 1; min-width: 0; font-weight: 600; }
+.mtg-ne-card-name, .mtg-ne-card-type { background: none; color: inherit; }
+.mtg-ne-ability.is-on { display: flex; gap: 4px; align-items: center; }
+.mtg-ne-ref-text { border: 1px solid var(--background-modifier-border); border-radius: 8px; padding: 8px 12px; }
+.mtg-ne-text { white-space: pre-wrap; color: var(--text-muted); }
+
+/* 新規カード (Scryfall を探す窓) */
+.mtg-cs-row { display: flex; gap: 8px; margin-bottom: 12px; }
+.mtg-cs-input { flex: 1; }
+.mtg-cs-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; max-height: 60vh; overflow: auto; }
+.mtg-cs-card { cursor: pointer; border-radius: 8px; padding: 2px; }
+.mtg-cs-card:hover { outline: 2px solid var(--interactive-accent); }
+.mtg-cs-card img { width: 100%; display: block; border-radius: 6px; }
+.mtg-cs-row { flex-wrap: wrap; align-items: center; }
+.mtg-cs-color { padding: 2px; width: 32px; height: 32px; opacity: .45; border-radius: 50%; }
+.mtg-cs-color.is-on { opacity: 1; box-shadow: 0 0 0 2px var(--interactive-accent); }
+.mtg-cs-color img { width: 100%; height: 100%; display: block; }
+.mtg-ne-cand { display: flex; gap: 10px; align-items: baseline; padding: 3px 6px; border-radius: 4px; cursor: pointer; }
+.mtg-ne-cand:hover { background: var(--background-modifier-hover); }
+.mtg-ne-cand.is-used { color: var(--text-faint); }
+.mtg-ne-multi { font-size: var(--font-ui-small); }
+.mtg-ne-multi summary { cursor: pointer; }
+.mtg-ne-multi-row { display: flex; gap: 6px; align-items: center; }
+.mtg-ne-cand .mtg-ne-pl { white-space: nowrap; flex-shrink: 0; margin-left: auto; }
+.mtg-ne-multi-find { width: 100%; margin: 4px 0; }
+.mtg-ne-multi-list { max-height: 200px; overflow: auto; }
+.mtg-ne-multi-row.is-hidden { display: none; }
+.mtg-ne-open { position: relative; flex: 1; min-width: 0; }
+.mtg-ne-open input { width: 100%; }
+.mtg-ne-open-list { position: absolute; z-index: 10; left: 0; right: 0; top: 100%; max-height: 260px; overflow: auto; background: var(--background-primary); border-radius: 6px; box-shadow: var(--shadow-s); }
+.mtg-ne-open-list:empty { display: none; }
+.mtg-ne-board { border: 1px solid var(--background-modifier-border); border-radius: 12px; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
+.mtg-ne-board.is-sel { border-color: var(--interactive-accent); box-shadow: 0 0 0 1px var(--interactive-accent); }
+.mtg-ne-board-head { display: flex; gap: 10px; align-items: baseline; cursor: pointer; }
+.mtg-ne-board .mtg-ne-chips { min-height: 56px; }
+.mtg-ne-board .mtg-ne-chips { border: none; padding: 0; min-height: 56px; }
+.mtg-ne-ref-head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.mtg-mana { display: inline-flex; gap: 2px; align-items: center; }
+.mtg-mana-icon { width: 1.15em; height: 1.15em; }
+.mtg-ne-card-text .mtg-ne-ability { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; }
+.mtg-ne-card-text .mtg-ne-ability.is-on { display: flex; }
+textarea.mtg-ne-name { resize: none; field-sizing: content; min-height: 2em; }
+/* 種類ごとの色 (kinds.ts の color)。背景は、薄く混ぜる */
+.mtg-ne-board { background: color-mix(in srgb, var(--kind-color, transparent) 13%, var(--background-primary)); }
+.mtg-ne-board.is-sel { background: color-mix(in srgb, var(--kind-color, transparent) 22%, var(--background-primary)); }
+.mtg-ne-board .mtg-ne-chip > span { background: color-mix(in srgb, var(--kind-color, transparent) 8%, var(--background-primary)); }
+.mtg-ne-board .mtg-ne-chip.is-effect > span { background: color-mix(in srgb, var(--kind-color, transparent) 18%, var(--background-primary)); }
+.mtg-ne-board-head .mtg-ne-pl { color: var(--kind-color, var(--text-muted)); font-weight: 600; }
+.mtg-ne-panel { background: color-mix(in srgb, var(--kind-color, transparent) 9%, var(--background-primary)); }
+.mtg-ne-card-namebar { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+.mtg-ne-card-nametext { font-weight: 600; min-width: 0; }
+.mtg-ne-card-type { font-size: var(--font-ui-small); }

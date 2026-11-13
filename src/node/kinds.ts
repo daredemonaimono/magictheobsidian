@@ -10,11 +10,12 @@ export interface Kind {
   id: string;
   cr: string;
   label: Label;
+  color: string; // 画面の背景色 (Obsidian の色の名前: --color-<color>)。種類ごとに色を変える
   timings: Timing[];
 }
 
 const T = (id: string, cr: string, ja: string, en: string): Timing => ({ id, cr, label: { ja, en } });
-const ALWAYS = T("always", "604.1", "常に", "Always");
+const ALWAYS = T("always", "604.1", "戦場にいる間", "While on the battlefield");
 const TRIGGERS: Timing[] = [
   T("enters", "603.6a", "戦場に出たとき", "When it enters the battlefield"),
   T("leaves", "603.6c", "戦場を離れたとき", "When it leaves the battlefield"),
@@ -30,17 +31,18 @@ const TRIGGERS: Timing[] = [
 ];
 
 export const KINDS: Kind[] = [
-  { id: "static", cr: "604", label: { ja: "常在型", en: "Static" }, timings: [ALWAYS] },
-  { id: "triggered", cr: "603", label: { ja: "誘発型", en: "Triggered" }, timings: TRIGGERS },
+  { id: "static", cr: "604", label: { ja: "常在型", en: "Static" }, color: "blue", timings: [ALWAYS] },
+  { id: "triggered", cr: "603", label: { ja: "誘発型", en: "Triggered" }, color: "orange", timings: TRIGGERS },
   {
     id: "activated",
     cr: "602",
     label: { ja: "起動型", en: "Activated" },
+    color: "green",
     timings: [T("anytime", "602.5d", "いつでも (優先権があるとき)", "Any time you have priority"), T("sorcery-speed", "602.5d", "ソーサリー・タイミングのみ", "Only as a sorcery")],
   },
-  { id: "spell", cr: "112.3a", label: { ja: "呪文能力", en: "Spell" }, timings: [T("resolves", "608.2", "解決時", "On resolution")] },
+  { id: "spell", cr: "112.3a", label: { ja: "呪文能力", en: "Spell" }, color: "purple", timings: [T("resolves", "608.2", "解決時", "On resolution")] },
   // キーワード能力: 常在型・誘発型のどちらにもなる (威迫は常在、機略は誘発)
-  { id: "keyword", cr: "702", label: { ja: "キーワード能力", en: "Keyword" }, timings: [{ ...ALWAYS, cr: "702.1" }, ...TRIGGERS] },
+  { id: "keyword", cr: "702", label: { ja: "キーワード能力", en: "Keyword" }, color: "yellow", timings: [{ ...ALWAYS, cr: "702.1" }, ...TRIGGERS] },
 ];
 
 export const kindOf = (id: string): Kind | undefined => KINDS.find((k) => k.id === id);

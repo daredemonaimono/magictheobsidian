@@ -1,7 +1,7 @@
 {
   "id": "magictheobsidian",
   "name": "Magic the Obsidian",
-  "version": "0.161.0",
+  "version": "0.162.0",
   "minAppVersion": "1.11.4",
   "description": "Magic: The Gathering rules and nodes in Obsidian (rebuilt from scratch).",
   "author": "daredemonaimono",
