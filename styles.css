@@ -1,0 +1,12 @@
+/* ノードを作る画面 */
+.mtg-ne { padding: 12px; display: flex; flex-direction: column; gap: 10px; overflow: auto; }
+.mtg-ne-row, .mtg-ne-step { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.mtg-ne-block { border: 1px solid var(--background-modifier-border); border-radius: 8px; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+.mtg-ne-h { font-weight: 600; color: var(--text-muted); }
+.mtg-ne-act { font-weight: 600; }
+.mtg-ne-ref { color: var(--text-accent); }
+.mtg-ne-pl { color: var(--text-muted); font-size: var(--font-ui-small); }
+.mtg-ne-num { width: 56px; }
+.mtg-ne-problem { color: var(--text-error); }
+.mtg-ne-preview { background: var(--background-secondary); padding: 8px; border-radius: 6px; white-space: pre-wrap; }
+.mtg-ne-save:disabled { opacity: .4; cursor: not-allowed; }
