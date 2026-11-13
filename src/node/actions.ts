@@ -27,6 +27,7 @@ export interface Def {
 const KW_CHOICES = KEYWORDS.map((k) => ({ id: k.id, label: k.label }));
 const L = (ja: string, en: string): Label => ({ ja, en });
 const C = (id: string, ja: string, en: string): Choice => ({ id, label: { ja, en } });
+const COLORS = [C("any", "色を問わない", "any color"), C("white", "白", "white"), C("blue", "青", "blue"), C("black", "黒", "black"), C("red", "赤", "red"), C("green", "緑", "green")]; // 色 (105.1)
 
 export const ACTIONS: Def[] = [
   {
@@ -89,6 +90,34 @@ export const ACTIONS: Def[] = [
     help: L("このクリーチャーをブロックできる条件 (威迫: 2体以上)", "A condition on blocking this creature (menace: two or more)"),
     only: ["static", "keyword"],
     params: [{ id: "min-blockers", label: L("最少のブロッカー数", "Minimum blockers"), type: "number", default: "2" }],
+  },
+  // コスト (代替コスト・起動コストの手順に使う)
+  {
+    id: "pay-life",
+    fn: "payLife",
+    label: L("ライフを支払う", "Pay life"),
+    cr: "119.4",
+    help: L("ライフを支払う (コスト。ライフが、その点数以上のときだけ、支払える)", "Pay life (a cost; only if your life total is at least that much)"),
+    params: [{ id: "amount", label: L("点数", "Amount"), type: "number", default: "1" }],
+  },
+  {
+    id: "exile-from-hand",
+    fn: "exileFromHand",
+    label: L("手札のカードを追放する", "Exile cards from your hand"),
+    cr: "701.13",
+    help: L("手札から、指定の色のカードを、指定の枚数、追放する (コスト)", "Exile a number of cards of a given color from your hand (a cost)"),
+    params: [
+      { id: "count", label: L("枚数", "Count"), type: "number", default: "1" },
+      { id: "color", label: L("色", "Color"), type: "choice", choices: COLORS, default: "any" },
+    ],
+  },
+  {
+    id: "counter",
+    fn: "counter",
+    label: L("打ち消す", "Counter"),
+    cr: "701.5",
+    help: L("対象 (呪文・起動型能力・誘発型能力) を打ち消す。解決されず、呪文は持ち主の墓地に置かれる。何を打ち消すかは、対象の欄で選ぶ", "Counter the target (a spell, or an activated or triggered ability). It doesn't resolve; a spell goes to its owner's graveyard. What gets countered is chosen in the target slot"),
+    params: [],
   },
   {
     id: "max-blockers",

@@ -36,6 +36,7 @@ const UI = {
   importFail: { ja: "取り込めない: {0}", en: "Cannot import: {0}" },
   importNotFound: { ja: "カードが見つからない", en: "Card not found" },
   mdSource: { ja: "原文の行", en: "source" },
+  mergeBtn: { ja: "選んだ {0} 行を 1 つの能力にする", en: "Merge the {0} selected lines into one ability" },
   rulesText: { ja: "原文", en: "Rules text" },
   saved: { ja: "保存した: {0}", en: "Saved: {0}" },
   unreadable: { ja: "ノードとして読めない: {0} ({1})", en: "Cannot read as a node: {0} ({1})" },

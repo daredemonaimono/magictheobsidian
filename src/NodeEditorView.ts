@@ -5,7 +5,7 @@ import { KINDS, kindOf } from "./node/kinds";
 import { CardSearchModal } from "./CardSearchModal";
 import { CardData, Print } from "./node/card";
 import { CARD_TYPES } from "./node/cardtypes";
-import { candidates } from "./node/split";
+import { abilityLabel, candidates, hasSource, mergeCandidates } from "./node/split";
 import { Call, NodeData, defaults } from "./node/md";
 import { KEYWORDS, TARGETS } from "./node/slots";
 import { ScryCard, cardsOf, fromScryfall } from "./node/scryfall";
@@ -91,6 +91,12 @@ export class NodeEditorView extends ItemView {
     }
   }
 
+  // 画面に出す能力の名前 (いまの言語。原文からできて、名前を書き換えていない能力は、いまの言語の原文)
+  private label(a: NodeData): string {
+    return abilityLabel(this.card, a, getLang()) || "—";
+  }
+
+  private picked = new Set<string>(); // 合体のために、チェックを入れた原文の行 (source)
   private shows: (() => void)[] = []; // 検索欄の一覧を、描き直す関数 (部品を置くたびに、設定済みのものを外す)
 
   redraw() {
@@ -101,7 +107,6 @@ export class NodeEditorView extends ItemView {
     const d = this.data;
     const c = this.card;
     const again = () => this.redraw();
-    const names = c.abilities.filter((_, i) => i !== this.sel).map((a) => a.name).filter(Boolean); // 呼べるノード = 同じカードの、ほかの能力
 
     // 左: カードを開く / 新規 → カードの枠 (線だけ) → その下に検索欄
     const left = root.createDiv("mtg-ne-left");
@@ -110,6 +115,7 @@ export class NodeEditorView extends ItemView {
       new CardSearchModal(this.app, (q) => this.store.search(q), async (found) => {
         this.card = await this.store.addCard(await this.withPrints(await this.withJapanese(fromScryfall(found, getLang() === "ja"), found), found));
         this.sel = 0;
+        this.picked.clear();
         await this.refreshKnown();
         this.redraw();
       }).open();
@@ -129,6 +135,7 @@ export class NodeEditorView extends ItemView {
           e.preventDefault(); // 欄の焦点が外れて、一覧が消える前に開く
           this.card = structuredClone(x);
             this.sel = 0;
+        this.picked.clear();
           again();
         };
       }
@@ -165,14 +172,14 @@ export class NodeEditorView extends ItemView {
     const text = frame.createDiv("mtg-ne-card-text");
     c.abilities.forEach((a, i) => {
       if (i !== this.sel) {
-        const row = text.createDiv({ text: a.name || "—", cls: "mtg-ne-ability" });
+        const row = text.createDiv({ text: this.label(a), cls: "mtg-ne-ability" });
         row.onclick = () => { this.sel = i; again(); };
         return;
       }
       const row = text.createDiv("mtg-ne-ability is-on");
       // 長い原文も見えるように、折り返す欄 (名前に、改行は入れられない)
       const nameIn = row.createEl("textarea", { cls: "mtg-ne-name" });
-      nameIn.value = a.name;
+      nameIn.value = this.label(a) === "—" ? "" : this.label(a);
       nameIn.rows = 1;
       nameIn.placeholder = t("name");
       nameIn.onkeydown = (e) => { if (e.key === "Enter") e.preventDefault(); };
@@ -186,15 +193,40 @@ export class NodeEditorView extends ItemView {
     if (c.text) {
       // 原文: 1 行ずつ、能力の候補 (カード名・コスト・タイプ行は、左のカードの枠に出す)。押すと、その能力ができる。候補が無ければ、枠も出さない
       let ref: HTMLElement | undefined;
+      let mergeBar: HTMLElement | undefined;
+      const rows = candidates(c, getLang()).filter((x) => !c.abilities.some((a) => hasSource(a, x.node.source)));
+      this.picked = new Set([...this.picked].filter((p) => rows.some((x) => x.node.source === p))); // もう候補でないものは、外す
+      const showMerge = () => {
+        mergeBar?.empty();
+        if (this.picked.size < 2 || !mergeBar) return;
+        mergeBar.createEl("button", { text: t("mergeBtn", this.picked.size), cls: "mod-cta" }).onclick = () => {
+          const chosen = rows.filter((x) => this.picked.has(x.node.source!));
+          const blankOnly = c.abilities.length === 1 && !c.abilities[0].name && !c.abilities[0].steps.length;
+          if (blankOnly) c.abilities[0] = mergeCandidates(chosen);
+          else c.abilities.push(mergeCandidates(chosen));
+          this.sel = blankOnly ? 0 : c.abilities.length - 1;
+          this.picked.clear();
+          again();
+        };
+      };
       for (const cand of candidates(c, getLang())) {
         // できているか: 原文の行 (source) で見る。source を持たない古い能力は、名前で見て、source を足す
-        const at = c.abilities.findIndex((a) => (a.source ? a.source === cand.node.source : [cand.node.name, ...cand.alt].includes(a.name)));
+        const at = c.abilities.findIndex((a) => (a.source ? hasSource(a, cand.node.source) : [cand.node.name, ...cand.alt].includes(a.name)));
         if (at >= 0 && !c.abilities[at].source) c.abilities[at].source = cand.node.source;
         if (at >= 0) continue; // できている能力は、候補から外す
-        ref ??= mid.createDiv("mtg-ne-ref-text");
+        if (!ref) {
+          ref = mid.createDiv("mtg-ne-ref-text");
+          mergeBar = ref.createDiv("mtg-ne-merge");
+        }
         const row = ref.createDiv({ cls: "mtg-ne-cand" });
+        // チェックを入れた行を、まとめて 1 つの能力にできる (複数行で 1 つの能力のカードのため)
+        const cb = row.createEl("input", { type: "checkbox", cls: "mtg-ne-cand-check" });
+        cb.checked = this.picked.has(cand.node.source!);
+        cb.onclick = (e) => e.stopPropagation();
+        cb.onchange = () => { if (cb.checked) this.picked.add(cand.node.source!); else this.picked.delete(cand.node.source!); showMerge(); };
         row.createSpan({ text: cand.line });
         row.onclick = () => {
+          this.picked.delete(cand.node.source!);
           const blankOnly = c.abilities.length === 1 && !c.abilities[0].name && !c.abilities[0].steps.length;
           if (blankOnly) c.abilities[0] = structuredClone(cand.node);
           else c.abilities.push(structuredClone(cand.node));
@@ -202,6 +234,7 @@ export class NodeEditorView extends ItemView {
           again();
         };
       }
+      showMerge();
     }
     // 盤面: すべての能力を、1 つずつの板にして並べる。押した板が、選択中になり、左の検索欄が、その能力のものに切り替わる
     c.abilities.forEach((a, i) => {
@@ -209,7 +242,7 @@ export class NodeEditorView extends ItemView {
       board.style.setProperty("--kind-color", `var(--color-${kindOf(a.kind)?.color ?? "base-50"})`); // 種類の色
       board.toggleClass("is-sel", i === this.sel);
       const head = board.createDiv("mtg-ne-board-head");
-      head.createSpan({ text: a.name || "—", cls: "mtg-ne-act" });
+      head.createSpan({ text: this.label(a), cls: "mtg-ne-act" });
       head.createSpan({ text: pick(kindOf(a.kind)?.label ?? nodeLbl(a.kind)), cls: "mtg-ne-pl" });
       const box = board.createDiv("mtg-ne-chips");
       box.dataset.i = String(i);
@@ -249,10 +282,10 @@ export class NodeEditorView extends ItemView {
         this.palette(panel, t("condition"), CONDITIONS.map((x) => ({ slot: "condition", id: x.id, label: x.label, cr: x.cr })));
         this.palette(panel, t("effect"), [
           ...ACTIONS.map((x) => ({ slot: "step", id: x.id, label: x.label, cr: x.cr })),
-          // キーワードの引用: 「キーワード能力を与える」を、そのキーワードで置く
+          // キーワードの引用: 「キーワード能力を与える」を、そのキーワードで置く。
+        // 一覧に出すのは、使い回せる部品 (動作・キーワード) だけ。同じカードの能力 (カード専用) は、出さない
           ...KEYWORDS.map((k) => ({ slot: "step", id: "grant-keyword", args: { keyword: k.id }, label: k.label, cr: k.cr })),
-          ...names.map((n) => ({ slot: "node", id: n, label: nodeLbl(n), cr: "" })),
-        ]);
+          ]);
       }
 
     }
@@ -400,7 +433,7 @@ export class NodeEditorView extends ItemView {
       root.querySelectorAll<HTMLElement>(".mtg-ne-chips").forEach((box) => { box.empty(); this.chips(box, c.abilities[Number(box.dataset.i)]); });
       root.querySelectorAll<HTMLElement>(".mtg-ne-board-head").forEach((head, i) => {
         const a = c.abilities[i];
-        head.children[0]?.setText(a.name || "—");
+        head.children[0]?.setText(this.label(a));
         head.children[1]?.setText(pick(kindOf(a.kind)?.label ?? nodeLbl(a.kind)));
         (head.parentElement as HTMLElement).style.setProperty("--kind-color", `var(--color-${kindOf(a.kind)?.color ?? "base-50"})`);
       });

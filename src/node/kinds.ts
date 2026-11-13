@@ -16,6 +16,8 @@ export interface Kind {
 
 const T = (id: string, cr: string, ja: string, en: string): Timing => ({ id, cr, label: { ja, en } });
 const ALWAYS = T("always", "604.1", "戦場にいる間", "While on the battlefield");
+// 代替コスト: 呪文を唱えるとき、マナ・コストを支払う代わりに、支払ってもよいコスト (118.9)。この能力の手順 = 支払うコスト (ライフ・追放など)
+const ALT_COST = T("alternative-cost", "118.9", "唱えるとき、マナ・コストの代わりに支払ってもよい", "May be paid instead of the mana cost when casting");
 const TRIGGERS: Timing[] = [
   T("enters", "603.6a", "戦場に出たとき", "When it enters the battlefield"),
   T("leaves", "603.6c", "戦場を離れたとき", "When it leaves the battlefield"),
@@ -31,7 +33,7 @@ const TRIGGERS: Timing[] = [
 ];
 
 export const KINDS: Kind[] = [
-  { id: "static", cr: "604", label: { ja: "常在型", en: "Static" }, color: "blue", timings: [ALWAYS] },
+  { id: "static", cr: "604", label: { ja: "常在型", en: "Static" }, color: "blue", timings: [ALWAYS, ALT_COST] },
   { id: "triggered", cr: "603", label: { ja: "誘発型", en: "Triggered" }, color: "orange", timings: TRIGGERS },
   {
     id: "activated",

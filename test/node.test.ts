@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { candidates } from "../src/node/split";
+import { abilityLabel, candidates, hasSource, mergeCandidates } from "../src/node/split";
 import { setLang } from "../src/i18n";
 import { CARD_TYPES, cardTypeOf } from "../src/node/cardtypes";
 import { KINDS, timingOf } from "../src/node/kinds";
@@ -266,5 +266,61 @@ assert.match(validate({ ...rhino, steps: [{ node: false, id: "max-blockers", arg
 
 // 種類ごとの色 (画面の背景色): 5 種類、それぞれ別の色
 assert.equal(new Set(KINDS.map((k) => k.color)).size, KINDS.length);
+
+// 能力の名前の表示: 言語を切り替えると、原文からできた能力は、その言語の原文。書き換えた名前は、そのまま
+{
+  const card2 = { ...stalkerJa, abilities: [] as NodeData[] };
+  const made = candidates(card2, "ja")[1].node; // 設定が日本語のときに作った (名前 = 日本語の原文)
+  card2.abilities = [made];
+  assert.equal(abilityLabel(card2, made, "ja"), "夜に吼える追跡者が攻撃するたび、それはターン終了時まで+2/+2の修整を受ける。");
+  assert.equal(abilityLabel(card2, made, "en"), "Whenever Savage Stalker attacks, it gets +2/+2 until end of turn.", "英語に切り替えると、英語の原文");
+  assert.equal(abilityLabel(card2, { ...made, name: "My name" }, "en"), "My name", "書き換えた名前は、そのまま");
+  assert.equal(abilityLabel(card2, { ...made, name: "夜に吼える追跡者が攻撃するたび、それはターン終了時まで+2/+2の修整を受ける。".slice(0, 40).trim() }, "en"), "Whenever Savage Stalker attacks, it gets +2/+2 until end of turn.", "旧い (40 字の) 名前も、自動の名前");
+  const kw = candidates(card2, "ja")[0].node;
+  assert.equal(abilityLabel(card2, kw, "ja"), "威迫");
+  assert.equal(abilityLabel(card2, kw, "en"), "Menace");
+  assert.equal(abilityLabel(card2, { name: "手で作った", kind: "static", timing: "always", steps: [] }, "en") === "手で作った", true);
+}
+
+// 複数行で 1 つの能力 (合体): source は、複数行。名前は、行をつなげたもの
+{
+  const fow = { name: "Force of Will", type: "instant", text: "You may pay 1 life and exile a blue card from your hand rather than pay this spell's mana cost.\nCounter target spell.", abilities: [] as NodeData[] };
+  const cs = candidates(fow, "en");
+  assert.equal(cs.length, 2);
+  const merged = mergeCandidates(cs);
+  assert.equal(merged.source, cs[0].node.source + "\n" + cs[1].node.source);
+  assert.equal(merged.name, cs[0].node.name + " / " + cs[1].node.name);
+  assert.ok(hasSource(merged, cs[0].node.source) && hasSource(merged, cs[1].node.source), "合体した能力は、どの行からもできている");
+  assert.ok(!hasSource({ ...merged, source: undefined }, cs[0].node.source));
+  for (const lang of ["ja", "en"] as const) {
+    setLang(lang);
+    const back = parseCardMd(toCardMd({ ...fow, abilities: [merged] })).abilities[0];
+    assert.deepEqual(back, merged, lang);
+  }
+  setLang("en");
+  assert.ok(toCardMd({ ...fow, abilities: [merged] }).includes("\nsource:\n  You may pay 1 life"), "複数行は、字下げで書く");
+  fow.abilities = [merged];
+  assert.equal(abilityLabel(fow, merged, "en"), merged.name);
+  assert.equal(abilityLabel(fow, { ...merged, name: "代替コスト + 打ち消し" }, "en"), "代替コスト + 打ち消し", "書き換えた名前は、そのまま");
+}
+
+// Force of Will (意志の力): 2 つの能力。代替コスト (常在型・唱えるとき・手順 = コスト) と、呪文能力 (対象の呪文を打ち消す)
+const fowAlt: NodeData = {
+  name: "Alternative cost", kind: "static", timing: "alternative-cost",
+  steps: [{ node: false, id: "pay-life", args: { amount: "1" } }, { node: false, id: "exile-from-hand", args: { count: "1", color: "blue" } }],
+};
+const fowSpell: NodeData = { name: "Counter", kind: "spell", timing: "resolves", target: "target-spell", steps: [{ node: false, id: "counter", args: {} }] };
+const fow = { name: "Force of Will", type: "instant", mana: "{3}{U}{U}", abilities: [fowAlt, fowSpell] };
+for (const lang of ["ja", "en"] as const) {
+  setLang(lang);
+  for (const a of fow.abilities) assert.deepEqual(validate(a, none), [], lang);
+  assert.deepEqual(parseCardMd(toCardMd(fow)), fow, lang);
+}
+setLang("en");
+assert.ok(toCardMd(fow).includes("timing: May be paid instead of the mana cost when casting\nsteps:\n  payLife(amount=1)\n  exileFromHand(count=1, color=blue)\n"), toCardMd(fow));
+assert.ok(toCardMd(fow).includes("target: target spell\nsteps:\n  counter()\n"));
+assert.equal(cardTypeOf("instant")?.castTiming, "anytime", "インスタント: 優先権があれば、いつでも唱えられる");
+setLang("ja");
+assert.match(validate({ ...fowAlt, steps: [{ node: false, id: "exile-from-hand", args: { count: "1", color: "purple" } }] }, none).join(), /色 は .* のどれか/);
 
 console.log("node ok");

@@ -65,7 +65,7 @@ export const toCardMd = (c: CardData): string => inEnglish(() => {
   out.push("## Abilities", "");
   for (const n of c.abilities) {
     const f = fields(n);
-    out.push("```node", `name: ${n.name}`, ...(f.source ? [`source: ${f.source}`] : []), `kind: ${f.kind}`, `timing: ${f.timing}`);
+    out.push("```node", `name: ${n.name}`, ...(f.source ? (f.source.includes("\n") ? ["source:", ...f.source.split("\n").map((l) => `  ${l}`)] : [`source: ${f.source}`]) : []), `kind: ${f.kind}`, `timing: ${f.timing}`);
     if (f.condition) out.push(`condition: ${f.condition}`);
     if (f.target) out.push(`target: ${f.target}`);
     if (f.keyword) out.push(`keyword: ${f.keyword}`);
@@ -76,15 +76,17 @@ export const toCardMd = (c: CardData): string => inEnglish(() => {
 
 function parseAbility(text: string): NodeData {
   const raw: Partial<Fields> & { name?: string } = { steps: [] };
-  let inSteps = false;
+  let list: "steps" | "source" | undefined; // 字下げした行が続く欄 (複数行の source は、字下げで書く)
+  const srcLines: string[] = [];
   for (const line of text.split("\n")) {
-    if (inSteps && /^\s+\S/.test(line)) { raw.steps!.push(line.trim()); continue; }
+    if (list && /^\s+\S/.test(line)) { (list === "steps" ? raw.steps! : srcLines).push(line.trim()); continue; }
     const m = /^([^:]+): *(.*)$/.exec(line);
     const key = m && KEYS.find(([k]) => tAny(k).some((x) => same(x, m[1].trim())))?.[1];
     if (!m || !key) continue;
-    inSteps = key === "steps";
+    list = key === "steps" ? "steps" : key === "source" && !m[2].trim() ? "source" : undefined;
     if (key !== "steps") (raw as Record<string, string>)[key] = m[2].trim();
   }
+  if (srcLines.length) raw.source = srcLines.join("\n");
   return buildNode(raw.name ?? "", raw);
 }
 

@@ -13,6 +13,7 @@ export const TARGETS: Opt[] = [
   O("all-creatures", "109.2", "すべてのクリーチャー", "all creatures"),
   O("target-creature", "115.1", "対象のクリーチャー", "target creature"),
   O("target-player", "115.1", "対象のプレイヤー", "target player"),
+  O("target-spell", "115.1", "対象の呪文", "target spell"),
 ];
 
 // キーワード。steps = そのキーワードが、動作として何をするか (定義)。ここに無いものは、まだ動作で書けない (手順は、空)

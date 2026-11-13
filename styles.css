@@ -89,3 +89,6 @@ textarea.mtg-ne-name { resize: none; field-sizing: content; min-height: 2em; }
 .mtg-ne-card-namebar { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
 .mtg-ne-card-nametext { font-weight: 600; min-width: 0; }
 .mtg-ne-card-type { font-size: var(--font-ui-small); }
+.mtg-ne-cand-check { margin: 0; flex-shrink: 0; align-self: center; }
+.mtg-ne-merge:empty { display: none; }
+.mtg-ne-merge { margin-bottom: 6px; }
