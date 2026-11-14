@@ -25,6 +25,7 @@ export function validate(n: NodeData, getNode: (name: string) => NodeData | unde
       if (v === undefined) out.push(t("missingParam", what, label, pl));
       else if (p.type === "mana" && !isMana(v)) out.push(t("notMana", what, label, pl, v));
       else if (p.type === "card" && !v) out.push(t("missingParam", what, label, pl));
+      else if (p.type === "text" && !v.trim()) out.push(t("missingParam", what, label, pl));
       else if (p.type === "card" && hasCard && !hasCard(v, p.filter)) out.push(t("noCard", v));
       else if (p.type === "number" && !/^-?\d+$/.test(v)) out.push(t("notInteger", what, label, pl, v));
       else if (p.type === "multi" && (!v || !v.split("|").every((x) => p.choices!.some((c) => c.id === x)))) out.push(t("notChoice", what, label, pl, p.choices!.map((x) => pick(x.label)).join(" / "), v));
@@ -62,7 +63,7 @@ export function validate(n: NodeData, getNode: (name: string) => NodeData | unde
   for (const s of n.steps) if (!s.node) check(s, ACTIONS, t("wordAction"));
   // コスト (起動型): コストの動作だけ。起動型には、コスト (または、忠誠度のコスト) が要る (602.1)
   if (n.cost?.length) {
-    if (n.kind !== "activated") out.push(t("costOnlyActivated"));
+    if (n.kind !== "activated" && n.kind !== "spell") out.push(t("costOnlyActivated"));
     for (const c of n.cost) {
       check(c, ACTIONS, t("wordCost"));
       const d = ACTIONS.find((x) => x.id === c.id);
@@ -81,6 +82,13 @@ export function validate(n: NodeData, getNode: (name: string) => NodeData | unde
   if (n.steps.length && !n.steps[n.steps.length - 1].node && (n.steps[n.steps.length - 1] as Call).id === "may-pay") out.push(t("mayPayEmpty"));
   // 「してもよい。そうしたなら」の後ろにも、行う手順が要る (118.12)
   if (n.steps.length && !n.steps[n.steps.length - 1].node && (n.steps[n.steps.length - 1] as Call).id === "may-do") out.push(t("mayDoEmpty"));
+  // 手順の途中の条件: 後ろに手順が要る。数のある条件は、N が要る (608.2c)
+  if (n.steps.length && !n.steps[n.steps.length - 1].node && (n.steps[n.steps.length - 1] as Call).id === "only-if") out.push(t("onlyIfEmpty"));
+  for (const s of n.steps) {
+    if (s.node || s.id !== "only-if") continue;
+    const cd = CONDITIONS.find((x) => x.id === s.args.condition);
+    if (cd?.params.length && !/^-?\d+$/.test(s.args.n ?? "")) out.push(t("onlyIfNeedsN", pick(cd.label)));
+  }
   // 参照: 無いノード・循環
   const walk = (cur: NodeData, path: string[]) => {
     for (const s of cur.steps) {

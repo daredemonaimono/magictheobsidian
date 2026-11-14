@@ -15,6 +15,7 @@ export interface ComposeInput {
   card: CardData;
   ability: NodeData; // 組む能力 (source = 原文の行)
   tokenNames: string[]; // 登録済みのトークンのカード名
+  emblemNames?: string[]; // 登録済みの紋章のカード名
   hasCard: (name: string, filter?: string) => boolean;
   maxTries?: number;
 }
@@ -31,7 +32,7 @@ export const unsupportedOf = (note: string): string | undefined => {
   return lines.length ? lines.join(" / ").slice(0, 400) : undefined;
 };
 
-export const userPrompt = (i: Pick<ComposeInput, "card" | "ability" | "tokenNames">): string =>
+export const userPrompt = (i: Pick<ComposeInput, "card" | "ability" | "tokenNames" | "emblemNames">): string =>
   [
     `カード: ${i.card.name}${i.card.typeLine ? ` (${i.card.typeLine})` : ""}${i.card.loyalty ? `、初期の忠誠度 ${i.card.loyalty}` : ""}`,
     i.card.keywords?.length ? `キーワード: ${i.card.keywords.join(", ")}` : "",
@@ -42,6 +43,7 @@ export const userPrompt = (i: Pick<ComposeInput, "card" | "ability" | "tokenName
     `**組む行 (この行だけ)**: ${(i.ability.source ?? i.ability.name).split("\n").join(" / ")}`,
     "",
     i.tokenNames.length ? `登録済みのトークン (createToken の token には、この名前を使う): ${i.tokenNames.join(" / ")}` : "登録済みのトークン: なし (トークンを作る行は、「未対応: トークンが未登録」と書く)",
+    i.emblemNames?.length ? `登録済みの紋章 (createEmblem の emblem には、この名前を使う): ${i.emblemNames.join(" / ")}` : "登録済みの紋章: なし (紋章を得る行は、「未対応: 紋章のカードが未登録」と書く)",
     "",
     "いまの状態 (まだ組んでいなければ、種類・タイミングは初期値):",
     abilityBlock(i.ability, true),

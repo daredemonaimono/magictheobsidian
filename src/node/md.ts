@@ -20,6 +20,7 @@ export interface NodeData {
   alsoTargets?: Call[]; // もう 1 つ以降の対象 (「target A and target B」の、B)。順に、対象 2・対象 3。対象を取るものだけ (115.1・115.3)
   keyword?: string; // キーワード (slots.ts の id)
   loyalty?: string; // 忠誠度能力のコスト (+1・0・-2。忠誠カウンターを、置く・取り除く: 606.4)。タイミング「忠誠度能力」(606.3) と組
+  sourceJa?: string; // 原文の行の、日本語 (source と同じ行数。複数行は、改行区切り)。対戦で、日本語設定なら、これを出す (英語設定は、source)
   unsupported?: string; // 未対応の部分 (AI で組んだとき「未対応: …」と答えた理由など)。消えない警告として、能力の板の下に出る。手で×を押すか、AI で組み直して無くなるまで、残る
   source?: string; // この能力のもとになった、原文の 1 行 (英語。原文からの候補を作ったとき。作ったかどうかの判定に使う)
   cost?: Call[]; // 起動型のコスト (コストの動作。{T}・マナ・ライフなど)。忠誠度のコストは、loyalty
@@ -34,12 +35,13 @@ function fmtCall(c: Call, defs: Callable[]): string {
 const optLabel = (list: Opt[], id: string) => { const o = list.find((x) => x.id === id); return o ? pick(o.label) : id; };
 
 // 書き出す文字 (設定の言語)。toMd と、カードの中の能力 (card.ts) が使う
-export interface Fields { unsupported?: string; source?: string; loyalty?: string; cost?: string[]; alsoTarget?: string[]; kind: string; timing: string; condition?: string; target?: string; keyword?: string; steps: string[] }
+export interface Fields { sourceJa?: string; unsupported?: string; source?: string; loyalty?: string; cost?: string[]; alsoTarget?: string[]; kind: string; timing: string; condition?: string; target?: string; keyword?: string; steps: string[] }
 export function fields(n: NodeData, ids = false): Fields {
   const k = kindOf(n.kind);
   const tm = k?.timings.find((x) => x.id === n.timing);
   return {
     ...(n.source ? { source: n.source } : {}),
+    ...(n.sourceJa ? { sourceJa: n.sourceJa } : {}),
     ...(n.unsupported ? { unsupported: n.unsupported } : {}),
     ...(n.loyalty !== undefined ? { loyalty: n.loyalty } : {}),
     ...(n.cost?.length ? { cost: n.cost.map((c) => fmtCall(c, ACTIONS)) } : {}),
@@ -96,6 +98,7 @@ export function buildNode(name: string, raw: Partial<Fields>): NodeData {
     kind: kind?.id ?? raw.kind ?? "",
     timing: timing?.id ?? raw.timing ?? "",
     ...(raw.source ? { source: raw.source } : {}),
+    ...(raw.sourceJa ? { sourceJa: raw.sourceJa } : {}),
     ...(raw.unsupported ? { unsupported: raw.unsupported } : {}),
     ...(raw.cost?.length ? { cost: raw.cost.map((l) => parseCall(l, ACTIONS)) } : {}),
     ...(raw.loyalty ? { loyalty: raw.loyalty.replace(/[\u2212\u2013]/g, "-").trim() } : {}), // 「−」(U+2212) も、読める

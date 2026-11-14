@@ -24,8 +24,10 @@ export function candidates(c: CardData, lang: Lang = "en"): Candidate[] {
   const unique = (n: string) => { let x = n || "ability", i = 2; while (used.has(x)) x = `${n} ${i++}`; used.add(x); return x; };
   const out: Candidate[] = [];
   const enLines = (c.text ?? "").split("\n");
-  const jaAll = lang === "ja" && c.textJa ? c.textJa.split("\n") : [];
-  const jaLines = jaAll.length === enLines.length ? jaAll : [];
+  const jaAll = c.textJa ? c.textJa.split("\n") : [];
+  const aligned = jaAll.length === enLines.length ? jaAll : []; // 行の数が合うときだけ、対応させる (合わなければ、手で直す: md の日本語の原文を、英語と同じ行数に)
+  const jaLines = lang === "ja" ? aligned : []; // 画面の表示は、日本語の設定のときだけ
+  const jaOf = (i: number) => (aligned[i] ? clean(aligned[i]) : undefined); // source-ja に入れる日本語 (言語の設定に関わらず)
   for (const [i, raw] of enLines.entries()) {
     const line = clean(raw);
     if (!line || line === "//") continue;
@@ -38,23 +40,40 @@ export function candidates(c: CardData, lang: Lang = "en"): Candidate[] {
         const shown = jaParts?.length === parts.length ? jaParts[j] : p;
         const known = KEYWORDS.find((k) => k.label.en.toLowerCase() === p.toLowerCase());
         const id = known?.id;
-        out.push({ line: shown, alt: [safeName(shown), safeName(p)], node: { source: p, name: unique(safeName(known ? known.label[lang] : shown.charAt(0).toUpperCase() + shown.slice(1))), kind: "keyword", timing: "always", ...(id ? { keyword: id } : {}), steps: structuredClone(KEYWORDS.find((k) => k.id === id)?.steps?.map((x) => ({ node: false as const, ...x })) ?? []) } });
+        out.push({ line: shown, alt: [safeName(shown), safeName(p)], node: { source: p, ...(jaOf(i)?.split(/[、,]\s*/).length === parts.length ? { sourceJa: jaOf(i)!.split(/[、,]\s*/)[j] } : {}), name: unique(safeName(known ? known.label[lang] : shown.charAt(0).toUpperCase() + shown.slice(1))), kind: "keyword", timing: "always", ...(id ? { keyword: id } : {}), steps: structuredClone(KEYWORDS.find((k) => k.id === id)?.steps?.map((x) => ({ node: false as const, ...x })) ?? []) } });
       }
       continue;
     }
     // 原文の行を、そのまま名前にする。種類・タイミングは、初期値 (人が選ぶ)
-    out.push({ line: jaLine ?? line, alt: [safeName(jaLine ?? line), safeName(line)], node: { source: line, name: unique(jaLine ?? line), kind: DEFAULT_KIND, timing: defaultTiming(DEFAULT_KIND), steps: [] } });
+    out.push({ line: jaLine ?? line, alt: [safeName(jaLine ?? line), safeName(line)], node: { source: line, ...(jaOf(i) ? { sourceJa: jaOf(i) } : {}), name: unique(jaLine ?? line), kind: DEFAULT_KIND, timing: defaultTiming(DEFAULT_KIND), steps: [] } });
   }
   return out;
 }
 
 // 選んだ候補の行を、1 つの能力にする (複数行で 1 つの能力: 選択肢つきの呪文・Saga など)。名前 = 行をつなげたもの、source = 行 (改行区切り)
 export function mergeCandidates(cs: Candidate[]): NodeData {
-  return { source: cs.map((x) => x.node.source).join("\n"), name: cs.map((x) => x.node.name).join(" / "), kind: DEFAULT_KIND, timing: defaultTiming(DEFAULT_KIND), steps: [] };
+  const ja = cs.map((x) => x.node.sourceJa);
+  return { source: cs.map((x) => x.node.source).join("\n"), ...(ja.every(Boolean) ? { sourceJa: ja.join("\n") } : {}), name: cs.map((x) => x.node.name).join(" / "), kind: DEFAULT_KIND, timing: defaultTiming(DEFAULT_KIND), steps: [] };
 }
 
 // この能力は、この原文の行から、できているか (source は、複数行を持てる)
 export const hasSource = (a: NodeData, source: string | undefined): boolean => !!a.source && a.source.split("\n").includes(source ?? "");
+
+// 対戦などで出す、能力の文 (誘発した・起動した能力の、その 1 つだけ)。日本語の設定で、日本語の文があれば、それ。無ければ、英語 (原文)、それも無ければ、名前
+export const abilityText = (a: NodeData, lang: Lang): string => (lang === "ja" && a.sourceJa ? a.sourceJa : a.source ?? a.name).split("\n").join(" / ");
+
+// 原文からできた能力で、source-ja が無いものに、カードの日本語の原文 (行が合うとき) から、足す。足したものがあれば true
+export function fillSourceJa(c: CardData): boolean {
+  if (!c.textJa) return false;
+  const cands = candidates(c, "en");
+  let changed = false;
+  for (const a of c.abilities) {
+    if (!a.source || a.sourceJa) continue;
+    const ja = a.source.split("\n").map((s) => cands.find((x) => x.node.source === s)?.node.sourceJa);
+    if (ja.every(Boolean)) { a.sourceJa = ja.join("\n"); changed = true; }
+  }
+  return changed;
+}
 
 // 画面に出す能力の名前。原文からできた能力で、名前を書き換えていなければ、いまの言語の原文の行 (キーワードなら、その名前。複数行なら、" / " でつなぐ) を出す
 // (保存してある名前は、そのまま。言語を切り替えると、表示だけ切り替わる)。書き換えた名前は、そのまま出す

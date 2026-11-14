@@ -2,7 +2,7 @@ import { CARD_TYPES } from "./cardtypes";
 import { CardData, Print } from "./card";
 
 // Scryfall (https://scryfall.com/docs/api) のカードを、CardData にする。カードのノートは英語なので、英語の名前・原文を使う。通信は main.ts (ここは、純粋な変換)。
-interface Face { loyalty?: string; image_uris?: { small?: string; art_crop?: string }; name?: string; printed_name?: string; mana_cost?: string; type_line?: string; oracle_text?: string; printed_text?: string; printed_type_line?: string }
+interface Face { power?: string; toughness?: string; loyalty?: string; image_uris?: { small?: string; art_crop?: string }; name?: string; printed_name?: string; mana_cost?: string; type_line?: string; oracle_text?: string; printed_text?: string; printed_type_line?: string }
 export interface ScryCard extends Face { object?: string; id: string; oracle_id?: string; layout?: string; loyalty?: string; power?: string; toughness?: string; colors?: string[]; set?: string; collector_number?: string; released_at?: string; name: string; lang?: string; keywords?: string[]; card_faces?: Face[]; data?: ScryCard[] }
 
 // 名前で検索 (1 ページ目)。日本語などの名前は、lang:ja で、日本語版のカードの中から探す
@@ -41,11 +41,14 @@ export function fromScryfall(res: ScryCard, withJa = false): CardData {
   const type = CARD_TYPES.find((x) => new RegExp(`\\b${x.label.en}\\b`, "i").test(typeLine))?.id;
   // トークン: 同じ名前でも、パワー・タフネス・色が違うものがある (Elf 2/2 黒緑 と Elf 1/1 緑)。名前に、それを入れて、区別する
   const token = c.layout === "token";
+  const emblem = c.layout === "emblem"; // 紋章 (114.1)
   const tokenName = `${c.name} Token (${c.power != null && c.toughness != null ? `${c.power}-${c.toughness} ` : ""}${c.colors?.join("") || "C"})`;
   const ja = withJa ? { nameJa: join((x) => x.printed_name, " // "), textJa: c.printed_text ?? join((x) => x.printed_text, "\n//\n"), typeLineJa: c.printed_type_line ?? join((x) => x.printed_type_line, " // ") } : {};
   return {
     name: token ? tokenName : c.name,
     ...(token ? { token: true } : {}),
+    ...(emblem ? { emblem: true } : {}),
+    ...((c.power ?? faces[0].power) != null && (c.toughness ?? faces[0].toughness) != null ? { power: (c.power ?? faces[0].power)!, toughness: (c.toughness ?? faces[0].toughness)! } : {}),
     ...((c.loyalty ?? faces[0].loyalty) ? { loyalty: (c.loyalty ?? faces[0].loyalty)! } : {}),
     ...(type ? { type } : {}),
     scryfall: c.id,

@@ -1,7 +1,7 @@
 import { FileSystemAdapter, Notice, Plugin, TFile, loadPrism, normalizePath, requestUrl } from "obsidian";
 import { setLang, t } from "./i18n";
 import { NODE_EDITOR_VIEW, NodeEditorView, NodeStore } from "./NodeEditorView";
-import { CardData, parseCardMd, toCardMd } from "./node/card";
+import { CardData, cardOfKind, parseCardMd, toCardMd } from "./node/card";
 import { ScryCard, artFileName, cardsOf, isScryfallImage, printsFrom, printsUrl, scryfallUrl } from "./node/scryfall";
 import { Settings, SettingsHost, SettingsTab, loadSettings } from "./settings";
 import { ComposeResult, composeAbility } from "./ai/compose";
@@ -106,11 +106,12 @@ export default class MagicTheObsidian extends Plugin {
   private async compose(card: CardData, ability: NodeData, tokens: CardData[]): Promise<ComposeResult> {
     const p = this.settings.ai.provider;
     const tokenNames = tokens.filter((c) => c.token).map((c) => c.name);
+    const emblemNames = tokens.filter((c) => c.emblem).map((c) => c.name);
     const key = this.apiKey(p); // 無ければ、ここで、設定を促すメッセージで止まる
     try {
       return await composeAbility({
-        http: this.http, provider: p, model: this.settings.ai.models[p] || DEFAULT_MODELS[p], key, guide, card, ability, tokenNames,
-        hasCard: (name, filter) => tokens.some((c) => c.name === name && (filter !== "token" || !!c.token)),
+        http: this.http, provider: p, model: this.settings.ai.models[p] || DEFAULT_MODELS[p], key, guide, card, ability, tokenNames, emblemNames,
+        hasCard: (name, filter) => tokens.some((c) => c.name === name && cardOfKind(c, filter)),
       });
     } catch (e) {
       throw new Error(t("aiError", (e as Error).message)); // 通信の失敗など (キーは、メッセージに含まれない)
@@ -150,7 +151,7 @@ export default class MagicTheObsidian extends Plugin {
       const p = this.settings.ai.provider;
       const key = this.apiKey(p); // 無ければ、設定を促すメッセージで止まる
       const cards = await this.nodeStore().cards();
-      const all = collect(cards, (name, filter) => cards.some((c) => c.name === name && (filter !== "token" || !!c.token)));
+      const all = collect(cards, (name, filter) => cards.some((c) => c.name === name && cardOfKind(c, filter)));
       const items = all.filter((x) => !x.easy); // キーワードだけの行は、機械で組める (AI に渡さない)
       const easy = all.filter((x) => x.easy);
       if (!items.length) return void new Notice(t("rrNone"));
@@ -245,8 +246,9 @@ export default class MagicTheObsidian extends Plugin {
           const addJa = !had.textJa && c.textJa;
           const addPrints = !had.prints?.length && c.prints?.length;
           const addLoyalty = !had.loyalty && c.loyalty; // 初期の忠誠度 (前に取り込んだカードに、足す)
-          if (!addJa && !addPrints && !addLoyalty) return had;
-          const merged: CardData = { ...had, ...(addJa ? { nameJa: c.nameJa, typeLineJa: c.typeLineJa, textJa: c.textJa } : {}), ...(addPrints ? { prints: c.prints } : {}), ...(addLoyalty ? { loyalty: c.loyalty } : {}) };
+          const addPT = !had.power && !!c.power && !!c.toughness; // パワー・タフネス (前に取り込んだカードに、足す)
+          if (!addJa && !addPrints && !addLoyalty && !addPT) return had;
+          const merged: CardData = { ...had, ...(addJa ? { nameJa: c.nameJa, typeLineJa: c.typeLineJa, textJa: c.textJa } : {}), ...(addPrints ? { prints: c.prints } : {}), ...(addLoyalty ? { loyalty: c.loyalty } : {}), ...(addPT ? { power: c.power, toughness: c.toughness } : {}) };
           await write(merged);
           return merged;
         }

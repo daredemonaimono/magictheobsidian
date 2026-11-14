@@ -39,6 +39,7 @@ const EFFECT: Rule[] = [
   { re: /\bcopy (?:this|that|target) spell\b/i, any: ["copy-spell"], label: "copy a spell" },
   { re: /\battacks each combat if able\b/i, any: ["must-attack"], label: "attacks each combat" },
   { re: /\bplay lands\b/i, any: ["may-play-land"], label: "play lands" },
+  { re: /\bgets? an emblem\b/i, any: ["create-emblem"], label: "get an emblem" },
   { re: /\bthe Ring tempts you\b/i, any: ["ring-tempts"], label: "the Ring tempts you" },
   { re: /\breturn(?:s)? .*\bto (?:its owner's|their owner's|your) hand\b|\bon (?:their choice of )?the top or bottom of (?:their|your) library\b|\bonto the battlefield\b/i, any: ["move-zone"], label: "move to a zone" },
   { re: /\bexile it instead\b/i, any: ["exile-instead-of-graveyard"], label: "exile instead" },
@@ -75,6 +76,7 @@ const stepIds = (a: NodeData): Set<string> => new Set([...a.steps.filter((s) => 
 export function auditAbility(card: CardData, a: NodeData, hasCard: (n: string, f?: string) => boolean): AbilityAudit {
   const problems = validate(a, (n) => card.abilities.find((x) => x.name === n), hasCard);
   const gaps: string[] = a.unsupported ? [t("gapAiUnsupported", a.unsupported)] : []; // AI が「未対応」と答えた理由 (消えない)
+  if (card.textJa && a.source && !a.sourceJa) gaps.push(t("gapNoSourceJa")); // 日本語の原文があるのに、この能力に割り当てられていない (行の数が合わない)
   const text = (a.source ?? a.name).split("\n").join(" ").trim();
   if (a.kind === "keyword" && a.keyword && !a.steps.length) return { problems, gaps }; // キーワードだけの能力 (定義のあるものは、手順が入る)
   // 「コスト: 効果」の形 (コロンの前が、コスト)。忠誠度能力 (+1: / −2: / 0:) も

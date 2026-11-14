@@ -37,6 +37,8 @@ const TRIGGERS: Timing[] = [
   T("land-enters", "603.6a", "あなたのコントロールする土地が戦場に出たとき", "Whenever a land you control enters"),
   T("graveyard-from-library", "603.6", "ライブラリーから墓地に置かれたとき", "When it is put into a graveyard from your library"),
   T("graveyard-from-anywhere", "603.6c", "どこからでも、墓地に置かれたとき (戦場を離れたとは、みなさない)", "When it is put into a graveyard from anywhere (never a leaves-the-battlefield ability)"),
+  T("cast-self", "601.2i", "このカードを唱えたとき (これ自身だけ)", "When you cast this spell"),
+  T("creature-combat-damage", "510.2", "あなたのクリーチャーが、プレイヤーに戦闘ダメージを与えたとき", "Whenever a creature you control deals combat damage to a player"),
   T("cast", "601.2i", "呪文を唱えたとき", "When a spell is cast"),
 ];
 

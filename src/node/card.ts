@@ -38,12 +38,15 @@ export interface CardData {
   textJa?: string;
   prints?: Print[]; // 版違い (取り込みで入る)
   loyalty?: string; // プレインズウォーカーの、初期の忠誠度 (Scryfall。306.5a)
+  power?: string; // クリーチャーのパワー (Scryfall。208.1。* なども、文字のまま)
+  toughness?: string; // クリーチャーのタフネス (208.1)
   token?: boolean; // トークン (唱えるカードではない)
+  emblem?: boolean; // 紋章 (114.1。統率領域に置かれる印。能力を持つ)
   keywords?: string[]; // キーワード能力の一覧 (Scryfall の keywords)
   abilities: NodeData[];
 }
 
-const KEYS: [UiKey, keyof Fields | "name"][] = [["name", "name"], ["mdSource", "source"], ["mdUnsupported", "unsupported"], ["mdKind", "kind"], ["mdCost", "cost"], ["mdLoyalty", "loyalty"], ["mdTiming", "timing"], ["mdCondition", "condition"], ["mdTarget", "target"], ["mdAlsoTarget", "alsoTarget"], ["mdKeyword", "keyword"], ["mdSteps", "steps"]];
+const KEYS: [UiKey, keyof Fields | "name"][] = [["name", "name"], ["mdSource", "source"], ["mdSourceJa", "sourceJa"], ["mdUnsupported", "unsupported"], ["mdKind", "kind"], ["mdCost", "cost"], ["mdLoyalty", "loyalty"], ["mdTiming", "timing"], ["mdCondition", "condition"], ["mdTarget", "target"], ["mdAlsoTarget", "alsoTarget"], ["mdKeyword", "keyword"], ["mdSteps", "steps"]];
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 
 // カードのノートは、どの言語の設定でも、英語で書き出す (世界共通。フロントマター・キー・見出し・値のすべて)。読むときは、日本語のものも読める
@@ -59,7 +62,7 @@ const inEnglish = <T>(f: () => T): T => {
 
 export const toCardMd = (c: CardData): string => inEnglish(() => {
   const ty = CARD_TYPES.find((x) => x.id === c.type);
-  const meta: [string, string | undefined][] = [["type", c.type && (ty ? pick(ty.label) : c.type)], ["scryfall", c.scryfall], ["mana", c.mana], ["type-line", c.typeLine], ["loyalty", c.loyalty], ["token", c.token ? "true" : undefined], ["art", c.art], ["keywords", c.keywords?.join(", ")], ["name-ja", c.nameJa], ["type-line-ja", c.typeLineJa]];
+  const meta: [string, string | undefined][] = [["type", c.type && (ty ? pick(ty.label) : c.type)], ["scryfall", c.scryfall], ["mana", c.mana], ["type-line", c.typeLine], ["loyalty", c.loyalty], ["power", c.power], ["toughness", c.toughness], ["token", c.token ? "true" : undefined], ["emblem", c.emblem ? "true" : undefined], ["art", c.art], ["keywords", c.keywords?.join(", ")], ["name-ja", c.nameJa], ["type-line-ja", c.typeLineJa]];
   const out = ["---", "mtg: card", ...meta.filter(([, v]) => v).map(([k, v]) => `${k}: ${v}`), "---", `# ${c.name}`, ""];
   if (c.text) out.push("## Rules text", "", ...c.text.split("\n").map((l) => `> ${l}`), "");
   if (c.textJa) out.push("## Rules text (ja)", "", ...c.textJa.split("\n").map((l) => `> ${l}`), "");
@@ -76,6 +79,7 @@ const FENCE_OPEN = "```mtg-node";
 function abilityBlockLines(n: NodeData, ids = false): string[] {
   const f = fields(n, ids);
   const out = [FENCE_OPEN, `name: ${n.name}`, ...(f.source ? (f.source.includes("\n") ? ["source:", ...f.source.split("\n").map((l) => `  ${l}`)] : [`source: ${f.source}`]) : []), `kind: ${f.kind}`, `timing: ${f.timing}`];
+  if (f.sourceJa && !ids) out.splice(2 + (f.source ? (f.source.includes("\n") ? f.source.split("\n").length + 1 : 1) : 0), 0, ...(f.sourceJa.includes("\n") ? ["source-ja:", ...f.sourceJa.split("\n").map((l) => `  ${l}`)] : [`source-ja: ${f.sourceJa}`])); // AI への手引き (ids) には、入れない (トークンの節約)
   if (f.unsupported) out.push(`unsupported: ${f.unsupported.split("\n").join(" / ")}`);
   if (f.loyalty !== undefined) out.push(`loyalty: ${f.loyalty}`);
   if (f.cost?.length) out.push("cost:", ...f.cost.map((c) => `  ${c}`));
@@ -86,24 +90,28 @@ function abilityBlockLines(n: NodeData, ids = false): string[] {
   out.push("steps:", ...f.steps.map((s) => `  ${s}`), "```");
   return out;
 }
+// 引数 (card) で選べるカードか: トークン / 紋章
+export const cardOfKind = (c: CardData, filter?: string): boolean => !filter || (filter === "token" ? !!c.token : filter === "emblem" ? !!c.emblem : true);
 export const abilityBlock = (n: NodeData, ids = false): string => inEnglish(() => abilityBlockLines(n, ids).join("\n"));
 
 // コードブロックの中身 (``` の内側) から、能力を読む。AI の答えも、これで読む
 export function parseAbility(text: string): NodeData {
   const raw: Partial<Fields> & { name?: string } = { steps: [] };
-  let list: "steps" | "source" | "cost" | "also" | undefined; // 字下げした行が続く欄 (複数行の source は、字下げで書く)
+  let list: "steps" | "source" | "sourceJa" | "cost" | "also" | undefined; // 字下げした行が続く欄 (複数行の source は、字下げで書く)
   const srcLines: string[] = [];
+  const jaLines: string[] = [];
   const costLines: string[] = [];
   const alsoLines: string[] = [];
   for (const line of text.split("\n")) {
-    if (list && /^\s+\S/.test(line)) { (list === "steps" ? raw.steps! : list === "cost" ? costLines : list === "also" ? alsoLines : srcLines).push(line.trim()); continue; }
+    if (list && /^\s+\S/.test(line)) { (list === "steps" ? raw.steps! : list === "cost" ? costLines : list === "also" ? alsoLines : list === "sourceJa" ? jaLines : srcLines).push(line.trim()); continue; }
     const m = /^([^:]+): *(.*)$/.exec(line);
     const key = m && KEYS.find(([k]) => tAny(k).some((x) => same(x, m[1].trim())))?.[1];
     if (!m || !key) continue;
-    list = key === "steps" ? "steps" : key === "cost" ? "cost" : key === "alsoTarget" ? "also" : key === "source" && !m[2].trim() ? "source" : undefined;
+    list = key === "steps" ? "steps" : key === "cost" ? "cost" : key === "alsoTarget" ? "also" : key === "source" && !m[2].trim() ? "source" : key === "sourceJa" && !m[2].trim() ? "sourceJa" : undefined;
     if (key !== "steps" && key !== "cost" && key !== "alsoTarget") (raw as Record<string, string>)[key] = m[2].trim();
   }
   if (srcLines.length) raw.source = srcLines.join("\n");
+  if (jaLines.length) raw.sourceJa = jaLines.join("\n");
   if (costLines.length) raw.cost = costLines;
   if (alsoLines.length) raw.alsoTarget = alsoLines;
   return buildNode(raw.name ?? "", raw);
@@ -123,7 +131,7 @@ export function parseCardMd(md: string): CardData {
   const text = new RegExp(`^## (?:${tAny("rulesText").join("|")})\\n\\n((?:>.*\\n?)*)`, "m").exec(body)?.[1].split("\n").filter((l) => l.startsWith(">")).map((l) => l.replace(/^> ?/, "")).join("\n");
   const textJa = /^## Rules text \(ja\)\n\n((?:>.*\n?)*)/m.exec(body)?.[1].split("\n").filter((l) => l.startsWith(">")).map((l) => l.replace(/^> ?/, "")).join("\n");
   const prints = [...(/^## Printings\n\n([\s\S]*?)(?:\n## |(?![\s\S]))/m.exec(body)?.[1] ?? "").matchAll(/^- (\S+) (\S+) (\S+) (\S+) (\S+)$/gm)].map((m) => ({ set: m[1], number: m[2], released: m[3] === "-" ? "" : m[3], id: m[4], art: m[5] }));
-  const extra = { ...(prints.length ? { prints } : {}), nameJa: meta(["name-ja"]), typeLineJa: meta(["type-line-ja"]), ...(textJa ? { textJa } : {}), scryfall: meta(["scryfall"]), art: meta(["art"]), token: meta(["token"]) === "true", loyalty: meta(["loyalty"]), keywords: meta(["keywords"]).split(/,\s*/).filter(Boolean), mana: meta(["mana"]), typeLine: meta(["type-line"]), ...(text ? { text } : {}) };
+  const extra = { ...(prints.length ? { prints } : {}), nameJa: meta(["name-ja"]), typeLineJa: meta(["type-line-ja"]), ...(textJa ? { textJa } : {}), scryfall: meta(["scryfall"]), art: meta(["art"]), token: meta(["token"]) === "true", ...(meta(["emblem"]) === "true" ? { emblem: true } : {}), loyalty: meta(["loyalty"]), ...(meta(["power"]) ? { power: meta(["power"]) } : {}), ...(meta(["toughness"]) ? { toughness: meta(["toughness"]) } : {}), keywords: meta(["keywords"]).split(/,\s*/).filter(Boolean), mana: meta(["mana"]), typeLine: meta(["type-line"]), ...(text ? { text } : {}) };
   return { name, ...(type ? { type } : {}), ...Object.fromEntries(Object.entries(extra).filter(([, v]) => (Array.isArray(v) ? v.length : v))), abilities };
 }
 

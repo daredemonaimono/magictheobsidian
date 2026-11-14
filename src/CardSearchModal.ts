@@ -5,7 +5,7 @@ import { byCr } from "./node/cr";
 import { COLORS, ScryCard, buildQuery, thumbOf } from "./node/scryfall";
 
 // タイプの絞り込み (Scryfall の t: に渡す英語)。土地は、唱えないので、cardtypes.ts には無いが、探せる
-const TYPES: { id: string; cr: string; label: Label }[] = [...CARD_TYPES.map((x) => ({ id: x.id, cr: x.cr, label: x.label })), { id: "land", cr: "305.1", label: { ja: "土地", en: "Land" } }, { id: "token", cr: "111.1", label: { ja: "トークン", en: "Token" } }].sort(byCr); // CR の番号順
+const TYPES: { id: string; cr: string; label: Label }[] = [...CARD_TYPES.map((x) => ({ id: x.id, cr: x.cr, label: x.label })), { id: "land", cr: "305.1", label: { ja: "土地", en: "Land" } }, { id: "token", cr: "111.1", label: { ja: "トークン", en: "Token" } }, { id: "emblem", cr: "114.1", label: { ja: "紋章", en: "Emblem" } }].sort(byCr); // CR の番号順
 
 // 新規カード: Scryfall を、名前・色 (アイコン)・タイプ (選択) で探し、カードの絵を見て選ぶ。選んだカードは、onPick で、Cards/ に保存される (別のイラストは、プレビューの絵を押して選ぶ: ArtPickModal)
 export class CardSearchModal extends Modal {

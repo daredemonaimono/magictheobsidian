@@ -9,7 +9,7 @@ import { KEYWORDS, TARGETS } from "../src/node/slots";
 import { CARD_TYPES, cardTypeOf } from "../src/node/cardtypes";
 import { KINDS, defaultTiming, timingOf } from "../src/node/kinds";
 import { NodeData } from "../src/node/md";
-import { parseCardMd, toCardMd } from "../src/node/card";
+import { abilityBlock, parseCardMd, toCardMd } from "../src/node/card";
 import { artFileName, artOf, buildQuery, isScryfallImage, cardsOf, fromScryfall, printsFrom, printsUrl, scryfallUrl } from "../src/node/scryfall";
 import { validate } from "../src/node/validate";
 
@@ -377,8 +377,8 @@ assert.equal(defaultTiming("static"), "always", "並びが変わっても、初�
 
 // 炎の侍祭、チャンドラ (Chandra, Flamecaller) の 0 能力: 赤の 1/1 のエレメンタル・トークンを 2 体生成する。トークンは、登録してあるトークンのカードを指す
 const chandra: NodeData = { name: "0: tokens", kind: "activated", timing: "loyalty", loyalty: "0", steps: [{ node: false, id: "create-token", args: { count: "2", token: "Elemental Token (1-1 R)" } }] };
-const tokenCards = new Map([["Elemental Token (1-1 R)", { name: "Elemental Token (1-1 R)", token: true, abilities: [] }], ["Lightning Bolt", { name: "Lightning Bolt", abilities: [] }]]);
-const hasCard = (n: string, f?: string) => { const c = tokenCards.get(n) as { token?: boolean } | undefined; return !!c && (f !== "token" || !!c.token); };
+const tokenCards = new Map([["Elemental Token (1-1 R)", { name: "Elemental Token (1-1 R)", token: true, abilities: [] }], ["Lightning Bolt", { name: "Lightning Bolt", abilities: [] }], ["Vraska Emblem", { name: "Vraska Emblem", emblem: true, abilities: [] }]]);
+const hasCard = (n: string, f?: string) => { const c = tokenCards.get(n) as { token?: boolean; emblem?: boolean } | undefined; return !!c && (f !== "token" || !!c.token) && (f !== "emblem" || !!c.emblem); };
 for (const lang of ["ja", "en"] as const) {
   setLang(lang);
   assert.deepEqual(validate(chandra, none, hasCard), [], lang);
@@ -421,6 +421,17 @@ const fromReport: NodeData[] = [
   { name: "Chain", kind: "spell", timing: "resolves", target: "any-target", steps: [{ node: false, id: "deal-damage", args: { amount: "3" } }, { node: false, id: "may-pay", args: { mana: "{R}{R}" } }, { node: false, id: "copy-spell", args: { "new-targets": "may-choose" } }] },
   { name: "Annihilator", kind: "keyword", timing: "attacks", keyword: "annihilator", steps: [{ node: false, id: "sacrifice-by", args: { who: "defending-player", count: "6", what: "permanent" } }] },
   { name: "Frodo", kind: "triggered", timing: "attacks", condition: { id: "gained-life-at-least", args: { n: "3" } }, steps: [{ node: false, id: "ring-tempts", args: {} }] },
+  // 報告書 (2回目) から: 条件つきの手順・働く領域・紋章・呪文の追加コスト・手順を行う人・プロテクション・パートナー
+  { name: "Frodo then", kind: "triggered", timing: "attacks", steps: [{ node: false, id: "only-if", args: { condition: "is-ring-bearer" } }, { node: false, id: "only-if", args: { condition: "ring-tempted-at-least", n: "2" } }, { node: false, id: "draw", args: { amount: "1" } }] },
+  { name: "From graveyard", kind: "triggered", timing: "land-enters", target: "self", steps: [{ node: false, id: "functions-from", args: { zone: "graveyard" } }, { node: false, id: "may-pay", args: { mana: "{4}{R}{R}" } }, { node: false, id: "move-zone", args: { to: "battlefield" } }] },
+  { name: "Emblem", kind: "spell", timing: "resolves", steps: [{ node: false, id: "create-emblem", args: { emblem: "Vraska Emblem" } }] },
+  { name: "Blizzard", kind: "spell", timing: "resolves", cost: [{ id: "pay-mana", args: { mana: "{2}" } }], target: "target-creature", steps: [{ node: false, id: "move-zone", args: { to: "hand" } }] },
+  { name: "Chain", kind: "spell", timing: "resolves", target: "any-target", steps: [{ node: false, id: "may-pay", args: { mana: "{R}{R}", who: "controller-of-target" } }, { node: false, id: "copy-spell", args: { "new-targets": "may-choose", who: "controller-of-target" } }] },
+  { name: "Prot", kind: "keyword", timing: "always", keyword: "protection", steps: [{ node: false, id: "protection-from", args: { what: "spells", color: "colored" } }] },
+  { name: "Partner", kind: "keyword", timing: "always", keyword: "partner", steps: [{ node: false, id: "partner-with", args: { name: "Sam, Loyal Attendant" } }] },
+  { name: "Cast self", kind: "triggered", timing: "cast-self", steps: [{ node: false, id: "extra-turn", args: { count: "1" } }] },
+  { name: "Emblem trigger", kind: "triggered", timing: "creature-combat-damage", target: "target-player", steps: [{ node: false, id: "lose-game", args: {} }] },
+  { name: "Anywhere", kind: "spell", timing: "resolves", target: "each", targetArgs: { controller: "you", zone: "any", type: "card", color: "any" }, steps: [{ node: false, id: "move-zone", args: { to: "exile" } }] },
 ];
 for (const lang of ["ja", "en"] as const) {
   setLang(lang);
@@ -431,6 +442,10 @@ for (const lang of ["ja", "en"] as const) {
 }
 setLang("en");
 assert.ok(validate({ ...fromReport[2], steps: [{ node: false, id: "may-do", args: {} }] }, none, hasCard).length, "「してもよい」の後ろが空なら、問題");
+assert.ok(validate({ name: "x", kind: "triggered", timing: "attacks", steps: [{ node: false, id: "only-if", args: { condition: "is-ring-bearer" } }] }, none, hasCard).length, "「条件が成り立つときだけ」の後ろが空なら、問題");
+assert.ok(validate({ name: "x", kind: "triggered", timing: "attacks", steps: [{ node: false, id: "only-if", args: { condition: "ring-tempted-at-least" } }, { node: false, id: "draw", args: { amount: "1" } }] }, none, hasCard).length, "数のある条件には、N が要る");
+assert.ok(validate({ name: "x", kind: "keyword", timing: "always", keyword: "partner", steps: [{ node: false, id: "partner-with", args: { name: "" } }] }, none, hasCard).length, "text の引数は、空だと、問題");
+assert.ok(validate({ name: "x", kind: "spell", timing: "resolves", steps: [{ node: false, id: "create-emblem", args: { emblem: "Not a card" } }] }, none, hasCard).length, "登録していない紋章は、問題");
 assert.ok(toMd(chandraFull).includes("timing: Loyalty ability (your main phase, empty stack, once per turn)\nloyalty: 0\n"), toMd(chandraFull));
 assert.ok(toMd(chandraFull).includes("target: them (the tokens this ability created)\nsteps:\n  createToken(count=2, token=Elemental Token (1-1 R))\n  grantKeyword(keyword=haste)\n  delay(when=end-step)\n  sacrifice()\n"), toMd(chandraFull));
 setLang("ja");
@@ -532,7 +547,7 @@ setLang("ja");
 // 起動型には、コストが要る (602.1)。コストは、コストの動作だけ。起動型でだけ
 assert.match(validate({ ...vaultMana, cost: undefined }, none, hasCard).join(), /コスト .*が要る/);
 assert.match(validate({ ...vaultMana, cost: [{ id: "draw", args: { amount: "1" } }] }, none, hasCard).join(), /コストではない/);
-assert.match(validate({ ...vaultUntap, cost: [{ id: "tap-self", args: {} }] }, none, hasCard).join(), /起動型でだけ/);
+assert.match(validate({ ...vaultUntap, kind: "static", timing: "always", cost: [{ id: "tap-self", args: {} }] }, none, hasCard).join(), /起動型と呪文能力/);
 assert.deepEqual(validate({ ...vaultMana, cost: [{ id: "tap-self", args: {} }, { id: "pay-mana", args: { mana: "{2}{R}" } }, { id: "pay-life", args: { amount: "2" } }] }, none, hasCard), [], "コストは、いくつでも");
 // コストの動作を、手順に置けるのは、代替コストのタイミングだけ
 assert.match(validate({ ...vaultUntap, steps: [{ node: false, id: "tap-self", args: {} }] }, none, hasCard).join(), /「コスト」の欄か、代替コストのタイミング/);
@@ -735,5 +750,51 @@ void (async () => {
   assert.notEqual(itemKey({ card: "C", typeLine: "", ability: "A", line: "l", notes: ["a"] }), itemKey({ card: "C", typeLine: "", ability: "A", line: "l", notes: ["b"] }), "注記が変われば、別のもの (調べ直す)");
   console.log("ruling incremental ok");
 })();
+
+// 紋章のカード (114.1): Scryfall の layout=emblem → emblem: true。ノートに書いて、読み戻せる
+{
+  const em = fromScryfall({ object: "card", id: "e1", name: "Vraska, Golgari Queen Emblem", layout: "emblem", type_line: "Emblem", oracle_text: "Whenever a creature you control deals combat damage to a player, that player loses the game." } as any);
+  assert.equal(em.emblem, true);
+  assert.equal(parseCardMd(toCardMd(em)).emblem, true);
+  assert.equal(parseCardMd(toCardMd({ name: "X", abilities: [] })).emblem, undefined, "紋章でないカードに、emblem は付かない");
+  assert.match(buildQuery("", { colors: [], type: "emblem" }), /t:emblem/);
+  const pt = fromScryfall({ object: "card", id: "p1", name: "Bear", type_line: "Creature — Bear", power: "2", toughness: "*" } as any);
+  assert.deepEqual([pt.power, pt.toughness], ["2", "*"]);
+  const back = parseCardMd(toCardMd(pt));
+  assert.deepEqual([back.power, back.toughness], ["2", "*"], "パワー・タフネスは、ノートに書いて、読み戻せる");
+  assert.equal(fromScryfall({ object: "card", id: "p2", name: "Bolt", type_line: "Instant" } as any).power, undefined);
+}
+
+// source-ja: 能力ごとの日本語の文 (対戦で、日本語設定なら、これを出す)
+{
+  const { candidates: cands, abilityText, fillSourceJa, mergeCandidates: merge } = require("../src/node/split");
+  const { auditAbility } = require("../src/node/audit");
+  const base = { name: "Firebird", keywords: ["Flying", "Haste"], text: "Flying, haste\nThis creature attacks each combat if able.\nLandfall — Whenever a land you control enters.", abilities: [] as any[] };
+  const aligned = { ...base, textJa: "飛行、速攻\n毎ターン、可能なら攻撃する。\n上陸 ― 土地が出るたび。" };
+  for (const lang of ["en", "ja"] as const) {
+    const cs = cands(aligned, lang);
+    assert.deepEqual(cs.map((x: any) => x.node.sourceJa), ["飛行", "速攻", "毎ターン、可能なら攻撃する。", "上陸 ― 土地が出るたび。"], `${lang}: 言語の設定に関わらず、source-ja が入る`);
+  }
+  assert.equal(cands({ ...base, textJa: "飛行、速攻毎ターン、可能なら攻撃する。上陸 ― 土地が出るたび。" }, "ja").every((x: any) => x.node.sourceJa === undefined), true, "行の数が合わなければ、割り当てない (手で直す)");
+  const cs = cands(aligned, "en");
+  assert.equal(merge([cs[2], cs[3]]).sourceJa, "毎ターン、可能なら攻撃する。\n上陸 ― 土地が出るたび。", "合体: 行ごとの日本語が、改行でつながる");
+  const ab = { ...cs[2].node, kind: "static", timing: "always", steps: [] } as any;
+  delete ab.sourceJa;
+  const card = { ...aligned, abilities: [ab] };
+  assert.equal(fillSourceJa(card), true, "あとから、足せる");
+  assert.equal(card.abilities[0].sourceJa, "毎ターン、可能なら攻撃する。");
+  assert.equal(abilityText(card.abilities[0], "ja"), "毎ターン、可能なら攻撃する。");
+  assert.equal(abilityText(card.abilities[0], "en"), "This creature attacks each combat if able.");
+  assert.equal(abilityText({ ...ab, sourceJa: undefined }, "ja"), "This creature attacks each combat if able.", "日本語が無ければ、英語");
+  // md の往復 (1 行・複数行)
+  const one = { name: "x", kind: "static", timing: "always", source: "A", sourceJa: "あ", steps: [{ node: false, id: "must-attack", args: {} }] } as any;
+  const two = { ...one, source: "A\nB", sourceJa: "あ\nい" };
+  for (const n of [one, two]) assert.deepEqual(parseMd(toMd(n)), n, "source-ja は、md に書いて、読み戻せる");
+  assert.ok(!abilityBlock(one, true).includes("source-ja"), "AI への手引き (ids) には、入れない");
+  // 点検: 日本語の原文があるのに、割り当てが無い
+  const noJa = { ...ab, sourceJa: undefined };
+  assert.ok(auditAbility({ ...aligned, abilities: [noJa] }, noJa, () => false).gaps.some((g: string) => /source-ja/.test(g)));
+  assert.ok(!auditAbility({ ...base, abilities: [noJa] }, noJa, () => false).gaps.some((g: string) => /source-ja/.test(g)), "日本語の原文が無いカードは、数えない");
+}
 
 console.log("node ok");

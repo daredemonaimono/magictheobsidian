@@ -178,6 +178,7 @@ textarea.mtg-ne-name { resize: none; field-sizing: content; min-height: 2em; }
 /* 忠誠度のアイコン (簡易): 銀の縁の、黒い札に、白い文字。能力の行の先頭に +N / −N / 0、右下に初期の忠誠度 */
 .mtg-ne-loy, .mtg-ne-loyalty-total { display: inline-block; flex-shrink: 0; min-width: 2.4em; padding: 0 6px; text-align: center; font-weight: 700; color: #fff; background: #101015; border: 2px solid #d6d8e0; border-radius: 4px 4px 12px 12px; font-family: var(--mtg-font-name); }
 .mtg-ne-loy { margin-right: 8px; font-size: 0.9em; vertical-align: middle; }
+.mtg-ne-pt-total { position: absolute; right: 12px; bottom: 10px; min-width: 3.2em; padding: 1px 10px; text-align: center; font-weight: 700; font-size: 1.1em; color: #15151a; background: color-mix(in srgb, var(--frame-color, #8b8f9c) 22%, #fff); border: 2px solid var(--frame-color, #8b8f9c); border-radius: 8px; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25); font-family: var(--mtg-font-name); } /* パワー/タフネス (簡易): 忠誠度の札 (黒地・下が丸い盾) とは違う、枠の色の、角の丸い四角 */
 .mtg-ne-loyalty-total { position: absolute; right: 12px; bottom: 10px; min-width: 2.6em; font-size: 1.1em; }
 
 /* 能力の欄の文字の大きさ: すべての行を、選択中の行 (入力欄) と、同じ大きさに */

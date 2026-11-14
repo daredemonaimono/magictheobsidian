@@ -1,6 +1,6 @@
 import { Label } from "../i18n";
 import { byCr } from "./cr";
-import { COLOR_CHOICES, Callable, Choice, ParamDef, choice } from "./params";
+import { COLOR_CHOICES, Callable, Choice, ParamDef, WHO_CHOICES, choice } from "./params";
 import { KEYWORDS } from "./slots";
 
 export type { Choice, ParamDef };
@@ -184,7 +184,7 @@ export const ACTIONS: Def[] = [
     label: L("支払ってもよい。そうしたなら、ここから先の手順を行う", "You may pay. If you do, do the following steps"),
     cr: "118.12",
     help: L("マナを支払ってもよい。支払ったなら、これより後ろの手順を、行う (支払わなければ、後ろは、行わない)", "You may pay the mana. If you do, do the steps after this one (if you don't, they are skipped)"),
-    params: [{ id: "mana", label: L("マナ", "Mana"), type: "mana", default: "{1}" }],
+    params: [{ id: "mana", label: L("マナ", "Mana"), type: "mana", default: "{1}" }, { id: "who", label: L("行う人", "Who"), type: "choice", choices: WHO_CHOICES, optional: true, default: "you" }],
   },
   {
     id: "untap",
@@ -301,8 +301,8 @@ export const ACTIONS: Def[] = [
     fn: "mayDo",
     label: L("してもよい。そうしたなら、ここから先の手順を行う", "You may. If you do, do the following steps"),
     cr: "118.12",
-    help: L("次の手順は、行ってもよい。行ったなら、その後ろの手順を行う (行わなければ、後ろは行わない)。マナを支払う場合は、「支払ってもよい」", "The next step is optional. If you do it, do the steps after it (if you don't, they are skipped). For paying mana, use \"may pay\""),
-    params: [],
+    help: L("次の手順は、行ってもよい。行ったなら、その後ろの手順を行う (行わなければ、後ろは行わない)。マナを支払う場合は、「支払ってもよい」。行う人の既定は、あなた", "The next step is optional. If you do it, do the steps after it (if you don't, they are skipped). For paying mana, use \"may pay\". The player defaults to you"),
+    params: [{ id: "who", label: L("行う人", "Who"), type: "choice", choices: WHO_CHOICES, optional: true, default: "you" }],
   },
   {
     id: "lose-game",
@@ -326,7 +326,7 @@ export const ACTIONS: Def[] = [
     label: L("呪文をコピーする", "Copy a spell"),
     cr: "707.10",
     help: L("呪文 (または能力) のコピーを、スタックに置く (唱えたことには、ならない)。新しい対象を選んでもよい (707.10c)", "Put a copy of a spell (or ability) onto the stack; it isn't cast. New targets may be chosen (707.10c)"),
-    params: [{ id: "new-targets", label: L("対象", "Targets"), type: "choice", choices: [C("may-choose", "新しい対象を選んでもよい", "may choose new targets"), C("keep", "そのまま", "keep the same")], default: "may-choose" }],
+    params: [{ id: "new-targets", label: L("対象", "Targets"), type: "choice", choices: [C("may-choose", "新しい対象を選んでもよい", "may choose new targets"), C("keep", "そのまま", "keep the same")], default: "may-choose" }, { id: "who", label: L("行う人", "Who"), type: "choice", choices: WHO_CHOICES, optional: true, default: "you" }],
   },
   {
     id: "may-play-land",
@@ -334,7 +334,7 @@ export const ACTIONS: Def[] = [
     label: L("土地をプレイしてもよい", "You may play lands"),
     cr: "305.1",
     help: L("対象の領域 (墓地など) の土地を、期間のあいだ、プレイしてもよい (許可を与える効果。土地のプレイは、特別な処理で、スタックを使わない。プレイできる回数などの他のルールは、そのまま)", "You may play lands from the target zone for the duration (playing a land is a special action; other land-play rules still apply)"),
-    params: [{ id: "duration", label: L("期間", "Duration"), type: "choice", choices: THIS_TURN, default: "this-turn" }],
+    params: [{ id: "duration", label: L("期間", "Duration"), type: "choice", choices: THIS_TURN, default: "this-turn" }, { id: "from", label: L("どこから", "From"), type: "choice", choices: [C("graveyard", "墓地", "your graveyard"), C("hand", "手札", "your hand"), C("library", "ライブラリーの一番上", "the top of your library"), C("exile", "追放領域", "exile")], optional: true, default: "graveyard" }],
   },
   {
     id: "sacrifice-by",
@@ -343,7 +343,7 @@ export const ACTIONS: Def[] = [
     cr: "701.21a",
     help: L("指定のプレイヤーが、自分のコントロールするパーマネントを、指定の数、生け贄に捧げる (何を捧げるかは、そのプレイヤーが選ぶ)", "The chosen player sacrifices permanents they control (that player chooses which)"),
     params: [
-      { id: "who", label: L("誰が", "Who"), type: "choice", choices: [C("defending-player", "防御プレイヤー", "the defending player"), C("target-player", "対象のプレイヤー", "target player"), C("each-opponent", "各対戦相手", "each opponent"), C("each-player", "各プレイヤー", "each player")], default: "target-player" },
+      { id: "who", label: L("誰が", "Who"), type: "choice", choices: [C("you", "あなた", "you"), C("defending-player", "防御プレイヤー", "the defending player"), C("target-player", "対象のプレイヤー", "target player"), C("controller-of-target", "対象のコントローラー (109.4)", "the target's controller"), C("each-opponent", "各対戦相手", "each opponent"), C("each-player", "各プレイヤー", "each player")], default: "target-player" },
       { id: "count", label: L("数", "Count"), type: "number", default: "1" },
       { id: "what", label: L("何を", "What"), type: "choice", choices: [C("permanent", "パーマネント", "permanents"), C("creature", "クリーチャー", "creatures"), C("artifact", "アーティファクト", "artifacts"), C("enchantment", "エンチャント", "enchantments"), C("land", "土地", "lands")], default: "permanent" },
     ],
@@ -373,6 +373,42 @@ export const ACTIONS: Def[] = [
     cr: "701.54a",
     help: L("あなたのクリーチャー 1 体を、指輪所持者にする (「指輪」の紋章を、持っていなければ、得る: 701.54c)", "Choose a creature you control as your Ring-bearer (get the emblem named The Ring first if you don't have it: 701.54c)"),
     params: [],
+  },
+  {
+    id: "create-emblem",
+    fn: "createEmblem",
+    label: L("紋章を得る", "Get an emblem"),
+    cr: "114.2",
+    help: L("登録してある紋章のカード (Cards/。タイプ: 紋章) を指して、あなたが、その紋章を得る。紋章は、統率領域に置かれ、あなたが、持ち主でコントローラーになる (114.1・114.2)。紋章の能力は、紋章のカードに組む", "Get an emblem from a registered emblem card (Cards/, type: emblem). It goes to the command zone, owned and controlled by you (114.1, 114.2). Build its abilities on the emblem card"),
+    params: [{ id: "emblem", label: L("紋章", "Emblem"), type: "card", filter: "emblem", default: "" }],
+  },
+  {
+    id: "functions-from",
+    fn: "functionsFrom",
+    label: L("この能力が働く領域", "Zone this ability functions in"),
+    cr: "113.6b",
+    help: L("この能力は、指定の領域でだけ働く (墓地から戻る能力・スタックで働く能力など。書かれていなければ、戦場。113.6k: 戦場から誘発できない誘発条件は、誘発できるすべての領域で働く)", "This ability functions only from the given zone (e.g. a graveyard ability, or one that works on the stack). Default: the battlefield"),
+    params: [{ id: "zone", label: L("領域", "Zone"), type: "choice", choices: [C("battlefield", "戦場", "the battlefield"), C("stack", "スタック", "the stack"), C("graveyard", "墓地", "the graveyard"), C("hand", "手札", "the hand"), C("library", "ライブラリー", "the library"), C("exile", "追放領域", "exile"), C("any", "すべての領域", "every zone")], default: "graveyard" }],
+  },
+  {
+    id: "protection-from",
+    fn: "protectionFrom",
+    label: L("プロテクション (何からの)", "Protection from…"),
+    cr: "702.16a",
+    help: L("指定のものからの、プロテクション: それによって、対象にならず、エンチャントされず、装備されず、ダメージを与えられず、ブロックされない (702.16b〜)。「1 色以上の呪文」= 何: 呪文 + 色: 1 色以上", "Protection from the given quality: can't be targeted, enchanted, equipped, damaged or blocked by it (702.16b…). 'spells that are one or more colors' = what: spells + color: colored"),
+    params: [
+      { id: "what", label: L("何からの", "From what"), type: "choice", choices: [C("everything", "すべて", "everything"), C("spells", "呪文", "spells"), C("permanents", "パーマネント", "permanents"), C("creatures", "クリーチャー", "creatures")], default: "permanents" },
+      { id: "color", label: L("色", "Color"), type: "choice", choices: [...COLORS, C("colored", "1 色以上 (無色でない)", "one or more colors")], default: "any" },
+    ],
+  },
+  {
+    id: "partner-with",
+    fn: "partnerWith",
+    label: L("パートナー (相手の名前)", "Partner with [name]"),
+    cr: "702.124a",
+    help: L("パートナー: 指定の名前のカードと、統率者にできる (ゲームの前に働く。構築のルール)", "Partner with a named card as commanders (works before the game; a deck-construction rule)"),
+    only: ["static", "keyword"],
+    params: [{ id: "name", label: L("カード名", "Card name"), type: "text", default: "" }],
   },
 ];
 
@@ -428,6 +464,19 @@ export const CONDITIONS: Def[] = [
   { id: "my-turn",
     fn: "isMyTurn", label: L("自分のターン", "It's your turn"), cr: "500.1", help: L("自分のターンである", "It is your turn"), params: [] },
 ];
+
+// 手順の途中の条件: 「そのあと、〜なら、…」。条件は、ここから先の手順に、かかる。2 つ以上 (かつ) は、続けて並べる (608.2c: 書かれた順に、行う)
+ACTIONS.push({
+  id: "only-if",
+  fn: "onlyIf",
+  label: L("ここから先は、条件が成り立つときだけ行う", "Do the following steps only if"),
+  cr: "608.2c",
+  help: L("手順の途中の条件 (「そのあと、〜なら」)。成り立たなければ、ここから先の手順は行わない。誘発型の「〜なら」(603.4) は、能力の条件の欄", "A mid-effect condition ('Then if …'). If false, the steps after it are skipped. For an intervening 'if' on a trigger (603.4), use the ability's condition field"),
+  params: [
+    { id: "condition", label: L("条件", "Condition"), type: "choice", choices: CONDITIONS.map((x) => ({ id: x.id, label: x.label })), default: CONDITIONS[0].id },
+    { id: "n", label: L("N (数のある条件のとき)", "N (for conditions with a number)"), type: "number", optional: true, default: "" },
+  ],
+});
 
 // 動作・条件は、CR の番号順 (作った順ではない)
 ACTIONS.sort(byCr);

@@ -4,7 +4,7 @@ import { ACTIONS, CONDITIONS, Def } from "./node/actions";
 import { DEFAULT_KIND, KINDS, defaultTiming, kindOf } from "./node/kinds";
 import { ArtPickModal } from "./ArtPickModal";
 import { CardSearchModal } from "./CardSearchModal";
-import { CardData, Print } from "./node/card";
+import { CardData, Print, cardOfKind } from "./node/card";
 import { CARD_TYPES } from "./node/cardtypes";
 import { ComposeResult } from "./ai/compose";
 import { auditAbility, auditCard } from "./node/audit";
@@ -12,7 +12,7 @@ import { unsupportedOf } from "./ai/compose";
 import { frameKinds, layerKeyFor, loyaltyBadge } from "./frames";
 import { frameEra } from "./node/frame";
 import { moveItem } from "./node/order";
-import { abilityLabel, candidates, hasSource, mergeCandidates } from "./node/split";
+import { abilityLabel, candidates, fillSourceJa, hasSource, mergeCandidates } from "./node/split";
 import { Call, NodeData, defaults } from "./node/md";
 import { Callable } from "./node/params";
 import { KEYWORDS, TARGETS } from "./node/slots";
@@ -118,7 +118,7 @@ export class NodeEditorView extends ItemView {
   // 登録してあるカードか (トークンの引数の確認用)
   private hasCard = (name: string, filter?: string): boolean => {
     const c = this.cards.get(name);
-    return !!c && (filter !== "token" || !!c.token);
+    return !!c && cardOfKind(c, filter);
   };
 
   private shows: (() => void)[] = []; // 検索欄の一覧を、描き直す関数 (部品を置くたびに、設定済みのものを外す)
@@ -138,6 +138,7 @@ export class NodeEditorView extends ItemView {
     top.createEl("button", { text: t("newCard") }).onclick = () => {
       new CardSearchModal(this.app, (q) => this.store.search(q), async (found) => {
         this.card = await this.importFound(found);
+        fillSourceJa(this.card);
         this.sel = 0;
         this.picked.clear();
         await this.refreshKnown();
@@ -163,6 +164,7 @@ export class NodeEditorView extends ItemView {
         row.onmousedown = (e) => {
           e.preventDefault(); // 欄の焦点が外れて、一覧が消える前に開く
           this.card = structuredClone(x);
+          fillSourceJa(this.card); // 日本語の原文の行が合うカードは、能力に、日本語の文を足す (保存で、ノートに残る)
             this.sel = 0;
         this.picked.clear();
           again();
@@ -276,6 +278,8 @@ export class NodeEditorView extends ItemView {
     });
     // 右下の、初期の忠誠度のタグ (306.5a)。まだ取り込んでいないカードは、「?」(取り込み直すと、入る)
     if (kinds.planeswalker) frame.createDiv({ text: c.loyalty ?? "?", cls: "mtg-ne-loyalty-total", attr: { title: t("loyaltyShort", c.loyalty ?? "?") } });
+    // 右下の、パワー/タフネスのバッジ (208.1)。クリーチャーで、まだ取り込んでいないカードは「?」(取り込み直すと、入る)
+    else if (c.power !== undefined || /creature|クリーチャー/i.test(c.typeLine ?? "")) { const pt = `${c.power ?? "?"}/${c.toughness ?? "?"}`; frame.createDiv({ text: pt, cls: "mtg-ne-pt-total", attr: { title: pt } }); }
     left.createEl("button", { text: t("addAbility"), cls: "mtg-ne-new" }).onclick = () => { c.abilities.push(blank()); this.sel = c.abilities.length - 1; again(); };
 
     // 中: 盤面 (チップ・問題・保存)
@@ -347,9 +351,11 @@ export class NodeEditorView extends ItemView {
           const r = await this.store.compose(c, a);
           if (!r.node) { new Notice(t("aiFailed", r.problems.join(" / ")), 12000); }
           else {
-            // 組んだ中身に差し替える (名前・原文は、そのまま)
+            // 組んだ中身に差し替える (名前・原文・日本語の原文は、そのまま)
+            const keepJa = a.sourceJa;
             for (const k of ["kind", "timing", "loyalty", "cost", "condition", "target", "targetArgs", "alsoTargets", "keyword", "steps", "unsupported"] as const) delete (a as unknown as Record<string, unknown>)[k];
             Object.assign(a, { ...r.node, name: a.name, ...(a.source ? { source: a.source } : {}) });
+            if (keepJa) a.sourceJa = keepJa; else delete a.sourceJa; // AI が書いた source-ja は、使わない (割り当ては、原文から)
             const why = unsupportedOf(r.note); // 「未対応: …」は、ノードに残す (通知は、消えるため)
             if (why) a.unsupported = why;
             this.sel = i;
@@ -401,7 +407,7 @@ export class NodeEditorView extends ItemView {
         // キーワード能力: キーワードを選ぶだけ
         this.palette(panel, t("keyword"), KEYWORDS.map((k) => ({ slot: "keyword", id: k.id, label: k.label, cr: k.cr })));
       } else {
-        if (d.kind === "activated") this.palette(panel, t("cost"), ACTIONS.filter((x) => x.cost).map((x) => ({ slot: "cost", id: x.id, label: x.label, cr: x.cr }))); // 起動型のコスト ({T}・マナ・ライフ・追放)
+        if (d.kind === "activated" || d.kind === "spell") this.palette(panel, t("cost"), ACTIONS.filter((x) => x.cost).map((x) => ({ slot: "cost", id: x.id, label: x.label, cr: x.cr }))); // 起動型のコスト ({T}・マナ・ライフ・追放)
         this.palette(panel, t("timing"), (kindOf(d.kind)?.timings ?? []).map((x) => ({ slot: "timing", id: x.id, label: x.label, cr: x.cr })));
         this.palette(panel, t("target"), TARGETS.map((x) => ({ slot: "target", id: x.id, label: x.label, cr: x.cr })));
         this.palette(panel, t("alsoTarget"), TARGETS.filter((x) => x.targets).map((x) => ({ slot: "alsoTarget", id: x.id, label: x.label, cr: x.cr }))); // 「target A and target B」の B
@@ -496,12 +502,13 @@ export class NodeEditorView extends ItemView {
       } else if (p.type === "card") {
         // 登録してあるカード (トークン) から選ぶ。ここで選んだカードを、手順が指す
         const sel = parent.createEl("select");
-        sel.createEl("option", { text: t("pickToken"), value: "" }).selected = !v;
-        const list = [...this.cards.values()].filter((x) => p.filter !== "token" || x.token).map((x) => x.name).sort();
+        const emb = p.filter === "emblem";
+        sel.createEl("option", { text: t(emb ? "pickEmblem" : "pickToken"), value: "" }).selected = !v;
+        const list = [...this.cards.values()].filter((x) => cardOfKind(x, p.filter)).map((x) => x.name).sort();
         if (v && !list.includes(v)) list.push(v); // 見つからない名前も、そのまま出す (検証が知らせる)
         for (const n of list) sel.createEl("option", { text: n, value: n }).selected = n === v;
-        sel.createEl("option", { text: t("findToken"), value: "__find__" }); // 登録していないトークンは、ここから探して、登録する (いまのカードは、そのまま)
-        if (!list.length) sel.title = t("noTokens");
+        sel.createEl("option", { text: t(emb ? "findEmblem" : "findToken"), value: "__find__" }); // 登録していないトークンは、ここから探して、登録する (いまのカードは、そのまま)
+        if (!list.length) sel.title = t(emb ? "noEmblems" : "noTokens");
         sel.onchange = () => {
           if (sel.value !== "__find__") { c.args[p.id] = sel.value; changed(); return; }
           sel.value = v;
@@ -510,8 +517,12 @@ export class NodeEditorView extends ItemView {
             await this.refreshKnown();
             c.args[p.id] = added.name;
             this.redraw();
-          }, "token").open();
+          }, emb ? "emblem" : "token").open();
         };
+      } else if (p.type === "text") {
+        const inp = parent.createEl("input", { type: "text", value: v });
+        inp.style.width = "160px";
+        inp.oninput = () => { c.args[p.id] = inp.value.trim(); changed(); };
       } else if (p.type === "mana") {
         const inp = parent.createEl("input", { type: "text", value: v, cls: "mtg-ne-num" });
         inp.style.width = "90px";
