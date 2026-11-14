@@ -11,7 +11,7 @@ import { FONT_DIR, Loaded, loadLocalFonts } from "./fonts";
 import { mtgNodeEditorHighlight } from "./highlight/editor";
 import { prismGrammar } from "./highlight/tokens";
 import { NodeData } from "./node/md";
-import { MAX_ITEMS, collect, reportMd, rulingAnalysis } from "./ruling";
+import { MAX_ITEMS, RulingState, collect, itemKey, reportMd, ruleWithSubs, rulingAnalysis } from "./ruling";
 
 const REPORT_DIR = "cr"; // Ruling report の置き場 (vault 直下の cr/。プラグインのフォルダの cr/ (CR の写し) とは、別)
 const CARD_DIR = "Cards"; // カード = Cards/<カード名>.md (能力のノードが、コードブロックで入る。ノードの置き場は、ここだけ)
@@ -28,6 +28,7 @@ export default class MagicTheObsidian extends Plugin {
     this.registerView(NODE_EDITOR_VIEW, (leaf) => new NodeEditorView(leaf, this.nodeStore()));
     this.addCommand({ id: "node-editor", name: "Node: open the node editor", callback: () => void this.openNodeEditor() });
     this.addCommand({ id: "ruling-report", name: "Ruling report", callback: () => void this.rulingReport() });
+    this.addCommand({ id: "ruling-report-full", name: "Ruling report (full re-check, ignore the last one)", callback: () => void this.rulingReport(true) });
     this.addRibbonIcon("blocks", t("ribbon"), () => void this.openNodeEditor());
     void this.loadCrInfo().catch(() => undefined); // 設定の画面に出す、CR の取得日・件数
     void this.reloadFonts(); // 自分で置いたフォント (fonts/) を、読み込む
@@ -145,28 +146,35 @@ export default class MagicTheObsidian extends Plugin {
   }
 
   // Ruling report: 組めていない・途中の能力を、AI が公式ルールを確認して点検し、足りないノードを、md の報告書 (Reports/) にする
-  private async rulingReport() {
+  private async rulingReport(full = false) {
     try {
       const p = this.settings.ai.provider;
       const key = this.apiKey(p); // 無ければ、設定を促すメッセージで止まる
       const cards = await this.nodeStore().cards();
-      const items = collect(cards, (name, filter) => cards.some((c) => c.name === name && (filter !== "token" || !!c.token)));
+      const all = collect(cards, (name, filter) => cards.some((c) => c.name === name && (filter !== "token" || !!c.token)));
+      const items = all.filter((x) => !x.easy); // キーワードだけの行は、機械で組める (AI に渡さない)
+      const easy = all.filter((x) => x.easy);
       if (!items.length) return void new Notice(t("rrNone"));
       new Notice(t("rrStart", String(Math.min(items.length, MAX_ITEMS))), 8000);
       const model = this.settings.ai.models[p] || DEFAULT_MODELS[p];
       const rules = await this.readCr(); // ローカルの CR (無ければ、ここで 1 回だけ取る)
-      const getRule = async (n: string) => rules[n];
-      const result = await rulingAnalysis({ http: this.http, provider: p, model, key, items, getRule });
+      const getRule = async (n: string) => ruleWithSubs(rules, n);
+      const statePath = `${this.manifest.dir}/cr/ruling-state.json`; // 前回の結果 (変わったものだけを、調べるため)
+      const a = this.app.vault.adapter;
+      let prev: RulingState | undefined;
+      if (!full && (await a.exists(statePath))) { try { prev = JSON.parse(await a.read(statePath)) as RulingState; } catch { /* 読めなければ、全部調べる */ } }
+      const result = await rulingAnalysis({ http: this.http, provider: p, model, key, items, prev, getRule });
+      if (!result.cut) await a.write(statePath, JSON.stringify({ keys: items.slice(0, MAX_ITEMS).map(itemKey), analysis: result.analysis, rules: result.rules } satisfies RulingState)); // 切れたものは、残さない (次は、全部調べ直す)
       const crDate = this.crInfo?.date ?? "";
       const d = new Date();
       const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      // 報告書は 1 つ (cr/Ruling report.md)。あれば、中身を更新する (消さない。見出しの「updated 日付」が、新しくなる)
       const vault = this.app.vault;
       if (!vault.getAbstractFileByPath(REPORT_DIR)) await vault.createFolder(REPORT_DIR);
-      let path = normalizePath(`${REPORT_DIR}/Ruling report ${date}.md`);
-      for (let n = 2; vault.getAbstractFileByPath(path); n++) path = normalizePath(`${REPORT_DIR}/Ruling report ${date} (${n}).md`); // 上書きしない
-      const file = await vault.create(path, reportMd(date, model, cards.length, items, result, crDate));
-      // 前の報告書は、ごみ箱へ (新しいのが、できてから。vault を、報告書で埋めない)
-      for (const f of vault.getFiles().filter((x) => x.parent?.path === REPORT_DIR && x !== file && /^Ruling report .*\.md$/.test(x.name))) await this.app.fileManager.trashFile(f);
+      const path = normalizePath(`${REPORT_DIR}/Ruling report.md`);
+      const body = reportMd(date, model, cards.length, items, result, crDate, easy);
+      const old = vault.getAbstractFileByPath(path);
+      const file = old instanceof TFile ? (await vault.modify(old, body), old) : await vault.create(path, body);
       new Notice(t("saved", path));
       await this.app.workspace.getLeaf(true).openFile(file);
     } catch (e) {

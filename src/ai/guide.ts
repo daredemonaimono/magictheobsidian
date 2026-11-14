@@ -48,6 +48,23 @@ export const reference = (): string => [
   ...CARD_TYPES.map((c) => `- \`${c.id}\` — ${both(c.label)} (CR ${c.cr})。唱えるタイミング: ${c.castTiming === "anytime" ? "優先権があれば、いつでも" : "自分のメイン・フェイズで、スタックが空のとき"}`),
 ].join("\n");
 
+// 点検用の、短い一覧 (英語・id だけ)。毎回送るので、トークンを、できるだけ減らす (docs/ai-guide.md の詳しい一覧とは、別)
+const cparam = (p: ParamDef): string => `${p.id}${p.optional ? "?" : ""}:${p.type === "choice" || p.type === "multi" ? p.choices!.map((c) => c.id).join("|") : p.type}${p.default ? `=${p.default}` : ""}`;
+const ccall = (c: Callable & { help?: { ja: string; en: string } }): string => `- ${c.fn ?? c.id}(${c.params.map(cparam).join(", ")}) [${c.id}] ${c.label.en}${c.only ? ` (only: ${c.only.join("/")})` : ""}${c.help ? ` — ${c.help.en}` : ""}`;
+export const compactReference = (): string => [
+  "Defined parts (id in [brackets]; fn(params) as written in nodes; ? = optional).",
+  "Kinds/timings:",
+  ...KINDS.map((k) => `- ${k.id}: ${k.label.en}; timings: ${k.timings.map((x) => x.id).join(", ")}`),
+  "Actions:",
+  ...ACTIONS.map(ccall),
+  "Conditions:",
+  ...CONDITIONS.map(ccall),
+  "Targets:",
+  ...TARGETS.map(ccall),
+  `Keywords: ${KEYWORDS.map((k) => k.id).join(", ")}`,
+  `Card types: ${CARD_TYPES.map((c) => c.id).join(", ")}`,
+].join("\n");
+
 export const examples = (): string =>
   EXAMPLES.flatMap((e) => [`#### ${e.card}`, "", "原文: " + (e.node.source ?? e.node.name).split("\n").join(" / "), "", abilityBlock(e.node, true), ""]).join("\n");
 

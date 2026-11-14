@@ -1,7 +1,8 @@
-import { reference } from "./ai/guide";
-import { Http, Msg, Provider, chatRequest, chatText, errorText } from "./ai/providers";
+import { compactReference } from "./ai/guide";
+import { Http, Msg, Provider, chatRequest, chatText, errorText, truncated } from "./ai/providers";
 import { auditCard } from "./node/audit";
 import { CardData, abilityBlock } from "./node/card";
+import { KEYWORDS } from "./node/slots";
 
 // Ruling report: ノードが組めていない・途中のものを、AI が、公式ルール (CR) を確認した上で点検し、「足りないノード」を炙り出して、md の報告書にする。
 // この報告書をもとに、エージェントが、新しいノードを組む (agent.md「Ruling report から、新しいノードを組む」)。
@@ -14,8 +15,13 @@ export interface Item {
   line: string; // 原文の行
   node?: string; // いまの状態 (組みかけ)
   notes: string[]; // 問題・抜けの疑い
+  easy?: boolean; // 定義済みのキーワードだけの行 (飛行・警戒 …): 機械で、組める。AI には、渡さない
 }
+const KW = new Set(KEYWORDS.map((k) => k.label.en.toLowerCase()));
+export const isKeywordOnly = (line: string): boolean => line.split(/,\s*/).every((x) => KW.has(x.trim().replace(/\.$/, "").toLowerCase()));
 export const MAX_ITEMS = 60;
+// 前回と照合するための、能力の印 (カード・能力・原文・いまのノード。どれかが変われば、別のもの)
+export const itemKey = (it: Item): string => [it.card, it.ability, it.line, it.node ?? ""].join("\u0001");
 
 // 組めていないもの: ルールなしのカードは、原文の行ごと / 組みかけの能力は、問題・抜けの疑いごと
 export function collect(cards: CardData[], hasCard: (n: string, f?: string) => boolean): Item[] {
@@ -25,38 +31,40 @@ export function collect(cards: CardData[], hasCard: (n: string, f?: string) => b
     if (!a.needsReview) continue;
     const typeLine = c.typeLine ?? "";
     if (a.noRules) {
-      for (const line of (c.text ?? "").split("\n").map((l) => l.trim()).filter(Boolean)) out.push({ card: c.name, typeLine, ability: "", line, notes: ["ルールなし (能力が 1 つも無い)"] });
+      for (const line of (c.text ?? "").split("\n").map((l) => l.trim()).filter(Boolean)) out.push({ card: c.name, typeLine, ability: "", line, notes: ["No rules (the card has no abilities yet)"], ...(isKeywordOnly(line) ? { easy: true } : {}) });
       continue;
     }
     c.abilities.forEach((ab, i) => {
       const r = a.abilities[i];
-      if (r.problems.length || r.gaps.length) out.push({ card: c.name, typeLine, ability: ab.name, line: (ab.source ?? ab.name).split("\n").join(" / "), node: abilityBlock(ab, true), notes: [...r.problems, ...r.gaps] });
+      if (r.problems.length || r.gaps.length) out.push({ card: c.name, typeLine, ability: ab.name, line: (ab.source ?? ab.name).split("\n").join(" / "), ...(ab.steps.length || ab.target || ab.condition || ab.cost?.length ? { node: abilityBlock(ab, true) } : {}), notes: [...r.problems, ...r.gaps].slice(0, 4) });
     });
   }
   return out;
 }
 
 const itemText = (it: Item): string =>
-  [`- **${it.card}**${it.typeLine ? ` (${it.typeLine})` : ""}${it.ability ? ` / 能力: ${it.ability}` : ""}`, `  - 原文: ${it.line}`, ...it.notes.map((n) => `  - 点検: ${n}`), ...(it.node ? ["  - いまの状態:", ...it.node.split("\n").map((l) => `    ${l}`)] : [])].join("\n");
+  [`- **${it.card}**${it.typeLine ? ` (${it.typeLine})` : ""}${it.ability ? ` / ability: ${it.ability}` : ""}`, `  - text: ${it.line}`, ...it.notes.map((n) => `  - check: ${n}`), ...(it.node ? ["  - current node:", ...it.node.split("\n").map((l) => `    ${l}`)] : [])].join("\n");
 
 // AI に渡す一覧 (多すぎるときは、最初の MAX_ITEMS だけ)
-export const itemsText = (items: Item[]): string => items.slice(0, MAX_ITEMS).map(itemText).join("\n") + (items.length > MAX_ITEMS ? `\n(ほか ${items.length - MAX_ITEMS} 件は、省いた)` : "");
+export const itemsText = (items: Item[]): string => items.slice(0, MAX_ITEMS).map(itemText).join("\n") + (items.length > MAX_ITEMS ? `\n(${items.length - MAX_ITEMS} more omitted)` : "");
 
 const SYSTEM = [
-  "あなたは、Magic: The Gathering の総合ルール (CR) に詳しい、ルールの点検者です。",
-  "Obsidian のプラグインが、カードの原文を、ノード (動作・条件・対象・キーワードなどの部品) に組んで、ルールを表します。下は、いま定義済みの部品の一覧です。",
+  "You are a rules auditor for Magic: The Gathering, expert in the Comprehensive Rules (CR).",
+  "An Obsidian plugin models each card's rules text as nodes (parts: actions, conditions, targets, keywords, kinds/timings). Below is the list of parts already defined.",
+  "Be concise: every output token costs.",
   "",
-  reference(),
+  compactReference(),
 ].join("\n");
 
-export const pickPrompt = (items: Item[]): string =>
+export const pickPrompt = (items: Item[], known: string[] = []): string =>
   [
-    "次は、ノードに組めていない・途中のカードの能力の一覧です。",
+    "Below are card abilities that are not yet modelled as nodes (or only partly).",
     "",
     itemsText(items),
     "",
-    "これらを組むために、**定義が足りない部品**を考えてください。その定義の根拠になる、総合ルールの規則の番号を挙げてください (番号は、あとで、公式の条文を取って確かめます。記憶で、条文を書かないでください)。",
-    '答えは、次の形の JSON コードブロックだけ: ```json\n{"rules": ["701.22", "603.7a"]}\n```(最大 40 個。「701.22」のような、番号だけ)',
+    ...(known.length ? [`Rule numbers already fetched (do not list them again): ${known.join(", ")}`, ""] : []),
+    "Think about which parts are MISSING to model them. List the CR rule numbers that ground those missing parts. The official text for each number is fetched afterwards: do not quote rule text from memory.",
+    'Answer with only a JSON code block: ```json\n{"rules": ["701.24", "603.7"]}\n``` (at most 40; plain rule numbers like 701.24 or 603.7a; a number without a letter also brings its lettered sub-rules).',
   ].join("\n");
 
 export const rulesFrom = (text: string): string[] => {
@@ -73,33 +81,44 @@ export interface Rule { number: string; text?: string } // text が無い = 公�
 export const fetchRules = async (get: (n: string) => Promise<string | undefined>, numbers: string[]): Promise<Rule[]> =>
   Promise.all(numbers.map(async (number) => { try { return { number, text: await get(number) }; } catch { return { number }; } }));
 
-export const reportPrompt = (items: Item[], rules: Rule[]): string =>
+// 規則の番号 → 条文 + その枝 (701.24 → 701.24a, b…。見出しだけの規則に、細部を付ける)
+export function ruleWithSubs(cr: Record<string, string>, n: string): string | undefined {
+  const head = cr[n];
+  if (head === undefined) return undefined;
+  const subs = Object.keys(cr).filter((k) => k.length === n.length + 1 && k.startsWith(n) && /[a-z]$/.test(k)).sort();
+  return (head + subs.map((k) => `\n  - ${k}: ${cr[k]}`).join("")).slice(0, 2500);
+}
+
+export interface Prev { analysis: string; gone: string[] } // 前回の分析と、前回から解決した (一覧から消えた) 能力
+export const reportPrompt = (items: Item[], rules: Rule[], prev?: Prev): string =>
   [
-    "次は、ノードに組めていない・途中のカードの能力の一覧です。",
+    ...(prev
+      ? ["A previous report exists. UPDATE it: keep entries that are still valid, add entries for the new/changed abilities below, and drop or shrink entries whose abilities are now resolved. Output the FULL updated body.", "", "Previous report body:", prev.analysis, "", prev.gone.length ? `Resolved since then (no longer incomplete):\n${prev.gone.slice(0, 40).map((g) => `- ${g}`).join("\n")}` : "Resolved since then: none", "", "New/changed incomplete abilities:"]
+      : ["Below are card abilities that are not yet modelled as nodes (or only partly)."]),
     "",
-    itemsText(items),
+    items.length ? itemsText(items) : "(none)",
     "",
-    "公式の総合ルール (Academy Ruins で確認した条文。**ここにある番号と条文だけを、根拠にする**):",
-    ...rules.map((r) => (r.text ? `- CR ${r.number}: ${r.text}` : `- CR ${r.number}: (確認できなかった。根拠にしない)`)),
+    "Official Comprehensive Rules text (fetched from the local CR copy). **Cite only the numbers and text given here**:",
+    ...rules.map((r) => (r.text ? `- CR ${r.number}: ${r.text}` : `- CR ${r.number}: (not found; do not cite)`)),
     "",
-    "報告書の本文 (Markdown) を書いてください。見出しは、この形:",
+    "Write the report body in English Markdown, with exactly these headings:",
     "",
-    "## 足りないノード",
-    "(必要度の高い順。1 つの部品に、1 つの `###`。下の項目を、箇条書きで)",
-    "### <部品の id (小文字・ハイフン)> — <日本語の名前>",
-    "- 種類: action / condition / target / keyword / kind・timing のどれか",
-    "- 根拠: CR <番号> (上の条文だけ。条文の要点を、日本語で)",
-    "- 引数: <名前・型・選択肢>。カード専用にせず、組み合わせで効く、汎用の部品にする",
-    "- 使うカード: <カード名のリスト>",
-    "- 実装の注意: <1〜2 行>",
+    "## Missing nodes",
+    "(highest need first; one `###` per part, each with these bullets)",
+    "### <part id (lowercase-hyphen)> — <short name>",
+    "- kind: action / condition / target / keyword / kind-timing",
+    "- grounds: CR <number> (only from the text above) + one-line gist",
+    "- params: <name, type, choices>. Generic and composable, never card-specific",
+    "- cards: <card names>",
+    "- note: <1-2 lines>",
     "",
-    "## 既存の部品で組めるもの",
-    "(定義済みの部品で組めるのに、組めていないもの。カード名・能力・使う部品・手順の案)",
+    "## Buildable with existing parts",
+    "(abilities that existing parts can already express: card, ability, parts, step sketch)",
     "",
-    "## 判断できなかったもの",
-    "(公式の条文が確認できず、決められないもの)",
+    "## Undecided",
+    "(cannot decide because the official text was not found)",
     "",
-    "守ること: 一覧に無いカード・規則を作らない。条文が確認できないものは、CR の番号を書かない。定義済みの部品と、重複する提案をしない。本文だけを答える (前置き・後書きは、書かない)。",
+    "Rules: do not invent cards or rules not in the list; do not cite a CR number whose text was not found; do not propose a part that duplicates a defined one; be terse; output the body only (no preface or afterword).",
   ].join("\n");
 
 export interface RulingInput {
@@ -108,53 +127,71 @@ export interface RulingInput {
   model: string;
   key: string;
   items: Item[];
+  prev?: RulingState; // 前回の結果 (あれば、変わったものだけを、調べる)
   getRule: (n: string) => Promise<string | undefined>;
   progress?: (msg: string) => void;
 }
-const ask = async (i: RulingInput, content: string): Promise<string> => {
+const ask = async (i: RulingInput, content: string, maxTokens = 16000): Promise<{ text: string; cut: boolean }> => {
   const messages: Msg[] = [{ role: "user", content }];
-  const res = await i.http(chatRequest(i.provider, i.model, i.key, SYSTEM, messages, 8000));
+  const res = await i.http(chatRequest(i.provider, i.model, i.key, SYSTEM, messages, maxTokens));
   if (res.status !== 200) throw new Error(`HTTP ${res.status} ${errorText(res.json)}`.trim());
-  return chatText(i.provider, res.json);
+  return { text: chatText(i.provider, res.json), cut: truncated(i.provider, res.json) };
 };
 
-export interface RulingResult { analysis: string; rules: Rule[] }
+export interface RulingState { keys: string[]; analysis: string; rules: Rule[] } // 前回の結果 (プラグインのフォルダに、残す)
+export interface RulingResult { analysis: string; rules: Rule[]; cut?: boolean; incremental?: boolean; reused?: boolean; fresh?: number; gone?: number }
+// 前回があれば、変わったもの (新しい・書き換えた) だけを AI に調べさせる。変わりが無ければ、AI を呼ばない。条文も、前回取ったものは、取り直さない
 export async function rulingAnalysis(i: RulingInput): Promise<RulingResult> {
-  i.progress?.("1/3");
-  const numbers = rulesFrom(await ask(i, pickPrompt(i.items)));
-  i.progress?.("2/3");
-  const rules = await fetchRules(i.getRule, numbers);
+  const sent = i.items.slice(0, MAX_ITEMS);
+  const prev = i.prev;
+  const had = new Set(prev?.keys ?? []);
+  const now = new Set(i.items.map(itemKey));
+  const fresh = prev ? sent.filter((x) => !had.has(itemKey(x))) : sent;
+  const gone = prev ? prev.keys.filter((k) => !now.has(k)) : [];
+  if (prev && !fresh.length && !gone.length) return { analysis: prev.analysis, rules: prev.rules, incremental: true, reused: true, fresh: 0, gone: 0 };
+  let rules = prev?.rules ?? [];
+  if (fresh.length) {
+    i.progress?.("1/3");
+    const known = new Set(rules.map((r) => r.number));
+    const numbers = rulesFrom((await ask(i, pickPrompt(fresh, [...known]), 1500)).text).filter((n) => !known.has(n));
+    i.progress?.("2/3");
+    rules = [...rules, ...(await fetchRules(i.getRule, numbers))];
+  }
   i.progress?.("3/3");
-  return { analysis: (await ask(i, reportPrompt(i.items, rules))).trim(), rules };
+  const r = await ask(i, reportPrompt(fresh, rules, prev ? { analysis: prev.analysis, gone: gone.map((k) => k.split("\u0001").filter((x, n) => n === 0 || n === 2).join(": ")) } : undefined));
+  return { analysis: r.text.trim(), rules, cut: r.cut, incremental: !!prev, fresh: fresh.length, gone: gone.length };
 }
 
-// 報告書 (md) 全体。上 = 機械の点検 (確かな部分) / 中 = AI の分析 / 下 = 取得した公式の条文 (確かめられるように)
-export function reportMd(date: string, model: string, cards: number, items: Item[], r: RulingResult, crDate = ""): string {
-  const rules = r.rules.map((x) => `- CR ${x.number}: ${x.text ?? "(確認できなかった)"}`);
+// 報告書 (md) 全体 (英語: トークンの節約)。上 = AI の分析 / 中 = 機械の点検 (確かな部分) / 下 = 取得した公式の条文 (確かめられるように)
+export function reportMd(date: string, model: string, cards: number, items: Item[], r: RulingResult, crDate = "", easy: Item[] = []): string {
+  const rules = r.rules.map((x) => `- CR ${x.number}: ${x.text ?? "(not found)"}`);
   return [
     "---",
     "mtg: ruling-report",
-    `date: ${date}`,
+    `updated: ${date}`,
     `model: ${model}`,
     `cards: ${cards}`,
     `items: ${items.length}`,
     ...(crDate ? [`cr: ${crDate}`] : []),
     "---",
-    `# Ruling report ${date}`,
+    `# Ruling report (updated ${date})`,
     "",
-    `> このノードをもとに、エージェントが、新しい部品を組む (手順は、agent.md「Ruling report から、新しいノードを組む」)。条文は、Academy Ruins から取った、ローカルの総合ルール (CR)${crDate ? ` (取得: ${crDate})` : ""} で確認したもの。AI の分析は、誤りがありうる: 部品を作る前に、条文を読み直すこと。`,
+    `> The agent builds new nodes from this report (procedure: agent.md, "Ruling report → build new nodes"). Rule text comes from the local Comprehensive Rules copy (Academy Ruins${crDate ? `, fetched ${crDate}` : ""}). The AI analysis may be wrong: re-read the rule text before building a part.`,
     "",
-    `組めていない能力: ${items.length} 件 (点検したカード ${cards} 枚)${items.length > MAX_ITEMS ? `。AI に渡したのは、最初の ${MAX_ITEMS} 件` : ""}`,
+    `Incomplete abilities: ${items.length} (${cards} cards checked)${items.length > MAX_ITEMS ? `. Only the first ${MAX_ITEMS} were sent to the AI` : ""}`,
     "",
+    ...(r.incremental ? [r.reused ? "Nothing changed since the last report: its analysis was reused (no AI call).\n" : `Since the last report: ${r.fresh} new/changed, ${r.gone} resolved. Only those were re-analysed; rule text fetched earlier was not re-fetched.\n`] : []),
+    ...(r.cut ? ["> ⚠ The AI output hit the token limit and is cut off. Re-run, or raise the limit.", ""] : []),
     r.analysis,
     "",
-    "## 点検の一覧 (機械)",
+    ...(easy.length ? ["## Keyword-only lines (machine: build with the defined keywords)", "", ...easy.map((e) => `- ${e.card}: ${e.line}`), ""] : []),
+    "## Check list (machine)",
     "",
     items.map(itemText).join("\n"),
     "",
-    "## 確認した公式の条文",
+    "## Official rule text used",
     "",
-    ...(rules.length ? rules : ["(なし)"]),
+    ...(rules.length ? rules : ["(none)"]),
     "",
   ].join("\n");
 }

@@ -655,13 +655,43 @@ assert.equal(frameEra({}), "modern");
 
 // Ruling report: 組めていないものの収集・番号の読み取り・報告書
 {
-  const { collect, rulesFrom, reportMd } = require("../src/ruling");
+  const { collect, rulesFrom, reportMd, ruleWithSubs, isKeywordOnly } = require("../src/ruling");
+  assert.equal(isKeywordOnly("Flying, vigilance"), true);
+  assert.equal(isKeywordOnly("Flying, protection from spells that are one or more colors"), false);
+  assert.equal(isKeywordOnly("Partner with Sam"), false);
+  assert.equal(ruleWithSubs({ "701.24": "Shuffle", "701.24a": "A", "701.24b": "B", "701.240": "x", "701.25": "y" }, "701.24"), "Shuffle\n  - 701.24a: A\n  - 701.24b: B");
+  assert.equal(ruleWithSubs({}, "1.1"), undefined);
   const items = collect([{ name: "Opt", typeLine: "Instant", text: "Scry 1.\nDraw a card.", abilities: [] }, { name: "Vanilla", typeLine: "Creature", abilities: [] }] as any, () => false);
   assert.equal(items.length, 2, "ルールなしは、原文の行ごと。原文の無いカードは、対象外");
   assert.equal(items[0].line, "Scry 1.");
   assert.deepEqual(rulesFrom('```json\n{"rules": ["701.22", "603.7a", "x", "701.22"]}\n```'), ["701.22", "603.7a"]);
   assert.deepEqual(rulesFrom("not json"), []);
-  assert.match(reportMd("2026-01-01", "m", 2, items, { analysis: "## 足りないノード", rules: [{ number: "701.22", text: "Scry" }, { number: "9.9" }] }), /mtg: ruling-report[\s\S]*CR 701\.22: Scry[\s\S]*CR 9\.9: \(確認できなかった\)/);
+  assert.match(reportMd("2026-01-01", "m", 2, items, { analysis: "## 足りないノード", rules: [{ number: "701.22", text: "Scry" }, { number: "9.9" }] }), /mtg: ruling-report[\s\S]*CR 701\.22: Scry[\s\S]*CR 9\.9: \(not found\)/);
 }
+
+// Ruling report: 前回を踏まえる (変わりが無ければ、AI を呼ばない。条文は、取り直さない)
+void (async () => {
+  const { rulingAnalysis, itemKey } = require("../src/ruling");
+  const prompts: string[] = [];
+  const http = async (req: any) => { prompts.push(JSON.parse(req.body).messages[0].content); return { status: 200, json: { content: [{ type: "text", text: prompts.length % 2 ? '```json\n{"rules":["701.24","119.3"]}\n```' : "## Missing nodes" }] } }; };
+  const gets: string[] = [];
+  const getRule = async (n: string) => { gets.push(n); return "text " + n; };
+  const mk = (card: string): any => ({ card, typeLine: "", ability: "", line: "L " + card, notes: [] });
+  const base = { http, provider: "claude", model: "m", key: "k", getRule };
+  const r1 = await rulingAnalysis({ ...base, items: [mk("A"), mk("B")] });
+  assert.equal(prompts.length, 2);
+  const state = { keys: [mk("A"), mk("B")].map(itemKey), analysis: r1.analysis, rules: r1.rules };
+  const r2 = await rulingAnalysis({ ...base, items: [mk("A"), mk("B")], prev: state });
+  assert.equal(prompts.length, 2, "変わりが無ければ、AI を呼ばない");
+  assert.equal(r2.reused, true);
+  const r3 = await rulingAnalysis({ ...base, items: [mk("A"), mk("C")], prev: state });
+  assert.equal(prompts.length, 4);
+  assert.equal(r3.fresh, 1);
+  assert.equal(r3.gone, 1);
+  assert.match(prompts[2], /already fetched[^\n]*701\.24/, "前回の条文は、取り直さない (番号を伝える)");
+  assert.match(prompts[3], /Previous report body[\s\S]*Resolved since then[^\n]*\n- B: L B/);
+  assert.equal(gets.filter((g) => g === "701.24").length, 1, "条文を、2 回取らない");
+  console.log("ruling incremental ok");
+})();
 
 console.log("node ok");

@@ -27,7 +27,8 @@ for (const p of ["claude", "openai", "gemini"] as const) {
   assert.ok(r.url.startsWith({ claude: "https://api.anthropic.com/", openai: "https://api.openai.com/", gemini: "https://generativelanguage.googleapis.com/" }[p]), `${p}: 送り先は、その AI の API だけ`);
 }
 const claude = JSON.parse(chatRequest("claude", "m", KEY, sys, msgs).body!);
-assert.equal(claude.system, sys);
+assert.equal(claude.system[0].text, sys);
+assert.deepEqual(claude.system[0].cache_control, { type: "ephemeral" });
 assert.deepEqual(claude.messages, msgs);
 const openai = JSON.parse(chatRequest("openai", "m", KEY, sys, msgs).body!);
 assert.deepEqual(openai.messages[0], { role: "system", content: sys });

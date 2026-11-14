@@ -24,7 +24,7 @@ export const DEFAULT_MODELS: Record<Provider, string> = { claude: "claude-sonnet
 export function chatRequest(p: Provider, model: string, key: string, system: string, messages: Msg[], maxTokens = 4096): HttpRequest {
   const json = { "Content-Type": "application/json" };
   if (p === "claude") {
-    return { url: "https://api.anthropic.com/v1/messages", method: "POST", headers: { ...json, "x-api-key": key, "anthropic-version": "2023-06-01" }, body: JSON.stringify({ model, max_tokens: maxTokens, system, messages }) };
+    return { url: "https://api.anthropic.com/v1/messages", method: "POST", headers: { ...json, "x-api-key": key, "anthropic-version": "2023-06-01" }, body: JSON.stringify({ model, max_tokens: maxTokens, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }], messages }) }; // 同じ手引きを何度も送るので、キャッシュさせる (2 回目から、入力の料金・時間が減る)
   }
   if (p === "openai") {
     return { url: "https://api.openai.com/v1/chat/completions", method: "POST", headers: { ...json, Authorization: `Bearer ${key}` }, body: JSON.stringify({ model, messages: [{ role: "system", content: system }, ...messages] }) };
@@ -44,9 +44,19 @@ export function chatText(p: Provider, res: unknown): string {
     p === "claude" ? (r.content as J[] | undefined)?.filter((c) => c.type === "text").map((c) => c.text).join("")
     : p === "openai" ? r.choices?.[0]?.message?.content
     : (r.candidates?.[0]?.content?.parts as J[] | undefined)?.map((x) => x.text ?? "").join("");
-  if (typeof text !== "string" || !text.trim()) throw new Error("empty response");
+  if (typeof text !== "string" || !text.trim()) {
+    // 何が返ったか (終わった理由・ブロックの種類) を、添える。本文・キーは、含めない
+    const why = p === "claude" ? `stop_reason=${r.stop_reason}, blocks=[${(r.content as J[] | undefined)?.map((c) => c.type).join(",") ?? ""}]` : p === "openai" ? `finish_reason=${r.choices?.[0]?.finish_reason}` : `finishReason=${r.candidates?.[0]?.finishReason}, block=${r.promptFeedback?.blockReason ?? "-"}`;
+    throw new Error(`empty response (${why})`);
+  }
   return text;
 }
+
+// 出力の上限で、途中で切れたか
+export const truncated = (p: Provider, res: unknown): boolean => {
+  const r = res as J;
+  return p === "claude" ? r.stop_reason === "max_tokens" : p === "openai" ? r.choices?.[0]?.finish_reason === "length" : r.candidates?.[0]?.finishReason === "MAX_TOKENS";
+};
 
 // エラーの本文から、短いメッセージを取る (キーは、本文に入らない)
 export function errorText(res: unknown): string {
