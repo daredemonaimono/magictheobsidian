@@ -1,4 +1,4 @@
-import { Notice, Plugin, TFile, loadPrism, normalizePath, requestUrl } from "obsidian";
+import { FileSystemAdapter, Notice, Plugin, TFile, loadPrism, normalizePath, requestUrl } from "obsidian";
 import { setLang, t } from "./i18n";
 import { NODE_EDITOR_VIEW, NodeEditorView, NodeStore } from "./NodeEditorView";
 import { CardData, parseCardMd, toCardMd } from "./node/card";
@@ -7,6 +7,7 @@ import { Settings, SettingsHost, SettingsTab, loadSettings } from "./settings";
 import { ComposeResult, composeAbility } from "./ai/compose";
 import { DEFAULT_MODELS, Http, Provider, errorText, modelIds, modelsRequest } from "./ai/providers";
 import guide from "../docs/ai-guide.md";
+import { FONT_DIR, Loaded, loadLocalFonts } from "./fonts";
 import { mtgNodeEditorHighlight } from "./highlight/editor";
 import { prismGrammar } from "./highlight/tokens";
 import { NodeData } from "./node/md";
@@ -25,14 +26,22 @@ export default class MagicTheObsidian extends Plugin {
     this.registerView(NODE_EDITOR_VIEW, (leaf) => new NodeEditorView(leaf, this.nodeStore()));
     this.addCommand({ id: "node-editor", name: "Node: open the node editor", callback: () => void this.openNodeEditor() });
     this.addRibbonIcon("blocks", t("ribbon"), () => void this.openNodeEditor());
+    void this.reloadFonts(); // 自分で置いたフォント (fonts/) を、読み込む
     const host: SettingsHost = {
       settings: () => this.settings,
       save: () => this.saveData(this.settings),
       changeLanguage: (l) => this.changeLanguage(l),
+      fonts: () => ({ dir: this.fullPath(`${this.manifest.dir}/${FONT_DIR}`), loaded: this.loadedFonts }),
+      openFontDir: () => this.openFontDir(),
+      reloadFonts: () => this.reloadFonts(),
       hasKey: (p) => { const id = this.settings.ai.keyIds[p]; return !!id && !!this.app.secretStorage.getSecret(id); },
       listModels: (p) => this.listModels(p),
     };
     this.addSettingTab(new SettingsTab(this.app, host, this));
+  }
+
+  onunload() {
+    for (const f of this.fontFaces) this.fontSet.delete(f); // 登録したフォントを、外す
   }
 
   // 言語を切り替える: 保存して、開いているノードの画面を、新しい言語で描き直す
@@ -43,6 +52,30 @@ export default class MagicTheObsidian extends Plugin {
     for (const leaf of this.app.workspace.getLeavesOfType(NODE_EDITOR_VIEW)) if (leaf.view instanceof NodeEditorView) leaf.view.redraw();
   }
 
+  // 自分で置いたフォントの読み込み。登録したものは、外せるように、覚えておく
+  private fontFaces: FontFace[] = [];
+  private get fontSet(): Set<FontFace> { return document.fonts as unknown as Set<FontFace>; } // FontFaceSet は、add / delete を持つ (型の定義が古い)
+  private fullPath(p: string): string { const a = this.app.vault.adapter; return a instanceof FileSystemAdapter ? a.getFullPath(p) : p; } // デスクトップだけ、実際のパスが分かる
+  private loadedFonts: Loaded[] = [];
+  private async reloadFonts() {
+    for (const f of this.fontFaces) this.fontSet.delete(f);
+    const r = await loadLocalFonts(this.app.vault.adapter, this.manifest.dir!, (face) => this.fontSet.add(face));
+    this.fontFaces = r.faces;
+    this.loadedFonts = r.loaded;
+    if (r.skipped.length) new Notice(t("fontSkipped", r.skipped.join(", ")), 8000);
+    // 登録したフォントを、プレビューに反映する (開いている画面を、描き直す)
+    for (const leaf of this.app.workspace.getLeavesOfType(NODE_EDITOR_VIEW)) if (leaf.view instanceof NodeEditorView) leaf.view.redraw();
+  }
+  // フォルダを、作って、開く (デスクトップだけ)
+  private async openFontDir() { await this.openDir(FONT_DIR); }
+  private async openDir(name: string) {
+    const dir = `${this.manifest.dir}/${name}`;
+    if (!(await this.app.vault.adapter.exists(dir))) await this.app.vault.adapter.mkdir(dir);
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (window as any).require("electron").shell.openPath(this.fullPath(dir));
+    } catch { /* モバイルなど: パスを、設定の画面に出してある */ }
+  }
   // AI の API への通信。キーは、ヘッダーにだけ載せる (URL・ログには、出さない)
   private http: Http = async (req) => {
     const r = await requestUrl({ url: req.url, method: req.method, headers: req.headers, body: req.body, throw: false });

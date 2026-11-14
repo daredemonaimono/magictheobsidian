@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { abilityLabel, candidates, hasSource, mergeCandidates } from "../src/node/split";
 import { setLang } from "../src/i18n";
 import { cmpCr } from "../src/node/cr";
+import { EIGHTH_EDITION, MAGIC_2015, eraOf, frameEra } from "../src/node/frame";
 import { moveItem } from "../src/node/order";
 import { ACTIONS, CONDITIONS } from "../src/node/actions";
 import { KEYWORDS, TARGETS } from "../src/node/slots";
@@ -586,5 +587,67 @@ assert.match(validate({ ...okoMinus5, alsoTargets: [{ id: "target-object", args:
 assert.deepEqual(validate({ ...okoMinus5, alsoTargets: [{ id: "target-creature", args: {} }, { id: "target-player", args: {} }] }, none, hasCard), [], "3 つ以上の対象も、書ける");
 // 対象を取らない「各〜」にも、パワーの上限
 assert.deepEqual(validate({ ...chandraCounters, targetArgs: { controller: "you", type: "creature", color: "any", "power-max": "2" } }, none, hasCard), []);
+
+// カードの枠の時代 (プレビューのフォント): 主な版の発売日で、旧枠 (〜2003-07-27)・8 版枠 (2003-07-28〜2014-07-17)・新枠 (2014-07-18〜)
+assert.equal(eraOf("1993-08-05"), "old");
+assert.equal(eraOf("2003-07-27"), "old");
+assert.equal(eraOf(EIGHTH_EDITION), "eighth", "第 8 版から、8 版枠");
+assert.equal(eraOf("2014-07-17"), "eighth");
+assert.equal(eraOf(MAGIC_2015), "modern", "基本セット 2015 から、新枠");
+assert.equal(eraOf("2026-04-24"), "modern");
+assert.equal(eraOf(undefined), "modern", "版が分からないときは、新枠");
+assert.equal(frameEra({ scryfall: "b", prints: [{ id: "a", set: "lea", number: "1", released: "1993-08-05", art: "x" }, { id: "b", set: "m10", number: "2", released: "2009-07-17", art: "y" }] }), "eighth", "主な版 (card.scryfall) の発売日");
+assert.equal(frameEra({ scryfall: "z", prints: [] }), "modern");
+assert.equal(frameEra({}), "modern");
+
+// 自分で置いたフォント (プラグインのフォルダの fonts/): ファイル名から、登録する名前
+{
+  const { familiesFor, weightFor, styleFor, FONT_EXT } = await import("../src/fonts");
+  assert.deepEqual(familiesFor("Beleren2016-Bold.ttf"), ["Beleren2016-Bold", "Beleren2016", "Beleren", "JaceBeleren"], "beleren を含めば、Beleren の名前でも、登録する");
+  assert.deepEqual(familiesFor("MagicMedieval.otf"), ["MagicMedieval"]);
+  assert.deepEqual(familiesFor("Planewalker.woff2"), ["Planewalker"]);
+  assert.deepEqual(familiesFor("Other Font.ttf"), ["Other Font"], "知らない名前は、ファイル名のまま");
+  assert.equal(weightFor("Beleren-Bold.ttf"), "700");
+  // 実際に置かれたファイル名 (Planewalker の 4 つの字体と、記号のフォント)
+  assert.deepEqual(familiesFor("Magicmedieval-pRV1.ttf"), ["Magicmedieval-pRV1", "MagicMedieval"], "大文字小文字を問わず、MagicMedieval");
+  assert.ok(familiesFor("PlanewalkerBold-xZj5.ttf").includes("Planewalker") && weightFor("PlanewalkerBold-xZj5.ttf") === "700" && styleFor("PlanewalkerBold-xZj5.ttf") === "normal");
+  assert.ok(familiesFor("PlanewalkerBoldItalic-p4qr.ttf").includes("Planewalker") && weightFor("PlanewalkerBoldItalic-p4qr.ttf") === "700" && styleFor("PlanewalkerBoldItalic-p4qr.ttf") === "italic");
+  assert.equal(styleFor("PlanewalkerItalic-DgM1.ttf"), "italic");
+  assert.equal(styleFor("Planewalker-38m6.ttf"), "normal");
+  assert.ok(!familiesFor("Planewalker Dings.otf").includes("Planewalker"), "記号のフォント (Dings) は、本文の Planewalker にしない");
+  assert.equal(weightFor("Beleren.ttf"), "400");
+  assert.ok(FONT_EXT.test("a.TTF") && FONT_EXT.test("a.woff2") && !FONT_EXT.test("a.exe") && !FONT_EXT.test("a.js"), "フォントのファイルだけ");
+}
+
+// カードの枠 (組み込みの CSS の枠): 色・種類のキー
+{
+  const { colorsOf, layerKeyFor, frameKinds, loyaltyBadge } = await import("../src/frames");
+  assert.deepEqual(colorsOf({ name: "x", mana: "{3}{U}{U}" }), ["U"]);
+  assert.deepEqual(colorsOf({ name: "x", mana: "{G}{W}{B}" }), ["W", "B", "G"], "WUBRG の順");
+  assert.deepEqual(colorsOf({ name: "x", mana: "{W/U}{2/R}{G/P}" }), ["W", "U", "R", "G"], "混成・フィレクシア");
+  assert.deepEqual(colorsOf({ name: "Elf Token (2-2 BG)", token: true }), ["B", "G"], "トークンは、名前の色から");
+  assert.deepEqual(colorsOf({ name: "x", mana: "{X}{C}" }), [], "無色");
+  assert.equal(layerKeyFor({ name: "x", mana: "{R}", typeLine: "Instant" }), "R");
+  assert.equal(layerKeyFor({ name: "x", mana: "{R}{G}", typeLine: "Creature" }), "M");
+  assert.equal(layerKeyFor({ name: "x", mana: "{4}", typeLine: "Artifact" }), "A");
+  assert.equal(layerKeyFor({ name: "x", typeLine: "Land" }), "L");
+  assert.equal(layerKeyFor({ name: "x", mana: "{3}", typeLine: "Artifact Creature — Golem" }), "A");
+  assert.equal(layerKeyFor({ name: "x", mana: "{2}", typeLine: "Creature" }), "C");
+  // 伝説・プレインズウォーカーの枠 (組み込みの CSS)
+  assert.deepEqual(frameKinds({ typeLine: "Legendary Creature — Human Wizard" }), { legendary: true, planeswalker: false });
+  assert.deepEqual(frameKinds({ typeLine: "Legendary Planeswalker — Chandra" }), { legendary: true, planeswalker: true });
+  assert.deepEqual(frameKinds({ typeLine: "Planeswalker — Jace" }), { legendary: false, planeswalker: true });
+  assert.deepEqual(frameKinds({ typeLine: "Creature — Elf", typeLineJa: "クリーチャー — エルフ" }), { legendary: false, planeswalker: false });
+  assert.deepEqual(frameKinds({ typeLineJa: "伝説のプレインズウォーカー — チャンドラ" }), { legendary: true, planeswalker: true }, "日本語のタイプ行でも");
+  assert.deepEqual(frameKinds({ typeLine: "Legendary Artifact — Equipment" }), { legendary: true, planeswalker: false });
+  assert.deepEqual(frameKinds({}), { legendary: false, planeswalker: false });
+  // 忠誠度のコストの印
+  assert.deepEqual(loyaltyBadge("+2"), { text: "+2", kind: "plus" });
+  assert.deepEqual(loyaltyBadge("2"), { text: "+2", kind: "plus" });
+  assert.deepEqual(loyaltyBadge("0"), { text: "0", kind: "zero" });
+  assert.deepEqual(loyaltyBadge("-5"), { text: "\u22125", kind: "minus" }, "マイナスは U+2212");
+  assert.deepEqual(loyaltyBadge("\u22122"), { text: "\u22122", kind: "minus" });
+  assert.deepEqual(loyaltyBadge("X"), { text: "X", kind: "zero" }, "数でないものは、そのまま");
+}
 
 console.log("node ok");

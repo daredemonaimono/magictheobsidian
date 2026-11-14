@@ -6,3 +6,4 @@ export class Setting {}
 export class SecretComponent {}
 export class Notice {}
 export const setIcon = () => {};
+export class FileSystemAdapter {}

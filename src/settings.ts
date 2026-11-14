@@ -1,5 +1,6 @@
 import { App, Notice, PluginSettingTab, SecretComponent, Setting } from "obsidian";
 import { DEFAULT_MODELS, PROVIDERS, Provider } from "./ai/providers";
+import { Loaded } from "./fonts";
 import { Lang, asLang, defaultLang, t } from "./i18n";
 
 // AI の設定。**API キーの値は、ここに持たない**: Obsidian の SecretStorage (キーチェーン) に置き、設定には、その名前 (keyIds) だけを残す。
@@ -30,6 +31,9 @@ export interface SettingsHost {
   settings(): Settings;
   save(): Promise<void>;
   changeLanguage(l: Lang): Promise<void>;
+  fonts(): { dir: string; loaded: Loaded[] }; // 自分で置いたフォントのフォルダと、読み込めたもの
+  openFontDir(): Promise<void>;
+  reloadFonts(): Promise<void>;
   hasKey(p: Provider): boolean; // キーが、キーチェーンに入っているか
   listModels(p: Provider): Promise<string[]>; // キーを使って、モデルの一覧を取る
 }
@@ -58,6 +62,7 @@ export class SettingsTab extends PluginSettingTab {
   }
 
   private general(el: HTMLElement) {
+    this.fontSection = this.fontSection.bind(this);
     new Setting(el).setName(t("settingsGeneral")).setHeading();
     new Setting(el)
       .setName(t("language"))
@@ -68,9 +73,22 @@ export class SettingsTab extends PluginSettingTab {
           this.display(); // 設定の画面も、新しい言語で描き直す
         }),
       );
+    this.fontSection(el);
   }
 
   // 対戦: AI にノードを組ませる設定。使う AI だけ (キー・モデルは、「API」タブ)
+  // フォント: 同梱できないフォント (Beleren など) を、自分で置いて、読み込む。ダウンロードは、しない
+  private fontSection(el: HTMLElement) {
+    const f = this.host.fonts();
+    new Setting(el).setName(t("fontHeading")).setDesc(t("fontDesc")).setHeading();
+    new Setting(el)
+      .setName(t("fontDir"))
+      .setDesc(f.dir)
+      .addButton((b) => b.setButtonText(t("fontOpen")).onClick(async () => { await this.host.openFontDir(); this.display(); }))
+      .addButton((b) => b.setButtonText(t("fontReload")).onClick(async () => { await this.host.reloadFonts(); this.display(); }));
+    new Setting(el).setName(t("fontLoaded")).setDesc(f.loaded.length ? f.loaded.map((x) => `${x.file} → ${x.families.join(" / ")}`).join("\n") : t("fontNone"));
+  }
+
   private battle(el: HTMLElement) {
     const s = this.host.settings().ai;
     new Setting(el).setName(t("aiHeading")).setDesc(t("aiHeadingDesc")).setHeading();

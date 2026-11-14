@@ -7,6 +7,8 @@ import { CardData, Print } from "./node/card";
 import { CARD_TYPES } from "./node/cardtypes";
 import { ComposeResult } from "./ai/compose";
 import { auditAbility, auditCard } from "./node/audit";
+import { frameKinds, layerKeyFor, loyaltyBadge } from "./frames";
+import { frameEra } from "./node/frame";
 import { moveItem } from "./node/order";
 import { abilityLabel, candidates, hasSource, mergeCandidates } from "./node/split";
 import { Call, NodeData, defaults } from "./node/md";
@@ -178,7 +180,10 @@ export class NodeEditorView extends ItemView {
       showCards();
     };
 
-    const frame = left.createDiv("mtg-ne-card");
+    // カードの枠: 時代 (旧枠・8 版枠・新枠 = 主な版の発売日) と言語で、フォントが決まる (styles.css の --mtg-font-*)
+    // mtg-color-*: 組み込みの枠の色 (W U B R G M C A L) / mtg-legendary: 伝説 (金の二重の縁・冠) / mtg-planeswalker: プレインズウォーカー (暗い金属の枠)
+    const kinds = frameKinds(c);
+    const frame = left.createDiv(`mtg-ne-card mtg-frame-${frameEra(c)} mtg-lang-${getLang()} mtg-color-${layerKeyFor(c)}${kinds.legendary ? " mtg-legendary" : ""}${kinds.planeswalker ? " mtg-planeswalker" : ""}`);
     // カード名とマナ・コスト (アイコン): 取り込んだカードは、名前 (設定が日本語なら日本語名) と、右にコスト。取り込み前は、名前の入力欄
     const ja = getLang() === "ja";
     if (c.name) {
@@ -221,15 +226,23 @@ export class NodeEditorView extends ItemView {
       };
     };
     const text = frame.createDiv("mtg-ne-card-text");
+    // 忠誠度能力の行の先頭に、コストの印 (+2 / 0 / −5)
+    const loyBadge = (row: HTMLElement, a: NodeData) => {
+      if (a.loyalty === undefined) return;
+      const b = loyaltyBadge(a.loyalty);
+      row.prepend(createSpan({ text: b.text, cls: `mtg-ne-loy is-${b.kind}` }));
+    };
     c.abilities.forEach((a, i) => {
       if (i !== this.sel) {
         const row = text.createDiv({ text: this.label(a), cls: "mtg-ne-ability" });
+        loyBadge(row, a);
         row.draggable = true;
         dnd(row, row, i);
         row.onclick = () => { this.sel = i; again(); };
         return;
       }
       const row = text.createDiv("mtg-ne-ability is-on");
+      loyBadge(row, a);
       row.onmousedown = (e) => { row.draggable = e.target === row; }; // 名前の入力欄の中は、文字の選択 (ドラッグしない)
       dnd(row, row, i);
       // 長い原文も見えるように、折り返す欄 (名前に、改行は入れられない)
@@ -241,7 +254,8 @@ export class NodeEditorView extends ItemView {
       nameIn.oninput = () => { a.name = nameIn.value.replace(/[\r\n]+/g, " "); this.update(); };
       row.createEl("button", { text: "✕", cls: "mtg-ne-x" }).onclick = () => { c.abilities.splice(i, 1); this.sel = Math.max(0, i - 1); again(); };
     });
-    frame.createEl("button", { text: t("addAbility"), cls: "mtg-ne-new" }).onclick = () => { c.abilities.push(blank()); this.sel = c.abilities.length - 1; again(); };
+    if (kinds.planeswalker && c.loyalty) frame.createDiv({ text: c.loyalty, cls: "mtg-ne-loyalty-total", attr: { title: t("loyaltyShort", c.loyalty) } }); // 初期の忠誠度 (306.5a)
+    left.createEl("button", { text: t("addAbility"), cls: "mtg-ne-new" }).onclick = () => { c.abilities.push(blank()); this.sel = c.abilities.length - 1; again(); };
 
     // 中: 盤面 (チップ・問題・保存)
     const mid = root.createDiv("mtg-ne-mid");
