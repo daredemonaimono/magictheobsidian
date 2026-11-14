@@ -171,8 +171,9 @@ export default class MagicTheObsidian extends Plugin {
           const had = parseCardMd(await vault.cachedRead(f));
           const addJa = !had.textJa && c.textJa;
           const addPrints = !had.prints?.length && c.prints?.length;
-          if (!addJa && !addPrints) return had;
-          const merged: CardData = { ...had, ...(addJa ? { nameJa: c.nameJa, typeLineJa: c.typeLineJa, textJa: c.textJa } : {}), ...(addPrints ? { prints: c.prints } : {}) };
+          const addLoyalty = !had.loyalty && c.loyalty; // 初期の忠誠度 (前に取り込んだカードに、足す)
+          if (!addJa && !addPrints && !addLoyalty) return had;
+          const merged: CardData = { ...had, ...(addJa ? { nameJa: c.nameJa, typeLineJa: c.typeLineJa, textJa: c.textJa } : {}), ...(addPrints ? { prints: c.prints } : {}), ...(addLoyalty ? { loyalty: c.loyalty } : {}) };
           await write(merged);
           return merged;
         }

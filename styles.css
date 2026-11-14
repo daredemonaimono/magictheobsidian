@@ -159,26 +159,30 @@ textarea.mtg-ne-name { resize: none; field-sizing: content; min-height: 2em; }
 
 .mtg-ne-new { margin-top: 8px; }
 
-/* 伝説: 金の二重の縁と、名前の欄の冠 (組み込みの簡易な枠) */
+/* 伝説のクリーチャー: 名前の欄が金の板になり、上に、簡易な金の冠 (ぎざぎざの 3 つの山) が付く。プレインズウォーカーには付けない */
 .mtg-ne-card { position: relative; }
-.mtg-ne-card.mtg-legendary { border: 5px double #d4af37; box-shadow: 0 0 0 1px color-mix(in srgb, #d4af37 55%, transparent), 0 0 12px color-mix(in srgb, #d4af37 25%, transparent); }
-.mtg-ne-card.mtg-legendary .mtg-ne-card-name { background: linear-gradient(90deg, color-mix(in srgb, #d4af37 38%, var(--background-primary)), color-mix(in srgb, var(--frame-color) 24%, var(--background-primary)) 60%); border-color: #d4af37; }
-.mtg-ne-card.mtg-legendary .mtg-ne-card-namebar::before { content: "♛"; color: #d4af37; margin-right: 6px; order: -1; }
-/* プレインズウォーカー: 暗い金属の枠。能力の行の先頭に、忠誠度のコストの印、右下に、初期の忠誠度の盾 */
-.mtg-ne-card.mtg-planeswalker { --pw-ink: #ece9e1; color: var(--pw-ink); border: 5px ridge #8d8f9b; background: linear-gradient(180deg, color-mix(in srgb, var(--frame-color) 22%, #15151b), #15151b 55%); }
-.mtg-ne-card.mtg-planeswalker .mtg-ne-card-name, .mtg-ne-card.mtg-planeswalker .mtg-ne-card-type { background: color-mix(in srgb, var(--frame-color) 30%, #1e1e26); border-color: #8d8f9b; color: var(--pw-ink); }
-.mtg-ne-card.mtg-planeswalker .mtg-ne-card-art, .mtg-ne-card.mtg-planeswalker .mtg-ne-card-text { border-color: #8d8f9b; }
-.mtg-ne-card.mtg-planeswalker .mtg-ne-card-text { background: color-mix(in srgb, var(--frame-color) 8%, #1b1b22); }
-.mtg-ne-card.mtg-planeswalker .mtg-ne-card-text .mtg-ne-ability { border-top: 1px solid rgba(255, 255, 255, 0.12); padding-top: 3px; }
-.mtg-ne-card.mtg-planeswalker .mtg-ne-card-text .mtg-ne-ability:first-child { border-top: none; }
-.mtg-ne-card.mtg-planeswalker textarea.mtg-ne-name { color: var(--pw-ink); background: none; }
-.mtg-ne-card.mtg-planeswalker .mtg-ne-card-text .mtg-ne-ability:hover, .mtg-ne-card.mtg-planeswalker .mtg-ne-card-text .mtg-ne-ability.is-on { background: rgba(255, 255, 255, 0.08); }
-.mtg-ne-loy { display: inline-block; flex-shrink: 0; min-width: 2.4em; margin-right: 8px; padding: 0 6px; text-align: center; font-weight: 700; font-size: 0.9em; line-height: 1.5; border-radius: 4px 12px 12px 4px; color: #fff; vertical-align: middle; }
-.mtg-ne-loy.is-plus { background: #2f7d4f; }
-.mtg-ne-loy.is-minus { background: #a8433c; }
-.mtg-ne-loy.is-zero { background: #6b7280; }
-.mtg-ne-loyalty-total { position: absolute; right: 12px; bottom: 10px; min-width: 2.2em; padding: 3px 8px 8px; text-align: center; font-weight: 700; color: #fff; background: #2b2b35; border: 2px solid #c8c9d2; clip-path: polygon(0 0, 100% 0, 100% 70%, 50% 100%, 0 70%); font-family: var(--mtg-font-name); }
-.mtg-ne-card.mtg-planeswalker .mtg-ne-card-type .mtg-ne-pl { display: none; } /* 初期の忠誠度は、右下の盾に出す */
+.mtg-ne-card.mtg-legendary:not(.mtg-planeswalker) .mtg-ne-card-name { position: relative; margin-top: 12px; border-color: #b98b2d; color: #2b1d06; background: linear-gradient(180deg, #f4e6a8, #d9b658 55%, #b98b2d); }
+.mtg-ne-card.mtg-legendary:not(.mtg-planeswalker) .mtg-ne-card-name::before { content: ""; position: absolute; left: 8%; right: 8%; top: -11px; height: 12px; background: linear-gradient(180deg, #f4e6a8, #d9b658); clip-path: polygon(0 100%, 8% 0, 28% 70%, 50% 0, 72% 70%, 92% 0, 100% 100%); pointer-events: none; }
+
+/* プレインズウォーカー: 暗い枠・背の高い絵の枠・暗い能力の欄 (簡易)。ホイルのスタンプ (下の中央のプレインズウォーカー・シンボル) は、描かない */
+.mtg-ne-card.mtg-planeswalker { color: #ece9e1; border-width: 5px; background: linear-gradient(180deg, color-mix(in srgb, var(--frame-color) 18%, #16161c), #121217 60%); }
+.mtg-ne-card.mtg-planeswalker .mtg-ne-card-name, .mtg-ne-card.mtg-planeswalker .mtg-ne-card-type { color: #ece9e1; background: color-mix(in srgb, var(--frame-color) 35%, #1c1c24); }
+.mtg-ne-card.mtg-planeswalker .mtg-ne-card-art { aspect-ratio: 626 / 590; border-radius: 6% / 50%; } /* 絵の枠は、左右が、外へふくらんだ形 */
+.mtg-ne-card.mtg-planeswalker .mtg-ne-card-text { background: rgba(8, 8, 12, 0.82); }
+.mtg-ne-card.mtg-planeswalker textarea.mtg-ne-name { color: #ece9e1; background: none; }
+.mtg-ne-card.mtg-planeswalker .mtg-ne-card-type .mtg-ne-pl { display: none; } /* 初期の忠誠度は、右下の印に出す */
+
+/* 忠誠度のアイコン (簡易): 銀の縁の、黒い札に、白い文字。能力の行の先頭に +N / −N / 0、右下に初期の忠誠度 */
+.mtg-ne-loy, .mtg-ne-loyalty-total { display: inline-block; flex-shrink: 0; min-width: 2.4em; padding: 0 6px; text-align: center; font-weight: 700; color: #fff; background: #101015; border: 2px solid #d6d8e0; border-radius: 4px 4px 12px 12px; font-family: var(--mtg-font-name); }
+.mtg-ne-loy { margin-right: 8px; font-size: 0.9em; vertical-align: middle; }
+.mtg-ne-loyalty-total { position: absolute; right: 12px; bottom: 10px; min-width: 2.6em; font-size: 1.1em; }
+
+/* 能力の欄の文字の大きさ: すべての行を、選択中の行 (入力欄) と、同じ大きさに */
+.mtg-ne-card .mtg-ne-card-text { font-size: var(--font-ui-small); }
+.mtg-ne-card .mtg-ne-card-text textarea.mtg-ne-name { font-size: inherit; }
+/* プレインズウォーカー: 右下の、初期の忠誠度のタグが、能力の文字に重ならないように、下に余白 */
+.mtg-ne-card.mtg-planeswalker { padding-bottom: 38px; }
+.mtg-ne-card.mtg-planeswalker .mtg-ne-loyalty-total { bottom: 6px; }
 
 /* BEGIN:fonts */
 /* MedievalSharp.ttf 400 — Copyright (c) Wojciech Kalinowski. SIL Open Font License 1.1 (https://openfontlicense.org)。必要な文字だけのサブセット。ライセンス全文: licenses/fonts/ */

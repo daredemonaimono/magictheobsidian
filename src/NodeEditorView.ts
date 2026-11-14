@@ -254,7 +254,8 @@ export class NodeEditorView extends ItemView {
       nameIn.oninput = () => { a.name = nameIn.value.replace(/[\r\n]+/g, " "); this.update(); };
       row.createEl("button", { text: "✕", cls: "mtg-ne-x" }).onclick = () => { c.abilities.splice(i, 1); this.sel = Math.max(0, i - 1); again(); };
     });
-    if (kinds.planeswalker && c.loyalty) frame.createDiv({ text: c.loyalty, cls: "mtg-ne-loyalty-total", attr: { title: t("loyaltyShort", c.loyalty) } }); // 初期の忠誠度 (306.5a)
+    // 右下の、初期の忠誠度のタグ (306.5a)。まだ取り込んでいないカードは、「?」(取り込み直すと、入る)
+    if (kinds.planeswalker) frame.createDiv({ text: c.loyalty ?? "?", cls: "mtg-ne-loyalty-total", attr: { title: t("loyaltyShort", c.loyalty ?? "?") } });
     left.createEl("button", { text: t("addAbility"), cls: "mtg-ne-new" }).onclick = () => { c.abilities.push(blank()); this.sel = c.abilities.length - 1; again(); };
 
     // 中: 盤面 (チップ・問題・保存)
