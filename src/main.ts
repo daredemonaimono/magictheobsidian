@@ -164,6 +164,7 @@ export default class MagicTheObsidian extends Plugin {
       },
       search: async (query) => get(scryfallUrl(query)),
       prints: async (oracleId) => printsFrom({ object: "list", data: await get(printsUrl(oracleId)), id: "", name: "" }), // 1 ページ目 (最大 175 印刷)
+      arts: async (id) => { const oid = (await get(`https://api.scryfall.com/cards/${encodeURIComponent(id)}`))[0]?.oracle_id; return oid ? get(printsUrl(oid)) : []; },
       addCard: async (c) => {
         const f = vault.getAbstractFileByPath(pathOf(c.name));
         if (f instanceof TFile) {

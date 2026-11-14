@@ -25,6 +25,7 @@ export function printsFrom(res: ScryCard): Print[] {
 // 絵のキャッシュ (ローカルに保存): ファイル名は Scryfall の id。ノートは、ユーザーが書き換えられるので、取りに行くのは、Scryfall の画像の配信元だけ
 export const artFileName = (id: string) => `${id.replace(/[^\w-]/g, "")}.jpg`;
 export const isScryfallImage = (url: string) => url.startsWith("https://cards.scryfall.io/");
+export const artOf = (c: ScryCard): string | undefined => c.image_uris?.art_crop ?? c.card_faces?.[0]?.image_uris?.art_crop;
 export const cardsOf = (res: ScryCard): ScryCard[] => (res.object === "list" ? res.data ?? [] : [res]);
 export const thumbOf = (c: ScryCard): string | undefined => c.image_uris?.small ?? c.card_faces?.[0]?.image_uris?.small;
 

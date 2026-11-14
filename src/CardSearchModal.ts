@@ -7,11 +7,17 @@ import { COLORS, ScryCard, buildQuery, thumbOf } from "./node/scryfall";
 // タイプの絞り込み (Scryfall の t: に渡す英語)。土地は、唱えないので、cardtypes.ts には無いが、探せる
 const TYPES: { id: string; cr: string; label: Label }[] = [...CARD_TYPES.map((x) => ({ id: x.id, cr: x.cr, label: x.label })), { id: "land", cr: "305.1", label: { ja: "土地", en: "Land" } }, { id: "token", cr: "111.1", label: { ja: "トークン", en: "Token" } }].sort(byCr); // CR の番号順
 
-// 新規カード: Scryfall を、名前・色 (アイコン)・タイプ (選択) で探し、カードの絵を見て選ぶ。選んだカードは、onPick で、Cards/ に保存される
+// 新規カード: Scryfall を、名前・色 (アイコン)・タイプ (選択) で探し、カードの絵を見て選ぶ。選んだカードは、onPick で、Cards/ に保存される (別のイラストは、プレビューの絵を押して選ぶ: ArtPickModal)
 export class CardSearchModal extends Modal {
-  constructor(app: App, private search: (q: string) => Promise<ScryCard[]>, private onPick: (c: ScryCard) => Promise<void>, private presetType = "") {
+  constructor(
+    app: App,
+    private search: (q: string) => Promise<ScryCard[]>,
+    private onPick: (c: ScryCard) => Promise<void>,
+    private presetType = "",
+  ) {
     super(app);
   }
+
   onOpen() {
     this.titleEl.setText(t("modalTitle"));
     const row = this.contentEl.createDiv("mtg-cs-row");
@@ -38,14 +44,18 @@ export class CardSearchModal extends Modal {
       out.empty();
       try {
         const found = (await this.search(q)).slice(0, 30);
-        if (!found.length) out.createDiv({ text: t("importNotFound"), cls: "mtg-ne-dim" });
-        for (const c of found) {
-          const cell = out.createDiv("mtg-cs-card");
-          const img = thumbOf(c);
-          if (img) cell.createEl("img", { attr: { src: img, alt: c.printed_name ?? c.name } });
-          else cell.createDiv({ text: c.printed_name ?? c.name });
-          cell.onclick = async () => { await this.onPick(c); this.close(); };
-        }
+        const render = () => {
+          out.empty();
+          if (!found.length) out.createDiv({ text: t("importNotFound"), cls: "mtg-ne-dim" });
+          for (const c of found) {
+            const cell = out.createDiv("mtg-cs-card");
+            const img = thumbOf(c);
+            if (img) cell.createEl("img", { attr: { src: img, alt: c.printed_name ?? c.name } });
+            else cell.createDiv({ text: c.printed_name ?? c.name });
+            cell.onclick = async () => { await this.onPick(c); this.close(); };
+          }
+        };
+        render();
       } catch (e) {
         out.createDiv({ text: t("importFail", (e as Error).message), cls: "mtg-ne-problem" });
       }

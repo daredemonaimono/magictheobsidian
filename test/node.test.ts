@@ -10,7 +10,7 @@ import { CARD_TYPES, cardTypeOf } from "../src/node/cardtypes";
 import { KINDS, defaultTiming, timingOf } from "../src/node/kinds";
 import { NodeData } from "../src/node/md";
 import { parseCardMd, toCardMd } from "../src/node/card";
-import { artFileName, buildQuery, isScryfallImage, cardsOf, fromScryfall, printsFrom, printsUrl, scryfallUrl } from "../src/node/scryfall";
+import { artFileName, artOf, buildQuery, isScryfallImage, cardsOf, fromScryfall, printsFrom, printsUrl, scryfallUrl } from "../src/node/scryfall";
 import { validate } from "../src/node/validate";
 
 // 能力の種類は、この 5 つ
@@ -180,6 +180,9 @@ assert.deepEqual(candidates({ ...stalkerJa, textJa: "1行だけ" }, "ja").map((x
 
 // 版違い (すべての印刷) の絵
 assert.match(printsUrl("abc"), /unique=prints&order=released/);
+assert.equal(artOf({ image_uris: { art_crop: "A" } } as any), "A");
+assert.equal(artOf({ card_faces: [{ image_uris: { art_crop: "B" } }] } as any), "B");
+assert.equal(artOf({} as any), undefined);
 const prints = printsFrom({ object: "list", id: "", name: "", data: [
   { id: "p1", name: "B", set: "lea", collector_number: "161", released_at: "1993-08-05", image_uris: { art_crop: "https://x/1.jpg" } },
   { id: "p2", name: "B", set: "m10", collector_number: "146", card_faces: [{ image_uris: { art_crop: "https://x/2.jpg" } }] },

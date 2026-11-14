@@ -2,6 +2,7 @@ import { ItemView, Notice, WorkspaceLeaf, setIcon } from "obsidian";
 import { Label, getLang, pick, t } from "./i18n";
 import { ACTIONS, CONDITIONS, Def } from "./node/actions";
 import { DEFAULT_KIND, KINDS, defaultTiming, kindOf } from "./node/kinds";
+import { ArtPickModal } from "./ArtPickModal";
 import { CardSearchModal } from "./CardSearchModal";
 import { CardData, Print } from "./node/card";
 import { CARD_TYPES } from "./node/cardtypes";
@@ -14,7 +15,7 @@ import { abilityLabel, candidates, hasSource, mergeCandidates } from "./node/spl
 import { Call, NodeData, defaults } from "./node/md";
 import { Callable } from "./node/params";
 import { KEYWORDS, TARGETS } from "./node/slots";
-import { ScryCard, cardsOf, fromScryfall } from "./node/scryfall";
+import { ScryCard, artOf, cardsOf, fromScryfall } from "./node/scryfall";
 import { validate } from "./node/validate";
 
 export const NODE_EDITOR_VIEW = "mtg-node-editor";
@@ -26,6 +27,7 @@ export interface NodeStore {
   search(query: string): Promise<ScryCard[]>; // Scryfall を名前で探す
   art(id: string, url: string): Promise<string>; // 絵をローカルに保存して、画面に出せるパスを返す (保存済みなら、取りに行かない)
   prints(oracleId: string): Promise<Print[]>; // 版違い (同じカードの、すべての印刷)
+  arts(scryfallId: string): Promise<ScryCard[]>; // 別の版 (同じカードの、すべての印刷。絵つき)
   addCard(c: CardData): Promise<CardData>; // Cards/ に保存する (同じ名前が、すでにあれば、それを返す)
 }
 
@@ -199,6 +201,23 @@ export class NodeEditorView extends ItemView {
     // ローカルに保存した絵を出す (まだ無ければ、ここで保存する)。取れなければ、URL のまま
     if (c.art && c.scryfall) void this.store.art(c.scryfall, c.art).then((src) => (art.style.backgroundImage = `url("${src}")`)).catch(() => (art.style.backgroundImage = `url("${c.art}")`));
     else if (c.art) art.style.backgroundImage = `url("${c.art}")`;
+    // 絵を押すと、別のイラストを選べる (取り込んだカードだけ)。選ぶと、絵と主な版が変わる (保存は、保存ボタン)
+    if (c.scryfall) {
+      art.addClass("is-pickable");
+      art.title = t("artPick");
+      art.onclick = async () => {
+        let arts: ScryCard[] = [];
+        try { arts = await this.store.arts(c.scryfall!); } catch (e) { new Notice(t("importFail", (e as Error).message)); return; }
+        new ArtPickModal(this.app, c.nameJa && getLang() === "ja" ? c.nameJa : c.name, arts, (a) => {
+          const src = artOf(a);
+          if (!src) return;
+          c.scryfall = a.id;
+          c.art = src;
+          this.update();
+          this.redraw();
+        }).open();
+      };
+    }
     // タイプ行 (「クリーチャー — サイ」): 取り込んだカードは、その文字。取り込み前は、カードタイプの選択欄
     const typeLine = ja ? c.typeLineJa || c.typeLine : c.typeLine;
     if (typeLine) {
