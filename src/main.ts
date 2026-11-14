@@ -11,7 +11,9 @@ import { FONT_DIR, Loaded, loadLocalFonts } from "./fonts";
 import { mtgNodeEditorHighlight } from "./highlight/editor";
 import { prismGrammar } from "./highlight/tokens";
 import { NodeData } from "./node/md";
+import { MAX_ITEMS, collect, reportMd, rulingAnalysis } from "./ruling";
 
+const REPORT_DIR = "cr"; // Ruling report の置き場 (vault 直下の cr/。プラグインのフォルダの cr/ (CR の写し) とは、別)
 const CARD_DIR = "Cards"; // カード = Cards/<カード名>.md (能力のノードが、コードブロックで入る。ノードの置き場は、ここだけ)
 
 export default class MagicTheObsidian extends Plugin {
@@ -25,7 +27,9 @@ export default class MagicTheObsidian extends Plugin {
     void loadPrism().then((Prism) => { Prism.languages["mtg-node"] = prismGrammar(); }).catch(() => { /* 閲覧表示の色分けだけ、効かない */ });
     this.registerView(NODE_EDITOR_VIEW, (leaf) => new NodeEditorView(leaf, this.nodeStore()));
     this.addCommand({ id: "node-editor", name: "Node: open the node editor", callback: () => void this.openNodeEditor() });
+    this.addCommand({ id: "ruling-report", name: "Ruling report", callback: () => void this.rulingReport() });
     this.addRibbonIcon("blocks", t("ribbon"), () => void this.openNodeEditor());
+    void this.loadCrInfo().catch(() => undefined); // 設定の画面に出す、CR の取得日・件数
     void this.reloadFonts(); // 自分で置いたフォント (fonts/) を、読み込む
     const host: SettingsHost = {
       settings: () => this.settings,
@@ -34,6 +38,8 @@ export default class MagicTheObsidian extends Plugin {
       fonts: () => ({ dir: this.fullPath(`${this.manifest.dir}/${FONT_DIR}`), loaded: this.loadedFonts }),
       openFontDir: () => this.openFontDir(),
       reloadFonts: () => this.reloadFonts(),
+      cr: () => this.crInfo,
+      refreshCr: async () => { await this.readCr(true); new Notice(t("crUpdated", String(this.crInfo?.count ?? 0))); },
       hasKey: (p) => { const id = this.settings.ai.keyIds[p]; return !!id && !!this.app.secretStorage.getSecret(id); },
       listModels: (p) => this.listModels(p),
     };
@@ -107,6 +113,64 @@ export default class MagicTheObsidian extends Plugin {
       });
     } catch (e) {
       throw new Error(t("aiError", (e as Error).message)); // 通信の失敗など (キーは、メッセージに含まれない)
+    }
+  }
+
+  // 総合ルール (CR) の、ローカルのコピー: <プラグイン>/cr/cr.json = { 規則の番号: 条文 }。Academy Ruins の /cr (全文) を、1 回だけ取って置く。更新は、設定のボタン (自動では、更新しない)
+  private cr?: Record<string, string>;
+  crInfo?: { count: number; date: string };
+  private get crPath() { return `${this.manifest.dir}/cr/cr.json`; }
+  private async readCr(refresh = false): Promise<Record<string, string>> {
+    const a = this.app.vault.adapter;
+    if (!refresh && !this.cr && (await a.exists(this.crPath))) this.cr = JSON.parse(await a.read(this.crPath)) as Record<string, string>;
+    if (!refresh && this.cr) return this.cr;
+    new Notice(t("crFetching"));
+    const res = await requestUrl({ url: "https://api.academyruins.com/cr", headers: { Accept: "application/json" }, throw: false }); // 送るものは、無い (全文を取るだけ)
+    if (res.status !== 200) throw new Error(`HTTP ${res.status}`);
+    const cr: Record<string, string> = {};
+    for (const [k, v] of Object.entries(res.json as Record<string, { ruleText?: string }>)) if (typeof v?.ruleText === "string") cr[k] = v.ruleText;
+    if (!Object.keys(cr).length) throw new Error("empty CR");
+    if (!(await a.exists(`${this.manifest.dir}/cr`))) await a.mkdir(`${this.manifest.dir}/cr`);
+    await a.write(this.crPath, JSON.stringify(cr));
+    this.cr = cr;
+    await this.loadCrInfo();
+    return cr;
+  }
+  private async loadCrInfo() {
+    const a = this.app.vault.adapter;
+    const st = (await a.exists(this.crPath)) ? await a.stat(this.crPath) : null;
+    if (!st) return void (this.crInfo = undefined);
+    const d = new Date(st.mtime);
+    this.crInfo = { count: Object.keys(this.cr ?? JSON.parse(await a.read(this.crPath))).length, date: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}` };
+  }
+
+  // Ruling report: 組めていない・途中の能力を、AI が公式ルールを確認して点検し、足りないノードを、md の報告書 (Reports/) にする
+  private async rulingReport() {
+    try {
+      const p = this.settings.ai.provider;
+      const key = this.apiKey(p); // 無ければ、設定を促すメッセージで止まる
+      const cards = await this.nodeStore().cards();
+      const items = collect(cards, (name, filter) => cards.some((c) => c.name === name && (filter !== "token" || !!c.token)));
+      if (!items.length) return void new Notice(t("rrNone"));
+      new Notice(t("rrStart", String(Math.min(items.length, MAX_ITEMS))), 8000);
+      const model = this.settings.ai.models[p] || DEFAULT_MODELS[p];
+      const rules = await this.readCr(); // ローカルの CR (無ければ、ここで 1 回だけ取る)
+      const getRule = async (n: string) => rules[n];
+      const result = await rulingAnalysis({ http: this.http, provider: p, model, key, items, getRule });
+      const crDate = this.crInfo?.date ?? "";
+      const d = new Date();
+      const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      const vault = this.app.vault;
+      if (!vault.getAbstractFileByPath(REPORT_DIR)) await vault.createFolder(REPORT_DIR);
+      let path = normalizePath(`${REPORT_DIR}/Ruling report ${date}.md`);
+      for (let n = 2; vault.getAbstractFileByPath(path); n++) path = normalizePath(`${REPORT_DIR}/Ruling report ${date} (${n}).md`); // 上書きしない
+      const file = await vault.create(path, reportMd(date, model, cards.length, items, result, crDate));
+      // 前の報告書は、ごみ箱へ (新しいのが、できてから。vault を、報告書で埋めない)
+      for (const f of vault.getFiles().filter((x) => x.parent?.path === REPORT_DIR && x !== file && /^Ruling report .*\.md$/.test(x.name))) await this.app.fileManager.trashFile(f);
+      new Notice(t("saved", path));
+      await this.app.workspace.getLeaf(true).openFile(file);
+    } catch (e) {
+      new Notice(t("aiError", (e as Error).message), 10000);
     }
   }
 

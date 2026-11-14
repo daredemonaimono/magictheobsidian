@@ -653,4 +653,15 @@ assert.equal(frameEra({}), "modern");
   assert.deepEqual(loyaltyBadge("X"), { text: "X", kind: "zero" }, "数でないものは、そのまま");
 }
 
+// Ruling report: 組めていないものの収集・番号の読み取り・報告書
+{
+  const { collect, rulesFrom, reportMd } = require("../src/ruling");
+  const items = collect([{ name: "Opt", typeLine: "Instant", text: "Scry 1.\nDraw a card.", abilities: [] }, { name: "Vanilla", typeLine: "Creature", abilities: [] }] as any, () => false);
+  assert.equal(items.length, 2, "ルールなしは、原文の行ごと。原文の無いカードは、対象外");
+  assert.equal(items[0].line, "Scry 1.");
+  assert.deepEqual(rulesFrom('```json\n{"rules": ["701.22", "603.7a", "x", "701.22"]}\n```'), ["701.22", "603.7a"]);
+  assert.deepEqual(rulesFrom("not json"), []);
+  assert.match(reportMd("2026-01-01", "m", 2, items, { analysis: "## 足りないノード", rules: [{ number: "701.22", text: "Scry" }, { number: "9.9" }] }), /mtg: ruling-report[\s\S]*CR 701\.22: Scry[\s\S]*CR 9\.9: \(確認できなかった\)/);
+}
+
 console.log("node ok");

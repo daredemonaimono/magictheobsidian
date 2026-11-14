@@ -21,10 +21,10 @@ export type Http = (req: HttpRequest) => Promise<{ status: number; json: unknown
 // 既定のモデル (一覧を取得するまでの、初期の候補)
 export const DEFAULT_MODELS: Record<Provider, string> = { claude: "claude-sonnet-5-5", openai: "gpt-5", gemini: "gemini-2.5-pro" };
 
-export function chatRequest(p: Provider, model: string, key: string, system: string, messages: Msg[]): HttpRequest {
+export function chatRequest(p: Provider, model: string, key: string, system: string, messages: Msg[], maxTokens = 4096): HttpRequest {
   const json = { "Content-Type": "application/json" };
   if (p === "claude") {
-    return { url: "https://api.anthropic.com/v1/messages", method: "POST", headers: { ...json, "x-api-key": key, "anthropic-version": "2023-06-01" }, body: JSON.stringify({ model, max_tokens: 4096, system, messages }) };
+    return { url: "https://api.anthropic.com/v1/messages", method: "POST", headers: { ...json, "x-api-key": key, "anthropic-version": "2023-06-01" }, body: JSON.stringify({ model, max_tokens: maxTokens, system, messages }) };
   }
   if (p === "openai") {
     return { url: "https://api.openai.com/v1/chat/completions", method: "POST", headers: { ...json, Authorization: `Bearer ${key}` }, body: JSON.stringify({ model, messages: [{ role: "system", content: system }, ...messages] }) };
@@ -33,7 +33,7 @@ export function chatRequest(p: Provider, model: string, key: string, system: str
     url: `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
     method: "POST",
     headers: { ...json, "x-goog-api-key": key },
-    body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents: messages.map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] })) }),
+    body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents: messages.map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] })), generationConfig: { maxOutputTokens: maxTokens } }),
   };
 }
 

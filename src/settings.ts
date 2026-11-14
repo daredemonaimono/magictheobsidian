@@ -34,6 +34,8 @@ export interface SettingsHost {
   fonts(): { dir: string; loaded: Loaded[] }; // 自分で置いたフォントのフォルダと、読み込めたもの
   openFontDir(): Promise<void>;
   reloadFonts(): Promise<void>;
+  cr(): { count: number; date: string } | undefined; // ローカルの総合ルール (CR) の、件数と取得日 (まだ無ければ、無し)
+  refreshCr(): Promise<void>; // Academy Ruins から、CR を取り直す
   hasKey(p: Provider): boolean; // キーが、キーチェーンに入っているか
   listModels(p: Provider): Promise<string[]>; // キーを使って、モデルの一覧を取る
 }
@@ -74,6 +76,15 @@ export class SettingsTab extends PluginSettingTab {
         }),
       );
     this.fontSection(el);
+    const cr = this.host.cr();
+    new Setting(el).setName(t("crHeading")).setDesc(t("crDesc")).setHeading();
+    new Setting(el)
+      .setName(t("crLocal"))
+      .setDesc(cr ? t("crInfo", String(cr.count), cr.date) : t("crNone"))
+      .addButton((b) => b.setButtonText(t("crUpdate")).onClick(async () => {
+        try { await this.host.refreshCr(); } catch (e) { new Notice(t("aiError", (e as Error).message)); }
+        this.display();
+      }));
   }
 
   // 対戦: AI にノードを組ませる設定。使う AI だけ (キー・モデルは、「API」タブ)
