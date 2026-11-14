@@ -713,6 +713,8 @@ void (async () => {
   assert.match(prompts[2], /already fetched[^\n]*701\.24/, "前回の条文は、取り直さない (番号を伝える)");
   assert.match(prompts[3], /Previous report body[\s\S]*Resolved since then[^\n]*\n- B: L B/);
   assert.equal(gets.filter((g) => g === "701.24").length, 1, "条文を、2 回取らない");
+  assert.ok(!/CR 701\.24:/.test(prompts[3]) || /newly fetched/.test(prompts[3]), "前回までの条文を、毎回送らない (新しく取ったものだけ)");
+  assert.ok(!prompts[3].includes("CR 119.3:"), "前回の条文は、プロンプトに入れない");
   const many = Array.from({ length: 45 }, (_, n) => mk("X" + n));
   const b1 = await rulingAnalysis({ ...base, items: many });
   assert.equal(b1.fresh, 20, "1 回に読むのは 20 件");

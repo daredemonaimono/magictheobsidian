@@ -97,7 +97,7 @@ export const reportPrompt = (items: Item[], rules: Rule[], prev?: Prev): string 
     "",
     items.length ? itemsText(items) : "(none)",
     "",
-    "Official Comprehensive Rules text (fetched from the local CR copy). **Cite only the numbers and text given here**:",
+    prev ? "Official Comprehensive Rules text newly fetched for the items above. **Cite only these numbers, or numbers already cited in the previous body (verified earlier)**:" : "Official Comprehensive Rules text (fetched from the local CR copy). **Cite only the numbers and text given here**:",
     ...rules.map((r) => (r.text ? `- CR ${r.number}: ${r.text}` : `- CR ${r.number}: (not found; do not cite)`)),
     "",
     "Write the report body in English Markdown, with exactly these headings:",
@@ -150,15 +150,17 @@ export async function rulingAnalysis(i: RulingInput): Promise<RulingResult> {
   const gone = prev ? prev.keys.filter((k) => !now.has(k)) : [];
   if (prev && !fresh.length && !gone.length) return { analysis: prev.analysis, rules: prev.rules, keys: prev.keys, incremental: true, reused: true, fresh: 0, gone: 0, left: 0 };
   let rules = prev?.rules ?? [];
+  let added: Rule[] = []; // 今回、新しく取った条文 (前回までの条文は、前回の分析に、すでに根拠として入っている)
   if (fresh.length) {
     i.progress?.("1/3");
     const known = new Set(rules.map((r) => r.number));
     const numbers = rulesFrom((await ask(i, pickPrompt(fresh, [...known]), 1500)).text).filter((n) => !known.has(n));
     i.progress?.("2/3");
-    rules = [...rules, ...(await fetchRules(i.getRule, numbers))];
+    added = await fetchRules(i.getRule, numbers);
+    rules = [...rules, ...added];
   }
   i.progress?.("3/3");
-  const r = await ask(i, reportPrompt(fresh, rules, prev ? { analysis: prev.analysis, gone: gone.map((k) => k.split("\u0001").filter((x, n) => n === 0 || n === 2).join(": ")) } : undefined));
+  const r = await ask(i, reportPrompt(fresh, prev ? added : rules, prev ? { analysis: prev.analysis, gone: gone.map((k) => k.split("\u0001").filter((x, n) => n === 0 || n === 2).join(": ")) } : undefined));
   const keys = [...(prev?.keys ?? []).filter((k) => now.has(k)), ...fresh.map(itemKey)]; // 読み終えたもの (残りは、含めない)
   return { analysis: r.text.trim(), rules, keys, cut: r.cut, incremental: !!prev, fresh: fresh.length, gone: gone.length, left };
 }
