@@ -43,7 +43,7 @@ export interface CardData {
   abilities: NodeData[];
 }
 
-const KEYS: [UiKey, keyof Fields | "name"][] = [["name", "name"], ["mdSource", "source"], ["mdKind", "kind"], ["mdCost", "cost"], ["mdLoyalty", "loyalty"], ["mdTiming", "timing"], ["mdCondition", "condition"], ["mdTarget", "target"], ["mdAlsoTarget", "alsoTarget"], ["mdKeyword", "keyword"], ["mdSteps", "steps"]];
+const KEYS: [UiKey, keyof Fields | "name"][] = [["name", "name"], ["mdSource", "source"], ["mdUnsupported", "unsupported"], ["mdKind", "kind"], ["mdCost", "cost"], ["mdLoyalty", "loyalty"], ["mdTiming", "timing"], ["mdCondition", "condition"], ["mdTarget", "target"], ["mdAlsoTarget", "alsoTarget"], ["mdKeyword", "keyword"], ["mdSteps", "steps"]];
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 
 // カードのノートは、どの言語の設定でも、英語で書き出す (世界共通。フロントマター・キー・見出し・値のすべて)。読むときは、日本語のものも読める
@@ -76,6 +76,7 @@ const FENCE_OPEN = "```mtg-node";
 function abilityBlockLines(n: NodeData, ids = false): string[] {
   const f = fields(n, ids);
   const out = [FENCE_OPEN, `name: ${n.name}`, ...(f.source ? (f.source.includes("\n") ? ["source:", ...f.source.split("\n").map((l) => `  ${l}`)] : [`source: ${f.source}`]) : []), `kind: ${f.kind}`, `timing: ${f.timing}`];
+  if (f.unsupported) out.push(`unsupported: ${f.unsupported.split("\n").join(" / ")}`);
   if (f.loyalty !== undefined) out.push(`loyalty: ${f.loyalty}`);
   if (f.cost?.length) out.push("cost:", ...f.cost.map((c) => `  ${c}`));
   if (f.condition) out.push(`condition: ${f.condition}`);

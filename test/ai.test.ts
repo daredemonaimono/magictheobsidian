@@ -152,14 +152,19 @@ assert.ok(Object.keys(g).length >= 9 && Object.values(g).every((x) => x.alias.st
   const gaps = auditAbility({ name: "Black Lotus", abilities: [lotus] }, lotus, hasTok).gaps.join(" | ");
   assert.match(gaps, /Sacrifice.*sacrifice-cost/, "コストの生け贄が、コストに無い");
   assert.match(gaps, /Add three mana.*add-mana/, "マナを加える効果が、無い");
-  // 部品が足りない (定義に、動作が無い): Destroy
+  // 部品が足りない (定義に、動作が無い): Discard (Destroy は、定義した)
   // 対象が 2 つの原文 (… and target …) で、もう1つの対象が無い: 抜けの疑い
   const exch = EXAMPLES.find((e) => e.card.startsWith("Oko, Thief of Crowns −5"))!.node;
   assert.ok(auditAbility({ name: "x", abilities: [exch] }, { ...exch, alsoTargets: undefined }, hasTok).gaps.some((g) => g.includes("対象が 2 つ")));
   assert.ok(auditAbility({ name: "x", abilities: [exch] }, { ...exch, alsoTargets: undefined, steps: [] }, hasTok).gaps.some((g) => /exchange.control/i.test(g)), "コントロールの交換が無い");
-  const destroy = { name: "Destroy target creature.", source: "Destroy target creature.", kind: "spell", timing: "resolves", steps: [] } satisfies NodeData;
-  const g2 = auditAbility({ name: "Doom Blade", abilities: [destroy] }, destroy, hasTok);
-  assert.ok(g2.gaps.some((g) => g.includes("部品が足りない") && g.includes("destroy")));
+  const destroy = { name: "Target player discards a card.", source: "Target player discards a card.", kind: "spell", timing: "resolves", steps: [] } satisfies NodeData;
+  const g2 = auditAbility({ name: "Mind Rot", abilities: [destroy] }, destroy, hasTok);
+  assert.ok(g2.gaps.some((g) => g.includes("部品が足りない") && g.includes("discard")));
+  // 定義した動作 (Destroy) は、「部品が足りない」ではなく、「動作が無い」(組めば、消える)
+  const dd = { name: "Destroy target creature.", source: "Destroy target creature.", kind: "spell", timing: "resolves", target: "target-creature", steps: [] } satisfies NodeData;
+  assert.ok(auditAbility({ name: "Doom Blade", abilities: [dd] }, dd, hasTok).gaps.some((g) => g.includes("destroy") && !g.includes("部品が足りない")));
+  const dd2 = { ...dd, steps: [{ node: false as const, id: "destroy", args: {} }] };
+  assert.deepEqual(auditAbility({ name: "Doom Blade", abilities: [dd2] }, dd2, hasTok).gaps, []);
   assert.ok(g2.gaps.some((g) => g.includes("target があるのに")), "対象が、組まれていない");
   assert.ok(g2.problems.some((p) => p.includes("手順が空")), "組みかけの問題 (検証)");
   // 構造: 「コスト: 効果」なのに、起動型でない / 忠誠度のコスト無し
@@ -176,7 +181,7 @@ assert.ok(Object.keys(g).length >= 9 && Object.values(g).every((x) => x.alias.st
   const bad = auditCard({ name: "Black Lotus", abilities: [lotus] }, hasTok);
   assert.equal(bad.needsReview, true);
   assert.ok(bad.gapCount >= 2 && bad.problemCount === 0, "検証は通るが、抜けの疑いがある、というカード");
-  assert.equal(auditCard({ name: "Doom Blade", abilities: [destroy] }, hasTok).problemCount > 0, true);
+  assert.equal(auditCard({ name: "Mind Rot", abilities: [destroy] }, hasTok).problemCount > 0, true);
 }
 
 console.log("ai ok");

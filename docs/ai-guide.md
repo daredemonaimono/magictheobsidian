@@ -106,9 +106,12 @@ steps:
   - timing `combat-damage` — 戦闘ダメージを与えたとき / When it deals combat damage (CR 510.2)
   - timing `end-step` — 終了ステップの開始時 / At the beginning of the end step (CR 513.1a)
   - timing `cast` — 呪文を唱えたとき / When a spell is cast (CR 601.2i)
+  - timing `graveyard-from-library` — ライブラリーから墓地に置かれたとき / When it is put into a graveyard from your library (CR 603.6)
   - timing `enters` — 戦場に出たとき / When it enters the battlefield (CR 603.6a)
+  - timing `land-enters` — あなたのコントロールする土地が戦場に出たとき / Whenever a land you control enters (CR 603.6a)
   - timing `leaves` — 戦場を離れたとき / When it leaves the battlefield (CR 603.6c)
   - timing `dies` — 死亡したとき / When it dies (CR 603.6c)
+  - timing `graveyard-from-anywhere` — どこからでも、墓地に置かれたとき (戦場を離れたとは、みなさない) / When it is put into a graveyard from anywhere (never a leaves-the-battlefield ability) (CR 603.6c)
 - `static` — 常在型 / Static (CR 604)。初期のタイミング `always`
   - timing `alternative-cost` — 唱えるとき、マナ・コストの代わりに支払ってもよい / May be paid instead of the mana cost when casting (CR 118.9)
   - timing `always` — 戦場にいる間 / While on the battlefield (CR 604.1)
@@ -123,13 +126,18 @@ steps:
   - timing `combat-damage` — 戦闘ダメージを与えたとき / When it deals combat damage (CR 510.2)
   - timing `end-step` — 終了ステップの開始時 / At the beginning of the end step (CR 513.1a)
   - timing `cast` — 呪文を唱えたとき / When a spell is cast (CR 601.2i)
+  - timing `graveyard-from-library` — ライブラリーから墓地に置かれたとき / When it is put into a graveyard from your library (CR 603.6)
   - timing `enters` — 戦場に出たとき / When it enters the battlefield (CR 603.6a)
+  - timing `land-enters` — あなたのコントロールする土地が戦場に出たとき / Whenever a land you control enters (CR 603.6a)
   - timing `leaves` — 戦場を離れたとき / When it leaves the battlefield (CR 603.6c)
   - timing `dies` — 死亡したとき / When it dies (CR 603.6c)
+  - timing `graveyard-from-anywhere` — どこからでも、墓地に置かれたとき (戦場を離れたとは、みなさない) / When it is put into a graveyard from anywhere (never a leaves-the-battlefield ability) (CR 603.6c)
   - timing `always` — 戦場にいる間 / While on the battlefield (CR 702.1)
 
 ### 動作 (`steps` に書く関数)
 
+- `loseGame()` — id `lose-game`、ゲームに敗北する (CR 104.3e)
+  - 説明: プレイヤー (対象の欄) が、ゲームに敗北する
 - `addMana(mana=…)` — id `add-mana`、マナを加える (CR 106.4)
   - 説明: マナを、マナ・プールに加える (マナ・シンボルの並び: {C}{C}{C} など)
   - 引数 `mana` (マナ: 登録済みのカード名。初期値 `{C}`)
@@ -141,9 +149,20 @@ steps:
   - 引数 `mana` (マナ: 登録済みのカード名。初期値 `{1}`)
 - `tapSelf()` — id `tap-self`、このパーマネントをタップする ({T}) (CR 107.5)
   - 説明: コストの {T}: このパーマネントを、タップする (すでにタップ状態なら、払えない)
+- `cantBeCountered()` — id `cant-be-countered`、打ち消されない (CR 113.6g)
+  - 説明: このオブジェクトは、打ち消されない (スタックの上で働く能力。「できない」は、「できる」に優先する: 101.2)
+  - 使える種類: `static`, `keyword`
 - `mayPay(mana=…)` — id `may-pay`、支払ってもよい。そうしたなら、ここから先の手順を行う (CR 118.12)
   - 説明: マナを支払ってもよい。支払ったなら、これより後ろの手順を、行う (支払わなければ、後ろは、行わない)
   - 引数 `mana` (マナ: 登録済みのカード名。初期値 `{1}`)
+- `mayDo()` — id `may-do`、してもよい。そうしたなら、ここから先の手順を行う (CR 118.12)
+  - 説明: 次の手順は、行ってもよい。行ったなら、その後ろの手順を行う (行わなければ、後ろは行わない)。マナを支払う場合は、「支払ってもよい」
+- `gainLife(amount=…)` — id `gain-life`、ライフを得る (CR 119.3)
+  - 説明: プレイヤー (既定: あなた) が、ライフを得る。ライフ総量が、その分だけ増える
+  - 引数 `amount` (点数: 整数。初期値 `1`)
+- `loseLife(amount=…)` — id `lose-life`、ライフを失う (CR 119.3)
+  - 説明: プレイヤーが、ライフを失う (支払う = コストの「ライフを支払う」とは別)
+  - 引数 `amount` (点数: 整数。初期値 `1`)
 - `payLife(amount=…)` — id `pay-life`、ライフを支払う (CR 119.4)
   - 説明: ライフを支払う (コスト。ライフが、その点数以上のときだけ、支払える)
   - 引数 `amount` (点数: 整数。初期値 `1`)
@@ -157,9 +176,21 @@ steps:
   - 説明: カウンター (残り続ける) を置く
   - 引数 `kind` (種類: 選択: `plus1` (+1/+1), `minus1` (-1/-1), `loyalty` (忠誠), `other` (その他)。初期値 `plus1`)
   - 引数 `amount` (数: 整数。初期値 `1`)
+- `mayPlayLand(duration=…)` — id `may-play-land`、土地をプレイしてもよい (CR 305.1)
+  - 説明: 対象の領域 (墓地など) の土地を、期間のあいだ、プレイしてもよい (許可を与える効果。土地のプレイは、特別な処理で、スタックを使わない。プレイできる回数などの他のルールは、そのまま)
+  - 引数 `duration` (期間: 選択: `this-turn` (このターン)。初期値 `this-turn`)
+- `moveZone(to=…)` — id `move-zone`、領域を移す (CR 400.7)
+  - 説明: 対象 (または、これ自身) を、別の領域へ移す。移ったものは、以前とは無関係の、新しいオブジェクトになる (400.7)。手札・追放は、持ち主の領域
+  - 引数 `to` (移し先: 選択: `hand` (手札), `battlefield` (戦場), `graveyard` (墓地), `exile` (追放領域), `library-top` (ライブラリーの一番上), `library-bottom` (ライブラリーの一番下), `library-owner-choice` (ライブラリーの一番上か一番下 (持ち主が選ぶ))。初期値 `hand`)
+- `extraTurn(count=…)` — id `extra-turn`、追加のターンを得る (CR 500.7)
+  - 説明: このターンの直後に、追加のターンを、指定の数だけ加える (追加のターンは、1 つずつ加わる)
+  - 引数 `count` (数: 整数。初期値 `1`)
 - `doesNotUntap()` — id `does-not-untap`、アンタップ・ステップに、アンタップしない (CR 502.3)
   - 説明: アンタップ・ステップに、アンタップするパーマネントを決めるとき、これは、アンタップしない (常に働く)
   - 使える種類: `static`
+- `mustAttack()` — id `must-attack`、毎戦闘、可能なら攻撃する (CR 508.1d)
+  - 説明: 攻撃クリーチャーの指定のとき、攻撃しなければならない (可能なら)。「攻撃する要求」の 1 つ
+  - 使える種類: `static`, `keyword`
 - `blockRequirement(min-blockers=…)` — id `block-requirement`、ブロックの条件を課す (CR 509.1b)
   - 説明: このクリーチャーをブロックできる条件 (威迫: 2体以上)
   - 使える種類: `static`, `keyword`
@@ -180,7 +211,7 @@ steps:
   - 引数 `duration` (期間: 選択: `indefinite` (ずっと (期間の指定なし: ゲームの終わりまで)), `this-turn` (このターン)。初期値 `indefinite`)
 - `grantKeyword(keyword=…)` — id `grant-keyword`、キーワード能力を与える (CR 613.1f)
   - 説明: 対象にキーワード能力を与える
-  - 引数 `keyword` (キーワード: 複数選択 (id を `|` でつなぐ): `deathtouch`, `double-strike`, `first-strike`, `flying`, `haste`, `landwalk`, `lifelink`, `protection`, `reach`, `shroud`, `trample`, `vigilance`, `fear`, `changeling`。初期値 `flying`)
+  - 引数 `keyword` (キーワード: 複数選択 (id を `|` でつなぐ): `deathtouch`, `double-strike`, `first-strike`, `flying`, `haste`, `landwalk`, `lifelink`, `protection`, `reach`, `shroud`, `trample`, `vigilance`, `fear`, `changeling`, `annihilator`, `partner`, `tiered`。初期値 `flying`)
 - `modifyPT(power=…, toughness=…, duration=…)` — id `modify-pt`、修整を与える (CR 613.4c)
   - 説明: パワー・タフネスを変える (カウンターではない。期間が終わると戻る)
   - 引数 `power` (パワー: 整数。初期値 `0`)
@@ -195,6 +226,8 @@ steps:
   - 説明: 登録してあるトークンのカード (Cards/) を指して、その数だけ、戦場に出す。生成したプレイヤーが、コントローラーになる
   - 引数 `count` (数: 整数。初期値 `1`)
   - 引数 `token` (トークン: 登録済みのトークンのカード名)
+- `destroy()` — id `destroy`、破壊する (CR 701.8a)
+  - 説明: パーマネントを、戦場から、持ち主の墓地に置く。何を破壊するかは、対象の欄で選ぶ
 - `exchangeControl()` — id `exchange-control`、コントロールを交換する (CR 701.12b)
   - 説明: 対象と、もう1つの対象の、コントロールを交換する (異なるプレイヤーがコントロールしていれば、互いに、相手のものを得る。交換を、すべて完了できなければ、何も起こらない: 701.12a・701.12b)。対象が 2 つ要る
 - `exileFromHand(count=…, color=…)` — id `exile-from-hand`、手札のカードを追放する (CR 701.13)
@@ -207,11 +240,24 @@ steps:
   - 説明: コストとして、自分がコントロールするパーマネントを、生け贄に捧げる (これ自身、または、指定のタイプのパーマネントを、枚数分)
   - 引数 `what` (何を: 選択: `self` (これ自身), `permanent` (パーマネント), `creature` (クリーチャー), `artifact` (アーティファクト), `enchantment` (エンチャント), `land` (土地)。初期値 `self`)
   - 引数 `count` (数 (これ自身のときは、不要): 整数)
+- `sacrificeBy(who=…, count=…, what=…)` — id `sacrifice-by`、プレイヤーに、生け贄に捧げさせる (CR 701.21a)
+  - 説明: 指定のプレイヤーが、自分のコントロールするパーマネントを、指定の数、生け贄に捧げる (何を捧げるかは、そのプレイヤーが選ぶ)
+  - 引数 `who` (誰が: 選択: `defending-player` (防御プレイヤー), `target-player` (対象のプレイヤー), `each-opponent` (各対戦相手), `each-player` (各プレイヤー)。初期値 `target-player`)
+  - 引数 `count` (数: 整数。初期値 `1`)
+  - 引数 `what` (何を: 選択: `permanent` (パーマネント), `creature` (クリーチャー), `artifact` (アーティファクト), `enchantment` (エンチャント), `land` (土地)。初期値 `permanent`)
+- `shuffle(whose=…)` — id `shuffle`、ライブラリーを切り直す (CR 701.24a)
+  - 説明: ライブラリーのカードを、順番が誰にも分からないよう、ランダムにする。「ライブラリーに加えて切り直す」は、領域を移す → 切り直す (701.24c)
+  - 引数 `whose` (誰のライブラリー: 選択: `you` (あなた), `owner` (対象の持ち主)。初期値 `you`)
 - `untap()` — id `untap`、アンタップする (CR 701.26b)
   - 説明: 対象をアンタップする (タップ状態のものだけ)
+- `ringTempts()` — id `ring-tempts`、指輪があなたを誘惑する (CR 701.54a)
+  - 説明: あなたのクリーチャー 1 体を、指輪所持者にする (「指輪」の紋章を、持っていなければ、得る: 701.54c)
 - `setAllCreatureTypes()` — id `all-creature-types`、すべてのクリーチャー・タイプを持つ (CR 702.73a)
   - 説明: このオブジェクトは、すべてのクリーチャー・タイプである (特性を定義する能力。戦場以外の領域でも働く: 604.3)
   - 使える種類: `static`, `keyword`
+- `copySpell(new-targets=…)` — id `copy-spell`、呪文をコピーする (CR 707.10)
+  - 説明: 呪文 (または能力) のコピーを、スタックに置く (唱えたことには、ならない)。新しい対象を選んでもよい (707.10c)
+  - 引数 `new-targets` (対象: 選択: `may-choose` (新しい対象を選んでもよい), `keep` (そのまま)。初期値 `may-choose`)
 
 ### 条件 (`condition` に書く関数)
 
@@ -220,11 +266,19 @@ steps:
   - 引数 `n` (N: 整数。初期値 `4`)
 - `isTapped()` — id `is-tapped`、このパーマネントが、タップ状態である (CR 110.5)
   - 説明: このパーマネントのステータスが、タップ状態である (誘発型では、「〜なら」: 誘発したときと、解決するときに、確かめる: 603.4)
+- `gainedLifeAtLeast(n=…)` — id `gained-life-at-least`、このターン、ライフを N 点以上得ている (CR 119.3)
+  - 説明: このターンに、あなたが得たライフの合計が N 以上 (ターンごとの記録が要る。誘発型では、「〜なら」: 603.4)
+  - 引数 `n` (N: 整数。初期値 `3`)
 - `graveyardHasCreatureWithKeyword(keyword=…)` — id `graveyard-has-keyword-creature`、墓地に、そのキーワードを持つクリーチャー・カードがある (CR 404.1)
   - 説明: いずれかの墓地に、そのキーワード能力を持つクリーチャー・カードがある。複数選ぶと、キーワードごとに別々に判定する (効果の同じキーワードに対応)
-  - 引数 `keyword` (キーワード: 複数選択 (id を `|` でつなぐ): `deathtouch`, `double-strike`, `first-strike`, `flying`, `haste`, `landwalk`, `lifelink`, `protection`, `reach`, `shroud`, `trample`, `vigilance`, `fear`, `changeling`。初期値 `flying`)
+  - 引数 `keyword` (キーワード: 複数選択 (id を `|` でつなぐ): `deathtouch`, `double-strike`, `first-strike`, `flying`, `haste`, `landwalk`, `lifelink`, `protection`, `reach`, `shroud`, `trample`, `vigilance`, `fear`, `changeling`, `annihilator`, `partner`, `tiered`。初期値 `flying`)
 - `isMyTurn()` — id `my-turn`、自分のターン (CR 500.1)
   - 説明: 自分のターンである
+- `ringTemptedAtLeast(n=…)` — id `ring-tempted-at-least`、指輪が、このゲームで N 回以上、あなたを誘惑している (CR 701.54c)
+  - 説明: このゲームで、指輪があなたを誘惑した回数が N 以上 (「指輪」の紋章の能力は、その回数で決まる)
+  - 引数 `n` (N: 整数。初期値 `2`)
+- `isRingBearer()` — id `is-ring-bearer`、これが、あなたの指輪所持者である (CR 701.54e)
+  - 説明: このクリーチャーが、あなたのコントロール下で戦場にいて、指輪所持者の指定を持っている
 
 ### 対象 (`target`)
 
@@ -246,6 +300,7 @@ steps:
 - `target-creature` — 対象のクリーチャー / target creature (CR 115.1)
 - `target-player` — 対象のプレイヤー / target player (CR 115.1)
 - `target-spell` — 対象の呪文 / target spell (CR 115.1)
+- `any-target` — 対象: 何でも (クリーチャー・プレイヤー・プレインズウォーカー・バトル) / any target (creature, player, planeswalker or battle) (CR 115.4)
 - `self` — これ自身 / this object (CR 201.5)
 - `created-tokens` — それら (この能力で生成したトークン) / them (the tokens this ability created) (CR 611.2c)
 
@@ -265,6 +320,9 @@ steps:
 - `vigilance` — 警戒 / Vigilance (CR 702.20)。手順の定義は、まだ無い (steps は空でよい)
 - `fear` — 畏怖 / Fear (CR 702.36)。手順の定義は、まだ無い (steps は空でよい)
 - `changeling` — 多相 / Changeling (CR 702.73)。定義済み: steps に `all-creature-types` を入れる
+- `annihilator` — 滅殺 / Annihilator (CR 702.86)。手順の定義は、まだ無い (steps は空でよい)
+- `partner` — パートナー / Partner (CR 702.124)。手順の定義は、まだ無い (steps は空でよい)
+- `tiered` — 段階 / Tiered (CR 702.183)。手順の定義は、まだ無い (steps は空でよい)
 
 ### カードタイプ (カードの `type`。唱えられるタイミングは、カードタイプが決める)
 

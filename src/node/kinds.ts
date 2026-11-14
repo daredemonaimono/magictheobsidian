@@ -34,6 +34,9 @@ const TRIGGERS: Timing[] = [
   T("draw-step", "504.1", "ドロー・ステップの開始時", "At the beginning of your draw step"),
   T("combat-begin", "507.1", "戦闘の開始時", "At the beginning of combat"),
   T("end-step", "513.1a", "終了ステップの開始時", "At the beginning of the end step"),
+  T("land-enters", "603.6a", "あなたのコントロールする土地が戦場に出たとき", "Whenever a land you control enters"),
+  T("graveyard-from-library", "603.6", "ライブラリーから墓地に置かれたとき", "When it is put into a graveyard from your library"),
+  T("graveyard-from-anywhere", "603.6c", "どこからでも、墓地に置かれたとき (戦場を離れたとは、みなさない)", "When it is put into a graveyard from anywhere (never a leaves-the-battlefield ability)"),
   T("cast", "601.2i", "呪文を唱えたとき", "When a spell is cast"),
 ];
 

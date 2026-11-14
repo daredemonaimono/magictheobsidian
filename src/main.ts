@@ -11,7 +11,7 @@ import { FONT_DIR, Loaded, loadLocalFonts } from "./fonts";
 import { mtgNodeEditorHighlight } from "./highlight/editor";
 import { prismGrammar } from "./highlight/tokens";
 import { NodeData } from "./node/md";
-import { MAX_ITEMS, RulingState, collect, itemKey, reportMd, ruleWithSubs, rulingAnalysis } from "./ruling";
+import { BATCH, RulingState, collect, itemKey, reportMd, ruleWithSubs, rulingAnalysis } from "./ruling";
 
 const REPORT_DIR = "cr"; // Ruling report の置き場 (vault 直下の cr/。プラグインのフォルダの cr/ (CR の写し) とは、別)
 const CARD_DIR = "Cards"; // カード = Cards/<カード名>.md (能力のノードが、コードブロックで入る。ノードの置き場は、ここだけ)
@@ -116,7 +116,6 @@ export default class MagicTheObsidian extends Plugin {
       throw new Error(t("aiError", (e as Error).message)); // 通信の失敗など (キーは、メッセージに含まれない)
     }
   }
-
   // 総合ルール (CR) の、ローカルのコピー: <プラグイン>/cr/cr.json = { 規則の番号: 条文 }。Academy Ruins の /cr (全文) を、1 回だけ取って置く。更新は、設定のボタン (自動では、更新しない)
   private cr?: Record<string, string>;
   crInfo?: { count: number; date: string };
@@ -155,7 +154,7 @@ export default class MagicTheObsidian extends Plugin {
       const items = all.filter((x) => !x.easy); // キーワードだけの行は、機械で組める (AI に渡さない)
       const easy = all.filter((x) => x.easy);
       if (!items.length) return void new Notice(t("rrNone"));
-      new Notice(t("rrStart", String(Math.min(items.length, MAX_ITEMS))), 8000);
+      new Notice(t("rrStart", String(Math.min(items.length, BATCH))), 8000);
       const model = this.settings.ai.models[p] || DEFAULT_MODELS[p];
       const rules = await this.readCr(); // ローカルの CR (無ければ、ここで 1 回だけ取る)
       const getRule = async (n: string) => ruleWithSubs(rules, n);
@@ -164,7 +163,7 @@ export default class MagicTheObsidian extends Plugin {
       let prev: RulingState | undefined;
       if (!full && (await a.exists(statePath))) { try { prev = JSON.parse(await a.read(statePath)) as RulingState; } catch { /* 読めなければ、全部調べる */ } }
       const result = await rulingAnalysis({ http: this.http, provider: p, model, key, items, prev, getRule });
-      if (!result.cut) await a.write(statePath, JSON.stringify({ keys: items.slice(0, MAX_ITEMS).map(itemKey), analysis: result.analysis, rules: result.rules } satisfies RulingState)); // 切れたものは、残さない (次は、全部調べ直す)
+      if (!result.cut) await a.write(statePath, JSON.stringify({ keys: result.keys, analysis: result.analysis, rules: result.rules } satisfies RulingState)); // 切れたものは、残さない (次は、全部調べ直す)
       const crDate = this.crInfo?.date ?? "";
       const d = new Date();
       const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -175,6 +174,7 @@ export default class MagicTheObsidian extends Plugin {
       const body = reportMd(date, model, cards.length, items, result, crDate, easy);
       const old = vault.getAbstractFileByPath(path);
       const file = old instanceof TFile ? (await vault.modify(old, body), old) : await vault.create(path, body);
+      if (result.left) new Notice(t("rrLeft", String(result.left)), 8000);
       new Notice(t("saved", path));
       await this.app.workspace.getLeaf(true).openFile(file);
     } catch (e) {

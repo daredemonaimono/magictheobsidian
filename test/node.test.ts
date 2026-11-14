@@ -409,6 +409,28 @@ for (const lang of ["ja", "en"] as const) {
   assert.deepEqual(parseMd(toMd(chandraFull)), chandraFull, lang);
 }
 setLang("en");
+
+// Ruling report の部品で組めるカード (検証が通り、md に書き出して、読み戻せる)
+const fromReport: NodeData[] = [
+  { name: "−3: Destroy", kind: "activated", timing: "loyalty", loyalty: "-3", target: "target-object", targetArgs: { controller: "any", type: "artifact|creature|enchantment|planeswalker", color: "any", "mana-value-max": "3" }, steps: [{ node: false, id: "destroy", args: {} }] },
+  { name: "Food", kind: "activated", timing: "anytime", cost: [{ id: "pay-mana", args: { mana: "{2}" } }, { id: "tap-self", args: {} }, { id: "sacrifice-cost", args: { what: "self" } }], steps: [{ node: false, id: "gain-life", args: { amount: "3" } }] },
+  { name: "Narcomoeba", kind: "triggered", timing: "graveyard-from-library", target: "self", steps: [{ node: false, id: "may-do", args: {} }, { node: false, id: "move-zone", args: { to: "battlefield" } }] },
+  { name: "Landfall", kind: "triggered", timing: "land-enters", target: "self", steps: [{ node: false, id: "may-pay", args: { mana: "{4}{R}{R}" } }, { node: false, id: "move-zone", args: { to: "battlefield" } }] },
+  { name: "Cast trigger", kind: "triggered", timing: "cast", steps: [{ node: false, id: "extra-turn", args: { count: "1" } }] },
+  { name: "Uncounterable", kind: "static", timing: "always", steps: [{ node: false, id: "cant-be-countered", args: {} }] },
+  { name: "Chain", kind: "spell", timing: "resolves", target: "any-target", steps: [{ node: false, id: "deal-damage", args: { amount: "3" } }, { node: false, id: "may-pay", args: { mana: "{R}{R}" } }, { node: false, id: "copy-spell", args: { "new-targets": "may-choose" } }] },
+  { name: "Annihilator", kind: "keyword", timing: "attacks", keyword: "annihilator", steps: [{ node: false, id: "sacrifice-by", args: { who: "defending-player", count: "6", what: "permanent" } }] },
+  { name: "Frodo", kind: "triggered", timing: "attacks", condition: { id: "gained-life-at-least", args: { n: "3" } }, steps: [{ node: false, id: "ring-tempts", args: {} }] },
+];
+for (const lang of ["ja", "en"] as const) {
+  setLang(lang);
+  for (const n of fromReport) {
+    assert.deepEqual(validate(n, none, hasCard), [], `${lang}: ${n.name}`);
+    assert.deepEqual(parseMd(toMd(n)), n, `${lang}: ${n.name} (md)`);
+  }
+}
+setLang("en");
+assert.ok(validate({ ...fromReport[2], steps: [{ node: false, id: "may-do", args: {} }] }, none, hasCard).length, "「してもよい」の後ろが空なら、問題");
 assert.ok(toMd(chandraFull).includes("timing: Loyalty ability (your main phase, empty stack, once per turn)\nloyalty: 0\n"), toMd(chandraFull));
 assert.ok(toMd(chandraFull).includes("target: them (the tokens this ability created)\nsteps:\n  createToken(count=2, token=Elemental Token (1-1 R))\n  grantKeyword(keyword=haste)\n  delay(when=end-step)\n  sacrifice()\n"), toMd(chandraFull));
 setLang("ja");
@@ -691,6 +713,24 @@ void (async () => {
   assert.match(prompts[2], /already fetched[^\n]*701\.24/, "前回の条文は、取り直さない (番号を伝える)");
   assert.match(prompts[3], /Previous report body[\s\S]*Resolved since then[^\n]*\n- B: L B/);
   assert.equal(gets.filter((g) => g === "701.24").length, 1, "条文を、2 回取らない");
+  const many = Array.from({ length: 45 }, (_, n) => mk("X" + n));
+  const b1 = await rulingAnalysis({ ...base, items: many });
+  assert.equal(b1.fresh, 20, "1 回に読むのは 20 件");
+  assert.equal(b1.left, 25);
+  const b2 = await rulingAnalysis({ ...base, items: many, prev: { keys: b1.keys, analysis: b1.analysis, rules: b1.rules } });
+  assert.equal(b2.fresh, 20);
+  assert.equal(b2.left, 5, "前回の続きから (読んだものは、読み直さない)");
+  // 「未対応」の注記は、ノードが持つ (消えない警告): 注記の取り出し・md の往復・点検
+  const { unsupportedOf } = require("../src/ai/compose");
+  assert.equal(unsupportedOf("組みました。\n未対応: 墓地から働く能力\n- Unsupported: second"), "墓地から働く能力 / second");
+  assert.equal(unsupportedOf("組みました。"), undefined);
+  const { auditAbility } = require("../src/node/audit");
+  const un = { name: "Draw", kind: "spell", timing: "resolves", source: "Draw a card.", unsupported: "墓地から働く能力", steps: [{ node: false, id: "draw", args: { amount: "1" } }] };
+  assert.ok(auditAbility({ name: "C", abilities: [un] }, un, () => false).gaps.some((g: string) => g.includes("墓地から働く能力")), "注記は、抜けの疑いとして、残る");
+  assert.deepEqual(auditAbility({ name: "C", abilities: [un] }, { ...un, unsupported: undefined }, () => false).gaps, []);
+  const { parseAbility: pa, abilityBlock: ab2 } = require("../src/node/card");
+  assert.equal(pa(ab2(un, true).replace(/^```mtg-node\n/, "").replace(/```$/, "")).unsupported, "墓地から働く能力", "md に書いて、読み戻せる");
+  assert.notEqual(itemKey({ card: "C", typeLine: "", ability: "A", line: "l", notes: ["a"] }), itemKey({ card: "C", typeLine: "", ability: "A", line: "l", notes: ["b"] }), "注記が変われば、別のもの (調べ直す)");
   console.log("ruling incremental ok");
 })();
 

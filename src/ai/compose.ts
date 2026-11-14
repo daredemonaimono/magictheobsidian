@@ -25,6 +25,12 @@ export interface ComposeResult {
   tries: number;
 }
 
+// AI の説明 (ブロックの外) から、「未対応: …」の理由を取る。無ければ undefined
+export const unsupportedOf = (note: string): string | undefined => {
+  const lines = note.split("\n").map((l) => /^\s*[-*・]?\s*(?:未対応|unsupported)\s*[:：]\s*(.+)$/i.exec(l)?.[1]?.trim()).filter((x): x is string => !!x);
+  return lines.length ? lines.join(" / ").slice(0, 400) : undefined;
+};
+
 export const userPrompt = (i: Pick<ComposeInput, "card" | "ability" | "tokenNames">): string =>
   [
     `カード: ${i.card.name}${i.card.typeLine ? ` (${i.card.typeLine})` : ""}${i.card.loyalty ? `、初期の忠誠度 ${i.card.loyalty}` : ""}`,

@@ -19,9 +19,9 @@ export interface Item {
 }
 const KW = new Set(KEYWORDS.map((k) => k.label.en.toLowerCase()));
 export const isKeywordOnly = (line: string): boolean => line.split(/,\s*/).every((x) => KW.has(x.trim().replace(/\.$/, "").toLowerCase()));
-export const MAX_ITEMS = 60;
+export const BATCH = 20; // 1 回に、AI が読む件数 (多いと、出力が上限に近づき、分析も粗くなる。残りは、次の実行へ)
 // 前回と照合するための、能力の印 (カード・能力・原文・いまのノード。どれかが変われば、別のもの)
-export const itemKey = (it: Item): string => [it.card, it.ability, it.line, it.node ?? ""].join("\u0001");
+export const itemKey = (it: Item): string => [it.card, it.ability, it.line, it.node ?? "", it.notes.join("|")].join("\u0001");
 
 // 組めていないもの: ルールなしのカードは、原文の行ごと / 組みかけの能力は、問題・抜けの疑いごと
 export function collect(cards: CardData[], hasCard: (n: string, f?: string) => boolean): Item[] {
@@ -45,8 +45,7 @@ export function collect(cards: CardData[], hasCard: (n: string, f?: string) => b
 const itemText = (it: Item): string =>
   [`- **${it.card}**${it.typeLine ? ` (${it.typeLine})` : ""}${it.ability ? ` / ability: ${it.ability}` : ""}`, `  - text: ${it.line}`, ...it.notes.map((n) => `  - check: ${n}`), ...(it.node ? ["  - current node:", ...it.node.split("\n").map((l) => `    ${l}`)] : [])].join("\n");
 
-// AI に渡す一覧 (多すぎるときは、最初の MAX_ITEMS だけ)
-export const itemsText = (items: Item[]): string => items.slice(0, MAX_ITEMS).map(itemText).join("\n") + (items.length > MAX_ITEMS ? `\n(${items.length - MAX_ITEMS} more omitted)` : "");
+export const itemsText = (items: Item[]): string => items.map(itemText).join("\n");
 
 const SYSTEM = [
   "You are a rules auditor for Magic: The Gathering, expert in the Comprehensive Rules (CR).",
@@ -139,16 +138,17 @@ const ask = async (i: RulingInput, content: string, maxTokens = 16000): Promise<
 };
 
 export interface RulingState { keys: string[]; analysis: string; rules: Rule[] } // 前回の結果 (プラグインのフォルダに、残す)
-export interface RulingResult { analysis: string; rules: Rule[]; cut?: boolean; incremental?: boolean; reused?: boolean; fresh?: number; gone?: number }
+export interface RulingResult { analysis: string; rules: Rule[]; keys: string[]; left: number; cut?: boolean; incremental?: boolean; reused?: boolean; fresh?: number; gone?: number }
 // 前回があれば、変わったもの (新しい・書き換えた) だけを AI に調べさせる。変わりが無ければ、AI を呼ばない。条文も、前回取ったものは、取り直さない
 export async function rulingAnalysis(i: RulingInput): Promise<RulingResult> {
-  const sent = i.items.slice(0, MAX_ITEMS);
   const prev = i.prev;
   const had = new Set(prev?.keys ?? []);
   const now = new Set(i.items.map(itemKey));
-  const fresh = prev ? sent.filter((x) => !had.has(itemKey(x))) : sent;
+  const todo = prev ? i.items.filter((x) => !had.has(itemKey(x))) : i.items;
+  const fresh = todo.slice(0, BATCH); // 今回、読むもの
+  const left = todo.length - fresh.length; // 次の実行に回すもの
   const gone = prev ? prev.keys.filter((k) => !now.has(k)) : [];
-  if (prev && !fresh.length && !gone.length) return { analysis: prev.analysis, rules: prev.rules, incremental: true, reused: true, fresh: 0, gone: 0 };
+  if (prev && !fresh.length && !gone.length) return { analysis: prev.analysis, rules: prev.rules, keys: prev.keys, incremental: true, reused: true, fresh: 0, gone: 0, left: 0 };
   let rules = prev?.rules ?? [];
   if (fresh.length) {
     i.progress?.("1/3");
@@ -159,7 +159,8 @@ export async function rulingAnalysis(i: RulingInput): Promise<RulingResult> {
   }
   i.progress?.("3/3");
   const r = await ask(i, reportPrompt(fresh, rules, prev ? { analysis: prev.analysis, gone: gone.map((k) => k.split("\u0001").filter((x, n) => n === 0 || n === 2).join(": ")) } : undefined));
-  return { analysis: r.text.trim(), rules, cut: r.cut, incremental: !!prev, fresh: fresh.length, gone: gone.length };
+  const keys = [...(prev?.keys ?? []).filter((k) => now.has(k)), ...fresh.map(itemKey)]; // 読み終えたもの (残りは、含めない)
+  return { analysis: r.text.trim(), rules, keys, cut: r.cut, incremental: !!prev, fresh: fresh.length, gone: gone.length, left };
 }
 
 // 報告書 (md) 全体 (英語: トークンの節約)。上 = AI の分析 / 中 = 機械の点検 (確かな部分) / 下 = 取得した公式の条文 (確かめられるように)
@@ -178,7 +179,7 @@ export function reportMd(date: string, model: string, cards: number, items: Item
     "",
     `> The agent builds new nodes from this report (procedure: agent.md, "Ruling report → build new nodes"). Rule text comes from the local Comprehensive Rules copy (Academy Ruins${crDate ? `, fetched ${crDate}` : ""}). The AI analysis may be wrong: re-read the rule text before building a part.`,
     "",
-    `Incomplete abilities: ${items.length} (${cards} cards checked)${items.length > MAX_ITEMS ? `. Only the first ${MAX_ITEMS} were sent to the AI` : ""}`,
+    `Incomplete abilities: ${items.length} (${cards} cards checked)${r.left ? `. ${r.left} not analysed yet (the AI reads ${BATCH} per run): run the command again` : ""}`,
     "",
     ...(r.incremental ? [r.reused ? "Nothing changed since the last report: its analysis was reused (no AI call).\n" : `Since the last report: ${r.fresh} new/changed, ${r.gone} resolved. Only those were re-analysed; rule text fetched earlier was not re-fetched.\n`] : []),
     ...(r.cut ? ["> ⚠ The AI output hit the token limit and is cut off. Re-run, or raise the limit.", ""] : []),

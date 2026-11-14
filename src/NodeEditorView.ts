@@ -8,6 +8,7 @@ import { CardData, Print } from "./node/card";
 import { CARD_TYPES } from "./node/cardtypes";
 import { ComposeResult } from "./ai/compose";
 import { auditAbility, auditCard } from "./node/audit";
+import { unsupportedOf } from "./ai/compose";
 import { frameKinds, layerKeyFor, loyaltyBadge } from "./frames";
 import { frameEra } from "./node/frame";
 import { moveItem } from "./node/order";
@@ -347,8 +348,10 @@ export class NodeEditorView extends ItemView {
           if (!r.node) { new Notice(t("aiFailed", r.problems.join(" / ")), 12000); }
           else {
             // 組んだ中身に差し替える (名前・原文は、そのまま)
-            for (const k of ["kind", "timing", "loyalty", "cost", "condition", "target", "targetArgs", "alsoTargets", "keyword", "steps"] as const) delete (a as unknown as Record<string, unknown>)[k];
+            for (const k of ["kind", "timing", "loyalty", "cost", "condition", "target", "targetArgs", "alsoTargets", "keyword", "steps", "unsupported"] as const) delete (a as unknown as Record<string, unknown>)[k];
             Object.assign(a, { ...r.node, name: a.name, ...(a.source ? { source: a.source } : {}) });
+            const why = unsupportedOf(r.note); // 「未対応: …」は、ノードに残す (通知は、消えるため)
+            if (why) a.unsupported = why;
             this.sel = i;
             new Notice(t("aiDone", r.tries) + (r.note ? `\n${r.note}` : ""), r.note ? 12000 : 4000);
           }
@@ -359,6 +362,13 @@ export class NodeEditorView extends ItemView {
       };
       const box = board.createDiv("mtg-ne-chips");
       box.dataset.i = String(i);
+      // 消えない警告 (黄色): AI が「未対応」と答えた理由。×で消す / AI で組み直して、無くなる
+      if (a.unsupported) {
+        const w = board.createDiv("mtg-ne-unsupported");
+        w.createSpan({ text: `⚠ ${a.unsupported}` });
+        const x = w.createEl("button", { text: "×", attr: { title: t("unsupportedClear") } });
+        x.onclick = (e) => { e.stopPropagation(); delete a.unsupported; this.update(); again(); };
+      }
       const choose = () => { if (this.sel !== i) { this.sel = i; again(); } };
       head.onclick = choose;
       box.onclick = (e) => { if (e.target === box) choose(); };

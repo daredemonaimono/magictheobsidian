@@ -36,6 +36,7 @@ export const TARGETS: TargetDef[] = [
   // すべてのクリーチャー = 各〜 (タイプ: クリーチャー / プレイヤー: 問わない)。「墓地の、マナ総量 3 以下のインスタントかソーサリーのカード 1 枚」= 対象の〜
   TG("each", "109.2", "条件に合う各オブジェクト (対象を取らない)", "each object matching the conditions (doesn't target)", selector("you", "creature"), "eachObject"),
   TG("target-object", "115.1", "条件に合う、対象の 1 つ (対象を取る)", "target object matching the conditions (targets)", selector("any", "permanent"), "targetObject", true),
+  TG("any-target", "115.4", "対象: 何でも (クリーチャー・プレイヤー・プレインズウォーカー・バトル)", "any target (creature, player, planeswalker or battle)", [], undefined, true),
   TG("target-creature", "115.1", "対象のクリーチャー", "target creature", [], undefined, true),
   TG("target-player", "115.1", "対象のプレイヤー", "target player", [], undefined, true),
   TG("target-spell", "115.1", "対象の呪文", "target spell", [], undefined, true),
@@ -61,6 +62,9 @@ export const KEYWORDS: KeywordOpt[] = [
   O("trample", "702.19", "トランプル", "Trample"),
   O("shroud", "702.18", "被覆", "Shroud"),
   O("vigilance", "702.20", "警戒", "Vigilance"),
+  O("annihilator", "702.86", "滅殺", "Annihilator"), // 滅殺 N: N はまだ持てない (キーワードの引数は、今後)
+  O("partner", "702.124", "パートナー", "Partner"), // 構築のルール: ゲームの前に働く
+  O("tiered", "702.183", "段階", "Tiered"), // モードごとのコスト (モードの入れ物は、今後)
   // 多相: 特性を定義する能力 (604.3)。すべての領域で働き、このオブジェクトは、すべてのクリーチャー・タイプになる
   { ...O("changeling", "702.73", "多相", "Changeling"), steps: [{ id: "all-creature-types", args: {} }] },
 ];

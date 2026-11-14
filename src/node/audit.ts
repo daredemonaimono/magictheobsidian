@@ -29,23 +29,30 @@ const EFFECT: Rule[] = [
   { re: /\bexchange control\b/i, any: ["exchange-control"], label: "exchange control" },
   { re: /\byou may cast\b/i, any: ["may-cast"], label: "you may cast" },
   { re: /\bbecomes? an? [^.]*\b(?:creature|artifact|enchantment|land)\b/i, any: ["become-token"], label: "becomes" },
+  { re: /\bgains? \d+ life\b|\bgain life\b/i, any: ["gain-life"], label: "gain life" },
+  { re: /\bloses? \d+ life\b/i, any: ["lose-life"], label: "lose life" },
+  { re: /\bdestroys?\b/i, any: ["destroy"], label: "destroy" },
+  { re: /\bshuffles?\b/i, any: ["shuffle"], label: "shuffle" },
+  { re: /\b(?:take|takes) an extra turn\b/i, any: ["extra-turn"], label: "extra turn" },
+  { re: /\bcan't be countered\b/i, any: ["cant-be-countered"], label: "can't be countered" },
+  { re: /\bloses? the game\b/i, any: ["lose-game"], label: "lose the game" },
+  { re: /\bcopy (?:this|that|target) spell\b/i, any: ["copy-spell"], label: "copy a spell" },
+  { re: /\battacks each combat if able\b/i, any: ["must-attack"], label: "attacks each combat" },
+  { re: /\bplay lands\b/i, any: ["may-play-land"], label: "play lands" },
+  { re: /\bthe Ring tempts you\b/i, any: ["ring-tempts"], label: "the Ring tempts you" },
+  { re: /\breturn(?:s)? .*\bto (?:its owner's|their owner's|your) hand\b|\bon (?:their choice of )?the top or bottom of (?:their|your) library\b|\bonto the battlefield\b/i, any: ["move-zone"], label: "move to a zone" },
   { re: /\bexile it instead\b/i, any: ["exile-instead-of-graveyard"], label: "exile instead" },
   { re: /\bat the beginning of the next\b/i, any: ["delayed-trigger"], label: "delayed" },
   { re: /\byou may pay \{/i, any: ["may-pay"], label: "you may pay" },
   // 定義されている動作が、まだ無いもの (部品が足りない)
-  { re: /\bdestroys?\b/i, any: [], label: "destroy" },
   { re: /\bdiscards?\b/i, any: [], label: "discard" },
-  { re: /\bgains? \d+ life\b|\bgain life\b/i, any: [], label: "gain life" },
-  { re: /\bloses? \d+ life\b/i, any: [], label: "lose life" },
   { re: /\bscry\b/i, any: [], label: "scry" },
   { re: /\bsearch(?:es)? (?:your|their|target) library\b/i, any: [], label: "search library" },
-  { re: /\breturn(?:s)? .*\bto (?:its owner's|their owner's|your) hand\b/i, any: [], label: "return to hand" },
   { re: /\bexile (?:target|all|each|another)\b/i, any: [], label: "exile" },
   { re: /\bmills?\b|\bmill \d+/i, any: [], label: "mill" },
   { re: /\btaps? (?:target|all|up to)\b/i, any: [], label: "tap" },
   { re: /\bregenerate\b/i, any: [], label: "regenerate" },
   { re: /\bfights?\b/i, any: [], label: "fight" },
-  { re: /\bshuffles?\b/i, any: [], label: "shuffle" },
   { re: /\breveals?\b/i, any: [], label: "reveal" },
   { re: /\blook at the top\b/i, any: [], label: "look at the top" },
 ];
@@ -67,7 +74,7 @@ const stepIds = (a: NodeData): Set<string> => new Set([...a.steps.filter((s) => 
 
 export function auditAbility(card: CardData, a: NodeData, hasCard: (n: string, f?: string) => boolean): AbilityAudit {
   const problems = validate(a, (n) => card.abilities.find((x) => x.name === n), hasCard);
-  const gaps: string[] = [];
+  const gaps: string[] = a.unsupported ? [t("gapAiUnsupported", a.unsupported)] : []; // AI が「未対応」と答えた理由 (消えない)
   const text = (a.source ?? a.name).split("\n").join(" ").trim();
   if (a.kind === "keyword" && a.keyword && !a.steps.length) return { problems, gaps }; // キーワードだけの能力 (定義のあるものは、手順が入る)
   // 「コスト: 効果」の形 (コロンの前が、コスト)。忠誠度能力 (+1: / −2: / 0:) も

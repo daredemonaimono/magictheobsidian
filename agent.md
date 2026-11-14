@@ -22,9 +22,20 @@
 
 ## Ruling report (足りないノードを炙り出す) → 新しいノードを組む
 - **コマンド「Ruling report」** (Obsidian のコマンド。`main.ts` の `rulingReport`、本体は `src/ruling.ts`)。ノードが組めていない・途中の能力 (`auditCard` の needsReview: ルールなし・問題・抜けの疑い) を集め、AI (設定の API) が、**公式の条文を確かめた上で**点検し、`cr/Ruling report.md` (vault 直下の cr/) に、報告書を作る (**報告書は 1 つ。あれば、中身を更新する** = 消さない。見出し「Ruling report (updated 日付)」と frontmatter `updated:` が新しくなる。作ったら、開く)。**前回を踏まえる**: 結果を `<プラグイン>/cr/ruling-state.json` (能力の印 `itemKey` の一覧・分析・取った条文) に残し、次は、**変わったもの (新しい・書き換えた) だけ** AI に調べさせる。前回取った条文は取り直さない。解決したもの (一覧から消えた) は、分析から外させる。変わりが無ければ、AI を呼ばない。切れた結果は、残さない。コマンド「Ruling report (full re-check, ignore the last one)」は、前回を使わず、全部調べる。
-- **流れ**: ① 点検 (機械) → ② AI が、必要な CR の番号を挙げる → ③ **ローカルの CR** から条文を引く (`<プラグイン>/cr/cr.json` = { 番号: 条文 }。Academy Ruins の `/cr` (全文・約 1.2MB) を、無ければ 1 回だけ取って置く。通信に、送るものは無い。更新は、設定 (一般) の「取り直す」だけ。自動では、更新しない。報告書の frontmatter `cr:` に、取得日) → ④ AI が、取れた条文だけを根拠に、報告を書く。AI に渡すのは、最初の 60 件まで (`MAX_ITEMS`)。AI の分析が長いときのため、`chatRequest` の最大トークンは、引数 (既定 4096。報告は 16000)。途中で切れたら、報告書に警告を入れる (`truncated`)。**報告書は、英語で書かせる** (トークンの節約。見出しは `## Missing nodes` / `## Buildable with existing parts` / `## Undecided` / `## Check list (machine)` / `## Official rule text used`)。条文は、番号 + その枝 (701.24 → 701.24a, b…。`ruleWithSubs`) を渡す (見出しだけの規則に、細部を付けるため)。
+- **流れ**: ① 点検 (機械) → ② AI が、必要な CR の番号を挙げる → ③ **ローカルの CR** から条文を引く (`<プラグイン>/cr/cr.json` = { 番号: 条文 }。Academy Ruins の `/cr` (全文・約 1.2MB) を、無ければ 1 回だけ取って置く。通信に、送るものは無い。更新は、設定 (一般) の「取り直す」だけ。自動では、更新しない。報告書の frontmatter `cr:` に、取得日) → ④ AI が、取れた条文だけを根拠に、報告を書く。**1 回に AI が読むのは 20 件まで** (`BATCH`。多いと、出力が上限に近づき、分析も粗くなる)。残りは、報告書と通知で「N 件が未分析」と知らせる: **もう一度、実行すると、続きから読む** (前回の分析に、積み上がる)。AI の分析が長いときのため、`chatRequest` の最大トークンは、引数 (既定 4096。報告は 16000)。途中で切れたら、報告書に警告を入れる (`truncated`)。**報告書は、英語で書かせる** (トークンの節約。見出しは `## Missing nodes` / `## Buildable with existing parts` / `## Undecided` / `## Check list (machine)` / `## Official rule text used`)。条文は、番号 + その枝 (701.24 → 701.24a, b…。`ruleWithSubs`) を渡す (見出しだけの規則に、細部を付けるため)。
+- **AI で組んだときの「未対応」の注記は、ノード自身が持つ** (`unsupported:`。ノードの md に 1 行): 「AI」ボタンの答えの「未対応: …」の理由を、ノードに残す。能力の板の下に、**消えない黄色の警告** `⚠ 理由` (×で消す / AI で組み直すと、無くなる)。点検は、これを「抜けの疑い」として数える (カードの一覧は、黄色のまま。完成にならない)。Ruling report は、点検の注記として読み、AI の分析に渡す (注記が変わると、調べ直す)。
 - **報告書の形**: frontmatter (`mtg: ruling-report`・date・model・cards・items) / 「Missing nodes」(部品ごとに、id・種類・根拠 CR・引数・使うカード・実装の注意) / 「Buildable with existing parts」 / 「Undecided」 / 「Check list (machine)」 / 「Official rule text used」。
 - **エージェントが、新しいノードを組む手順**: 報告書を読む → 「Missing nodes」の 1 つずつ、**条文を Academy Ruins で、もう一度確かめる** (AI の分析は、誤りがありうる。CR の番号は、記憶で書かない) → `actions.ts` / `slots.ts` などに、CR の番号順で、汎用の部品として足す (カード専用にしない) → `npm run guide` で手引きを更新 → テスト → 組めていなかったカードを、組み直す → 新しい報告書で、減ったことを確かめる。じゅまの承認なしに、コミット・公開はしない。
+
+### 報告書から組んだもの (2026-11-14。条文は、ローカルの CR で確認済み)
+- **動作**: `gain-life`・`lose-life` (119.3)、`destroy` (701.8a)、`move-zone` (400.7。移し先 = 手札・戦場・墓地・追放・ライブラリーの上/下/持ち主が選ぶ)、`shuffle` (701.24a)、`may-do` (118.12。後ろに手順が要る = 検証 `mayDoEmpty`)、`lose-game` (104.3e)、`extra-turn` (500.7)、`copy-spell` (707.10・707.10c)、`may-play-land` (305.1)、`sacrifice-by` (701.21a。防御プレイヤー・対象のプレイヤー・各対戦相手・各プレイヤー)、`must-attack` (508.1d)、`cant-be-countered` (113.6g)、`ring-tempts` (701.54a)。
+- **条件**: `gained-life-at-least` (119.3。ターンごとの記録が、エンジンに要る)、`is-ring-bearer` (701.54e)、`ring-tempted-at-least` (701.54c)。
+- **対象**: `any-target` (115.4)。
+- **タイミング** (誘発型・キーワード): `land-enters` (603.6a)・`graveyard-from-library` (603.6)・`graveyard-from-anywhere` (603.6c)。
+- **キーワード** (手順なし。引数は、まだ持てない): `annihilator` (702.86)・`partner` (702.124)・`tiered` (702.183)。
+- 点検 (`audit.ts`) の「部品が足りない」から、上の動作を外し、あるはずの動作として判定する。
+- **まだ組んでいないもの** (次の報告書で、見直す): 紋章を得る動作 (紋章のカードが要る)・誘発の主体の絞り込み (「あなたのクリーチャーが戦闘ダメージを与えたとき」。タイミングに引数が要る)・能力が働く領域 (墓地・スタック。ノードに項目が要る)・キーワードの引数 (滅殺 N)・段階 (モードの入れ物)・対象の持ち主 / コントローラーの参照。
+- **カードの組み直し** (Cards/ のノート) は、アプリの中でやる (AI ボタン・手): この作業は、部品の定義だけ。
 
 ## CR の番号順 (方針)
 

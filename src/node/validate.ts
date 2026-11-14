@@ -79,6 +79,8 @@ export function validate(n: NodeData, getNode: (name: string) => NodeData | unde
   if (n.steps.length && !n.steps[n.steps.length - 1].node && (n.steps[n.steps.length - 1] as Call).id === "delayed-trigger") out.push(t("delayEmpty"));
   // 「支払ってもよい。そうしたなら」の後ろには、支払ったときに行う手順が要る (118.12)
   if (n.steps.length && !n.steps[n.steps.length - 1].node && (n.steps[n.steps.length - 1] as Call).id === "may-pay") out.push(t("mayPayEmpty"));
+  // 「してもよい。そうしたなら」の後ろにも、行う手順が要る (118.12)
+  if (n.steps.length && !n.steps[n.steps.length - 1].node && (n.steps[n.steps.length - 1] as Call).id === "may-do") out.push(t("mayDoEmpty"));
   // 参照: 無いノード・循環
   const walk = (cur: NodeData, path: string[]) => {
     for (const s of cur.steps) {
