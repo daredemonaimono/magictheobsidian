@@ -1,16 +1,20 @@
 import assert from "node:assert/strict";
 import { abilityLabel, candidates, hasSource, mergeCandidates } from "../src/node/split";
 import { setLang } from "../src/i18n";
+import { cmpCr } from "../src/node/cr";
+import { moveItem } from "../src/node/order";
+import { ACTIONS, CONDITIONS } from "../src/node/actions";
+import { KEYWORDS, TARGETS } from "../src/node/slots";
 import { CARD_TYPES, cardTypeOf } from "../src/node/cardtypes";
-import { KINDS, timingOf } from "../src/node/kinds";
+import { KINDS, defaultTiming, timingOf } from "../src/node/kinds";
 import { NodeData } from "../src/node/md";
 import { parseCardMd, toCardMd } from "../src/node/card";
 import { artFileName, buildQuery, isScryfallImage, cardsOf, fromScryfall, printsFrom, printsUrl, scryfallUrl } from "../src/node/scryfall";
 import { validate } from "../src/node/validate";
 
-// 能力の種類は、この 5 つ (この順)
-assert.deepEqual(KINDS.map((k) => k.label.ja), ["常在型", "誘発型", "起動型", "呪文能力", "キーワード能力"]);
-assert.deepEqual(KINDS.map((k) => k.label.en), ["Static", "Triggered", "Activated", "Spell", "Keyword"]);
+// 能力の種類は、この 5 つ
+assert.deepEqual(KINDS.map((k) => k.label.ja), ["呪文能力", "起動型", "誘発型", "常在型", "キーワード能力"]); // CR の番号順 (112.3a・602・603・604・702)
+assert.deepEqual(KINDS.map((k) => k.label.en), ["Spell", "Activated", "Triggered", "Static", "Keyword"]);
 
 // 威迫: キーワード能力。ブロックの条件を課す (誘発ではない)
 const menace: NodeData = { name: "Menace", kind: "keyword", timing: "always", steps: [{ node: false, id: "block-requirement", args: { "min-blockers": "2" } }] };
@@ -41,11 +45,11 @@ for (const lang of ["ja", "en"] as const) {
   setLang(lang);
   const md = toMd(ferocious);
   assert.ok(md.startsWith("---\nmtg: card\n---\n# C\n"), md);
-  assert.ok(md.includes("```node\nname: Ferocious\nkind: Triggered\ntiming: When it attacks\ncondition: controlsPowerAtLeast(n=4)\ntarget: this creature\nsteps:\n  modifyPT(power=2, toughness=2, duration=until-eot)\n```"), md);
+  assert.ok(md.includes("```mtg-node\nname: Ferocious\nkind: Triggered\ntiming: When it attacks\ncondition: controlsPowerAtLeast(n=4)\ntarget: this object\nsteps:\n  modifyPT(power=2, toughness=2, duration=until-eot)\n```"), md);
 }
 setLang("ja");
 // 飛行を与える常在型 (全クリーチャー) と、キーワード「飛行」
-const giveFlying: NodeData = { name: "GiveFlying", kind: "static", timing: "always", target: "all-creatures", steps: [{ node: false, id: "grant-keyword", args: { keyword: "flying" } }] };
+const giveFlying: NodeData = { name: "GiveFlying", kind: "static", timing: "always", target: "each", targetArgs: { controller: "any", type: "creature", color: "any" }, steps: [{ node: false, id: "grant-keyword", args: { keyword: "flying" } }] };
 const flying: NodeData = { name: "Flying", kind: "keyword", timing: "always", keyword: "flying", steps: [] };
 for (const lang of ["ja", "en"] as const) {
   setLang(lang);
@@ -110,7 +114,7 @@ assert.equal(bolt.type, "instant");
 assert.equal(bolt.mana, "{R}");
 const ja2 = fromScryfall({ object: "list", data: [{ id: "x2", name: "Savage Stalker", printed_name: "夜に吼える追跡者", lang: "ja", type_line: "Artifact Creature — Wolf", mana_cost: "{2}{G}", printed_text: "威迫\n獰猛", oracle_text: "Menace" }] });
 assert.equal(ja2.name, "Savage Stalker"); // 日本語で探しても、カードのノートは英語
-assert.equal(ja2.type, "creature"); // 複数のタイプは、cardtypes.ts の順で最初のもの (唱えるタイミングは、どれも同じ)
+assert.equal(ja2.type, "artifact"); // 複数のタイプは、cardtypes.ts (CR の番号順) で最初のもの (唱えるタイミングは、どれも同じ)
 assert.equal(ja2.text, "Menace");
 const dfc = fromScryfall({ id: "x3", name: "A // B", card_faces: [{ name: "A", type_line: "Creature — Human", oracle_text: "a", mana_cost: "{1}" }, { name: "B", type_line: "Creature — Wolf", oracle_text: "b" }] });
 assert.equal(dfc.name, "A // B");
@@ -322,5 +326,265 @@ assert.ok(toCardMd(fow).includes("target: target spell\nsteps:\n  counter()\n"))
 assert.equal(cardTypeOf("instant")?.castTiming, "anytime", "インスタント: 優先権があれば、いつでも唱えられる");
 setLang("ja");
 assert.match(validate({ ...fowAlt, steps: [{ node: false, id: "exile-from-hand", args: { count: "1", color: "purple" } }] }, none).join(), /色 は .* のどれか/);
+
+// 思考の反映 (Thought Reflection): あなたがカードを 1 枚引くなら、代わりに、2 枚引く = 置換効果 (誘発ではない: 614.1)。タイミング = 置き換える出来事
+const reflection: NodeData = { name: "Draw replacement", kind: "static", timing: "replace-draw", steps: [{ node: false, id: "draw", args: { amount: "2" } }] };
+for (const lang of ["ja", "en"] as const) {
+  setLang(lang);
+  assert.deepEqual(validate(reflection, none), [], lang);
+  assert.deepEqual(parseMd(toMd(reflection)), reflection, lang);
+}
+setLang("en");
+assert.ok(toMd(reflection).includes("timing: If you would draw a card, instead\nsteps:\n  draw(amount=2)\n"), toMd(reflection));
+setLang("ja");
+assert.match(validate({ ...reflection, kind: "triggered" }, none).join(), /タイミング "replace-draw" は、誘発型にない/, "置換は、常在型のタイミング");
+
+// CR の番号順: 作った順ではなく、番号順に並ぶ
+assert.ok(cmpCr("701.6", "701.13") < 0 && cmpCr("701.13", "701.6") > 0, "数として比べる");
+assert.ok(cmpCr("613.1f", "613.4c") < 0 && cmpCr("509.1b", "509.1i") < 0);
+assert.ok(cmpCr("702", "702.1") < 0, "短いほうが先");
+assert.ok(cmpCr("113.3a", "602") < 0 && cmpCr("604.1", "614.11") < 0);
+assert.equal(cmpCr("603.6c", "603.6c"), 0);
+assert.ok(cmpCr("999", "") < 0 && cmpCr("", "999") > 0, "番号が無いものは、最後");
+const sortedByCr = (xs: { cr: string }[]) => xs.every((x, i) => i === 0 || cmpCr(xs[i - 1].cr, x.cr) <= 0);
+for (const [name, xs] of Object.entries({ KINDS, ACTIONS, CONDITIONS, TARGETS, KEYWORDS, CARD_TYPES })) assert.ok(sortedByCr(xs), `${name} は、CR の番号順`);
+for (const k of KINDS) assert.ok(sortedByCr(k.timings), `${k.id} のタイミングは、CR の番号順`);
+for (const k of KINDS) assert.ok(timingOf(k.id, defaultTiming(k.id)), `${k.id} の初期のタイミングがある`);
+assert.equal(defaultTiming("static"), "always", "並びが変わっても、初期のタイミングは、変わらない");
+
+// トークン: 名前にパワー・タフネス・色を入れて区別。type は、トークンのタイプ行から
+{
+  const elfBG = fromScryfall({ id: "t1", name: "Elf", layout: "token", type_line: "Token Creature — Elf", power: "2", toughness: "2", colors: ["B", "G"], oracle_text: "" });
+  const elfG = fromScryfall({ id: "t2", name: "Elf", layout: "token", type_line: "Token Creature — Elf", power: "1", toughness: "1", colors: ["G"] });
+  const clue = fromScryfall({ id: "t3", name: "Clue", layout: "token", type_line: "Token Artifact — Clue", colors: [] });
+  assert.equal(elfBG.name, "Elf Token (2-2 BG)");
+  assert.equal(elfG.name, "Elf Token (1-1 G)", "同じ名前でも、区別できる");
+  assert.equal(clue.name, "Clue Token (C)", "パワー・タフネスが無いものは、色だけ (無色は C)");
+  assert.equal(elfBG.token, true);
+  assert.equal(elfBG.type, "creature");
+  assert.equal(fromScryfall({ id: "c", name: "Elf", layout: "normal" }).token, undefined, "トークンでなければ、付けない");
+  assert.equal(buildQuery("elf", { colors: [], type: "token" }), "elf t:token");
+  for (const lang of ["ja", "en"] as const) {
+    setLang(lang);
+    assert.deepEqual(parseCardMd(toCardMd({ ...elfBG, abilities: [] })), elfBG, lang);
+  }
+  assert.ok(!toCardMd({ ...fromScryfall({ id: "c", name: "X" }), abilities: [] }).includes("token:"));
+}
+
+// 炎の侍祭、チャンドラ (Chandra, Flamecaller) の 0 能力: 赤の 1/1 のエレメンタル・トークンを 2 体生成する。トークンは、登録してあるトークンのカードを指す
+const chandra: NodeData = { name: "0: tokens", kind: "activated", timing: "loyalty", loyalty: "0", steps: [{ node: false, id: "create-token", args: { count: "2", token: "Elemental Token (1-1 R)" } }] };
+const tokenCards = new Map([["Elemental Token (1-1 R)", { name: "Elemental Token (1-1 R)", token: true, abilities: [] }], ["Lightning Bolt", { name: "Lightning Bolt", abilities: [] }]]);
+const hasCard = (n: string, f?: string) => { const c = tokenCards.get(n) as { token?: boolean } | undefined; return !!c && (f !== "token" || !!c.token); };
+for (const lang of ["ja", "en"] as const) {
+  setLang(lang);
+  assert.deepEqual(validate(chandra, none, hasCard), [], lang);
+  assert.deepEqual(parseMd(toMd(chandra)), chandra, lang);
+}
+setLang("en");
+assert.ok(toMd(chandra).includes("\n  createToken(count=2, token=Elemental Token (1-1 R))\n"), toMd(chandra));
+setLang("ja");
+const withToken = (token: string): NodeData => ({ ...chandra, steps: [{ node: false, id: "create-token", args: { count: "2", token } }] });
+assert.match(validate(withToken("Elemental Token (9-9 R)"), none, hasCard).join(), /登録されていない/, "登録していないカードは、指せない");
+assert.match(validate(withToken("Lightning Bolt"), none, hasCard).join(), /登録されていない/, "トークンでないカードは、指せない");
+assert.match(validate(withToken(""), none, hasCard).join(), /トークン が無い/, "空は不可");
+assert.deepEqual(validate(withToken("Anything"), none), [], "確認の関数が無ければ、確認しない");
+
+// 炎の侍祭、チャンドラの 0 能力の全文: 赤の 1/1 のエレメンタルを 2 体生成する。それらは速攻を得る。次の終了ステップの開始時に、それらを生け贄に捧げる
+const chandraFull: NodeData = {
+  name: "0: tokens", kind: "activated", timing: "loyalty", loyalty: "0", target: "created-tokens",
+  steps: [
+    { node: false, id: "create-token", args: { count: "2", token: "Elemental Token (1-1 R)" } },
+    { node: false, id: "grant-keyword", args: { keyword: "haste" } },
+    { node: false, id: "delayed-trigger", args: { when: "end-step" } },
+    { node: false, id: "sacrifice", args: {} },
+  ],
+};
+for (const lang of ["ja", "en"] as const) {
+  setLang(lang);
+  assert.deepEqual(validate(chandraFull, none, hasCard), [], lang);
+  assert.deepEqual(parseMd(toMd(chandraFull)), chandraFull, lang);
+}
+setLang("en");
+assert.ok(toMd(chandraFull).includes("timing: Loyalty ability (your main phase, empty stack, once per turn)\nloyalty: 0\n"), toMd(chandraFull));
+assert.ok(toMd(chandraFull).includes("target: them (the tokens this ability created)\nsteps:\n  createToken(count=2, token=Elemental Token (1-1 R))\n  grantKeyword(keyword=haste)\n  delay(when=end-step)\n  sacrifice()\n"), toMd(chandraFull));
+setLang("ja");
+assert.match(validate({ ...chandraFull, steps: chandraFull.steps.slice(1) }, none, hasCard).join(), /トークンを生成する手順が要る/, "「それら」には、生成する手順がいる");
+assert.match(validate({ ...chandraFull, steps: chandraFull.steps.slice(0, 3) }, none, hasCard).join(), /遅延誘発/, "遅延誘発の後ろは、空にできない");
+assert.match(validate({ ...chandraFull, steps: [{ node: false, id: "delayed-trigger", args: { when: "someday" } }, chandraFull.steps[3]] }, none, hasCard).join(), /タイミング は .* のどれか/);
+
+// 能力の入れ替え (ドラッグ)
+{
+  const xs = ["a", "b", "c", "d"];
+  assert.equal(moveItem(xs, 0, 2), true);
+  assert.deepEqual(xs, ["b", "c", "a", "d"], "前から後ろへ");
+  assert.equal(moveItem(xs, 3, 0), true);
+  assert.deepEqual(xs, ["d", "b", "c", "a"], "後ろから前へ");
+  assert.equal(moveItem(xs, 1, 1), false, "同じ位置は、動かさない");
+  assert.equal(moveItem(xs, -1, 2) || moveItem(xs, 0, 9) || moveItem(xs, NaN, 1), false, "範囲外は、動かさない");
+  assert.deepEqual(xs, ["d", "b", "c", "a"]);
+}
+
+// 忠誠度能力 (606): コスト (+1・0・-2) と、タイミング「忠誠度能力」(606.3) は、組。起動型でだけ
+{
+  setLang("ja");
+  const walk = (loyalty: string | undefined, timing = "loyalty", kind = "activated"): NodeData => ({ ...chandraFull, kind, timing, loyalty });
+  assert.deepEqual(validate(walk("-2"), none, hasCard), [], "-2");
+  assert.deepEqual(validate(walk("+1"), none, hasCard), [], "+1");
+  assert.match(validate(walk("x"), none, hasCard).join(), /忠誠度のコスト "x" は、整数/);
+  assert.match(validate(walk(undefined), none, hasCard).join(), /組で持つ/, "タイミングだけ");
+  assert.match(validate(walk("0", "sorcery-speed"), none, hasCard).join(), /組で持つ/, "コストだけ");
+  assert.match(validate(walk("0", "always", "static"), none, hasCard).join(), /起動型でだけ/);
+  assert.deepEqual(parseMd(toMd(walk("-2"))).loyalty, "-2");
+  // 「−」(U+2212) で書かれたものも、読める
+  assert.equal(parseMd(toMd(walk("-2")).replace("loyalty: -2", "loyalty: \u22122")).loyalty, "-2");
+  const pw = fromScryfall({ id: "p", name: "Chandra, Flamecaller", type_line: "Legendary Planeswalker — Chandra", loyalty: "4" });
+  assert.equal(pw.loyalty, "4");
+  assert.equal(pw.type, "planeswalker");
+  for (const lang of ["ja", "en"] as const) { setLang(lang); assert.deepEqual(parseCardMd(toCardMd({ ...pw, abilities: [walk("-2")] })), { ...pw, abilities: [walk("-2")] }, lang); }
+}
+
+// 炎の侍祭、チャンドラの 0 能力 (もう 1 つ): あなたがコントロールしている赤の各プレインズウォーカーの上に、忠誠カウンターを 1 個ずつ置く = 対象を取らない「各〜」
+const chandraCounters: NodeData = {
+  name: "0: counters", kind: "activated", timing: "loyalty", loyalty: "0",
+  target: "each", targetArgs: { controller: "you", type: "planeswalker", color: "red" },
+  steps: [{ node: false, id: "add-counter", args: { kind: "loyalty", amount: "1" } }],
+};
+for (const lang of ["ja", "en"] as const) {
+  setLang(lang);
+  assert.deepEqual(validate(chandraCounters, none, hasCard), [], lang);
+  assert.deepEqual(parseMd(toMd(chandraCounters)), chandraCounters, lang);
+}
+setLang("en");
+assert.ok(toMd(chandraCounters).includes("target: eachObject(controller=you, type=planeswalker, color=red)\n"), toMd(chandraCounters));
+assert.ok(toMd({ ...chandraCounters, target: "self", targetArgs: undefined }).includes("target: this object\n"), "引数の無い対象は、ラベルのまま");
+setLang("ja");
+assert.match(validate({ ...chandraCounters, targetArgs: { controller: "you", type: "planeswalker", color: "purple" } }, none, hasCard).join(), /色 は .* のどれか/);
+assert.match(validate({ ...chandraCounters, targetArgs: undefined }, none, hasCard).join(), /プレイヤー が無い/, "引数が無いと、止まる");
+// ラベルでも読める (日本語で書かれた引数)
+assert.deepEqual(parseMd(toMd(chandraCounters).replace("controller=you, type=planeswalker, color=red", "プレイヤー=あなた, タイプ=プレインズウォーカー, 色=赤")).targetArgs, chandraCounters.targetArgs);
+
+// 炎の侍祭、チャンドラの −2 能力: 墓地の、マナ総量 3 以下のインスタントかソーサリーのカード 1 枚を対象とする。このターン、唱えてもよい。このターン、墓地に置かれるなら、代わりに追放する
+const minus2: NodeData = {
+  name: "-2: …", kind: "activated", timing: "loyalty", loyalty: "-2", target: "target-object",
+  targetArgs: { controller: "you", zone: "graveyard", type: "instant|sorcery", color: "any", "mana-value-max": "3" },
+  steps: [{ node: false, id: "may-cast", args: { duration: "this-turn" } }, { node: false, id: "exile-instead-of-graveyard", args: { duration: "this-turn" } }],
+};
+for (const lang of ["ja", "en"] as const) {
+  setLang(lang);
+  assert.deepEqual(validate(minus2, none, hasCard), [], lang);
+  assert.deepEqual(parseMd(toMd(minus2)), minus2, lang);
+}
+setLang("en");
+assert.ok(toMd(minus2).includes("target: targetObject(controller=you, zone=graveyard, type=instant|sorcery, color=any, mana-value-max=3)\nsteps:\n  mayCast(duration=this-turn)\n"), toMd(minus2));
+setLang("ja");
+// 無くてもよい引数 (optional): マナ総量・領域は、無くても通る。書く値が空なら、md に出さない
+const noLimit = { ...minus2, targetArgs: { controller: "you", type: "instant", color: "any" } };
+assert.deepEqual(validate(noLimit, none, hasCard), [], "領域・マナ総量は、無くてもよい");
+assert.ok(!toMd({ ...minus2, targetArgs: { ...minus2.targetArgs!, "mana-value-max": "" } }).includes("mana-value-max"), "空の値は、md に書かない");
+assert.match(validate({ ...minus2, targetArgs: { ...minus2.targetArgs!, "mana-value-max": "three" } }, none, hasCard).join(), /整数/, "書いたなら、整数");
+assert.match(validate({ ...minus2, targetArgs: { ...minus2.targetArgs!, zone: "moon" } }, none, hasCard).join(), /領域 は .* のどれか/);
+assert.match(validate({ ...minus2, targetArgs: { controller: "you", color: "any" } }, none, hasCard).join(), /タイプ が無い/, "タイプは、必須");
+// 各〜も、同じ絞り込みを使う (領域・マナ総量は、あとから足した引数。前に保存した各〜も、そのまま通る)
+assert.deepEqual(validate({ ...chandraCounters, targetArgs: { controller: "you", type: "planeswalker", color: "red" } }, none, hasCard), []);
+
+// 魔力の櫃 (Mana Vault): アンタップしない / アップキープに {4} を支払ってもよい。そうしたなら、アンタップする / ドロー・ステップに、タップ状態なら 1 点のダメージ / {T}: {C}{C}{C} を加える
+const vaultUntap: NodeData = { name: "u", kind: "static", timing: "always", target: "self", steps: [{ node: false, id: "does-not-untap", args: {} }] };
+const vaultUpkeep: NodeData = { name: "p", kind: "triggered", timing: "upkeep", target: "self", steps: [{ node: false, id: "may-pay", args: { mana: "{4}" } }, { node: false, id: "untap", args: {} }] };
+const vaultDraw: NodeData = { name: "d", kind: "triggered", timing: "draw-step", target: "you", condition: { id: "is-tapped", args: {} }, steps: [{ node: false, id: "deal-damage", args: { amount: "1" } }] };
+const vaultMana: NodeData = { name: "m", kind: "activated", timing: "anytime", cost: [{ id: "tap-self", args: {} }], steps: [{ node: false, id: "add-mana", args: { mana: "{C}{C}{C}" } }] };
+for (const lang of ["ja", "en"] as const) {
+  setLang(lang);
+  for (const n of [vaultUntap, vaultUpkeep, vaultDraw, vaultMana]) {
+    assert.deepEqual(validate(n, none, hasCard), [], `${lang} ${n.name}`);
+    assert.deepEqual(parseMd(toMd(n)), n, `${lang} ${n.name}`);
+  }
+}
+setLang("en");
+assert.ok(toMd(vaultMana).includes("timing: Any time you have priority\ncost:\n  tapSelf()\nsteps:\n  addMana(mana={C}{C}{C})\n"), toMd(vaultMana));
+assert.ok(toMd(vaultUpkeep).includes("steps:\n  mayPay(mana={4})\n  untap()\n"));
+setLang("ja");
+// 起動型には、コストが要る (602.1)。コストは、コストの動作だけ。起動型でだけ
+assert.match(validate({ ...vaultMana, cost: undefined }, none, hasCard).join(), /コスト .*が要る/);
+assert.match(validate({ ...vaultMana, cost: [{ id: "draw", args: { amount: "1" } }] }, none, hasCard).join(), /コストではない/);
+assert.match(validate({ ...vaultUntap, cost: [{ id: "tap-self", args: {} }] }, none, hasCard).join(), /起動型でだけ/);
+assert.deepEqual(validate({ ...vaultMana, cost: [{ id: "tap-self", args: {} }, { id: "pay-mana", args: { mana: "{2}{R}" } }, { id: "pay-life", args: { amount: "2" } }] }, none, hasCard), [], "コストは、いくつでも");
+// コストの動作を、手順に置けるのは、代替コストのタイミングだけ
+assert.match(validate({ ...vaultUntap, steps: [{ node: false, id: "tap-self", args: {} }] }, none, hasCard).join(), /「コスト」の欄か、代替コストのタイミング/);
+// マナ・シンボル
+assert.match(validate({ ...vaultMana, steps: [{ node: false, id: "add-mana", args: { mana: "three" } }] }, none, hasCard).join(), /マナ・シンボルの並び/);
+assert.deepEqual(validate({ ...vaultMana, steps: [{ node: false, id: "add-mana", args: { mana: "{W/U}{2/W}{X}{C}" } }] }, none, hasCard), [], "混成・X も、通る");
+// 「支払ってもよい」の後ろが、空
+assert.match(validate({ ...vaultUpkeep, steps: [vaultUpkeep.steps[0]] }, none, hasCard).join(), /支払ってもよい」の後ろ/);
+// 「アンタップしない」は、常在型でだけ
+assert.match(validate({ ...vaultUpkeep, steps: [{ node: false, id: "does-not-untap", args: {} }] }, none, hasCard).join(), /常在型でだけ/);
+
+// 対象「これ自身」: クリーチャーとは限らない。前の名前 (このクリーチャー / this creature) で保存したノートも、読める
+setLang("ja");
+const legacy = "---\nmtg: card\n---\n# X\n\n## Abilities\n\n```node\nname: a\nkind: static\ntiming: always\ntarget: this creature\nsteps:\n  doesNotUntap()\n```\n";
+assert.equal(parseMd(legacy).target, "self", "前の名前 (英語)");
+assert.equal(parseMd(legacy.replace("this creature", "このクリーチャー")).target, "self", "前の名前 (日本語)");
+assert.deepEqual(validate(parseMd(legacy), none, hasCard), []);
+
+// Black Lotus: {T}, Sacrifice this artifact: Add three mana of any one color. = コストに {T} と生け贄 / 効果は、好きな 1 色のマナ 3 点
+const lotus: NodeData = {
+  name: "l", kind: "activated", timing: "anytime",
+  cost: [{ id: "tap-self", args: {} }, { id: "sacrifice-cost", args: { what: "self" } }],
+  steps: [{ node: false, id: "add-mana-any-color", args: { amount: "3" } }],
+};
+for (const lang of ["ja", "en"] as const) {
+  setLang(lang);
+  assert.deepEqual(validate(lotus, none, hasCard), [], lang);
+  assert.deepEqual(parseMd(toMd(lotus)), lotus, lang);
+}
+setLang("en");
+assert.ok(toMd(lotus).includes("cost:\n  tapSelf()\n  sacrificeCost(what=self)\nsteps:\n  addManaOfAnyOneColor(amount=3)\n"), toMd(lotus));
+setLang("ja");
+assert.deepEqual(validate({ ...lotus, cost: [{ id: "sacrifice-cost", args: { what: "creature", count: "2" } }] }, none, hasCard), [], "「クリーチャー 2 体を生け贄に捧げる」(コスト)");
+assert.match(validate({ ...lotus, cost: [{ id: "sacrifice-cost", args: { what: "moon" } }] }, none, hasCard).join(), /何を は .* のどれか/);
+// 生け贄は、効果としても使える (チャンドラ) が、コストの動作 (sacrificeCost) は、手順に置けない
+assert.match(validate({ ...lotus, steps: [{ node: false, id: "sacrifice-cost", args: { what: "self" } }] }, none, hasCard).join(), /「コスト」の欄か、代替コストのタイミング/);
+
+// Oko の +2: 対象のアーティファクトかクリーチャーは、すべての能力を失い、緑の 3/3 の大鹿・クリーチャーになる = 登録してある大鹿トークンのカードを指す変身
+const elkCards = new Map([["Elk Token (3-3 G)", true], ["Lightning Bolt", false]]);
+const hasElk = (n: string, f?: string) => elkCards.has(n) && (f !== "token" || elkCards.get(n) === true);
+const okoPlus2: NodeData = {
+  name: "+2: …", kind: "activated", timing: "loyalty", loyalty: "+2", target: "target-object",
+  targetArgs: { controller: "any", zone: "battlefield", type: "artifact|creature", color: "any" },
+  steps: [{ node: false, id: "become-token", args: { token: "Elk Token (3-3 G)", duration: "indefinite" } }],
+};
+for (const lang of ["ja", "en"] as const) {
+  setLang(lang);
+  assert.deepEqual(validate(okoPlus2, none, hasElk), [], lang);
+  assert.deepEqual(parseMd(toMd(okoPlus2)), okoPlus2, lang);
+}
+setLang("en");
+assert.ok(toMd(okoPlus2).includes("steps:\n  becomeToken(token=Elk Token (3-3 G), duration=indefinite)\n"), toMd(okoPlus2));
+setLang("ja");
+assert.match(validate({ ...okoPlus2, steps: [{ node: false, id: "become-token", args: { token: "Lightning Bolt", duration: "indefinite" } }] }, none, hasElk).join(), /登録されていない/, "トークンでないカードには、なれない");
+assert.match(validate({ ...okoPlus2, steps: [{ node: false, id: "become-token", args: { token: "", duration: "indefinite" } }] }, none, hasElk).join(), /トークン が無い/, "何になるか、未選択");
+assert.match(validate({ ...okoPlus2, steps: [{ node: false, id: "become-token", args: { token: "Elk Token (3-3 G)", duration: "forever" } }] }, none, hasElk).join(), /期間 は .* のどれか/);
+
+// Oko の −5: あなたがコントロールしていてアーティファクトやクリーチャーである 1 つを対象とし、対戦相手がコントロールしていてパワーが 3 以下であるクリーチャー 1 体を対象とする。それらのコントロールを交換する = 対象が 2 つ
+const okoMinus5: NodeData = {
+  name: "-5: …", kind: "activated", timing: "loyalty", loyalty: "-5", target: "target-object",
+  targetArgs: { controller: "you", zone: "battlefield", type: "artifact|creature", color: "any" },
+  alsoTargets: [{ id: "target-object", args: { controller: "opponent", zone: "battlefield", type: "creature", color: "any", "power-max": "3" } }],
+  steps: [{ node: false, id: "exchange-control", args: {} }],
+};
+for (const lang of ["ja", "en"] as const) {
+  setLang(lang);
+  assert.deepEqual(validate(okoMinus5, none, hasCard), [], lang);
+  assert.deepEqual(parseMd(toMd(okoMinus5)), okoMinus5, lang);
+}
+setLang("en");
+assert.ok(toMd(okoMinus5).includes("also-target:\n  targetObject(controller=opponent, zone=battlefield, type=creature, color=any, power-max=3)\nsteps:\n  exchangeControl()\n"), toMd(okoMinus5));
+setLang("ja");
+assert.match(validate({ ...okoMinus5, alsoTargets: undefined }, none, hasCard).join(), /対象が 2 つ要る/, "交換には、対象が 2 つ");
+assert.match(validate({ ...okoMinus5, target: undefined }, none, hasCard).join(), /最初の対象が要る/);
+assert.match(validate({ ...okoMinus5, alsoTargets: [{ id: "self", args: {} }] }, none, hasCard).join(), /対象を取るもの.*だけ/, "「これ自身」は、対象を取らない");
+assert.match(validate({ ...okoMinus5, alsoTargets: [{ id: "target-object", args: { controller: "opponent", type: "creature", color: "any", "power-max": "x" } }] }, none, hasCard).join(), /整数/, "もう1つの対象の引数も、検証する");
+assert.deepEqual(validate({ ...okoMinus5, alsoTargets: [{ id: "target-creature", args: {} }, { id: "target-player", args: {} }] }, none, hasCard), [], "3 つ以上の対象も、書ける");
+// 対象を取らない「各〜」にも、パワーの上限
+assert.deepEqual(validate({ ...chandraCounters, targetArgs: { controller: "you", type: "creature", color: "any", "power-max": "2" } }, none, hasCard), []);
 
 console.log("node ok");

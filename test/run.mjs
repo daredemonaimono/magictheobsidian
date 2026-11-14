@@ -16,7 +16,7 @@ let failed = 0;
 for (const f of files) {
   const file = join(out, f.replace(/\.ts$/, ".mjs"));
   // obsidian は実行時にしか無いので、テストでは簡易版 (fetch) に差し替える
-  await build({ entryPoints: [join("test", f)], bundle: true, platform: "node", format: "esm", outfile: file, alias: { obsidian: "test/obsidian-shim.ts" }, logLevel: "error" });
+  await build({ entryPoints: [join("test", f)], bundle: true, platform: "node", format: "esm", outfile: file, alias: { obsidian: "test/obsidian-shim.ts" }, loader: { ".md": "text" }, logLevel: "error" });
   const r = spawnSync(process.execPath, [file], { stdio: "inherit" });
   console.log(`${r.status === 0 ? "PASS" : "FAIL"} ${f}`);
   if (r.status !== 0) failed++;

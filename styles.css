@@ -92,3 +92,37 @@ textarea.mtg-ne-name { resize: none; field-sizing: content; min-height: 2em; }
 .mtg-ne-cand-check { margin: 0; flex-shrink: 0; align-self: center; }
 .mtg-ne-merge:empty { display: none; }
 .mtg-ne-merge { margin-bottom: 6px; }
+/* アート全体が見える高さ (Scryfall の art_crop の縦横比 626:457)。枠の縦は、中身に合わせて伸びる */
+.mtg-ne-card-art { flex: none; aspect-ratio: 626 / 457; }
+.mtg-ne-card-text { min-height: 140px; }
+.mtg-ne-ability.is-drop, .mtg-ne-board.is-drop { box-shadow: 0 -3px 0 var(--interactive-accent); }
+.mtg-ne-card-text .mtg-ne-ability:not(.is-on), .mtg-ne-board-head { cursor: grab; }
+.mtg-ne-board-head .mtg-ne-pl { white-space: nowrap; flex-shrink: 0; margin-left: auto; }
+.mtg-ne-board-head .mtg-ne-act { min-width: 0; }
+.mtg-ne-board-head .mtg-ne-pl { margin-left: 0; }
+.mtg-ne-ai { margin-left: auto; padding: 0 10px; height: 24px; font-size: var(--font-ui-smaller); }
+.mtg-set-tabs { display: flex; gap: 6px; margin-bottom: 12px; }
+.mtg-set-tab.is-on { background: var(--interactive-accent); color: var(--text-on-accent); }
+
+/* ```mtg-node コードブロックの色 (編集表示 .mtg-tok-* と、閲覧表示 .token.mtg-* で、同じ色)。テーマの色に合わせる */
+.mtg-key, .token.mtg-key { color: var(--color-purple); font-weight: 600; }
+.mtg-fn, .token.mtg-fn { color: var(--color-blue); }
+.mtg-param, .token.mtg-param { color: var(--color-orange); }
+.mtg-value, .token.mtg-value { color: var(--color-green); }
+.mtg-mana, .token.mtg-mana { color: var(--color-yellow); }
+.mtg-num, .token.mtg-num { color: var(--color-cyan); }
+.mtg-link, .token.mtg-link { color: var(--text-accent); }
+.mtg-text, .token.mtg-text { color: var(--text-muted); }
+.mtg-ne-filter { width: 32px; height: 32px; padding: 0; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.mtg-ne-filter .svg-icon { width: 16px; height: 16px; }
+.mtg-ne-filter.is-on { background: var(--interactive-accent); color: var(--text-on-accent); }
+.mtg-ne-tag { color: var(--text-warning, var(--color-orange)); font-size: var(--font-ui-smaller); }
+.mtg-ne-gap { color: var(--color-orange); }
+.mtg-ne-review { color: var(--text-error); }
+.mtg-ne-gap { color: var(--color-yellow); }
+.mtg-ne-tag-gap { color: var(--color-yellow); font-size: var(--font-ui-smaller); }
+.mtg-ne-review-part { color: var(--color-yellow); }
+/* チップは、板の幅を超えない。引数が多いときは、折り返す */
+.mtg-ne-chip { max-width: 100%; }
+.mtg-ne-chip > span { flex-wrap: wrap; white-space: normal; }
+.mtg-ne-chip > span > span:first-child { white-space: nowrap; }

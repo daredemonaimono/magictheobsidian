@@ -1,14 +1,15 @@
 import { App, Modal } from "obsidian";
 import { Label, pick, t } from "./i18n";
 import { CARD_TYPES } from "./node/cardtypes";
+import { byCr } from "./node/cr";
 import { COLORS, ScryCard, buildQuery, thumbOf } from "./node/scryfall";
 
 // タイプの絞り込み (Scryfall の t: に渡す英語)。土地は、唱えないので、cardtypes.ts には無いが、探せる
-const TYPES: { id: string; label: Label }[] = [...CARD_TYPES.map((x) => ({ id: x.id, label: x.label })), { id: "land", label: { ja: "土地", en: "Land" } }];
+const TYPES: { id: string; cr: string; label: Label }[] = [...CARD_TYPES.map((x) => ({ id: x.id, cr: x.cr, label: x.label })), { id: "land", cr: "305.1", label: { ja: "土地", en: "Land" } }, { id: "token", cr: "111.1", label: { ja: "トークン", en: "Token" } }].sort(byCr); // CR の番号順
 
 // 新規カード: Scryfall を、名前・色 (アイコン)・タイプ (選択) で探し、カードの絵を見て選ぶ。選んだカードは、onPick で、Cards/ に保存される
 export class CardSearchModal extends Modal {
-  constructor(app: App, private search: (q: string) => Promise<ScryCard[]>, private onPick: (c: ScryCard) => Promise<void>) {
+  constructor(app: App, private search: (q: string) => Promise<ScryCard[]>, private onPick: (c: ScryCard) => Promise<void>, private presetType = "") {
     super(app);
   }
   onOpen() {
@@ -28,6 +29,7 @@ export class CardSearchModal extends Modal {
     const type = filters.createEl("select");
     type.createEl("option", { text: `${t("cardType")}: ${t("none")}`, value: "" });
     for (const ty of TYPES) type.createEl("option", { text: pick(ty.label), value: ty.id });
+    type.value = this.presetType; // 開くときの、タイプの絞り込み (トークンを探すときは、トークン)
     const out = this.contentEl.createDiv("mtg-cs-grid");
     const go = async () => {
       const q = buildQuery(input.value, { colors: COLORS.filter((c) => colors.has(c)), type: type.value });

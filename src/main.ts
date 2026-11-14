@@ -1,9 +1,15 @@
-import { Notice, Plugin, TFile, normalizePath, requestUrl } from "obsidian";
+import { Notice, Plugin, TFile, loadPrism, normalizePath, requestUrl } from "obsidian";
 import { setLang, t } from "./i18n";
 import { NODE_EDITOR_VIEW, NodeEditorView, NodeStore } from "./NodeEditorView";
 import { CardData, parseCardMd, toCardMd } from "./node/card";
 import { ScryCard, artFileName, cardsOf, isScryfallImage, printsFrom, printsUrl, scryfallUrl } from "./node/scryfall";
-import { Settings, SettingsTab, loadSettings } from "./settings";
+import { Settings, SettingsHost, SettingsTab, loadSettings } from "./settings";
+import { ComposeResult, composeAbility } from "./ai/compose";
+import { DEFAULT_MODELS, Http, Provider, errorText, modelIds, modelsRequest } from "./ai/providers";
+import guide from "../docs/ai-guide.md";
+import { mtgNodeEditorHighlight } from "./highlight/editor";
+import { prismGrammar } from "./highlight/tokens";
+import { NodeData } from "./node/md";
 
 const CARD_DIR = "Cards"; // カード = Cards/<カード名>.md (能力のノードが、コードブロックで入る。ノードの置き場は、ここだけ)
 
@@ -13,10 +19,20 @@ export default class MagicTheObsidian extends Plugin {
   async onload() {
     this.settings = loadSettings(await this.loadData());
     setLang(this.settings.language);
+    // ```mtg-node ブロックの色分け: 編集表示 (CodeMirror) と、閲覧表示 (Prism) の、両方
+    this.registerEditorExtension(mtgNodeEditorHighlight);
+    void loadPrism().then((Prism) => { Prism.languages["mtg-node"] = prismGrammar(); }).catch(() => { /* 閲覧表示の色分けだけ、効かない */ });
     this.registerView(NODE_EDITOR_VIEW, (leaf) => new NodeEditorView(leaf, this.nodeStore()));
     this.addCommand({ id: "node-editor", name: "Node: open the node editor", callback: () => void this.openNodeEditor() });
     this.addRibbonIcon("blocks", t("ribbon"), () => void this.openNodeEditor());
-    this.addSettingTab(new SettingsTab(this.app, () => this.settings.language, (l) => this.changeLanguage(l), this));
+    const host: SettingsHost = {
+      settings: () => this.settings,
+      save: () => this.saveData(this.settings),
+      changeLanguage: (l) => this.changeLanguage(l),
+      hasKey: (p) => { const id = this.settings.ai.keyIds[p]; return !!id && !!this.app.secretStorage.getSecret(id); },
+      listModels: (p) => this.listModels(p),
+    };
+    this.addSettingTab(new SettingsTab(this.app, host, this));
   }
 
   // 言語を切り替える: 保存して、開いているノードの画面を、新しい言語で描き直す
@@ -25,6 +41,40 @@ export default class MagicTheObsidian extends Plugin {
     setLang(l);
     await this.saveData(this.settings);
     for (const leaf of this.app.workspace.getLeavesOfType(NODE_EDITOR_VIEW)) if (leaf.view instanceof NodeEditorView) leaf.view.redraw();
+  }
+
+  // AI の API への通信。キーは、ヘッダーにだけ載せる (URL・ログには、出さない)
+  private http: Http = async (req) => {
+    const r = await requestUrl({ url: req.url, method: req.method, headers: req.headers, body: req.body, throw: false });
+    let json: unknown = null;
+    try { json = r.json; } catch { /* JSON でない答え (HTML のエラーなど) */ }
+    return { status: r.status, json };
+  };
+  // キーは、Obsidian の SecretStorage (キーチェーン) から、使うときだけ取る。設定ファイルには、キーの名前だけ
+  private apiKey(p: Provider): string {
+    const id = this.settings.ai.keyIds[p];
+    const key = id ? this.app.secretStorage.getSecret(id) : null;
+    if (!key) throw new Error(t("aiNoKey", p));
+    return key;
+  }
+  private async listModels(p: Provider): Promise<string[]> {
+    const res = await this.http(modelsRequest(p, this.apiKey(p)));
+    if (res.status !== 200) throw new Error(`HTTP ${res.status} ${errorText(res.json)}`.trim());
+    return modelIds(p, res.json);
+  }
+  // 能力 1 つを、AI に組ませる (設定の AI。検証を通った答えだけを返す)
+  private async compose(card: CardData, ability: NodeData, tokens: CardData[]): Promise<ComposeResult> {
+    const p = this.settings.ai.provider;
+    const tokenNames = tokens.filter((c) => c.token).map((c) => c.name);
+    const key = this.apiKey(p); // 無ければ、ここで、設定を促すメッセージで止まる
+    try {
+      return await composeAbility({
+        http: this.http, provider: p, model: this.settings.ai.models[p] || DEFAULT_MODELS[p], key, guide, card, ability, tokenNames,
+        hasCard: (name, filter) => tokens.some((c) => c.name === name && (filter !== "token" || !!c.token)),
+      });
+    } catch (e) {
+      throw new Error(t("aiError", (e as Error).message)); // 通信の失敗など (キーは、メッセージに含まれない)
+    }
   }
 
   private async openNodeEditor() {
@@ -50,19 +100,21 @@ export default class MagicTheObsidian extends Plugin {
       if (res.status !== 200) throw new Error(`HTTP ${res.status}`);
       return cardsOf(res.json as ScryCard);
     };
-    return {
-      cards: async () => {
-        const out: CardData[] = [];
-        for (const f of vault.getMarkdownFiles().filter((x) => x.path.startsWith(`${CARD_DIR}/`))) {
-          try {
-            out.push(parseCardMd(await vault.cachedRead(f)));
-          } catch (e) {
-            new Notice(t("unreadable", f.path, (e as Error).message));
-          }
+    const readCards = async (): Promise<CardData[]> => {
+      const out: CardData[] = [];
+      for (const f of vault.getMarkdownFiles().filter((x) => x.path.startsWith(`${CARD_DIR}/`))) {
+        try {
+          out.push(parseCardMd(await vault.cachedRead(f)));
+        } catch (e) {
+          new Notice(t("unreadable", f.path, (e as Error).message));
         }
-        return out;
-      },
+      }
+      return out;
+    };
+    return {
+      cards: readCards,
       saveCard: write,
+      compose: async (card, ability) => this.compose(card, ability, await readCards()),
       // 絵をローカルに保存して (あれば、取りに行かない)、画面に出せるパスを返す。保存先: プラグインのフォルダの art/ (リポジトリの外。コミットされない)
       art: async (id, url) => {
         if (!isScryfallImage(url)) throw new Error("not a Scryfall image");

@@ -11,4 +11,5 @@ await esbuild.build({
   sourcemap: false,
   treeShaking: true,
   outfile: "main.js",
+  loader: { ".md": "text" }, // AI への手引き (docs/ai-guide.md) を、そのまま、main.js に入れる
 });

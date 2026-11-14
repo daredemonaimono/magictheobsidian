@@ -1,33 +1,25 @@
 import { Label } from "../i18n";
+import { byCr } from "./cr";
+import { COLOR_CHOICES, Callable, Choice, ParamDef, choice } from "./params";
 import { KEYWORDS } from "./slots";
 
+export type { Choice, ParamDef };
+
 // 動作 (コードで固定) と条件。ノードは、これらを組んで作る。id は言語に依らない。
-export interface Choice {
-  id: string;
-  label: Label;
-}
-export interface ParamDef {
-  id: string;
-  label: Label;
-  type: "number" | "choice" | "multi"; // multi = choices から、いくつでも選ぶ (値は id を | でつなぐ)
-  choices?: Choice[];
-  default: string; // 選択のときは、choice の id
-}
-export interface Def {
-  id: string;
-  label: Label;
+export interface Def extends Callable {
+  cost?: boolean; // コストの動作 (起動型の「コスト」の欄・代替コストの手順に使う)
   fn: string; // 割り振られた関数の名前 (中身は、エンジンで作る)。md の手順は、この名前の呼び出しで書く
   cr: string;
   help: Label;
-  params: ParamDef[];
-  only?: string[]; // 使える種類 (無ければ、どれでも)
 }
 
 // キーワードの選択肢。multi で複数選ぶと、それぞれのキーワードが、別々に扱われる (条件と効果が、同じキーワードどうしで対応する)
 const KW_CHOICES = KEYWORDS.map((k) => ({ id: k.id, label: k.label }));
+const INDEFINITE = choice("indefinite", "ずっと (期間の指定なし: ゲームの終わりまで)", "indefinitely"); // 611.2a: 期間が書かれていなければ、ゲームの終わりまで
+const THIS_TURN = [choice("this-turn", "このターン", "this turn")]; // 期間 (611.2a: 解決で生まれた継続的効果は、書かれた期間だけ続く)
 const L = (ja: string, en: string): Label => ({ ja, en });
-const C = (id: string, ja: string, en: string): Choice => ({ id, label: { ja, en } });
-const COLORS = [C("any", "色を問わない", "any color"), C("white", "白", "white"), C("blue", "青", "blue"), C("black", "黒", "black"), C("red", "赤", "red"), C("green", "緑", "green")]; // 色 (105.1)
+const C = choice;
+const COLORS = COLOR_CHOICES;
 
 export const ACTIONS: Def[] = [
   {
@@ -71,7 +63,7 @@ export const ACTIONS: Def[] = [
     label: L("キーワード能力を与える", "Grant a keyword ability"),
     cr: "613.1f",
     help: L("対象にキーワード能力を与える", "Give the target a keyword ability"),
-    params: [{ id: "keyword", label: L("キーワード", "Keyword"), type: "multi", choices: KW_CHOICES, default: KEYWORDS[0].id }],
+    params: [{ id: "keyword", label: L("キーワード", "Keyword"), type: "multi", choices: KW_CHOICES, default: "flying" }],
   },
   {
     id: "all-creature-types",
@@ -94,6 +86,7 @@ export const ACTIONS: Def[] = [
   // コスト (代替コスト・起動コストの手順に使う)
   {
     id: "pay-life",
+    cost: true,
     fn: "payLife",
     label: L("ライフを支払う", "Pay life"),
     cr: "119.4",
@@ -102,6 +95,7 @@ export const ACTIONS: Def[] = [
   },
   {
     id: "exile-from-hand",
+    cost: true,
     fn: "exileFromHand",
     label: L("手札のカードを追放する", "Exile cards from your hand"),
     cr: "701.13",
@@ -112,10 +106,143 @@ export const ACTIONS: Def[] = [
     ],
   },
   {
+    id: "create-token",
+    fn: "createToken",
+    label: L("トークンを生成する", "Create tokens"),
+    cr: "701.7a",
+    help: L("登録してあるトークンのカード (Cards/) を指して、その数だけ、戦場に出す。生成したプレイヤーが、コントローラーになる", "Create tokens from a registered token card (Cards/) and put them onto the battlefield; you control them"),
+    params: [
+      { id: "count", label: L("数", "Count"), type: "number", default: "1" },
+      { id: "token", label: L("トークン", "Token"), type: "card", filter: "token", default: "" },
+    ],
+  },
+  {
+    id: "delayed-trigger",
+    fn: "delay",
+    label: L("ここから先の手順を、あとで行う (遅延誘発)", "Do the following steps later (delayed trigger)"),
+    cr: "603.7",
+    help: L("この手順より後ろの手順は、指定のタイミングに、1 回だけ行う (遅延誘発能力。解決中に作られ、次にそのタイミングが来たときだけ誘発する: 603.7a・603.7b)", "The steps after this one are done once, at the given time (a delayed triggered ability, created during resolution; it triggers only the next time: 603.7a, 603.7b)"),
+    params: [{ id: "when", label: L("タイミング", "When"), type: "choice", choices: [C("upkeep", "次のアップキープの開始時", "the beginning of the next upkeep"), C("combat-begin", "次の戦闘の開始時", "the beginning of the next combat"), C("end-step", "次の終了ステップの開始時", "the beginning of the next end step")], default: "end-step" }],
+  },
+  {
+    id: "sacrifice",
+    fn: "sacrifice",
+    label: L("生け贄に捧げる", "Sacrifice"),
+    cr: "701.21a",
+    help: L("戦場から、持ち主の墓地に置く。自分がコントロールする、戦場のパーマネントだけを、生け贄に捧げられる。何を捧げるかは、対象の欄で選ぶ", "Move it from the battlefield to its owner's graveyard. Only a permanent you control. What is sacrificed is chosen in the target slot"),
+    params: [],
+  },
+  {
+    id: "tap-self",
+    cost: true,
+    fn: "tapSelf",
+    label: L("このパーマネントをタップする ({T})", "Tap this permanent ({T})"),
+    cr: "107.5",
+    help: L("コストの {T}: このパーマネントを、タップする (すでにタップ状態なら、払えない)", "The {T} in a cost: tap this permanent (can't be paid if it's already tapped)"),
+    params: [],
+  },
+  {
+    id: "pay-mana",
+    cost: true,
+    fn: "payMana",
+    label: L("マナを支払う", "Pay mana"),
+    cr: "107.4",
+    help: L("マナ・コストを支払う (マナ・シンボルの並び: {2}{R} など)", "Pay a mana cost (mana symbols like {2}{R})"),
+    params: [{ id: "mana", label: L("マナ", "Mana"), type: "mana", default: "{1}" }],
+  },
+  {
+    id: "add-mana",
+    fn: "addMana",
+    label: L("マナを加える", "Add mana"),
+    cr: "106.4",
+    help: L("マナを、マナ・プールに加える (マナ・シンボルの並び: {C}{C}{C} など)", "Add mana to your mana pool (mana symbols like {C}{C}{C})"),
+    params: [{ id: "mana", label: L("マナ", "Mana"), type: "mana", default: "{C}" }],
+  },
+  {
+    id: "sacrifice-cost",
+    cost: true,
+    fn: "sacrificeCost",
+    label: L("生け贄に捧げる (コスト)", "Sacrifice (cost)"),
+    cr: "701.21a",
+    help: L("コストとして、自分がコントロールするパーマネントを、生け贄に捧げる (これ自身、または、指定のタイプのパーマネントを、枚数分)", "Sacrifice permanents you control as a cost (this one, or permanents of a given type)"),
+    params: [
+      { id: "what", label: L("何を", "What"), type: "choice", choices: [C("self", "これ自身", "this object"), C("permanent", "パーマネント", "a permanent"), C("creature", "クリーチャー", "a creature"), C("artifact", "アーティファクト", "an artifact"), C("enchantment", "エンチャント", "an enchantment"), C("land", "土地", "a land")], default: "self" },
+      { id: "count", label: L("数 (これ自身のときは、不要)", "Count (not needed for itself)"), type: "number", optional: true, default: "" },
+    ],
+  },
+  {
+    id: "add-mana-any-color",
+    fn: "addManaOfAnyOneColor",
+    label: L("好きな 1 色のマナを加える", "Add mana of any one color"),
+    cr: "106.4",
+    help: L("好きな 1 色を選んで、その色のマナを、指定の数だけ、加える (「any one color」。色を選ぶのは、解決のとき)", "Choose one color and add that many mana of it (\"any one color\")"),
+    params: [{ id: "amount", label: L("数", "Amount"), type: "number", default: "1" }],
+  },
+  {
+    id: "may-pay",
+    fn: "mayPay",
+    label: L("支払ってもよい。そうしたなら、ここから先の手順を行う", "You may pay. If you do, do the following steps"),
+    cr: "118.12",
+    help: L("マナを支払ってもよい。支払ったなら、これより後ろの手順を、行う (支払わなければ、後ろは、行わない)", "You may pay the mana. If you do, do the steps after this one (if you don't, they are skipped)"),
+    params: [{ id: "mana", label: L("マナ", "Mana"), type: "mana", default: "{1}" }],
+  },
+  {
+    id: "untap",
+    fn: "untap",
+    label: L("アンタップする", "Untap"),
+    cr: "701.26b",
+    help: L("対象をアンタップする (タップ状態のものだけ)", "Untap the target (only tapped permanents can be untapped)"),
+    params: [],
+  },
+  {
+    id: "does-not-untap",
+    fn: "doesNotUntap",
+    label: L("アンタップ・ステップに、アンタップしない", "Doesn't untap during your untap step"),
+    cr: "502.3",
+    help: L("アンタップ・ステップに、アンタップするパーマネントを決めるとき、これは、アンタップしない (常に働く)", "When you determine which permanents untap during your untap step, this one doesn't"),
+    only: ["static"],
+    params: [],
+  },
+  {
+    id: "exchange-control",
+    fn: "exchangeControl",
+    label: L("コントロールを交換する", "Exchange control"),
+    cr: "701.12b",
+    help: L("対象と、もう1つの対象の、コントロールを交換する (異なるプレイヤーがコントロールしていれば、互いに、相手のものを得る。交換を、すべて完了できなければ、何も起こらない: 701.12a・701.12b)。対象が 2 つ要る", "Exchange control of the target and the other target (701.12a, 701.12b). Needs two targets"),
+    params: [],
+  },
+  {
+    id: "become-token",
+    fn: "becomeToken",
+    label: L("トークンのカードの特性になる (変身)", "Becomes the characteristics of a token card"),
+    cr: "613.1",
+    help: L("対象は、登録してあるトークンのカード (Cards/) と同じ、タイプ・色・基本のパワーとタフネス・能力になる。元の能力は、すべて失う (層の規則で、重ねて決まる: 613.1d タイプ・613.1e 色・613.1f 能力・613.4b パワー/タフネスの設定)。例: 「すべての能力を失い、緑の 3/3 の大鹿・クリーチャーになる」", "The target becomes the type, color, base power/toughness and abilities of a registered token card, losing all its other abilities (applied in layers: 613.1d type, 613.1e color, 613.1f abilities, 613.4b power/toughness setting)"),
+    params: [
+      { id: "token", label: L("トークン", "Token"), type: "card", filter: "token", default: "" },
+      { id: "duration", label: L("期間", "Duration"), type: "choice", choices: [INDEFINITE, ...THIS_TURN], default: "indefinite" },
+    ],
+  },
+  {
+    id: "may-cast",
+    fn: "mayCast",
+    label: L("唱えてもよい", "You may cast it"),
+    cr: "601.3",
+    help: L("対象 (いまある領域のカード) を、期間のあいだ、唱えてもよい (許可を与える効果。唱えるための他のルールは、そのまま)", "You may cast the target (from where it is) for the duration (other casting rules still apply)"),
+    params: [{ id: "duration", label: L("期間", "Duration"), type: "choice", choices: THIS_TURN, default: "this-turn" }],
+  },
+  {
+    id: "exile-instead-of-graveyard",
+    fn: "exileInsteadOfGraveyard",
+    label: L("墓地に置かれるなら、代わりに追放する", "If it would be put into a graveyard, exile it instead"),
+    cr: "614.1a",
+    help: L("対象が、期間のあいだ、墓地に置かれるなら、代わりに追放する (解決中に作られる置換効果。置き換えた出来事は、起こらない: 614.6)", "If the target would be put into a graveyard during the duration, exile it instead (a replacement effect created on resolution; the replaced event never happens: 614.6)"),
+    params: [{ id: "duration", label: L("期間", "Duration"), type: "choice", choices: THIS_TURN, default: "this-turn" }],
+  },
+  {
     id: "counter",
     fn: "counter",
     label: L("打ち消す", "Counter"),
-    cr: "701.5",
+    cr: "701.6a",
     help: L("対象 (呪文・起動型能力・誘発型能力) を打ち消す。解決されず、呪文は持ち主の墓地に置かれる。何を打ち消すかは、対象の欄で選ぶ", "Counter the target (a spell, or an activated or triggered ability). It doesn't resolve; a spell goes to its owner's graveyard. What gets countered is chosen in the target slot"),
     params: [],
   },
@@ -145,11 +272,23 @@ export const CONDITIONS: Def[] = [
     label: L("墓地に、そのキーワードを持つクリーチャー・カードがある", "A creature card with the keyword is in a graveyard"),
     cr: "404.1",
     help: L("いずれかの墓地に、そのキーワード能力を持つクリーチャー・カードがある。複数選ぶと、キーワードごとに別々に判定する (効果の同じキーワードに対応)", "A creature card with that keyword is in any graveyard. With several, each is checked separately (paired with the same keyword in the effect)"),
-    params: [{ id: "keyword", label: L("キーワード", "Keyword"), type: "multi", choices: KW_CHOICES, default: KEYWORDS[0].id }],
+    params: [{ id: "keyword", label: L("キーワード", "Keyword"), type: "multi", choices: KW_CHOICES, default: "flying" }],
+  },
+  {
+    id: "is-tapped",
+    fn: "isTapped",
+    label: L("このパーマネントが、タップ状態である", "This permanent is tapped"),
+    cr: "110.5",
+    help: L("このパーマネントのステータスが、タップ状態である (誘発型では、「〜なら」: 誘発したときと、解決するときに、確かめる: 603.4)", "This permanent's status is tapped (on a triggered ability: an intervening 'if', checked on trigger and on resolution: 603.4)"),
+    params: [],
   },
   { id: "my-turn",
     fn: "isMyTurn", label: L("自分のターン", "It's your turn"), cr: "500.1", help: L("自分のターンである", "It is your turn"), params: [] },
 ];
+
+// 動作・条件は、CR の番号順 (作った順ではない)
+ACTIONS.sort(byCr);
+CONDITIONS.sort(byCr);
 
 export const actionOf = (id: string) => ACTIONS.find((a) => a.id === id);
 export const conditionOf = (id: string) => CONDITIONS.find((c) => c.id === id);

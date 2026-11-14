@@ -1,11 +1,12 @@
 {
   "name": "magictheobsidian",
-  "version": "0.163.0",
+  "version": "0.164.0",
   "description": "Obsidian plugin: Magic: The Gathering rules and nodes (rebuilt from scratch).",
   "main": "main.js",
   "scripts": {
-    "build": "tsc --noEmit --skipLibCheck && node esbuild.config.mjs",
-    "test": "node test/run.mjs"
+    "build": "node scripts/gen-guide.mjs && tsc --noEmit --skipLibCheck && node esbuild.config.mjs",
+    "test": "node test/run.mjs",
+    "guide": "node scripts/gen-guide.mjs"
   },
   "license": "MIT",
   "devDependencies": {

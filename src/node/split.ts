@@ -1,6 +1,6 @@
 import { Lang } from "../i18n";
 import { CardData } from "./card";
-import { KINDS } from "./kinds";
+import { DEFAULT_KIND, defaultTiming } from "./kinds";
 import { KEYWORDS } from "./slots";
 import { NodeData } from "./md";
 
@@ -43,14 +43,14 @@ export function candidates(c: CardData, lang: Lang = "en"): Candidate[] {
       continue;
     }
     // 原文の行を、そのまま名前にする。種類・タイミングは、初期値 (人が選ぶ)
-    out.push({ line: jaLine ?? line, alt: [safeName(jaLine ?? line), safeName(line)], node: { source: line, name: unique(jaLine ?? line), kind: KINDS[0].id, timing: KINDS[0].timings[0].id, steps: [] } });
+    out.push({ line: jaLine ?? line, alt: [safeName(jaLine ?? line), safeName(line)], node: { source: line, name: unique(jaLine ?? line), kind: DEFAULT_KIND, timing: defaultTiming(DEFAULT_KIND), steps: [] } });
   }
   return out;
 }
 
 // 選んだ候補の行を、1 つの能力にする (複数行で 1 つの能力: 選択肢つきの呪文・Saga など)。名前 = 行をつなげたもの、source = 行 (改行区切り)
 export function mergeCandidates(cs: Candidate[]): NodeData {
-  return { source: cs.map((x) => x.node.source).join("\n"), name: cs.map((x) => x.node.name).join(" / "), kind: KINDS[0].id, timing: KINDS[0].timings[0].id, steps: [] };
+  return { source: cs.map((x) => x.node.source).join("\n"), name: cs.map((x) => x.node.name).join(" / "), kind: DEFAULT_KIND, timing: defaultTiming(DEFAULT_KIND), steps: [] };
 }
 
 // この能力は、この原文の行から、できているか (source は、複数行を持てる)

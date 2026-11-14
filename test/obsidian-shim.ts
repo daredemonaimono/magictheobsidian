@@ -3,3 +3,6 @@ export class TFile {}
 export const normalizePath = (p: string) => p;
 export class PluginSettingTab {}
 export class Setting {}
+export class SecretComponent {}
+export class Notice {}
+export const setIcon = () => {};
